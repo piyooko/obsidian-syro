@@ -18,13 +18,22 @@
 
 
 
-import { ItemView, WorkspaceLeaf, Menu, TFile, Notice, Scope } from "obsidian";
+import {
+    ItemView,
+    WorkspaceLeaf,
+    Menu,
+    TFile,
+    Notice,
+    Scope,
+    type KeymapEventHandler,
+    type Modifier,
+} from "obsidian";
 import { createRoot, Root } from "react-dom/client";
 import React from "react";
 import type SRPlugin from "src/main";
 import { NoteReviewSidebar } from "src/ui/components/NoteReviewSidebar";
 import { reviewDecksToSidebarState } from "src/ui/adapters/noteReviewAdapter";
-import { NoteReviewItem, NoteReviewSidebarState } from "src/ui/types/noteReview";
+import { NoteReviewItem } from "src/ui/types/noteReview";
 import { ReviewCommitStore, ReviewCommitLog } from "src/dataStore/reviewCommitStore";
 import { t } from "src/lang/helpers";
 import { ContextAnchorService } from "src/util/ContextAnchor";
@@ -34,6 +43,18 @@ import { captureTimelineContext } from "src/ui/timeline/timelineContext";
 
 // Stable view type id used when registering the sidebar view.
 export const REACT_REVIEW_QUEUE_VIEW_TYPE = "react-review-queue-list-view";
+
+interface RenameCapableFileManager {
+    promptForFileRename?: (file: TFile) => void;
+}
+
+interface WarningCapableMenuItem {
+    setWarning?: () => void;
+}
+
+interface ScrollableMarkdownEditor {
+    scrollTo?: (x: number, y: number) => void;
+}
 
 /**
  * React item view for the note review queue.
@@ -53,14 +74,14 @@ export class ReactNoteReviewView extends ItemView {
     private editingId: string | null = null;
     private unsubscribeSyncEvent: (() => void) | null = null;
     private isLoading: boolean = false;
-    private timelineScopeHandlers: any[] = [];
+    private timelineScopeHandlers: KeymapEventHandler[] = [];
 
     constructor(leaf: WorkspaceLeaf, plugin: SRPlugin) {
         super(leaf);
         this.plugin = plugin;
 
         // Restore the last saved timeline height.
-        this.timelineHeight = (this.plugin.data.settings as any).sidebarTimelineHeight || 300;
+        this.timelineHeight = this.plugin.data.settings.sidebarTimelineHeight || 300;
 
         // Register workspace and vault listeners.
         this.registerEvent(this.app.workspace.on("file-open", () => this.handleFileOpen()));
@@ -111,7 +132,6 @@ export class ReactNoteReviewView extends ItemView {
         const contentEl = this.containerEl.children[1] as HTMLElement;
         contentEl.empty();
         contentEl.addClass("sr-react-note-review-view");
-        contentEl.style.padding = "0";
 
         this.commitStore = this.plugin.reviewCommitStore;
 
@@ -229,7 +249,7 @@ export class ReactNoteReviewView extends ItemView {
         const hotkeyActions: Array<{
             action: "bold" | "italic" | "strikethrough" | "highlight" | "inline-code" | "math";
             commandIds: string[];
-            fallback: Array<{ modifiers: string[]; key: string }>;
+            fallback: Array<{ modifiers: Modifier[]; key: string }>;
         }> = [
             {
                 action: "bold",
@@ -270,7 +290,7 @@ export class ReactNoteReviewView extends ItemView {
             );
             for (const hotkey of hotkeys) {
                 this.timelineScopeHandlers.push(
-                    this.scope.register(hotkey.modifiers as any, hotkey.key, (evt: KeyboardEvent) => {
+                    this.scope.register(hotkey.modifiers, hotkey.key, (evt: KeyboardEvent) => {
                         const timelineTarget = this.getTimelineEventTarget(document.activeElement);
                         if (!timelineTarget) {
                             return true;
@@ -300,14 +320,22 @@ export class ReactNoteReviewView extends ItemView {
 
     private resolveTimelineHotkeys(
         commandIds: readonly string[],
-        fallback: ReadonlyArray<{ modifiers: string[]; key: string }>,
-    ): Array<{ modifiers: string[]; key: string }> {
-        const commandsApi = (this.app as any).commands;
-        const hotkeyManager = (this.app as any).hotkeyManager;
-        const collected: Array<{ modifiers: string[]; key: string }> = [];
+        fallback: ReadonlyArray<{ modifiers: Modifier[]; key: string }>,
+    ): Array<{ modifiers: Modifier[]; key: string }> {
+        const appWithCommands = this.app as typeof this.app & {
+            commands?: {
+                commands?: Record<string, { hotkeys?: Array<{ modifiers: Modifier[]; key: string }> }>;
+            };
+            hotkeyManager?: {
+                customKeys?: Record<string, Array<{ modifiers: Modifier[]; key: string }>>;
+            };
+        };
+        const commandsApi = appWithCommands.commands;
+        const hotkeyManager = appWithCommands.hotkeyManager;
+        const collected: Array<{ modifiers: Modifier[]; key: string }> = [];
         const seen = new Set<string>();
 
-        const pushHotkey = (hotkey: any) => {
+        const pushHotkey = (hotkey?: { modifiers: Modifier[]; key: string }) => {
             if (!hotkey || !hotkey.key || !Array.isArray(hotkey.modifiers)) return;
             const signature = `${hotkey.modifiers.join("+")}::${hotkey.key}`;
             if (seen.has(signature)) return;
@@ -424,11 +452,13 @@ export class ReactNoteReviewView extends ItemView {
         // User specifically asked for "System commands".
         // Let's add Rename as it's standard.
         fileMenu.addItem((menuItem) => {
+            const fileManager = this.app.fileManager as typeof this.app.fileManager &
+                RenameCapableFileManager;
             menuItem
                 .setTitle(t("RENAME") || "Rename")
                 .setIcon("pencil")
                 .onClick(() => {
-                    (this.app.fileManager as any).promptForFileRename(item.noteFile);
+                    fileManager.promptForFileRename?.(item.noteFile);
                 });
         });
 
@@ -441,12 +471,13 @@ export class ReactNoteReviewView extends ItemView {
 
         // 4. Danger actions (Delete) at the very bottom
         fileMenu.addItem((menuItem) => {
+            const warningMenuItem = menuItem as typeof menuItem & WarningCapableMenuItem;
             menuItem.setTitle(t("DELETE")).setIcon("trash");
-            if (typeof (menuItem as any).setWarning === "function") {
-                (menuItem as any).setWarning();
+            if (typeof warningMenuItem.setWarning === "function") {
+                warningMenuItem.setWarning();
             }
             menuItem.onClick(async () => {
-                await this.app.vault.trash(item.noteFile, true);
+                await this.app.fileManager.trashFile(item.noteFile);
             });
         });
 
@@ -654,7 +685,7 @@ export class ReactNoteReviewView extends ItemView {
      */
     private handleTimelineHeightChange(height: number): void {
         this.timelineHeight = height;
-        (this.plugin.data.settings as any).sidebarTimelineHeight = height;
+        this.plugin.data.settings.sidebarTimelineHeight = height;
         this.plugin.savePluginData();
     }
 
@@ -747,10 +778,11 @@ export class ReactNoteReviewView extends ItemView {
                           clientHeight: number;
                       })
                     : null;
-                if (scrollInfo && (editor as any).scrollTo) {
+                const scrollableEditor = editor as typeof editor & ScrollableMarkdownEditor;
+                if (scrollInfo && scrollableEditor.scrollTo) {
                     const targetTop =
                         log.scrollPercentage * (scrollInfo.height - scrollInfo.clientHeight);
-                    (editor as any).scrollTo(0, targetTop);
+                    scrollableEditor.scrollTo(0, targetTop);
                 }
                 return;
             }

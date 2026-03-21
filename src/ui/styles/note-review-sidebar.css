@@ -22,6 +22,10 @@
     font-family: var(--font-interface);
 }
 
+.sr-react-note-review-view {
+    padding: 0;
+}
+
 /* ==========================================
    Tag Filter Bar
    ========================================== */

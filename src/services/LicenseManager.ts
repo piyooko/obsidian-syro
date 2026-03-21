@@ -17,6 +17,11 @@
 
 import { Notice, Plugin, requestUrl } from "obsidian";
 import type { SRSettings } from "src/settings";
+import { getPlatformFingerprint } from "src/util/platform";
+
+interface AdapterWithBasePath {
+    basePath?: string;
+}
 
 /**
  * License 管理器 —— 单例模式
@@ -67,12 +72,13 @@ export class LicenseManager {
 
         try {
             // 获取笔记库路径信息
-            const adapter = this.plugin.app.vault.adapter;
+            const adapter = this.plugin.app.vault.adapter as typeof this.plugin.app.vault.adapter &
+                AdapterWithBasePath;
             let vaultPath = this.plugin.app.vault.getName();
-            if (adapter && "basePath" in adapter) {
-                vaultPath = (adapter as any).basePath + "/" + vaultPath;
+            if (adapter.basePath) {
+                vaultPath = adapter.basePath + "/" + vaultPath;
             }
-            const platform = navigator.platform || "";
+            const platform = getPlatformFingerprint();
 
             // 组合因素并做 SHA-256 哈希
             const vaultInfo = [vaultPath, platform].join("|");
@@ -240,12 +246,13 @@ export class LicenseManager {
 
         try {
             // 重新生成当前机器的指纹
-            const adapter = this.plugin.app.vault.adapter;
+            const adapter = this.plugin.app.vault.adapter as typeof this.plugin.app.vault.adapter &
+                AdapterWithBasePath;
             let vaultPath = this.plugin.app.vault.getName();
-            if (adapter && "basePath" in adapter) {
-                vaultPath = (adapter as any).basePath + "/" + vaultPath;
+            if (adapter.basePath) {
+                vaultPath = adapter.basePath + "/" + vaultPath;
             }
-            const platform = navigator.platform || "";
+            const platform = getPlatformFingerprint();
             const vaultInfo = [vaultPath, platform].join("|");
 
             const encoder = new TextEncoder();

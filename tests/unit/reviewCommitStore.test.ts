@@ -2,6 +2,16 @@ import { Iadapter } from "src/dataStore/adapter";
 import { ReviewCommitStore } from "src/dataStore/reviewCommitStore";
 import { DEFAULT_SETTINGS } from "src/settings";
 
+interface AdapterSingleton {
+    _instance: {
+        adapter: {
+            exists: (path: string) => Promise<boolean>;
+            read: (path: string) => Promise<string>;
+            write: (path: string, value: string) => Promise<void>;
+        };
+    };
+}
+
 describe("reviewCommitStore", () => {
     const files = new Map<string, string>();
     const adapter = {
@@ -15,7 +25,7 @@ describe("reviewCommitStore", () => {
     beforeEach(() => {
         files.clear();
         jest.clearAllMocks();
-        (Iadapter as any)._instance = { adapter };
+        (Iadapter as unknown as AdapterSingleton)._instance = { adapter };
     });
 
     it("stores manual entries by default and preserves metadata on edit", async () => {

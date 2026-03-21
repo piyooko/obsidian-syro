@@ -1,0 +1,33 @@
+@keyframes syro-breathe {
+    0% {
+        opacity: 0.6;
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.6;
+    }
+}
+
+.syro-status-bar-hidden {
+    display: none;
+}
+
+.syro-status-bar-item[data-syro-due-enabled="true"] .syro-status-note.is-due,
+.syro-status-bar-item[data-syro-due-enabled="true"] .syro-status-card.is-due {
+    color: var(--syro-status-color, var(--text-accent));
+}
+
+.syro-status-bar-item[data-syro-due-enabled="true"][data-syro-status-animation="breathing"]
+    .syro-status-note.is-due,
+.syro-status-bar-item[data-syro-due-enabled="true"][data-syro-status-animation="breathing"]
+    .syro-status-card.is-due {
+    animation: syro-breathe var(--syro-status-period, 2s) infinite ease-in-out;
+}
+
+.syro-sb-sep {
+    opacity: 0.7;
+}

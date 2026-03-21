@@ -392,6 +392,7 @@ export default class SRPlugin extends Plugin {
 
         // Initialize Note Status Bar Item
         this.statusBarNote = this.addStatusBarItem();
+        this.statusBarNote.classList.add("syro-status-bar-item", "syro-status-bar-note-item");
         this.statusBarNote.classList.add("mod-clickable");
         setTooltip(this.statusBarNote, t("OPEN_NOTE_FOR_REVIEW"), { placement: "top" });
         this.statusBarNote.addEventListener("click", async () => {
@@ -401,6 +402,10 @@ export default class SRPlugin extends Plugin {
 
         // Initialize Flashcard Status Bar Item
         this.statusBarFlashcard = this.addStatusBarItem();
+        this.statusBarFlashcard.classList.add(
+            "syro-status-bar-item",
+            "syro-status-bar-flashcard-item",
+        );
         this.statusBarFlashcard.classList.add("mod-clickable");
         setTooltip(this.statusBarFlashcard, t("REVIEW_CARDS"), { placement: "top" });
         this.statusBarFlashcard.addEventListener("click", async () => {
@@ -611,7 +616,6 @@ export default class SRPlugin extends Plugin {
             id: "srs-cloze-same-level",
             name: t("CMD_CREATE_CLOZE_SAME_LEVEL"),
             icon: "flashcards",
-            hotkeys: [{ modifiers: ["Ctrl", "Alt", "Shift"], key: "c" }],
             editorCallback: async (editor) => {
                 // 【付费功能限制】
                 const licMgr = LicenseManager.getInstance(this);
@@ -625,7 +629,6 @@ export default class SRPlugin extends Plugin {
             id: "srs-cloze-new-level",
             name: t("CMD_CREATE_CLOZE_NEW_LEVEL"),
             icon: "flashcards",
-            hotkeys: [{ modifiers: ["Alt", "Shift"], key: "c" }],
             editorCallback: async (editor) => {
                 // 【付费功能限制】
                 const licMgr = LicenseManager.getInstance(this);
@@ -2005,9 +2008,12 @@ export default class SRPlugin extends Plugin {
 
     public updateStatusBarVisibility() {
         const visible = this.data.settings.showStatusBar !== false;
-        const display = visible ? "" : "none";
-        if (this.statusBarNote) this.statusBarNote.style.display = display;
-        if (this.statusBarFlashcard) this.statusBarFlashcard.style.display = display;
+        if (this.statusBarNote) {
+            this.statusBarNote.classList.toggle("syro-status-bar-hidden", !visible);
+        }
+        if (this.statusBarFlashcard) {
+            this.statusBarFlashcard.classList.toggle("syro-status-bar-hidden", !visible);
+        }
     }
 
     updateStatusBar() {
@@ -2032,7 +2038,7 @@ export default class SRPlugin extends Plugin {
                       })
                     : t("STATUS_BAR_NOTE_DUE", { dueNotesCount: dueNotesCount.toString() }),
         });
-        if (dueNotesCount > 0) {
+        if (dueNotesCount > 0 && this.data.settings.showStatusBarDueNotification) {
             noteSpan.classList.add("is-due");
         }
         setTooltip(
@@ -2056,7 +2062,7 @@ export default class SRPlugin extends Plugin {
                           dueFlashcardsCount: dueFlashcardsCount.toString(),
                       }),
         });
-        if (dueFlashcardsCount > 0) {
+        if (dueFlashcardsCount > 0 && this.data.settings.showStatusBarDueNotification) {
             cardSpan.classList.add("is-due");
         }
         setTooltip(
@@ -2077,54 +2083,44 @@ export default class SRPlugin extends Plugin {
      * 每次设置变更时调用，实时生效无需重启
      */
     updateStatusBarStyles() {
-        const styleId = "syro-status-bar-style";
-        let styleEl = document.getElementById(styleId) as HTMLStyleElement;
-
-        if (!styleEl) {
-            styleEl = document.createElement("style");
-            styleEl.id = styleId;
-            document.head.appendChild(styleEl);
-        }
-
         const s = this.data.settings;
 
         // --- 若关闭总开关，或者没有任何动画设置，则清空样式并退出 ---
-        if (!s.showStatusBarDueNotification) {
-            styleEl.textContent = "";
-            return;
-        }
 
         // Keyframes definition - Removed glow/text-shadow
-        const keyframes = `
-            @keyframes syro-breathe {
-                0% { opacity: 0.6; }
-                50% { opacity: 1; }
-                100% { opacity: 0.6; }
-            }
-        `;
 
         // Map animation names based on settings
         // ============ 状态栏呼吸灯动画类型 ============
-        const noteAnim = s.noteStatusBarAnimation === "Breathing" ? "syro-breathe" : "none";
-        const cardAnim = s.flashcardStatusBarAnimation === "Breathing" ? "syro-breathe" : "none";
 
-        styleEl.textContent = `
-            ${keyframes}
+        if (this.statusBarNote) {
+            this.statusBarNote.setAttribute(
+                "data-syro-status-animation",
+                s.noteStatusBarAnimation === "Breathing" ? "breathing" : "none",
+            );
+            this.statusBarNote.setAttribute(
+                "data-syro-due-enabled",
+                s.showStatusBarDueNotification ? "true" : "false",
+            );
+            this.statusBarNote.setAttribute(
+                "style",
+                `--syro-status-color: ${s.noteStatusBarColor}; --syro-status-period: ${s.noteStatusBarPeriod}s;`,
+            );
+        }
 
-            .syro-status-note.is-due {
-                color: ${s.noteStatusBarColor};
-                animation: ${noteAnim} ${s.noteStatusBarPeriod}s infinite ease-in-out;
-            }
-
-            .syro-status-card.is-due {
-                color: ${s.flashcardStatusBarColor};
-                animation: ${cardAnim} ${s.flashcardStatusBarPeriod}s infinite ease-in-out;
-            }
-
-            .syro-sb-sep {
-                opacity: 0.7;
-            }
-        `;
+        if (this.statusBarFlashcard) {
+            this.statusBarFlashcard.setAttribute(
+                "data-syro-status-animation",
+                s.flashcardStatusBarAnimation === "Breathing" ? "breathing" : "none",
+            );
+            this.statusBarFlashcard.setAttribute(
+                "data-syro-due-enabled",
+                s.showStatusBarDueNotification ? "true" : "false",
+            );
+            this.statusBarFlashcard.setAttribute(
+                "style",
+                `--syro-status-color: ${s.flashcardStatusBarColor}; --syro-status-period: ${s.flashcardStatusBarPeriod}s;`,
+            );
+        }
     }
 
     public registerSRFocusListener() {

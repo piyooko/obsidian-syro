@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import { X, Merge, SplitSquareHorizontal, Layers } from "lucide-react";
 import "../styles/cloze-popover.css";
 import { t } from "src/lang/helpers";
+import { isCompactMobilePlatform } from "src/util/platform";
 
 // =========================================
 // 类型定义
@@ -29,11 +30,12 @@ interface ClozePopoverProps {
     onSplit: () => void;
     onMergeAll: () => void;
     onClose: () => void;
+    initialSize: { width: number; height: number };
+    onSizeChange: (size: { width: number; height: number }) => void;
     renderMarkdown: (text: string, el: HTMLElement) => void;
 }
 
 // 存储尺寸的 key
-const SIZE_STORAGE_KEY = "sr-cloze-popover-size";
 
 // 默认尺寸
 const DEFAULT_WIDTH = 680;
@@ -51,7 +53,7 @@ const MarkdownBlock: React.FC<{
 
     useEffect(() => {
         if (containerRef.current) {
-            containerRef.current.innerHTML = "";
+            containerRef.current.replaceChildren();
             renderMarkdown(content, containerRef.current);
         }
     }, [content, renderMarkdown]);
@@ -115,11 +117,17 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
     onSplit,
     onMergeAll,
     onClose,
+    initialSize,
+    onSizeChange,
     renderMarkdown,
 }) => {
     const popoverRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState({ top: 0, left: 0 });
-    const [size, setSize] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
+    const [size, setSize] = useState({
+        width: initialSize?.width ?? DEFAULT_WIDTH,
+        height: initialSize?.height ?? DEFAULT_HEIGHT,
+    });
+    const sizeRef = useRef(size);
     const isResizing = useRef(false);
 
     // 锁定对齐方向
@@ -136,18 +144,15 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
 
     // 加载记忆的尺寸
     useEffect(() => {
-        try {
-            const saved = localStorage.getItem(SIZE_STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                if (parsed.width && parsed.height) {
-                    setSize({ width: parsed.width, height: parsed.height });
-                }
-            }
-        } catch (e) {
-            // ignore
-        }
-    }, []);
+        sizeRef.current = size;
+    }, [size]);
+
+    useEffect(() => {
+        setSize({
+            width: initialSize?.width ?? DEFAULT_WIDTH,
+            height: initialSize?.height ?? DEFAULT_HEIGHT,
+        });
+    }, [initialSize]);
 
     // 计算定位：首次智能判断，之后锁定方向
     const updatePosition = useCallback(() => {
@@ -207,6 +212,22 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
             window.removeEventListener("scroll", handleScroll, true);
         };
     }, [updatePosition]);
+
+    useEffect(() => {
+        if (!popoverRef.current) {
+            return;
+        }
+
+        popoverRef.current.setAttribute(
+            "style",
+            [
+                `top: ${position.top}px`,
+                `left: ${position.left}px`,
+                `--sr-cloze-popover-width: ${size.width}px`,
+                `--sr-cloze-popover-height: ${size.height}px`,
+            ].join("; "),
+        );
+    }, [position, size]);
 
     // 点击外部关闭
     useEffect(() => {
@@ -271,9 +292,7 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
             isResizing.current = false;
             document.removeEventListener("mousemove", handleMouseMove);
             document.removeEventListener("mouseup", handleMouseUp);
-            try {
-                localStorage.setItem(SIZE_STORAGE_KEY, JSON.stringify(size));
-            } catch (e) {}
+            onSizeChange(sizeRef.current);
         };
 
         document.addEventListener("mousemove", handleMouseMove);
@@ -281,10 +300,7 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
     };
 
     // 移动端检测
-    const isMobile =
-        window.innerWidth <= 480 ||
-        navigator.platform.indexOf("iPhone") !== -1 ||
-        navigator.platform.indexOf("Android") !== -1;
+    const isMobile = window.innerWidth <= 480 || isCompactMobilePlatform();
 
     if (isMobile) {
         return (
@@ -336,18 +352,7 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
     }
 
     return (
-        <div
-            ref={popoverRef}
-            className="sr-cloze-popover"
-            style={{
-                position: "fixed",
-                top: position.top,
-                left: position.left,
-                width: size.width,
-                height: size.height,
-                zIndex: 1000,
-            }}
-        >
+        <div ref={popoverRef} className="sr-cloze-popover">
             {/* 调整大小手柄 */}
             <div
                 className="sr-popover-resize-handle sr-resize-e"

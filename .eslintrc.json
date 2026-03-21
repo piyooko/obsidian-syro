@@ -10,6 +10,21 @@
         "sourceType": "module"
     },
     "plugins": ["@typescript-eslint"],
+    "overrides": [
+        {
+            "files": ["tests/**/*.ts", "tests/**/*.tsx", "**/__mocks__/**/*.js"],
+            "env": {
+                "jest": true,
+                "node": true
+            }
+        },
+        {
+            "files": ["src/main.ts"],
+            "rules": {
+                "no-empty": "off"
+            }
+        }
+    ],
     "rules": {
         "linebreak-style": 0,
         "quotes": ["warn", "double", "avoid-escape"],

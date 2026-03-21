@@ -138,6 +138,9 @@ export interface SRSettings {
     // React UI Specific
     reactFlashcardWidth: number;
     reactFlashcardHeight: number;
+    sidebarTimelineHeight: number;
+    clozePopoverWidth: number;
+    clozePopoverHeight: number;
     flashcardEasyText: string;
     flashcardGoodText: string;
     flashcardHardText: string;
@@ -292,6 +295,9 @@ export const DEFAULT_SETTINGS: SRSettings = {
     flashcardWidthPercentage: Platform.isMobile ? 100 : 40,
     reactFlashcardWidth: 720,
     reactFlashcardHeight: 600,
+    sidebarTimelineHeight: 300,
+    clozePopoverWidth: 680,
+    clozePopoverHeight: 420,
     flashcardEasyText: t("EASY"),
     flashcardGoodText: t("GOOD"),
     flashcardHardText: t("HARD"),
@@ -456,6 +462,19 @@ export function upgradeSettings(settings: SRSettings) {
     if (settings.clozeContextSoftLimitLines === undefined) {
         settings.clozeContextSoftLimitLines = 15;
     }
+
+    if (settings.sidebarTimelineHeight === undefined) {
+        settings.sidebarTimelineHeight = 300;
+    }
+
+    if (settings.clozePopoverWidth === undefined) {
+        settings.clozePopoverWidth = 680;
+    }
+
+    if (settings.clozePopoverHeight === undefined) {
+        settings.clozePopoverHeight = 420;
+    }
+
     if (settings.showOtherAnkiClozeVisual === undefined) {
         settings.showOtherAnkiClozeVisual = settings.showOtherClozesVisual ?? false;
     }

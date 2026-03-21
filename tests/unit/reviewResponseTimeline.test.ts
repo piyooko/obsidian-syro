@@ -1,19 +1,23 @@
+import type { App } from "obsidian";
 import { autoCommitReviewResponseToTimeline } from "src/ui/timeline/reviewResponseTimeline";
 import { ReviewResponse } from "src/scheduling";
+import type { ReviewCommitStore } from "src/dataStore/reviewCommitStore";
+
+type CommitStoreLike = Pick<ReviewCommitStore, "addCommit">;
 
 describe("reviewResponseTimeline", () => {
-    const makeApp = () =>
+    const makeApp = (): App =>
         ({
             workspace: {
                 getActiveViewOfType: jest.fn(() => null),
                 getLeavesOfType: jest.fn(() => []),
             },
-        }) as any;
+        }) as unknown as App;
 
     it("does nothing when auto logging is disabled", async () => {
-        const commitStore = {
+        const commitStore = ({
             addCommit: jest.fn(),
-        } as any;
+        } as CommitStoreLike) as unknown as ReviewCommitStore;
 
         const committed = await autoCommitReviewResponseToTimeline({
             app: makeApp(),
@@ -28,9 +32,9 @@ describe("reviewResponseTimeline", () => {
     });
 
     it("writes review-response entries with metadata when enabled", async () => {
-        const commitStore = {
+        const commitStore = ({
             addCommit: jest.fn(async () => undefined),
-        } as any;
+        } as CommitStoreLike) as unknown as ReviewCommitStore;
 
         const committed = await autoCommitReviewResponseToTimeline({
             app: makeApp(),

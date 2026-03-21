@@ -1,6 +1,7 @@
 import { App, MarkdownRenderer, Component } from "obsidian";
 import { createRoot, Root } from "react-dom/client";
 import React from "react";
+import type { SRSettings } from "src/settings";
 import { ClozePopover } from "../components/ClozePopover";
 import { EditorView } from "@codemirror/view";
 
@@ -15,6 +16,16 @@ interface Segment {
     id: string;
     text: string;
     clozeId?: string;
+}
+
+interface ClozePopoverSize {
+    width: number;
+    height: number;
+}
+
+interface SyroPluginLike {
+    data: { settings: Pick<SRSettings, "clozePopoverWidth" | "clozePopoverHeight"> };
+    savePluginData: () => Promise<void>;
 }
 
 /**
@@ -37,6 +48,44 @@ export class ClozePopoverManager {
     private blockStart: number = 0;
     private blockEnd: number = 0;
     private renderComponent: Component;
+
+    private getPluginInstance(): SyroPluginLike | null {
+        const pluginRegistry = (
+            this.app as App & { plugins?: { plugins?: Record<string, unknown> } }
+        ).plugins;
+        const plugin = pluginRegistry?.plugins?.syro;
+
+        if (
+            plugin &&
+            typeof plugin === "object" &&
+            "data" in plugin &&
+            "savePluginData" in plugin &&
+            typeof (plugin as SyroPluginLike).savePluginData === "function"
+        ) {
+            return plugin as SyroPluginLike;
+        }
+
+        return null;
+    }
+
+    private getInitialPopoverSize(): ClozePopoverSize {
+        const plugin = this.getPluginInstance();
+        return {
+            width: plugin?.data.settings.clozePopoverWidth ?? 680,
+            height: plugin?.data.settings.clozePopoverHeight ?? 420,
+        };
+    }
+
+    private async persistPopoverSize(size: ClozePopoverSize): Promise<void> {
+        const plugin = this.getPluginInstance();
+        if (!plugin) {
+            return;
+        }
+
+        plugin.data.settings.clozePopoverWidth = size.width;
+        plugin.data.settings.clozePopoverHeight = size.height;
+        await plugin.savePluginData();
+    }
 
     constructor(
         app: App,
@@ -269,6 +318,8 @@ export class ClozePopoverManager {
                 onSplit: () => this.handleSplit(),
                 onMergeAll: () => this.handleMergeAll(),
                 onClose: () => this.close(),
+                initialSize: this.getInitialPopoverSize(),
+                onSizeChange: (size) => void this.persistPopoverSize(size),
                 renderMarkdown: (text, el) => {
                     MarkdownRenderer.render(this.app, text, el, "", this.renderComponent);
                 },

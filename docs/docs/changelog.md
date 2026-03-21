@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.4] - 2026-03-21
+
+- Removed the default Anki-cloze hotkeys from the shipped command metadata for community review compliance.
+- Replaced the custom folder suggester, legacy trash call, `localStorage` popover sizing, `navigator.platform`, and `new Function` interpolation with review-safe implementations.
+- Moved status bar due styling out of runtime style injection and into static CSS-driven presentation for the public release build.
+
 ## [0.0.3] - 2026-03-21
 
 - Finalized the plugin description for the initial community submission and aligned it across the repo, release metadata, and community submission.
