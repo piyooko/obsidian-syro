@@ -20,7 +20,6 @@
  */
 import {
     getAllTags,
-    MarkdownView,
     Notice,
     Plugin,
     TAbstractFile,
@@ -93,7 +92,6 @@ import { LinkRank } from "src/algorithms/priorities/linkPageranks";
 import { Queue } from "./dataStore/queue";
 import { ReviewDeckSelectionModal } from "./ui/modals/reviewDeckSelectionModal";
 import { setDueDates } from "./algorithms/balance/balance";
-import { postponeItems } from "./algorithms/balance/postpone";
 import { RepetitionItem, RPITEMTYPE } from "./dataStore/repetitionItem";
 import { IReviewNote } from "./reviewNote/review-note";
 import { ReviewView } from "./ui/views/reviewView";
@@ -103,7 +101,6 @@ import TabViewManager from "src/ui/views/TabViewManager";
 import { TabView } from "src/ui/views/TabView";
 import { DeckStatsService } from "./dataStore/deckStatsService";
 import { SRSettingTab } from "src/ui/settings/settings-react";
-import { GetInputModal } from "src/ui/modals/getInputModal";
 import { clozeDecorationPlugin, initializeClozeDecoration } from "./editor/cloze-decoration";
 import { latexPopoverExtension, initializeLatexPopover } from "./editor/latex-popover-manager";
 import { latexClozePreprocessorPlugin } from "./editor/latex-cloze-preprocessor";
@@ -638,10 +635,6 @@ export default class SRPlugin extends Plugin {
                     await this.requestSync({ trigger: "startup" });
                 }
             }, 2000);
-
-            // 为所有已打开的 MarkdownView 添加推迟复习按钮
-            this.addPostponeButtonToAllViews();
-
             // ====== License 防破解检测点 A：启动时静默验证 ======
             try {
                 const licMgr = LicenseManager.getInstance(this);
@@ -663,67 +656,7 @@ export default class SRPlugin extends Plugin {
             }
         });
 
-        // 监听布局变化，为新打开的视图添加推迟复习按钮
-        this.registerEvent(
-            this.app.workspace.on("layout-change", () => {
-                this.addPostponeButtonToAllViews();
-            }),
-        );
-
         this.registerSRFocusListener();
-    }
-
-    // 已添加推迟按钮的视图集合，防止重复添加
-    private viewsWithPostponeButton: WeakSet<MarkdownView> = new WeakSet();
-
-    /**
-     * 为所有已打开的 MarkdownView 添加推迟复习按钮
-     */
-    private addPostponeButtonToAllViews(): void {
-        const markdownLeaves = this.app.workspace.getLeavesOfType("markdown");
-        for (const leaf of markdownLeaves) {
-            const view = leaf.view as MarkdownView;
-            if (view && !this.viewsWithPostponeButton.has(view)) {
-                this.addPostponeButtonToView(view);
-                this.viewsWithPostponeButton.add(view);
-            }
-        }
-    }
-
-    /**
-     * 为单个 MarkdownView 添加推迟复习按钮
-     */
-    private addPostponeButtonToView(view: MarkdownView): void {
-        // 确保view有addAction方法
-        if (!view || typeof view.addAction !== "function") {
-            return;
-        }
-        view.addAction("calendar-clock", t("CMD_POSTPONE_NOTE_MANUAL"), async () => {
-            const file = view.file;
-            if (!file) {
-                new Notice(t("PLEASE_TAG_NOTE"));
-                return;
-            }
-
-            const noteItem = this.noteReviewStore.getItem(file.path);
-            if (!noteItem) {
-                new Notice(t("PLEASE_TAG_NOTE"));
-                return;
-            }
-
-            const input = new GetInputModal(this.app, t("CMD_INPUT_POSITIVE_NUMBER"));
-            input.submitCallback = async (days: number) => {
-                postponeItems([noteItem], days);
-                await this.noteReviewStore.save();
-                new Notice(t("CMD_NOTE_POSTPONED", { days: days }));
-                this.updateAndSortDueNotes();
-                this.syncEvents.emit("note-review-updated");
-                if (this.data.settings.autoNextNote && this.lastSelectedReviewDeck) {
-                    this.reviewNextNote(this.lastSelectedReviewDeck);
-                }
-            };
-            input.open();
-        });
     }
 
     onunload(): void {
