@@ -88,7 +88,6 @@ export class ReviewCommitStore {
                 }
             }
         } catch (error) {
-            console.log("[ReviewCommitStore] 加载失败，使用空数据:", error);
             this.data = {};
         }
     }

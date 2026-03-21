@@ -276,19 +276,12 @@ export const LinearCard: FC<LinearCardProps> = ({
 
     // 切换编辑模式
     const toggleEditMode = useCallback(() => {
-        console.log("[LinearCard] toggleEditMode called", {
-            isEditing,
-            plugin: !!plugin,
-            rawContent: rawContent?.substring(0, 30),
-        });
-
         if (isEditing) {
             // 退出编辑模式
             setIsEditing(false);
             showToast(t("UI_EXIT_EDIT_MODE"), (<Check size={14} />) as any);
         } else {
             // 进入编辑模式
-            console.log("[LinearCard] Entering edit mode, plugin:", plugin);
             setEditText(rawContent);
             setIsEditing(true);
             setIsFlipped(true); // 确保显示背面
@@ -299,11 +292,6 @@ export const LinearCard: FC<LinearCardProps> = ({
     const handleAnswerInternal = useCallback(
         (rating: number) => {
             if (plugin?.data?.settings?.showRuntimeDebugMessages) {
-                console.log("[SR Debug] handleAnswerInternal called", {
-                    rating,
-                    isDeleted,
-                    hasOnAnswer: !!onAnswer,
-                });
             }
             if (isDeleted) return;
 
@@ -1310,40 +1298,26 @@ function postProcessMarkers(container: HTMLElement) {
  * 滚动规则：第一个高亮行滚动到视口垂直中心
  */
 function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startLine: number) {
-    console.log("[SR Debug] postProcessCodeBlock called");
-
     const preElements = container.querySelectorAll("pre");
-    console.log("[SR Debug] Found pre elements:", preElements.length);
-
     if (preElements.length === 0) {
         // 如果没有找到 pre 元素，尝试直接处理容器内容
-        console.log("[SR Debug] No pre elements, trying to process container directly");
-        console.log("[SR Debug] Container innerHTML:", container.innerHTML.substring(0, 500));
         return;
     }
 
     preElements.forEach((pre, preIndex) => {
         const codeEl = pre.querySelector("code");
-        console.log("[SR Debug] Pre", preIndex, "has code element:", !!codeEl);
-
         if (!codeEl) {
             // 某些情况下可能没有 code 元素，直接使用 pre 的内容
-            console.log("[SR Debug] No code element, using pre innerHTML");
         }
 
         // 获取代码内容（优先使用 code 元素，否则使用 pre）
         let codeContent = codeEl ? codeEl.innerHTML : pre.innerHTML;
-        console.log("[SR Debug] Original codeContent:", codeContent.substring(0, 200));
-
         // 先将 HTML 实体转换回 Unicode 字符（Obsidian 渲染后可能会转义）
         codeContent = codeContent
             .replace(/&laquo;/g, "«")
             .replace(/&raquo;/g, "»")
             .replace(/&#171;/g, "«")
             .replace(/&#187;/g, "»");
-
-        console.log("[SR Debug] After entity decode:", codeContent.substring(0, 200));
-        console.log("[SR Debug] Contains placeholder marker:", codeContent.includes("««SR_CLOZE:"));
 
         // 记录包含占位符的行索引（用于多行高亮）
         const clozeLineIndices: Set<number> = new Set();

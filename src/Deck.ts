@@ -374,7 +374,6 @@ export class Deck {
 
     debugLogToConsole(desc: string = null, indent: number = 0) {
         let str: string = desc != null ? `${desc}: ` : "";
-        console.log((str += this.toString(indent)));
     }
 
     toString(indent: number = 0): string {
@@ -498,9 +497,6 @@ export class DeckTreeFilter {
         currentLimits.dueCards = Math.min(currentLimits.dueCards, myDueQuota);
 
         if (settings.showRuntimeDebugMessages) {
-            console.log(
-                `[SR-Debug] _applyTopDownLimits: deck='${deckPath}', myQuota={new:${myNewQuota}, due:${myDueQuota}}, effectiveLimit={new:${currentLimits.newCards}, due:${currentLimits.dueCards}}`,
-            );
         }
 
         const result = new Deck(node.deckName, null);

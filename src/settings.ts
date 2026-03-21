@@ -410,7 +410,6 @@ export function upgradeSettings(settings: SRSettings) {
         settings.flashcardCardOrder == null &&
         settings.flashcardDeckOrder == null
     ) {
-        console.log(`loadPluginData: Upgrading settings: ${settings.randomizeCardOrder}`);
         settings.flashcardCardOrder = settings.randomizeCardOrder
             ? "DueFirstRandom"
             : "DueFirstSequential";
@@ -484,11 +483,9 @@ export function upgradeSettings(settings: SRSettings) {
     // Upgrade legacy single-algorithm settings to separate card and note algorithms.
     if (!settings.cardAlgorithm) {
         settings.cardAlgorithm = settings.algorithm || "Fsrs";
-        console.log("Upgrading to dual algorithm: cards=" + settings.cardAlgorithm);
     }
     if (!settings.noteAlgorithm) {
         settings.noteAlgorithm = "WeightedMultiplier";
-        console.log("Upgrading to dual algorithm: notes=" + settings.noteAlgorithm);
     }
 
     // Create algorithm settings storage when upgrading old settings.
@@ -512,12 +509,10 @@ export function upgradeSettings(settings: SRSettings) {
 
     // Keep data in the plugin folder; the old track-file mode is no longer supported.
     if (settings.dataLocation !== DataLocation.PluginFolder) {
-        console.log(`Upgrading dataLocation from ${settings.dataLocation} to PluginFolder`);
         settings.dataLocation = DataLocation.PluginFolder;
     }
 
     if (settings.cardBlockID) {
-        console.log("Disabling legacy cardBlockID setting");
         settings.cardBlockID = false;
     }
 

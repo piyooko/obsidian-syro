@@ -133,7 +133,6 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     const logRuntimeDebug = useCallback(
         (...args: unknown[]) => {
             if (plugin.data.settings.showRuntimeDebugMessages) {
-                console.log(...args);
             }
         },
         [plugin],
@@ -423,7 +422,6 @@ const DeckListView: React.FC<DeckListViewProps> = ({
 
         const result = remainingDeckTree.subdecks.map((deck: Deck) => deckToUIState(deck, plugin));
         if (plugin.data.settings.showRuntimeDebugMessages) {
-            console.log(`[V3-Scheduler] DeckListView render: tick=${tick}, decks=${result.length}`);
         }
         return result;
     }, [plugin.remainingDeckTree, plugin, tick]);
@@ -563,7 +561,6 @@ const DeckListView: React.FC<DeckListViewProps> = ({
                     onClose={() => setOpenDeckOptions(null)}
                     onSaved={() => {
                         if (plugin.data.settings.showRuntimeDebugMessages) {
-                            console.log("[ReviewSession] DeckOptions saved");
                         }
                     }}
                 />
@@ -645,9 +642,6 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     const topicPath = deck.getTopicPath();
     const stats = sequencer.getDeckStats(topicPath);
     if (settings.showRuntimeDebugMessages) {
-        console.log(
-            `[DEBUG_REVIEW_UI] Card Review UI counters for deck '${deck.deckName}' -> New: ${stats.newCount}, Learning: ${stats.learningCount}, Due: ${stats.dueCount}`,
-        );
     }
     let cardType: "new" | "learning" | "due" = "due";
     if (sequencer.isCurrentCardFromLearningQueue) {

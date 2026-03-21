@@ -78,12 +78,10 @@ export async function algorithmSwitchData(
         await store.save();
         const msg = fromTo + t("ALGORITHM_SWITCH_SUCCESS");
         new Notice(msg);
-        console.debug(msg);
         return true;
     } catch (error) {
         await store.load(bak_path);
         new Notice(error + fromTo + t("ALGORITHM_SWITCH_FAILED"));
-        console.log(error);
         return false;
     }
 }

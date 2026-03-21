@@ -42,14 +42,7 @@ export class LinkRank {
      * @returns
      */
     getContribution(note: TFile, easeByPath: NoteEaseList) {
-        console.log("[SR Debug LinkRank] ===== getContribution called =====");
-        console.log("[SR Debug LinkRank] note.path:", note.path);
-        console.log("[SR Debug LinkRank] settings.noteAlgorithm:", this.settings.noteAlgorithm);
-        console.log("[SR Debug LinkRank] algorithmSettings:", this.settings.algorithmSettings);
-
         const algoSettings = this.settings.algorithmSettings[this.settings.noteAlgorithm];
-        console.log("[SR Debug LinkRank] algoSettings:", algoSettings);
-
         if (!algoSettings) {
             console.error("[SR Debug LinkRank] ERROR: algoSettings is undefined!");
             console.error(
@@ -60,8 +53,6 @@ export class LinkRank {
         }
 
         const baseEase = algoSettings.baseEase;
-        console.log("[SR Debug LinkRank] baseEase:", baseEase);
-
         if (baseEase === undefined || isNaN(baseEase)) {
             console.error("[SR Debug LinkRank] ERROR: baseEase is", baseEase);
             throw new Error(`baseEase is ${baseEase} for algorithm ${this.settings.noteAlgorithm}`);
@@ -107,8 +98,6 @@ export class LinkRank {
             ease = (ease + easeByPath.getEaseByPath(note.path)) / 2;
         }
         ease = Math.round(ease * 100) / 100;
-
-        console.log("[SR Debug LinkRank] Calculated ease:", ease);
 
         if (isNaN(ease)) {
             console.error("[SR Debug LinkRank] ERROR: Final ease is NaN!");

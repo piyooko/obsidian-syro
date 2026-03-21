@@ -64,7 +64,6 @@ export class Sm2Algorithm extends SrsAlgorithm {
 
     onSelection(item: RepetitionItem, optionStr: string, repeat: boolean): ReviewResult {
         const data = item.data as Sm2Data;
-        console.log("item.data:", item.data);
         const interval = function (n: number): number {
             if (n === 1) {
                 return 1;

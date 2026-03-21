@@ -52,7 +52,7 @@ export class ItemInfoModal extends Modal {
 
         // 顶部按钮栏（粘性定位 sticky）
         const buttonDivAll = contentEl.createDiv("srs-flex-row");
-        buttonDivAll.setAttr("style", "position: sticky;top: 0");
+        buttonDivAll.addClass("sr-info-modal-top-actions");
 
         // 内容显示区域
         const contentdiv = contentEl.createEl("div");
@@ -83,7 +83,7 @@ export class ItemInfoModal extends Modal {
 
         // 底部按钮栏（保存/关闭）
         const buttonDiv = contentEl.createDiv("srs-flex-row");
-        buttonDiv.setAttr("style", "position: sticky;bottom: 0;margin-top: auto;");
+        buttonDiv.addClass("sr-info-modal-bottom-actions");
 
         new ButtonComponent(buttonDiv)
             .setButtonText(t("SAVE_ITEM_INFO"))
@@ -157,8 +157,6 @@ export class ItemInfoModal extends Modal {
         contentEl.createEl("p").setText(t("ITEM_INFO_TITLE") + " " + path);
         const contentdiv = contentEl.createEl("div");
 
-        console.debug("item: ", item);
-
         // 使用 Markdown 表格语法构建显示内容
         const title =
             "key | value \n\
@@ -216,17 +214,12 @@ export class ItemInfoModal extends Modal {
      */
     submit() {
         const item = this.item;
-        console.debug(this);
         const algo = this.settings.algorithm;
 
         // 1. 保存下次复习时间 (Next Review)
         if (this.mnextReview.size > 0) {
             this.mnextReview.forEach((v, id) => {
                 const item = this.store.getItembyID(id);
-                console.log(
-                    `update item priority from ${item.nextReview} to ${v}, current item info:`,
-                    item,
-                );
                 const nr = window.moment(v).valueOf() ?? 0;
                 // 更新 item 对象的 nextReview 属性
                 item.nextReview = nr > 0 ? nr : item.nextReview;

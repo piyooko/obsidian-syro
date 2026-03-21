@@ -7,7 +7,6 @@ import { Tags } from "src/tags";
 export function registerTrackFileEvents(plugin: SRPlugin) {
     const logRuntimeDebug = (...args: unknown[]) => {
         if (plugin.data.settings.showRuntimeDebugMessages) {
-            console.log(...args);
         }
     };
 

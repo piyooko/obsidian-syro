@@ -333,17 +333,10 @@ export class RepetitionItem {
         if (enableBalance) {
             let days = Math.max(0, newdue - now) / DateUtils.DAYS_TO_MILLIS;
             days = balance(days, this.itemType);
-            console.debug("days:", days);
             const nextInterval = days * DateUtils.DAYS_TO_MILLIS;
             newdue = nextInterval + now;
         }
 
-        console.debug({
-            oitvl,
-            newitvl,
-            odue: new Date(this.nextReview).toISOString(),
-            ndue: new Date(newdue).toISOString(),
-        });
         this.isFsrs ? ((this.data as FsrsData).due = new Date(newdue)) : null;
         this.nextReview = newdue;
     }
@@ -424,7 +417,6 @@ export class RepetitionItem {
             // @ts-ignore
             this.data[key] = value;
         } catch (error) {
-            console.log(error);
         }
     }
 }

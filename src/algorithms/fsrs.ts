@@ -192,7 +192,6 @@ export class FsrsAlgorithm extends SrsAlgorithm {
         let card: FsrsData;
         if (!item || !item.data || (item.data as FsrsData).state === undefined) {
             // 新卡片或数据损坏，创建空卡
-            console.log("[FSRS] Creating empty card for invalid item");
             card = tsfsrs.createEmptyCard();
         } else {
             const data = item.data as FsrsData;
@@ -221,7 +220,6 @@ export class FsrsAlgorithm extends SrsAlgorithm {
         // 安全检查：如果 item 或 item.data 无效，创建空卡
         let data: FsrsData;
         if (!item || !item.data || (item.data as FsrsData).state === undefined) {
-            console.log("[FSRS onSelection] Creating empty card for invalid item");
             data = tsfsrs.createEmptyCard();
             if (item) {
                 item.data = data;
@@ -509,7 +507,6 @@ export class FsrsAlgorithm extends SrsAlgorithm {
                                 return;
                             }
                         } catch (error) {
-                            console.log(error);
                         }
                         new Notice(t("VALID_NUMBER_WARNING"));
                         text.setValue(this.settings.w.toString());

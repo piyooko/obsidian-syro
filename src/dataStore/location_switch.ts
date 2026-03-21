@@ -89,9 +89,6 @@ export class LocationSwitch {
                 const suffix = "-" + new Date().toISOString().replace(/[:.]/g, "");
                 await adapter.rename(newPath, newPath + suffix).then(() => {
                     if (this.settings.showSchedulingDebugMessages) {
-                        console.debug(
-                            "orginal file: " + newPath + " renamed to: " + newPath + suffix,
-                        );
                     }
                 });
             }
@@ -440,7 +437,6 @@ export class LocationSwitch {
         plugin.syncLock = false;
         const msg = "converteTrackfileToNoteSched success!";
         if (this.settings.showSchedulingDebugMessages) {
-            console.debug("dueids after: ", dueIds, store.data.trackedFiles, store.data.items);
         }
         if (dryrun) {
             // const settings = plugin.data.settings;
@@ -480,14 +476,6 @@ export class LocationSwitch {
             this.compare(noteStats, afternoteStats, "note") ||
             this.compare(cardStats, aftercardStats, "card")
         ) {
-            console.log(
-                "before chang noteStats, cardStats:\n",
-                noteStats,
-                cardStats,
-                "\nafter change:\n",
-                afternoteStats,
-                aftercardStats,
-            );
             new Notice(t("DATA_LOST_WARNING"));
         }
     }

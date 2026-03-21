@@ -125,7 +125,6 @@ export class ItemTrans {
         if (item == null) {
             // store._updateItem(fileid, ind, RPITEMTYPE.NOTE, rdeck.deckName);
             // item = store.getItembyID(fileid);
-            console.debug("syncRCDataToSRrevDeck update null item:", item, trackedFile);
             return;
         }
         if (!trackedFile.isDefault && !item.isTracked) {

@@ -24,7 +24,6 @@ export function postponeItems(items: RepetitionItem[], days?: number): Repetitio
         // https://github.com/open-spaced-repetition/fsrs4anki-helper/blob/58bcfcf8b5eeb60835c5cbde1d0d0ef769af62b0/schedule/postpone.py#L73
         .filter((item) => {
             // currentR>0.65
-            console.debug("current R:", currentRetention(item), 1 / currentRetention(item) - 1);
             return currentRetention(item) > 0.65;
         });
     const safe_cnt = safe_fltItems.length;
@@ -93,7 +92,6 @@ function postpone(items: RepetitionItem[], newdue?: number): RepetitionItem[] {
             cnt++;
             item.updateDueByInterval(newitvl, newdue);
         }
-        console.debug(newdue, newitvl, item.interval);
     });
     debug("postpone", 0, { cnt });
     return items;

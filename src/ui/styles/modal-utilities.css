@@ -1,0 +1,32 @@
+.sr-confirm-modal-actions {
+    justify-content: flex-end;
+    gap: var(--size-4-2);
+    margin-top: var(--size-4-4);
+}
+
+.sr-info-modal-top-actions {
+    position: sticky;
+    top: 0;
+}
+
+.sr-info-modal-bottom-actions {
+    position: sticky;
+    bottom: 0;
+    margin-top: auto;
+}
+
+.sr-review-response-grid {
+    display: grid;
+}
+
+.sr-review-response-grid--cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.sr-review-response-grid--cols-5 {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.sr-review-response-grid--cols-6 {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+}

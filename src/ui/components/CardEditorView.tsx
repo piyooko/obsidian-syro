@@ -102,8 +102,6 @@ export const CardEditorView: FC<CardEditorViewProps> = ({ value, onChange, onExi
     useEffect(() => {
         if (!containerRef.current) return;
 
-        console.log("[CardEditor] Initializing...");
-
         // 创建自定义快捷键
         const customKeymap = keymap.of([
             // ESC 退出
@@ -228,8 +226,6 @@ export const CardEditorView: FC<CardEditorViewProps> = ({ value, onChange, onExi
             state,
             parent: containerRef.current,
         });
-
-        console.log("[CardEditor] Created, focusing...");
 
         // 延迟聚焦
         setTimeout(() => {

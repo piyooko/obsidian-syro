@@ -54,7 +54,6 @@ export class TouchOnMobile {
                 // console.debug("ctx.lineTo(" + touches[i].pageX + ", " + touches[i].pageY + ");");
                 this.ongoingTouches.splice(idx, 1, copyTouch(touches[i])); // 切换触摸信息
             } else {
-                console.debug("无法确定下一个触摸点。");
             }
         }
     }

@@ -166,7 +166,8 @@ export class reviewResponseModal {
 
         // 响应区域 (Grid 布局)
         this.response = this.contentEl.createDiv("sr-show-response");
-        this.response.setAttribute("style", `grid-template-columns: ${"1fr ".repeat(btnCols)}`);
+        this.response.addClass("sr-review-response-grid");
+        this.response.addClass(`sr-review-response-grid--cols-${Math.min(btnCols, 6)}`);
 
         this.buttons = [];
         this._createNoteControls();

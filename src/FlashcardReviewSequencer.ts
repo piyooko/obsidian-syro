@@ -112,7 +112,6 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
     private logRuntimeDebug(...args: unknown[]): void {
         if (this.shouldLogRuntimeDebug()) {
-            console.log(...args);
         }
     }
     private _selectedTopicPath: TopicPath = TopicPath.emptyPath; // 保存用户选择的卡组路径

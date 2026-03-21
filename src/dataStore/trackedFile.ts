@@ -157,7 +157,6 @@ export class TrackedFile implements ITrackedFile {
     rename(newPath: string) {
         const old = this.path;
         this.path = newPath;
-        console.log(`[TrackedFile] Renamed: ${old} -> ${newPath}`);
     }
 
     get hasCards() {

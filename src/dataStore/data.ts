@@ -172,13 +172,11 @@ export class DataStore {
 
     private logInfo(...args: unknown[]): void {
         if (this.shouldLogDebug()) {
-            console.log(...args);
         }
     }
 
     private logDebug(...args: unknown[]): void {
         if (this.shouldLogDebug()) {
-            console.debug(...args);
         }
     }
 

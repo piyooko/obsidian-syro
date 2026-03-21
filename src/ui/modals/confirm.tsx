@@ -36,10 +36,7 @@ export default class ConfirmModal {
 
         // 创建按钮容器
         const buttonDiv = contentEl.createDiv("srs-flex-row");
-        buttonDiv.setAttr(
-            "style",
-            "justify-content: flex-end; gap: var(--size-4-2); margin-top: var(--size-4-4);",
-        );
+        buttonDiv.addClass("sr-confirm-modal-actions");
 
         // --- Confirm 按钮 ---
         new ButtonComponent(buttonDiv)

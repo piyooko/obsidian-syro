@@ -755,7 +755,6 @@ export default class SRPlugin extends Plugin {
             };
             this.savePluginData();
             if (this.data.settings.showSchedulingDebugMessages) {
-                console.log(`[SR] New day detected (${today}). Daily limits reset.`);
             }
         }
     }
@@ -1035,7 +1034,6 @@ export default class SRPlugin extends Plugin {
 
     private logRuntimeDebug(...args: unknown[]): void {
         if (this.data.settings.showRuntimeDebugMessages) {
-            console.log(...args);
         }
     }
 
@@ -1251,16 +1249,12 @@ export default class SRPlugin extends Plugin {
     }: SyncRequestOptions = {}): Promise<boolean> {
         if (!force && this.shouldSkipDisabledAutomaticIncrementalSync(mode, trigger)) {
             if (this.data.settings.showSchedulingDebugMessages) {
-                console.log(`[SR-SyncGate] Skipping ${trigger} incremental sync by setting.`);
             }
             return false;
         }
 
         if (!force && this.shouldSkipAutomaticSync(reviewMode, mode, trigger)) {
             if (this.data.settings.showSchedulingDebugMessages) {
-                console.log(
-                    `[SR-SyncGate] Skipping ${trigger} sync within ${AUTO_SYNC_COOLDOWN_MS}ms cooldown.`,
-                );
             }
             return false;
         }
@@ -1405,10 +1399,6 @@ export default class SRPlugin extends Plugin {
                 );
             }
             if (settings.showSchedulingDebugMessages) {
-                console.log(
-                    "[SR-Debug] sync➡1: fullDeckTree 所有卡片数:",
-                    fullDeckTree.getCardCount(CardListType.All, true),
-                );
             }
             progressTip?.update(totalNotes, totalNotes, "正在构建牌组树...");
             if (releaseSaveSuppression) {
@@ -1426,10 +1416,6 @@ export default class SRPlugin extends Plugin {
             // Reviewable cards are all except those with the "edit later" tag
             this.deckTree = DeckTreeFilter.filterForReviewableCards(fullDeckTree);
             if (settings.showSchedulingDebugMessages) {
-                console.log(
-                    "[SR-Debug] sync➡2: deckTree (过滤 EditLater 后):",
-                    this.deckTree.getCardCount(CardListType.All, true),
-                );
             }
 
             // sort the deck names
@@ -1446,14 +1432,6 @@ export default class SRPlugin extends Plugin {
                 reviewMode,
             );
             if (settings.showSchedulingDebugMessages) {
-                console.log(
-                    "[SR-Debug] sync➡3: remainingDeckTree (过滤未到期后):",
-                    this.remainingDeckTree.getCardCount(CardListType.All, true),
-                    "New:",
-                    this.remainingDeckTree.getCardCount(CardListType.NewCard, true),
-                    "Due:",
-                    this.remainingDeckTree.getCardCount(CardListType.DueCard, true),
-                );
             }
 
             // [V3 调度器] 不再在 sync 全局阶段应用每日上限。
@@ -1512,20 +1490,10 @@ export default class SRPlugin extends Plugin {
                 statsService.calculateDeckStats(dName, dItems);
             }
             if (this.data.settings.showSchedulingDebugMessages) {
-                console.log(
-                    "[SR-Debug] 全局 DeckStatsService Cache 填充完成，共计牌组数: ",
-                    deckItemsMap.size,
-                );
                 this.showSyncInfo();
             }
 
             if (this.data.settings.showSchedulingDebugMessages) {
-                console.log(
-                    "SR: " +
-                        t("SYNC_TIME_TAKEN", {
-                            t: Date.now() - now.valueOf(),
-                        }),
-                );
             }
 
             const fbar = this.reviewFloatBar;
@@ -1632,10 +1600,6 @@ export default class SRPlugin extends Plugin {
         const settings = this.data.settings;
         const debugScheduling = settings.showSchedulingDebugMessages;
         if (debugScheduling) {
-            console.log("[SR Debug] ===== saveReviewResponse called =====");
-            console.log("[SR Debug] note.path:", note.path);
-            console.log("[SR Debug] response:", response);
-            console.log("[SR Debug] noteAlgorithm:", settings.noteAlgorithm);
         }
 
         if (isIgnoredPath(settings.noteFoldersToIgnore, note.path)) {
@@ -1646,7 +1610,6 @@ export default class SRPlugin extends Plugin {
         if (!tracking) {
             // tagCheck已经显示Notice，这里不需要额外提示
             if (debugScheduling) {
-                console.log("[SR Debug] tagCheck failed");
             }
             new Notice(t("PLEASE_TAG_NOTE"));
             return;
@@ -1662,12 +1625,10 @@ export default class SRPlugin extends Plugin {
         let ease: number;
         if (item.isNew && settings.noteAlgorithm !== algorithmNames.Fsrs) {
             if (debugScheduling) {
-                console.log("[SR Debug] Calculating ease for new note (non-FSRS)");
             }
             try {
                 ease = this.linkRank.getContribution(note, this.easeByPath).ease;
                 if (debugScheduling) {
-                    console.log("[SR Debug] Calculated ease:", ease);
                 }
             } catch (error) {
                 console.error("[SR Debug] Error calculating ease:", error);
@@ -1676,7 +1637,6 @@ export default class SRPlugin extends Plugin {
         }
 
         if (debugScheduling) {
-            console.log("[SR Debug] Applying note review response...");
         }
 
         if (item.isNew && ease != null) {
@@ -1724,7 +1684,6 @@ export default class SRPlugin extends Plugin {
         this.syncEvents.emit("note-review-updated");
 
         if (debugScheduling) {
-            console.log("[SR Debug] saveReviewResponse completed successfully");
         }
 
         // ✅ 刷新UI
@@ -1842,11 +1801,9 @@ export default class SRPlugin extends Plugin {
         for (const deckKey in this.reviewDecks) {
             const reviewDeck = this.reviewDecks[deckKey];
             if (this.data.settings.showSchedulingDebugMessages) {
-                console.log("[SR Debug] Calling sortNotes for deck:", deckKey);
             }
             reviewDeck.sortNotes(this.linkRank.pageranks);
             if (this.data.settings.showSchedulingDebugMessages) {
-                console.log("[SR Debug] sortNotes completed for deck:", deckKey);
             }
         }
         this.lastSelectedReviewDeck = deckKey;
@@ -1874,7 +1831,6 @@ export default class SRPlugin extends Plugin {
                             `${deck.deckName} due cnt error: calc ${calcDueCnt}, dnc: ${deck.dueNotesCount}`,
                         );
                         if (this.data.settings.showSchedulingDebugMessages) {
-                            console.debug("schedNotes:", deck.scheduledNotes);
                         }
                     }
                     const id = `${this.manifest.id}:view-item-info`;
@@ -2017,7 +1973,6 @@ export default class SRPlugin extends Plugin {
             // 使用 setTimeout 避免阻塞界面渲染，给界面一点初始化时间
             setTimeout(async () => {
                 if (this.data.settings.showSchedulingDebugMessages) {
-                    console.log("[SR-Init] 首次激活复习视图，触发后台全局垃圾回收 (GC)...");
                 }
                 await this.store.performGlobalGarbageCollection();
                 this.hasPerformedInitialGC = true;
@@ -2046,12 +2001,6 @@ export default class SRPlugin extends Plugin {
         if (!this.data.settings.showSchedulingDebugMessages) {
             return;
         }
-        console.log(`SR: ${t("EASES")}`, this.easeByPath);
-        console.log(`SR: ${t("DECKS")}`, this.deckTree);
-        console.log(`SR: NOTE ${t("DECKS")}`, this.reviewDecks);
-        console.log("SR: cardStats ", this.cardStats);
-        console.log("SR: noteStats ", this.noteStats);
-        console.log("SR: this.dueDatesNotes", this.dueDatesNotes);
     }
 
     public updateStatusBarVisibility() {
@@ -2292,9 +2241,6 @@ export default class SRPlugin extends Plugin {
                     deck.learningFlashcards.push(card);
                     movedCount++;
                     if (this.data.settings.showSchedulingDebugMessages) {
-                        console.log(
-                            `[SR-Debug] 纠正学习卡片物理位置: ID=${card.Id} 从 New 移至 Learning (牌组: ${deckPath})`,
-                        );
                     }
                 }
             }
@@ -2307,9 +2253,6 @@ export default class SRPlugin extends Plugin {
                     deck.learningFlashcards.push(card);
                     movedCount++;
                     if (this.data.settings.showSchedulingDebugMessages) {
-                        console.log(
-                            `[SR-Debug] 纠正学习卡片物理位置: ID=${card.Id} 从 Due 移至 Learning (牌组: ${deckPath})`,
-                        );
                     }
                 }
             }
@@ -2333,11 +2276,7 @@ export default class SRPlugin extends Plugin {
 
         if (this.data.settings.showSchedulingDebugMessages) {
             if (movedCount > 0) {
-                console.log(
-                    `[SR-Debug] collectLearningCardsFromStore: 共纠正了 ${movedCount} 张错位学习卡。`,
-                );
             }
-            console.log(`[SR-Debug] 当前全局学习队列长度: ${this.learningQueue.length}`);
         }
 
         // 按 dueTime 排序学习队列

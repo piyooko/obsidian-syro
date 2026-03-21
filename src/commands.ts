@@ -201,8 +201,6 @@ export default class Commands {
                     ? new SyncProgressTip("准备同步数据...")
                     : null;
                 progressTip?.show();
-                console.log("[GlobalSync] Start. Tracked files:", Object.keys(trackedFiles).length);
-
                 // ====== 第0步：同 path 文件去重（保留卡片最多的条目） ======
                 progressTip?.update(0, 100, "正在去重文件条目...");
                 const pathMap = new Map<string, string[]>(); // path -> fileIDs
@@ -244,12 +242,8 @@ export default class Commands {
                         }
                         deduped++;
                     }
-                    console.log(
-                        `[GlobalSync] Dedup: ${path} had ${fileIDs.length} copies, merged to 1 (${best.trackedItems.length} cards)`,
-                    );
                 }
                 if (deduped > 0) {
-                    console.log(`[GlobalSync] Removed ${deduped} duplicate file entries`);
                 }
 
                 // ====== 第1步：清除幽灵文件 ======
@@ -283,9 +277,6 @@ export default class Commands {
                                 }
                             }
                         }
-                        console.log(
-                            `[GlobalSync] Ghost file removed: ${tkfile.path} (${itemsCleaned} items cleaned)`,
-                        );
                         delete trackedFiles[fileID];
                         const orderIdx = store.data.fileOrder?.indexOf(fileID);
                         if (orderIdx !== undefined && orderIdx >= 0) {
@@ -351,13 +342,7 @@ export default class Commands {
 
                         if (diff > 0) {
                             deletedGhostCards += diff;
-                            console.log(
-                                `[GlobalSync] ${tkfile.path}: cleaned ${diff} ghost cards (${oldCount} -> ${newCount})`,
-                            );
                         } else if (diff < 0) {
-                            console.log(
-                                `[GlobalSync] ${tkfile.path}: found ${-diff} new cards (${oldCount} -> ${newCount})`,
-                            );
                         }
                         syncedFiles++;
                     } catch (err) {
@@ -378,7 +363,6 @@ export default class Commands {
                 ].filter(Boolean);
                 const msg = `全局同步完成！\n${parts.join("\n")}`;
                 new Notice(msg, 6000);
-                console.log("[GlobalSync]", msg);
             },
         });
     }
@@ -408,7 +392,6 @@ export default class Commands {
             name: t("CMD_PRINT_VIEW_STATE"),
             callback: () => {
                 const state = plugin.app.workspace.getActiveViewOfType(MarkdownView).getState();
-                console.log(state);
             },
         });
 
@@ -416,7 +399,6 @@ export default class Commands {
             id: "debug-print-eph-state",
             name: t("CMD_PRINT_EPHEMERAL_STATE"),
             callback: () => {
-                console.log(plugin.app.workspace.activeLeaf.getEphemeralState());
             },
         });
 
@@ -446,7 +428,6 @@ export default class Commands {
             callback: () => {
                 const que = Queue.getInstance();
                 que.buildQueueAll();
-                console.log("Queue Size: " + que.queueSize());
             },
         });
 
@@ -454,7 +435,6 @@ export default class Commands {
             id: "debug-print-data",
             name: t("CMD_PRINT_DATA"),
             callback: () => {
-                console.log(plugin.store.data);
             },
         });
 

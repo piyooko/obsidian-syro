@@ -147,7 +147,6 @@ export class AnkiAlgorithm extends SrsAlgorithm {
                 break;
             case algorithmNames.Anki:
             case algorithmNames.SM2:
-                console.log("use same data, don't have to convert.");
                 break;
             case algorithmNames.Fsrs:
                 this.importer_Fsrs(items);
