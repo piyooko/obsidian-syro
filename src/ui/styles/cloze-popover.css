@@ -1,0 +1,453 @@
+/**
+ * ClozePopover 样式
+ * 
+ * 使用 Obsidian CSS 变量确保主题兼容
+ * 支持移动端优化
+ */
+
+/* ==========================================
+   Popover 容器 (桌面端)
+   ========================================== */
+.sr-cloze-popover {
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ==========================================
+   双栏布局 (桌面端)
+   ========================================== */
+.sr-popover-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* 左栏 */
+.sr-popover-left {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--background-modifier-border);
+    min-width: 0;
+}
+
+/* 右栏 */
+.sr-popover-right-minimal {
+    width: 320px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    background: var(--background-secondary);
+}
+
+/* 单个填空时左栏占满 */
+.sr-popover-body.sr-single-cloze .sr-popover-left {
+    border-right: none;
+}
+
+/* ==========================================
+   移动端原生风格菜单
+   ========================================== */
+.sr-mobile-cloze-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.sr-mobile-cloze-menu {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 280px;
+    max-width: 90vw;
+    background: var(--background-primary);
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    z-index: 1001;
+    border: 1px solid var(--background-modifier-border);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 8px 0;
+}
+
+.sr-mobile-menu-header {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    margin-bottom: 4px;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    /* Added gap */
+}
+
+.sr-mobile-menu-title {
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    color: var(--interactive-accent);
+}
+
+.sr-mobile-menu-content-preview {
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-normal);
+    font-weight: normal;
+}
+
+.sr-mobile-menu-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.sr-mobile-menu-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    gap: 12px;
+    cursor: pointer;
+    background: transparent;
+    transition: background 0.1s ease;
+    font-size: 16px;
+    color: var(--text-normal);
+}
+
+.sr-mobile-menu-item:active {
+    background: var(--background-modifier-hover);
+}
+
+.sr-mobile-menu-item svg {
+    color: var(--text-muted);
+    min-width: 18px;
+}
+
+.sr-mobile-menu-subtext {
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--text-muted);
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sr-mobile-menu-divider {
+    height: 1px;
+    background: var(--background-modifier-border);
+    margin: 4px 0;
+}
+
+/* ==========================================
+   旧的/通用的样式片段 (仍需保留以防 PC 端用到)
+   ========================================== */
+.sr-popover-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.sr-popover-close-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sr-popover-close-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.sr-popover-left-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.sr-popover-scroll-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.sr-popover-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sr-popover-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.sr-popover-current-item {
+    padding: 12px;
+    background: var(--background-secondary-alt);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.sr-popover-cloze-id {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font-monospace);
+    flex-shrink: 0;
+}
+
+.sr-popover-cloze-text {
+    font-size: 14px;
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sr-popover-merge-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sr-popover-merge-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: left;
+    width: 100%;
+}
+
+.sr-popover-merge-item:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--interactive-accent);
+}
+
+.sr-popover-merge-id {
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.sr-popover-merge-text {
+    flex: 1;
+    font-size: 14px;
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sr-popover-merge-icon {
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.sr-popover-merge-item:hover .sr-popover-merge-icon {
+    opacity: 1;
+}
+
+.sr-popover-actions {
+    margin-top: auto;
+    display: flex;
+    gap: 12px;
+}
+
+.sr-popover-btn-secondary {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px;
+    background: transparent;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    color: var(--text-normal);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.sr-popover-btn-secondary:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--text-muted);
+}
+
+.sr-popover-resize-handle {
+    position: absolute;
+    z-index: 1001;
+}
+
+.sr-resize-e {
+    top: 0;
+    right: 0;
+    width: 10px;
+    height: 100%;
+    cursor: ew-resize;
+}
+
+.sr-resize-s {
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 10px;
+    cursor: ns-resize;
+}
+
+.sr-resize-se {
+    bottom: 0;
+    right: 0;
+    width: 15px;
+    height: 15px;
+    cursor: nwse-resize;
+}
+
+/* ==========================================
+   极简卡片预览样式 (右侧面板)
+   纯线条设计，无背景
+   ========================================== */
+
+/* 卡片预览容器 - 可滚动 */
+.sr-popover-preview-cards-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    height: 100%;
+    overflow-y: auto;
+}
+
+/* 单个卡片预览 - 使用主题背景色 */
+.sr-preview-card-minimal {
+    background: var(--background-primary);
+    /* 使用主题背景色(纯白/纯黑) */
+    border: 1px solid var(--text-normal);
+    /* 浅色模式: 纯黑边框 */
+    border-radius: 0;
+    cursor: pointer;
+    transition: border-color 0.1s ease;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    /* 默认 2 张卡片铺满高度 */
+    min-height: calc(50% - 6px);
+    flex-shrink: 0;
+}
+
+.sr-preview-card-minimal:hover {
+    border-color: var(--interactive-accent);
+}
+
+/* 暗色主题边框 */
+.theme-dark .sr-preview-card-minimal {
+    border-color: rgba(255, 255, 255, 0.3);
+    /* 暗色模式: 浅白边框 */
+}
+
+.theme-dark .sr-preview-card-minimal:hover {
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* 卡片内容区 */
+.sr-preview-card-body {
+    padding: 12px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-normal);
+    flex: 1;
+    overflow-y: auto;
+}
+
+.sr-preview-card-body p {
+    margin: 0;
+}
+
+/* 卡片编号 - 底部极简小数字 */
+.sr-preview-card-footer-minimal {
+    padding: 4px 0;
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--text-faint);
+    font-family: var(--font-monospace);
+    text-align: center;
+    opacity: 0.6;
+}
+
+/* ==========================================
+   Cloze 状态样式 (与复习界面一致)
+   ========================================== */
+
+/* 当前激活的空位 */
+.sr-cloze-active-blank {
+    color: #2196f3;
+    font-weight: bold;
+    background-color: rgba(33, 150, 243, 0.1);
+    padding: 0 4px;
+}
+
+/* 当前激活的答案 */
+.sr-cloze-active-answer {
+    color: #2196f3;
+    font-weight: bold;
+    background-color: rgba(33, 150, 243, 0.15);
+    padding: 0 4px;
+}
+
+/* 非激活的 cloze */
+.sr-cloze-inactive {
+    background-color: rgba(129, 140, 248, 0.12);
+    color: var(--text-normal);
+    padding: 0 2px;
+}
+
+/* ==========================================
+   暗色主题
+   ========================================== */
+.theme-dark .sr-preview-card-footer-minimal {
+    color: #52525b;
+}

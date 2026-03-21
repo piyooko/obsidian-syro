@@ -1,0 +1,38 @@
+name: Lint and Test Code
+
+on:
+    pull_request:
+        branches: [main]
+    push:
+        branches: [main]
+
+env:
+    COREPACK_ENABLE_STRICT: 0
+
+jobs:
+    lint_and_test_code:
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+              with:
+                  version: 9.10.0
+                  run_install: false
+
+            - name: Setup Node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "20"
+                  cache: "pnpm"
+
+            - name: Install Dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Build
+              run: pnpm build
+
+            - name: Test
+              run: pnpm test

@@ -1,0 +1,55 @@
+/**
+ * Tailwind CSS 入口文件
+ * 
+ * 这个文件会被 esbuild 的 Tailwind 插件处理，
+ * 编译后的 CSS 会被合并到项目根目录的 styles.css 中
+ * 
+ * 重要：所有组件 CSS 必须在此显式导入，否则不会被构建系统包含！
+ */
+
+/* ==========================================
+   组件样式导入 (必须在 @tailwind 之前)
+   ========================================== */
+@import "./deck-tree.css";
+@import "./linear-card.css";
+@import "./note-review-sidebar.css";
+@import "./cloze-popover.css";
+@import "./settings-panel.css";
+@import "./editor.css";
+@import "./latex-popover.css";
+@import "./sync-progress-tip.css";
+
+/* ==========================================
+   Tailwind 指令
+   ========================================== */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================
+   自定义 CSS 变量 (兼容 Obsidian 主题)
+   使用这些变量可以让组件自动适应亮/暗主题
+   ========================================== */
+.sr-react-root {
+    /* 覆盖 Obsidian 的默认字体 */
+    --sr-font-sans: "Inter", var(--font-interface), system-ui, sans-serif;
+
+    /* 颜色变量 (使用 Obsidian CSS 变量作为回退) */
+    --sr-bg-primary: var(--background-primary);
+    --sr-bg-secondary: var(--background-secondary);
+    --sr-text-normal: var(--text-normal);
+    --sr-text-muted: var(--text-muted);
+    --sr-interactive-accent: var(--interactive-accent);
+}
+
+/* 暗色模式覆盖 */
+.theme-dark .sr-react-root {
+    --sr-bg-primary: #0b0c0e;
+    --sr-bg-secondary: #141517;
+}
+
+/* 组件容器基础样式 */
+.sr-react-root {
+    font-family: var(--sr-font-sans);
+    color: var(--sr-text-normal);
+}

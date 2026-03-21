@@ -1,0 +1,598 @@
+/**
+ * DeckTree 样式
+ * 
+ * 纯 CSS 实现，使用 Obsidian CSS 变量确保主题兼容
+ * 采用嵌套 DOM + border-left 实现 Obsidian 风格树状导引线
+ */
+
+/* ==========================================
+   Tab 视图强制全屏覆盖
+   ========================================== */
+
+/* 强制 Tab 模式下的内容容器全屏 */
+.sr-tab-view {
+    padding: 0 !important;
+    /* 移除 Obsidian 默认内边距 */
+    height: 100% !important;
+}
+
+.sr-tab-view-content {
+    margin: 0 auto !important;
+    /* 在 Tab 模式下，我们不需要限制 40% 宽度，直接 100% */
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+}
+
+/* 核心复习容器：确保它能撑开 */
+.sr-review-session {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.sr-card-review-view {
+    width: 100% !important;
+    height: 100% !important;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: var(--background-primary);
+    /* 确保背景色统一 */
+}
+
+/* ==========================================
+   容器宽度覆盖 - 强制牌组列表使用全宽
+   覆盖 TabView 的 flashcardWidthPercentage 内联样式
+   ========================================== */
+.sr-tab-view-content:has(.sr-deck-list-view) {
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+/* 备用选择器 (如果 :has() 不支持) */
+.sr-deck-list-view {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
+    position: relative;
+    height: 100%;
+    overflow: hidden;
+}
+
+.sr-deck-list-scroll {
+    position: relative;
+    height: 100%;
+    overflow-y: auto;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+.is-mobile .sr-deck-list-scroll {
+    padding: 8px;
+}
+
+/* ==========================================
+   卡片复习视图也使用全宽
+   ========================================== */
+.sr-tab-view-content:has(.sr-card-review-view) {
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+/* ==========================================
+   容器 - 移动端无边框
+   ========================================== */
+.sr-deck-tree {
+    --sr-deck-row-inline-margin: 4px;
+    --sr-deck-row-inline-padding: 8px;
+    --sr-deck-collapse-btn-size: 18px;
+    --sr-deck-collapse-btn-center-offset: 9px;
+    --sr-deck-children-guide-offset: calc(
+        var(--sr-deck-row-inline-margin) + var(--sr-deck-row-inline-padding) + var(--sr-deck-collapse-btn-center-offset)
+    );
+    --sr-deck-children-inline-padding: 12px;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--syro-deck-tree-radius, 12px);
+    overflow: hidden;
+}
+
+.sr-deck-tree-host {
+    position: relative;
+    width: 100%;
+    overflow: visible;
+}
+
+.sr-deck-tree-shell {
+    position: relative;
+    width: min(860px, 100%);
+    max-width: 100%;
+    margin-inline: auto;
+    will-change: width;
+}
+
+.sr-deck-tree-shell--resizing {
+    user-select: none;
+}
+
+.sr-deck-tree-shell--resizing .sr-deck-tree {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+.sr-deck-tree-resize-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 14px;
+    z-index: 20;
+    cursor: ew-resize;
+    touch-action: none;
+}
+
+.sr-deck-tree-resize-handle--left {
+    left: -7px;
+}
+
+.sr-deck-tree-resize-handle--right {
+    right: -7px;
+}
+
+/* 移动端：去除卡片样式，贴边显示 */
+.is-mobile .sr-deck-tree {
+    --sr-deck-row-inline-padding: 2px;
+    --sr-deck-children-inline-padding: 4px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+/* ==========================================
+   表头 - 移动端隐藏
+   ========================================== */
+.sr-deck-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    background: var(--background-secondary-alt);
+}
+
+/* 移动端隐藏表头 */
+.is-mobile .sr-deck-header {
+    display: none;
+}
+
+.sr-deck-header-name {
+    flex: 1;
+    padding-left: 20px;
+    /* 18px icon + 2px gap = 20px vs Row's 20px offset */
+}
+
+.sr-deck-header-stat {
+    width: 40px;
+    /* Aligned with row stats width */
+    text-align: center;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    opacity: 1;
+    transition: opacity 0.2s;
+}
+
+.sr-deck-header-stat.new {
+    color: var(--color-blue);
+}
+
+.sr-deck-header-stat.learning {
+    color: var(--color-orange);
+}
+
+.sr-deck-header-stat.due {
+    color: var(--color-green);
+}
+
+.sr-deck-header-stat.dimmed {
+    opacity: 0.2;
+    filter: grayscale(100%);
+}
+
+.sr-deck-header-action {
+    width: 24px;
+    /* Matches settings button width */
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.sr-deck-sync-btn {
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--syro-deck-row-radius, 4px);
+    cursor: pointer;
+    color: var(--text-faint);
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.sr-deck-sync-btn svg {
+    transform-origin: center;
+}
+
+.sr-deck-sync-btn:hover {
+    background-color: var(--background-modifier-hover) !important;
+    color: var(--text-normal) !important;
+}
+
+.sr-deck-sync-btn:disabled {
+    cursor: default;
+}
+
+.sr-deck-sync-btn.is-syncing {
+    color: var(--text-accent);
+    background-color: var(--background-modifier-hover) !important;
+}
+
+.is-mobile .sr-deck-sync-btn {
+    display: none !important;
+}
+
+/* ==========================================
+   牌组列表容器
+   ========================================== */
+.sr-deck-list {
+    padding: 4px 0;
+}
+
+/* ==========================================
+   牌组节点 - 嵌套容器
+   ========================================== */
+.sr-deck-node {
+    /* 节点容器 */
+}
+
+/* ==========================================
+   牌组行 - Obsidian 风格
+   ========================================== */
+.sr-deck-row {
+    display: flex;
+    align-items: center;
+    padding: 4px var(--sr-deck-row-inline-padding);
+    cursor: pointer;
+    transition: background 0.1s ease;
+    user-select: none;
+    position: relative;
+    min-height: 28px;
+    border-radius: var(--syro-deck-row-radius, 4px);
+    margin: 1px var(--sr-deck-row-inline-margin);
+}
+
+.sr-deck-row > * {
+    position: relative;
+    z-index: 1;
+}
+
+.sr-deck-row.sr-deck-row-recent::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--background-modifier-hover);
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.sr-deck-row:hover {
+    background: var(--background-modifier-hover);
+}
+
+/* 移动端行样式 */
+.is-mobile .sr-deck-row {
+    padding-block: 2px;
+    /* Reduced padding-left to 2px for tighter fit */
+    min-height: 32px;
+    margin-block: 0;
+}
+
+/* ==========================================
+   子牌组容器 - 嵌套 + 左侧导引线
+   ========================================== */
+.sr-deck-children {
+    /* 左侧导引线 - Obsidian 风格 */
+    margin-left: var(--sr-deck-children-guide-offset);
+    padding-left: var(--sr-deck-children-inline-padding);
+    border-left: 1px solid var(--background-modifier-border);
+    overflow: hidden;
+}
+
+/* 移动端：精确对齐导引线到 Chevron 中心
+   计算: 
+   1. 行 Padding-Left = 2px
+   2. 箭头容器内 SVG 居中，SVG 宽 12px，容器宽 18px，左边隙 3px。
+   3. SVG 中心(x=6) + 边隙(3px) = 9px。
+   4. 总对齐位置 = 2px + 9px = 11px。
+*/
+.is-mobile .sr-deck-children {
+    margin-left: var(--sr-deck-children-guide-offset);
+    /* 11px 对齐箭头中心 */
+    padding-left: var(--sr-deck-children-inline-padding);
+    /* 极小缩进 step */
+}
+
+/* ==========================================
+   牌组名称列
+   ========================================== */
+.sr-deck-name-col {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 2px;
+    /* Reduced gap */
+}
+
+/* ==========================================
+   折叠箭头
+   ========================================== */
+.sr-deck-collapse-btn {
+    width: var(--sr-deck-collapse-btn-size);
+    height: var(--sr-deck-collapse-btn-size);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--syro-deck-row-radius, 4px);
+    color: var(--text-faint);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+    padding: 0;
+}
+
+.sr-deck-collapse-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+/* 无子项时隐藏箭头但保留占位 */
+.sr-deck-collapse-btn.sr-no-children {
+    visibility: hidden;
+}
+
+/* ==========================================
+   牌组名称
+   ========================================== */
+.sr-deck-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sr-deck-row:hover .sr-deck-name {
+    color: var(--text-accent);
+}
+
+/* 移动端：稍大字号 */
+.is-mobile .sr-deck-name {
+    font-size: 15px;
+}
+
+/* ==========================================
+   统计数字容器 - Anki 风格
+   ========================================== */
+.sr-deck-stats-group {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0;
+    gap: 0;
+    flex-shrink: 0;
+}
+
+/* 移动端：紧凑排列 */
+.is-mobile .sr-deck-stats-group {
+    gap: 2px;
+    /* Reduced gap from 6px */
+    margin-left: auto;
+    padding: 2px 4px;
+    justify-content: flex-end;
+}
+
+/* ==========================================
+   单个统计数字
+   ========================================== */
+.sr-deck-stat {
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    width: 40px;
+    /* Fixed width to match header */
+    min-width: 40px;
+}
+
+/* 移动端统计数字 - 减小字号 */
+.is-mobile .sr-deck-stat {
+    font-size: 11px;
+    /* 减小字号 */
+    min-width: auto;
+    padding: 0 1px;
+    /* Reduced padding from 3px */
+}
+
+/* 颜色 */
+.sr-deck-stat.new {
+    color: var(--color-blue);
+}
+
+.sr-deck-stat.learning {
+    color: var(--color-orange);
+}
+
+.sr-deck-stat.due {
+    color: var(--color-green);
+}
+
+/* 零值淡化 */
+.sr-deck-stat.zero {
+    opacity: 0.3;
+}
+
+/* ==========================================
+   设置按钮 - 移动端隐藏，桌面端悬浮显示
+   ========================================== */
+/* ==========================================
+   设置按钮 (Settings Button) - 完美复刻 UISandbox
+   ========================================== */
+.sr-deck-settings-btn {
+    /* 核心 1：强制去除 Obsidian 默认按钮背景、边框和阴影 */
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+
+    /* 核心 2：布局与尺寸 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--syro-deck-row-radius, 4px);
+    cursor: pointer;
+
+    /* 核心 3：颜色与过渡 */
+    color: var(--text-faint);
+    /* 默认淡色 */
+    opacity: 0;
+    /* 默认完全透明（隐藏） */
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    /* 防止被压缩 */
+}
+
+/* 交互逻辑：当鼠标悬停在整行(.sr-deck-row)时，显示按钮 */
+.sr-deck-row:hover .sr-deck-settings-btn {
+    opacity: 1;
+}
+
+/* 交互逻辑：当鼠标悬停在按钮本身时，加深颜色并添加背景 */
+.sr-deck-settings-btn:hover {
+    background-color: var(--background-modifier-hover) !important;
+    /* 淡淡的背景色 */
+    color: var(--text-normal) !important;
+    /* 图标变亮 */
+}
+
+/* 移动端适配：齿轮作为唯一入口，需要常驻可见 */
+.is-mobile .sr-deck-settings-btn {
+    display: flex !important;
+    opacity: 1;
+    margin-left: 2px !important;
+}
+
+/* ==========================================
+   空状态
+   ========================================== */
+.sr-deck-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+/* ==========================================
+   自定义滚动条
+   ========================================== */
+.sr-deck-tree::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sr-deck-tree::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sr-deck-tree::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border);
+    border-radius: 3px;
+}
+
+.sr-deck-tree::-webkit-scrollbar-thumb:hover {
+    background: var(--text-faint);
+}
+
+body.syro-deck-tree-square-corners .sr-deck-tree,
+body.syro-deck-tree-square-corners .sr-deck-row,
+body.syro-deck-tree-square-corners .sr-deck-sync-btn,
+body.syro-deck-tree-square-corners .sr-deck-collapse-btn,
+body.syro-deck-tree-square-corners .sr-deck-settings-btn,
+body.syro-deck-tree-square-corners .is-mobile .sr-deck-stats-group {
+    border-radius: 0 !important;
+}
+
+/* @settings
+
+name: Syro Deck Tree
+id: syro-deck-tree-style
+settings:
+  -
+    id: syro-deck-tree-style-heading
+    title: Deck Tree
+    type: heading
+    level: 2
+    collapsed: false
+  -
+    id: syro-deck-tree-shape-info
+    title: Shape controls
+    description: Use the toggle for fully square corners, or sliders for custom curvature.
+    type: info-text
+  -
+    id: syro-deck-tree-square-corners
+    title: Square corners
+    description: Force the deck tree container, rows, and controls to use 0 radius.
+    type: class-toggle
+  -
+    id: syro-deck-tree-radius
+    title: Container corner radius
+    description: Set to 0 for square corners.
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 0
+    max: 24
+    step: 1
+  -
+    id: syro-deck-row-radius
+    title: Row corner radius
+    description: Controls the row and small button corners in the deck tree.
+    type: variable-number-slider
+    default: 4
+    format: px
+    min: 0
+    max: 16
+    step: 1
+*/

@@ -1,0 +1,34 @@
+{
+    "$schema": "https://unpkg.com/knip@5/schema.json",
+    "entry": ["src/main.ts!", "esbuild.config.mjs", "jest.config.js"],
+    "project": [
+        "src/**/*.{ts,tsx}!",
+        "tests/unit/**/*.{ts,tsx}",
+        "esbuild.config.mjs",
+        "jest.config.js",
+        "utils/**/*.js"
+    ],
+    "ignore": [
+        "build/**",
+        "coverage/**",
+        "docs/**",
+        "plugin_test/**",
+        "scripts/**",
+        "debug-parser.ts",
+        "test-*.{js,ts}",
+        "*.log",
+        "*.txt",
+        "src/note-question-parser.ts"
+    ],
+    "ignoreExportsUsedInFile": true,
+    "ignoreFiles": [
+        "src/ui/components/SettingsModal.tsx",
+        "src/ui/components/EmbeddedSettingsPanel.tsx",
+        "src/ui/components/CardDebugModal.tsx",
+        "src/ui/components/CardEditorView.tsx",
+        "src/ui/components/DeckTree.tsx",
+        "src/ui/components/LinearCard.tsx",
+        "src/ui/components/NoteReviewSidebar.tsx",
+        "src/ui/containers/ReviewSession.tsx"
+    ]
+}

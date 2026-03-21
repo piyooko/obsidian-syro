@@ -1,0 +1,267 @@
+/**
+ * Editor Styles
+ * 
+ * Migrated from UIsandbox:
+ * - LatexClozePopover.css (sr-cloze-mask, sr-cloze-reveal, sr-cloze-editor)
+ * - LatexRenderer.css (KaTeX specific styles)
+ * - LatexClozeModal.css (preview content cloze styles)
+ * 
+ * Used by:
+ * - src/editor/cloze-decoration.ts (CodeMirror decorations)
+ * - src/editor/cloze-postprocessor.ts (Reading view)
+ * - LaTeX preview components
+ */
+
+/* ==========================================
+   Cloze Highlight (Editor & Reading View)
+   类似高亮效果，不使用加粗
+   ========================================== */
+
+/* Base cloze highlight - 使用淡紫色背景，类似 mark 高亮但颜色不同 */
+.sr-cloze-highlight {
+    background-color: rgba(129, 140, 248, 0.18);
+    /* 淡紫色 */
+    color: var(--text-normal);
+    /* 保持正常文字颜色 */
+    border-radius: 4px;
+    padding: 1px 4px;
+    margin: 0 1px;
+    /* 无加粗 */
+}
+
+/* Dark theme enhancement */
+.theme-dark .sr-cloze-highlight {
+    background-color: rgba(129, 140, 248, 0.25);
+}
+
+/* Active cloze being edited - 边框强调 */
+.sr-cloze-editing {
+    background-color: rgba(129, 140, 248, 0.22);
+    box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.5);
+}
+
+/* ==========================================
+   Flashcard Review States
+   ========================================== */
+
+/* Cloze hidden state (question/front) - Anki Blue */
+.sr-cloze-hidden {
+    color: #2196f3;
+    font-weight: bold;
+    background-color: rgba(33, 150, 243, 0.1);
+    border-radius: 4px;
+    padding: 0 4px;
+}
+
+/* Cloze shown state (answer/back) - Anki Blue */
+.sr-cloze-shown {
+    color: #2196f3;
+    font-weight: bold;
+    background-color: rgba(33, 150, 243, 0.15);
+    border-radius: 4px;
+    padding: 0 4px;
+}
+
+/* ==========================================
+   Fallback/Generic Cloze Style
+   ========================================== */
+
+.cloze {
+    background-color: rgba(var(--interactive-accent-rgb), 0.2);
+    color: var(--text-normal);
+    border-radius: 4px;
+    padding: 0 2px;
+    font-weight: 600;
+}
+
+/* ==========================================
+   KaTeX Cloze Styles (LaTeX 公式内)
+   ========================================== */
+
+/* 编辑器模式 - 边框高亮 */
+.katex .sr-cloze-editor {
+    border: 1px solid rgba(129, 140, 248, 0.5);
+    background-color: rgba(129, 140, 248, 0.1);
+    border-radius: 5px;
+    padding: 2px 4px;
+    margin: 0 1px;
+    color: inherit;
+    transition: all 0.15s ease;
+    box-sizing: border-box;
+}
+
+/* 不同 ID 的颜色变化 */
+.katex .sr-cloze-editor.sr-c1 {
+    border-color: rgba(129, 140, 248, 0.5);
+    background-color: rgba(129, 140, 248, 0.1);
+}
+
+.katex .sr-cloze-editor.sr-c2 {
+    border-color: rgba(52, 211, 153, 0.5);
+    background-color: rgba(52, 211, 153, 0.1);
+}
+
+.katex .sr-cloze-editor.sr-c3 {
+    border-color: rgba(251, 146, 60, 0.5);
+    background-color: rgba(251, 146, 60, 0.1);
+}
+
+/* 复习正面 - 遮挡模式 (渐变蓝色) */
+.katex .sr-cloze-mask {
+    background: linear-gradient(135deg, #5865f2 0%, #4752c4 100%);
+    color: transparent !important;
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin: 0 2px;
+    min-width: 20px;
+    display: inline-block;
+    box-shadow: 0 1px 3px rgba(88, 101, 242, 0.3);
+}
+
+/* 复习背面 - 揭示模式 */
+.katex .sr-cloze-reveal {
+    color: #818cf8 !important;
+    background-color: rgba(129, 140, 248, 0.15);
+    border-radius: 4px;
+    padding: 2px 4px;
+    margin: 0 1px;
+}
+
+/* ==========================================
+   Non-KaTeX Cloze Styles (通用遮挡)
+   ========================================== */
+
+/* 非 LaTeX 遮挡样式 */
+.sr-cloze-mask {
+    color: #60a5fa !important;
+    font-weight: 700;
+}
+
+.sr-cloze-mask::before {
+    content: "[";
+}
+
+.sr-cloze-mask::after {
+    content: "]";
+}
+
+/* 非 LaTeX 揭示样式 */
+.sr-cloze-reveal {
+    color: #60a5fa !important;
+    background: rgba(96, 165, 250, 0.12);
+    padding: 0 4px;
+    border-radius: 3px;
+}
+
+/* 编辑器内的 Cloze */
+.sr-cloze-editor {
+    color: #60a5fa !important;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
+}
+
+/* ==========================================
+   Preview Content Cloze Styles
+   ========================================== */
+
+.sr-preview-content .katex .sr-cloze-editor {
+    border: 1px solid rgba(129, 140, 248, 0.5);
+    background-color: rgba(129, 140, 248, 0.12);
+    border-radius: 5px;
+    padding: 2px 5px;
+    margin: 0 2px;
+    transition: all 0.15s ease;
+}
+
+.sr-preview-content .katex .sr-cloze-editor.sr-c1 {
+    border-color: rgba(129, 140, 248, 0.5);
+    background-color: rgba(129, 140, 248, 0.12);
+}
+
+.sr-preview-content .katex .sr-cloze-editor.sr-c2 {
+    border-color: rgba(52, 211, 153, 0.5);
+    background-color: rgba(52, 211, 153, 0.12);
+}
+
+.sr-preview-content .katex .sr-cloze-editor.sr-c3 {
+    border-color: rgba(251, 146, 60, 0.5);
+    background-color: rgba(251, 146, 60, 0.12);
+}
+
+.sr-preview-content .katex .sr-cloze-mask {
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    color: transparent !important;
+    border-radius: 4px;
+    padding: 2px 8px;
+    margin: 0 2px;
+    min-width: 24px;
+    display: inline-block;
+    box-shadow: 0 1px 3px rgba(99, 102, 241, 0.3);
+}
+
+.sr-preview-content .katex .sr-cloze-reveal {
+    color: #a5b4fc !important;
+    background-color: rgba(129, 140, 248, 0.15);
+    border-radius: 4px;
+    padding: 2px 5px;
+    margin: 0 2px;
+}
+
+/* ==========================================
+   LaTeX Preview Content Cloze
+   ========================================== */
+
+.sr-latex-preview-content .katex .sr-cloze-editor {
+    border: 1px solid rgba(129, 140, 248, 0.5);
+    background-color: rgba(129, 140, 248, 0.12);
+    border-radius: 5px;
+    padding: 2px 5px;
+    margin: 0 2px;
+}
+
+.sr-latex-preview-content .katex .sr-cloze-mask {
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    color: transparent !important;
+    border-radius: 4px;
+    padding: 2px 8px;
+    margin: 0 2px;
+    min-width: 24px;
+    display: inline-block;
+}
+
+.sr-latex-preview-content .katex .sr-cloze-reveal {
+    color: #a5b4fc !important;
+    background-color: rgba(129, 140, 248, 0.15);
+    border-radius: 4px;
+    padding: 2px 5px;
+    margin: 0 2px;
+}
+
+/* ==========================================
+   Anki-Style Cloze ({{c1::...}}) in Editor
+   ========================================== */
+
+/* Anki cloze in source mode - subtle underline */
+.cm-anki-cloze {
+    border-bottom: 2px solid var(--interactive-accent);
+}
+
+/* Anki cloze ID number */
+.cm-anki-cloze-id {
+    color: var(--text-muted);
+    font-size: 0.85em;
+}
+
+/* Anki cloze content */
+.cm-anki-cloze-content {
+    color: var(--text-normal);
+    font-weight: 500;
+}
+
+/* Anki cloze hint */
+.cm-anki-cloze-hint {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.9em;
+}

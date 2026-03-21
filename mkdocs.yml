@@ -1,0 +1,101 @@
+site_name: Syro
+site_url: https://github.com/piyooko/obsidian-syro
+site_author: piyooko
+site_description: >-
+    Documentation for the Syro plugin
+
+repo_name: piyooko/obsidian-syro
+repo_url: https://github.com/piyooko/obsidian-syro
+edit_uri: ""
+docs_dir: docs/docs
+
+theme:
+    name: material
+    logo: assets/favicon.ico
+    favicon: assets/favicon.ico
+    icon:
+        repo: fontawesome/brands/github
+    palette:
+        - scheme: default
+          toggle:
+              icon: material/brightness-7
+              name: Switch to dark mode
+        - scheme: slate
+          toggle:
+              icon: material/brightness-4
+              name: Switch to light mode
+    features:
+        - navigation.top
+        - navigation.expand
+        - toc.follow
+        - content.code.copy
+
+nav:
+    - Home: index.md
+    - Getting Started:
+          - Core Concepts: getting-started/introduction.md
+          - 5-Minute Quick Start: getting-started/quick-start.md
+    - Flashcards:
+          - Overview: flashcards/index.md
+          - Card Authoring: flashcards/card-authoring.md
+          - Review Workflow: flashcards/review-workflow.md
+    - Note Review:
+          - Overview: note-review/index.md
+          - Queue Management: note-review/queue-management.md
+          - Timeline: note-review/timeline.md
+    - Advanced & FAQ:
+          - Data, Sync & Backup: advanced-and-faq/data-and-sync.md
+          - FAQ & Troubleshooting: advanced-and-faq/faq-troubleshooting.md
+    - Changelog: changelog.md
+    - License: license.md
+
+plugins:
+    - search
+    - i18n:
+          docs_structure: folder
+          languages:
+              - locale: en
+                name: English
+                default: true
+              - locale: zh
+                name: 简体中文
+                nav_translations:
+                    Home: 首页
+                    Getting Started: 新手起步
+                    Core Concepts: 核心理念
+                    5-Minute Quick Start: 5 分钟快速上手
+                    Flashcards: 闪卡复习
+                    Overview: 总览
+                    Card Authoring: 优雅地编写闪卡
+                    Review Workflow: 管理复习与心流
+                    Note Review: 笔记复习
+                    Queue Management: 掌控笔记复习队列
+                    Timeline: Timeline
+                    Advanced & FAQ: 进阶与数据管理
+                    Data, Sync & Backup: 数据、同步与备份机制
+                    FAQ & Troubleshooting: 常见问题与排障指南
+                    Changelog: 更新记录
+                    License: 开源许可证
+
+markdown_extensions:
+    - toc:
+          permalink: true
+    - pymdownx.highlight:
+          anchor_linenums: true
+    - pymdownx.inlinehilite
+    - pymdownx.snippets
+    - admonition
+    - pymdownx.details
+    - pymdownx.superfences
+    - attr_list
+    - footnotes
+    - pymdownx.emoji:
+          emoji_index: !!python/name:material.extensions.emoji.twemoji
+          emoji_generator: !!python/name:material.extensions.emoji.to_svg
+    - md_in_html
+
+extra_css:
+    - stylesheets/extra.css
+
+remote_branch: gh-pages
+remote_name: origin

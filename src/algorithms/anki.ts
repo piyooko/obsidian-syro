@@ -1,0 +1,297 @@
+/**
+ * 这个文件主要是干什么的：
+ * [算法层] Anki 默认算法的具体实现。
+ * 实现了基于 Ease Factor 的经典 Anki 算法逻辑。当用户评分 Again/Hard/Good/Easy 时，计算下一次的间隔和 Ease 变化。
+ *
+ * 它在项目中属于：算法层 (Algorithms) / 实现 (Implementation)
+ *
+ * 它会用到哪些文件：
+ * 1. src/algorithms/algorithms.ts
+ *
+ * 哪些文件会用到它：
+ * 1. src/algorithms/algorithms_switch.ts
+ */
+/**
+ * [算法层：负责计算下一次复习的时间、间隔和难度] [核心] Anki 默认算法实现。
+ */
+import { Setting, Notice } from "obsidian";
+import { DateUtils, MiscUtils } from "src/util/utils_recall";
+import { SrsAlgorithm, algorithmNames } from "./algorithms";
+import deepcopy from "deepcopy";
+import { FsrsData } from "./fsrs";
+import { balance } from "./balance/balance";
+import { RepetitionItem, ReviewResult } from "src/dataStore/repetitionItem";
+import { t } from "src/lang/helpers";
+
+export interface AnkiData {
+    ease: number;
+    lastInterval: number;
+    iteration: number;
+}
+
+export interface AnkiSettings {
+    easyBonus: number;
+    baseEase: number;
+    lapseInterval: number;
+    graduatingInterval: number;
+    easyInterval: number;
+}
+
+const AnkiOptions: string[] = ["Again", "Hard", "Good", "Easy"];
+
+/**
+ * This is an implementation of the Anki algorithm as described in
+ * https://faqs.ankiweb.net/what-spaced-repetition-algorithm.html
+ */
+export class AnkiAlgorithm extends SrsAlgorithm {
+    settings: AnkiSettings;
+    defaultSettings(): AnkiSettings {
+        return {
+            easyBonus: 1.3,
+            baseEase: 2.5,
+            lapseInterval: 0.5,
+            graduatingInterval: 1,
+            easyInterval: 4,
+        };
+    }
+
+    defaultData(): AnkiData {
+        return {
+            ease: this.settings.baseEase,
+            lastInterval: 0,
+            iteration: 1,
+        };
+    }
+
+    srsOptions(): string[] {
+        return AnkiOptions;
+    }
+
+    calcAllOptsIntervals(item: RepetitionItem): number[] {
+        const intvls: number[] = [];
+        this.srsOptions().forEach((opt, _ind) => {
+            const itemCopy: RepetitionItem = deepcopy(item);
+            const result = this.onSelection(itemCopy, opt, false);
+            const intvl = Math.round((result.nextReview / DateUtils.DAYS_TO_MILLIS) * 100) / 100;
+            intvls.push(intvl);
+        });
+        return intvls;
+    }
+
+    onSelection(item: RepetitionItem, optionStr: string, repeat: boolean): ReviewResult {
+        const data: AnkiData = item.data as AnkiData;
+        const response = AnkiOptions.indexOf(optionStr);
+
+        let correct = true;
+        let nextInterval = 0;
+        if (repeat) {
+            if (response == 0) {
+                correct = false;
+            }
+
+            return {
+                correct,
+                nextReview: -1,
+            };
+        }
+
+        if (response == 0) {
+            // Again
+            data.ease = Math.max(1.3, data.ease - 0.2);
+            nextInterval = data.lastInterval * this.settings.lapseInterval;
+            correct = false;
+        } else if (response == 1) {
+            // Hard
+            data.ease = Math.max(1.3, data.ease - 0.15);
+            nextInterval = data.lastInterval * 1.2;
+            if (nextInterval - data.lastInterval < 1) nextInterval = data.lastInterval + 1;
+        } else if (response == 2) {
+            // Good
+            if (data.iteration == 1) {
+                // Graduation!
+                nextInterval = this.settings.graduatingInterval;
+            } else {
+                nextInterval = data.lastInterval * data.ease;
+                if (nextInterval - data.lastInterval < 1) nextInterval = data.lastInterval + 1;
+            }
+        } else if (response == 3) {
+            data.ease += 0.15;
+            if (data.iteration == 1) {
+                // Graduation!
+                nextInterval = this.settings.easyInterval;
+            } else {
+                if (data.lastInterval < 1) {
+                    data.lastInterval += 1;
+                } else if (data.lastInterval - this.settings.easyInterval < 1) {
+                    data.lastInterval = this.settings.easyInterval;
+                }
+                nextInterval = data.lastInterval * data.ease * this.settings.easyBonus;
+            }
+        }
+
+        data.ease = MiscUtils.fixed(data.ease, 3);
+        data.iteration += 1;
+        // nextInterval = balance(nextInterval, item.itemType);
+        data.lastInterval = nextInterval;
+
+        return {
+            correct,
+            nextReview: nextInterval * DateUtils.DAYS_TO_MILLIS,
+        };
+    }
+
+    importer(fromAlgo: algorithmNames, items: RepetitionItem[]): void {
+        switch (fromAlgo) {
+            case algorithmNames.Default:
+                this.importer_Defualt(items);
+                break;
+            case algorithmNames.Anki:
+            case algorithmNames.SM2:
+                console.log("use same data, don't have to convert.");
+                break;
+            case algorithmNames.Fsrs:
+                this.importer_Fsrs(items);
+                break;
+            default:
+                throw Error(fromAlgo + "can't import to Anki");
+                break;
+        }
+    }
+    private importer_Defualt(items: RepetitionItem[]): void {
+        items.map((item) => {
+            if (item != null && item.data != null) {
+                const data = item.data as AnkiData;
+                data.ease /= 100;
+            }
+        });
+    }
+
+    private importer_Fsrs(items: RepetitionItem[]): void {
+        items.forEach((item) => {
+            if (item != null && item.data != null) {
+                const data = item.data as FsrsData;
+                const lastitval = data.scheduled_days;
+                const iter = data.reps;
+                const newdata = this.defaultData() as AnkiData;
+                newdata.lastInterval =
+                    lastitval > newdata.lastInterval
+                        ? lastitval
+                        : iter > 1
+                          ? this.settings.graduatingInterval
+                          : newdata.lastInterval;
+                newdata.iteration = iter;
+                item.data = deepcopy(newdata);
+            }
+        });
+    }
+
+    displaySettings(
+        containerEl: HTMLElement,
+        update: (settings: AnkiSettings, refresh?: boolean) => void,
+    ) {
+        containerEl.createDiv().innerHTML = t("ANKI_ALGORITHM_DESC");
+        new Setting(containerEl)
+            .setName(t("STARTING_EASE"))
+            .setDesc(t("STARTING_EASE_DESC"))
+            .addText((text) =>
+                text
+                    .setPlaceholder(t("STARTING_EASE"))
+                    .setValue(this.settings.baseEase.toString())
+                    .onChange((newValue) => {
+                        const ease = Number(newValue);
+
+                        if (isNaN(ease) || ease < 0) {
+                            new Notice(t("STARTING_EASE_ERROR"));
+                            return;
+                        }
+
+                        if (ease < 1.3) {
+                            new Notice(t("STARTING_EASE_WARNING"));
+                        }
+
+                        this.settings.baseEase = ease;
+                        update(this.settings);
+                    }),
+            );
+
+        new Setting(containerEl)
+            .setName(t("EASY_BONUS_ANKI"))
+            .setDesc(t("EASY_BONUS_ANKI_DESC"))
+            .addText((text) =>
+                text
+                    .setPlaceholder(t("EASY_BONUS_ANKI"))
+                    .setValue(this.settings.easyBonus.toString())
+                    .onChange((newValue) => {
+                        const bonus = Number(newValue);
+
+                        if (isNaN(bonus) || bonus < 1) {
+                            new Notice(t("EASY_BONUS_ANKI_ERROR"));
+                            return;
+                        }
+
+                        this.settings.easyBonus = bonus;
+                        update(this.settings);
+                    }),
+            );
+
+        new Setting(containerEl)
+            .setName(t("LAPSE_INTERVAL_MODIFIER"))
+            .setDesc(t("LAPSE_INTERVAL_MODIFIER_DESC"))
+            .addText((text) =>
+                text
+                    .setPlaceholder(t("LAPSE_INTERVAL_MODIFIER"))
+                    .setValue(this.settings.lapseInterval.toString())
+                    .onChange((newValue) => {
+                        const lapse = Number(newValue);
+
+                        if (isNaN(lapse) || lapse <= 0) {
+                            new Notice(t("LAPSE_INTERVAL_ERROR"));
+                            return;
+                        }
+
+                        this.settings.lapseInterval = lapse;
+                        update(this.settings);
+                    }),
+            );
+
+        new Setting(containerEl)
+            .setName(t("GRADUATING_INTERVAL"))
+            .setDesc(t("GRADUATING_INTERVAL_DESC"))
+            .addText((text) =>
+                text
+                    .setPlaceholder(t("GRADUATING_INTERVAL"))
+                    .setValue(this.settings.graduatingInterval.toString())
+                    .onChange((newValue) => {
+                        const interval = Number(newValue);
+
+                        if (isNaN(interval) || interval <= 0) {
+                            new Notice(t("GRADUATING_INTERVAL_ERROR"));
+                            return;
+                        }
+
+                        this.settings.graduatingInterval = interval;
+                        update(this.settings);
+                    }),
+            );
+
+        new Setting(containerEl)
+            .setName(t("EASY_INTERVAL"))
+            .setDesc(t("EASY_INTERVAL_DESC"))
+            .addText((text) =>
+                text
+                    .setPlaceholder(t("EASY_INTERVAL"))
+                    .setValue(this.settings.easyInterval.toString())
+                    .onChange((newValue) => {
+                        const interval = Number(newValue);
+
+                        if (isNaN(interval) || interval <= 0) {
+                            new Notice(t("EASY_INTERVAL_ERROR"));
+                            return;
+                        }
+
+                        this.settings.easyInterval = interval;
+                        update(this.settings);
+                    }),
+            );
+    }
+}

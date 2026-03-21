@@ -1,0 +1,28 @@
+{
+    "compilerOptions": {
+        "baseUrl": "./",
+        "paths": {
+            "src/*": ["src/*"]
+        },
+        "emitDecoratorMetadata": true,
+        "experimentalDecorators": true,
+        "inlineSourceMap": true,
+        "inlineSources": true,
+        "module": "ESNext",
+        "target": "ES2018",
+        "allowJs": true,
+        "noImplicitAny": true,
+        "moduleResolution": "node",
+        "esModuleInterop": true,
+        "importHelpers": true,
+        "lib": ["dom", "dom.Iterable", "scripthost", "ES5", "ES6", "ES7", "ES2021"],
+        "jsx": "react",
+        "jsxFactory": "h",
+        "jsxFragmentFactory": "Fragment",
+        "skipLibCheck": true,
+        "strict": false
+    },
+    "include": ["**/*.ts", "**/*.tsx"],
+    "exclude": ["node_modules"],
+    "files": ["node_modules/jest-expect-message/types/index.d.ts"]
+}

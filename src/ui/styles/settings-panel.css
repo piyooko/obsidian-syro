@@ -1,0 +1,437 @@
+/* ==========================================
+   Obsidian Native Style Grouping
+   模仿官方设置的圆角分组风格
+   ========================================== */
+
+.sr-settings-panel {
+    color: var(--text-normal);
+    font-family: var(--font-interface);
+    padding-bottom: 20px;
+}
+
+.sr-style-setting-content {
+    height: calc(100% - 10rem);
+    overflow-y: auto;
+    padding: 0 10px;
+}
+
+.sr-style-setting-header {
+    margin-bottom: 24px;
+    overflow-y: hidden;
+    overflow-x: auto;
+}
+
+.sr-style-setting-tab-group {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding-bottom: 0;
+}
+
+.sr-style-tab {
+    padding: 12px 4px;
+    font-size: 14px;
+    font-weight: var(--font-medium);
+    cursor: pointer;
+    white-space: nowrap;
+    background: transparent;
+    color: var(--text-muted);
+    transition: all 0.2s ease;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+}
+
+.sr-style-tab:hover {
+    color: var(--text-normal);
+    background: transparent;
+}
+
+.sr-style-tab.sr-style-tab-active {
+    color: var(--text-normal);
+    border-bottom: 2px solid var(--interactive-accent);
+    transform: none !important;
+    background: transparent;
+    z-index: 1;
+}
+
+/* 1. 分组容器样式 */
+.sr-setting-section {
+    margin-bottom: 24px;
+}
+
+/* 标题样式 */
+.sr-setting-section .setting-item-heading {
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    padding: 0 4px;
+    /* 稍微缩进一点，对齐视觉 */
+}
+
+/* 选项列表容器 (圆角卡片背景) */
+.sr-setting-section .setting-items {
+    background-color: var(--background-primary-alt);
+    /* 次级背景色 */
+
+    /* ↓↓↓ 修改这里：去掉边框 ↓↓↓ */
+    border: none;
+    /* 原来是: border: 1px solid var(--background-modifier-border); */
+
+    border-radius: var(--radius-m);
+    /* 官方圆角 */
+    overflow: hidden;
+    /* 确保子元素不溢出圆角 */
+    display: flex;
+    flex-direction: column;
+}
+
+/* 2. 单个选项样式 (扁平化) */
+.sr-setting-section .setting-items .setting-item {
+    border: none;
+    /* 移除默认的边框 */
+    margin: 0;
+    /* 移除默认外边距 */
+    padding: 12px 20px;
+    /* 调整内边距：上下紧凑，左右宽敞 */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: auto;
+    /* 移除最小高度限制，显得更紧凑 */
+}
+
+/* 3. 中间分隔线 (两端不连接) */
+/* 除了第一个元素外，其他元素顶部添加分隔线 */
+.sr-setting-section .setting-items .setting-item:not(:first-child) {
+    position: relative;
+}
+
+.sr-setting-section .setting-items .setting-item:not(:first-child)::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 20px;
+    /* 左侧留白 */
+    right: 20px;
+    /* 右侧留白 */
+    height: 1px;
+    background-color: var(--background-modifier-border);
+    /* 细线颜色 */
+    display: block;
+}
+
+/* 修正：文字区域样式 */
+.sr-settings-panel .setting-item-info {
+    flex: 1;
+    margin-right: 12px;
+}
+
+.sr-settings-panel .setting-item-name {
+    font-size: 14px;
+    /* 调整字号 */
+    font-weight: 500;
+    color: var(--text-normal);
+}
+
+.sr-settings-panel .setting-item-description {
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.4;
+    margin-top: 2px;
+    padding-top: 0;
+    /* 移除多余内边距 */
+}
+
+/* 修正：控件区域对齐 */
+.sr-settings-panel .setting-item-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.sr-settings-panel .setting-item {
+    border-top: 1px solid var(--background-modifier-border);
+    padding: 18px 0;
+    margin: 0;
+}
+
+.sr-settings-panel .setting-item:first-child {
+    border-top: none;
+}
+
+.sr-settings-panel .setting-item-name {
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.sr-settings-panel .setting-item-description {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-top: 4px;
+    line-height: 1.5;
+}
+
+/* ==========================================
+   控件样式微调 (适配背景色)
+   ========================================== */
+
+/* 下拉框、输入框背景修正 */
+/* 因为容器已经是 primary-alt，输入框需要用 primary 才能区分，或者反过来 */
+.sr-settings-panel .setting-items select,
+.sr-settings-panel .setting-items input[type="text"],
+.sr-settings-panel .setting-items input[type="number"],
+.sr-settings-panel .setting-items textarea {
+    background-color: var(--background-primary);
+    /* 在灰底上显示为白/黑底 */
+    border-color: var(--background-modifier-border);
+    transition: all 0.2s ease;
+}
+
+.sr-settings-panel .setting-items select:hover,
+.sr-settings-panel .setting-items input:hover,
+.sr-settings-panel .setting-items textarea:hover {
+    border-color: var(--background-modifier-border-hover);
+}
+
+/* Toggle 开关背景修正 */
+.sr-settings-panel .mod-toggle .checkbox-container {
+    background-color: var(--background-primary);
+    /* 开关槽背景 */
+}
+
+.sr-settings-panel .mod-toggle .checkbox-container.is-enabled {
+    background-color: var(--interactive-accent);
+    /* 激活色 */
+}
+
+/* 移除 React 组件可能自带的边框干扰 */
+.sr-settings-panel .setting-items .setting-item:first-child {
+    border-top: none;
+}
+
+/* ==========================================
+   Secondary Action Button (Transparent Style)
+   ========================================== */
+.sr-btn-transparent {
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 4px 8px !important;
+    margin: 0 !important;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    cursor: pointer;
+
+    color: var(--text-muted) !important;
+    font-size: 12px !important; /* Slightly smaller to match description text */
+    transition: all 0.2s ease;
+    height: auto !important;
+}
+
+.sr-btn-transparent:hover {
+    background-color: var(--background-modifier-hover) !important;
+    color: var(--text-normal) !important;
+    opacity: 1;
+}
+
+.sr-supporter-label-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.sr-supporter-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 7px 2px 6px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 999px;
+    color: var(--text-muted);
+    background: var(--background-primary);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    line-height: 1;
+}
+
+.sr-supporter-diamond {
+    display: block;
+    color: var(--text-normal);
+    opacity: 0.72;
+}
+
+.sr-supporter-diamond rect {
+    fill: currentColor;
+}
+
+.is-mobile .sr-style-tab {
+    padding: 12px;
+}
+
+/* ==========================================
+   Deck Options In-Tab Panel
+   ========================================== */
+
+.sr-deck-options-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 24px;
+    background: var(--background-primary);
+    box-sizing: border-box;
+}
+
+.sr-deck-options-anchor-panel {
+    display: flex;
+    flex-direction: column;
+    width: min(100%, 860px);
+    min-height: 0;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 18px;
+    box-shadow:
+        0 18px 44px rgba(0, 0, 0, 0.18),
+        0 2px 12px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(8px);
+    transition:
+        opacity 0.14s ease,
+        transform 0.14s ease;
+}
+
+.sr-deck-options-anchor-panel.is-ready {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.sr-deck-options-anchor-panel .setting-item-control input[type="text"],
+.sr-deck-options-anchor-panel .setting-item-control input[type="number"],
+.sr-deck-options-anchor-panel .setting-item-control select {
+    min-width: 180px;
+}
+
+.sr-deck-options-toolbar {
+    margin-bottom: 0;
+    padding: 0 16px;
+    flex-shrink: 0;
+}
+
+.sr-deck-options-toolbar .sr-style-setting-tab-group {
+    align-items: flex-start;
+    gap: 12px;
+    min-height: 48px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+
+.sr-deck-options-title-text {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-normal);
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.5;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.sr-deck-options-toolbar-spacer {
+    display: none;
+}
+
+.sr-deck-options-close-btn {
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    color: var(--text-muted);
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-top: -2px;
+}
+
+.sr-deck-options-close-btn:hover {
+    background: var(--background-modifier-hover) !important;
+    color: var(--text-normal);
+}
+
+.sr-deck-options-scroll {
+    flex: 1;
+    min-height: 0;
+    height: auto;
+    max-height: none;
+    padding: 0 10px 8px;
+}
+
+.sr-deck-options-scroll .sr-setting-section:first-child .setting-item-heading {
+    margin-top: 8px;
+}
+
+.sr-deck-options-select-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sr-deck-options-select-control select {
+    min-width: 180px;
+}
+
+.sr-deck-options-select-control .clickable-icon {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin: 0;
+}
+
+.sr-deck-options-footer-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 16px 16px;
+    border-top: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    flex-shrink: 0;
+}
+
+.is-mobile .sr-deck-options-overlay {
+    padding: 8px;
+}
+
+.is-mobile .sr-deck-options-anchor-panel {
+    width: 100%;
+    max-height: 100%;
+    border-radius: 14px;
+}
+
+.is-mobile .sr-deck-options-toolbar {
+    padding: 0 12px;
+}
+
+.is-mobile .sr-deck-options-scroll {
+    padding: 0 6px 4px;
+}

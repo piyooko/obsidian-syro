@@ -1,0 +1,1996 @@
+/**
+ * 线性卡片样式表 (LinearCard Styles)
+ * 
+ * 这个文件主要负责定义线性复习卡片界面的所有视觉样式。
+ * 它在项目中属于：界面层 (UI Layer)
+ * 
+ * 它被以下文件使用：
+ * - src/ui/components/LinearCard.tsx (引入并使用其中的样式类)
+ * 
+ * 主要包含：
+ * - 卡片容器与背景样式
+ * - 头部导航栏与面包屑样式
+ * - 统计面板与徽章样式
+ * - 卡片内容区域排版
+ * - 底部操作栏与按钮样式
+ * - 响应式适配与暗色模式支持
+ * 
+ * 使用了 Obsidian 的 CSS 变量以确保与主题的兼容性。
+ */
+
+/* ==========================================
+   容器与背景
+   ========================================== */
+/* ==========================================
+   容器与背景
+   ========================================== */
+.sr-linear-card-wrapper {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* 增加一个半透明遮罩效果，让卡片更有“浮动”感，哪怕是在 Tab 里 */
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-interface);
+    padding: 24px;
+    position: relative;
+    user-select: text;
+    overflow: hidden;
+}
+
+/* ==========================================
+   Toast 提示
+   ========================================== */
+.sr-toast-container {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    z-index: 100;
+    pointer-events: none;
+}
+
+.sr-toast {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--background-secondary-alt);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 9999px;
+    font-size: 12px;
+    color: var(--text-normal);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* ==========================================
+   卡片本体 - UIsandbox 风格
+   ========================================== */
+.sr-linear-card {
+    display: flex;
+    flex-direction: column;
+    width: 720px;
+    /* 移除之前可能存在的固定限制 */
+    max-width: 100% !important;
+    max-height: 100% !important;
+    min-height: 0;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+    position: relative;
+    z-index: 10;
+    overflow: hidden;
+    contain: layout paint;
+    will-change: width, height;
+}
+
+.sr-linear-card.sr-is-resizing {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.sr-linear-card.sr-is-resizing * {
+    transition: none !important;
+    animation: none !important;
+}
+
+.sr-linear-card.sr-is-resizing .sr-card-content-scroll {
+    pointer-events: none;
+}
+
+.theme-dark .sr-linear-card {
+    background: #121212;
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.sr-card-highlight {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(
+        to right,
+        transparent,
+        var(--background-modifier-border-hover),
+        transparent
+    );
+    pointer-events: none;
+    z-index: 20;
+}
+
+.theme-dark .sr-card-highlight {
+    background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.08), transparent);
+}
+
+/* ==========================================
+   Header - UIsandbox 风格
+   ========================================== */
+.sr-card-header {
+    height: 48px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--background-secondary);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 30;
+    gap: 8px;
+}
+
+.theme-dark .sr-card-header {
+    background: rgba(18, 18, 18, 0.5);
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* 统计看板 - UIsandbox 风格 */
+.sr-stats-panel {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    background: var(--background-modifier-hover);
+    padding: 2px;
+    border-radius: 8px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.theme-dark .sr-stats-panel {
+    background: rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+.sr-stats-divider {
+    width: 1px;
+    height: 12px;
+    background: var(--background-modifier-border);
+    margin: 0 2px;
+}
+
+.theme-dark .sr-stats-divider {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.sr-stat-badge {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: all 0.2s;
+    opacity: 0.4;
+}
+
+.sr-stat-badge:hover {
+    opacity: 0.7;
+}
+
+.sr-stat-badge.active {
+    opacity: 1;
+}
+
+/* 活跃状态背景指示器 */
+.sr-stat-badge.active::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--background-modifier-hover);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    z-index: 0;
+}
+
+.theme-dark .sr-stat-badge.active::before {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+.sr-stat-dot {
+    position: relative;
+    z-index: 1;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.sr-stat-dot.sr-stat-new {
+    background: #3b82f6;
+}
+
+.sr-stat-dot.sr-stat-learning {
+    background: #f97316;
+}
+
+.sr-stat-dot.sr-stat-due {
+    background: #22c55e;
+}
+
+.sr-stat-info {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sr-stat-label {
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+
+/* 活跃状态下的 label 颜色 */
+.sr-stat-badge.active .sr-stat-label.sr-stat-new {
+    color: #3b82f6;
+}
+
+.sr-stat-badge.active .sr-stat-label.sr-stat-learning {
+    color: #f97316;
+}
+
+.sr-stat-badge.active .sr-stat-label.sr-stat-due {
+    color: #22c55e;
+}
+
+.sr-stat-count {
+    position: relative;
+    z-index: 1;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: var(--font-monospace);
+    color: var(--text-muted);
+    min-width: 14px;
+    text-align: center;
+}
+
+/* 活跃状态下的 count 颜色 */
+.sr-stat-badge.active .sr-stat-count {
+    color: var(--text-normal);
+}
+
+.sr-stat-badge.active.sr-stat-new-badge .sr-stat-count {
+    color: #3b82f6;
+}
+
+.theme-dark .sr-stat-badge.active .sr-stat-count {
+    color: var(--text-normal);
+}
+
+/* 操作区 */
+.sr-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.sr-breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-family: var(--font-monospace);
+    color: var(--text-muted);
+}
+
+.sr-header-left,
+.sr-header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+@media (min-width: 640px) {
+    .sr-breadcrumbs {
+        display: flex;
+    }
+}
+
+.sr-breadcrumb-item {
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.sr-breadcrumb-item:hover {
+    color: var(--text-normal);
+}
+
+.sr-breadcrumb-separator {
+    opacity: 0.4;
+    flex-shrink: 0;
+}
+
+.sr-filename-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--background-modifier-hover);
+    border: 1px solid var(--background-modifier-border);
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.sr-filename-badge:hover {
+    background: var(--background-modifier-active-hover);
+}
+
+.sr-filename-badge span {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-normal);
+    font-weight: 500;
+}
+
+/* 菜单 */
+.sr-menu-container {
+    position: relative;
+}
+
+.sr-menu-btn {
+    padding: 6px;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.sr-menu-btn:hover,
+.sr-menu-btn.active {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.sr-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+}
+
+/* =================================================================
+   下拉菜单容器 (Dropdown Menu)
+   对应 .sr-dropdown-menu
+   ================================================================= */
+.sr-dropdown-menu {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    margin-top: 8px;
+    width: 192px;
+    /* w-48 */
+
+    /* 背景与边框 */
+    background-color: white;
+    border: 1px solid #e4e4e7;
+    /* zinc-200 */
+    border-radius: 8px;
+
+    /* 阴影 */
+    box-shadow:
+        0 10px 15px -3px rgba(0, 0, 0, 0.1),
+        0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+    padding: 4px;
+    z-index: 50;
+    overflow: hidden;
+    transform-origin: top right;
+
+    /* 防止文字选中 */
+    user-select: none;
+}
+
+.theme-dark .sr-dropdown-menu {
+    background-color: #18181b;
+    /* zinc-900 / #18181A */
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* =================================================================
+   菜单项 (Menu Item)
+   对应 .sr-menu-item
+   ================================================================= */
+.sr-menu-item {
+    /* 核心：重置 Obsidian 按钮样式 */
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+
+    /* 布局 */
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    /* 图标文字在左，快捷键在右 */
+    padding: 6px 12px;
+    border-radius: 4px;
+
+    /* 字体 */
+    font-size: 12px;
+    color: #52525b;
+    /* text-zinc-600 */
+    text-align: left;
+
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.theme-dark .sr-menu-item {
+    color: #d4d4d8;
+    /* dark:text-zinc-300 */
+}
+
+/* 菜单项悬停 */
+.sr-menu-item:hover {
+    background-color: #f4f4f5 !important;
+    /* bg-zinc-100 */
+}
+
+.theme-dark .sr-menu-item:hover {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    /* dark:hover:bg-white/5 */
+}
+
+/* 菜单项左侧内容包裹 (图标+文字) */
+.sr-menu-item-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* 菜单项图标 */
+.sr-menu-item-icon {
+    opacity: 0.7;
+    display: flex;
+    align-items: center;
+}
+
+/* 菜单项右侧快捷键 (U, O, E...) */
+.sr-menu-item-kbd {
+    font-size: 10px;
+    font-family: var(--font-monospace);
+    opacity: 0.4;
+    border: 1px solid currentColor;
+    padding: 0 4px;
+    border-radius: 3px;
+    min-width: 18px;
+    text-align: center;
+}
+
+/* =================================================================
+   分隔线 (Divider)
+   对应 .sr-menu-divider
+   ================================================================= */
+.sr-menu-divider {
+    height: 1px;
+    background-color: #f4f4f5;
+    /* zinc-100 */
+    margin: 4px 0;
+    width: 100%;
+}
+
+.theme-dark .sr-menu-divider {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* =================================================================
+   危险操作菜单项 (Danger Variant)
+   对应 .sr-menu-item.danger
+   ================================================================= */
+.sr-menu-item.danger {
+    color: #ef4444;
+    /* text-red-500 */
+}
+
+.sr-menu-item.danger:hover {
+    background-color: #fef2f2 !important;
+    /* hover:bg-red-50 */
+}
+
+.theme-dark .sr-menu-item.danger:hover {
+    background-color: rgba(239, 68, 68, 0.1) !important;
+    /* dark:hover:bg-red-500/10 */
+}
+
+/* ==========================================
+   计时器进度条
+   ========================================== */
+.sr-timer-bar-container {
+    height: 2px;
+    width: 100%;
+    background: var(--background-modifier-border);
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.sr-timer-bar {
+    height: 100%;
+    position: absolute;
+    left: 0;
+    top: 0;
+    background: #3b82f6;
+}
+
+/* ==========================================
+   内容区域 - UIsandbox 风格
+   ========================================== */
+.sr-card-content-area {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: var(--background-secondary);
+}
+
+.theme-dark .sr-card-content-area {
+    background: #121212;
+}
+
+.sr-card-content-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 32px 40px;
+    scroll-padding-block: clamp(48px, 14vh, 112px);
+}
+
+/* 基础卡片内容 */
+.sr-basic-content {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+}
+
+.sr-content-label {
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.sr-content-text {
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--text-normal);
+    line-height: 1.6;
+}
+
+.sr-content-text.answer {
+    color: var(--text-muted);
+}
+
+.sr-answer-section {
+    overflow: hidden;
+}
+
+.sr-content-divider {
+    width: 100%;
+    height: 1px;
+    background: var(--background-modifier-border);
+    margin-bottom: 24px;
+}
+
+/* 填空卡片内容 */
+.sr-cloze-content {
+    font-size: 18px;
+    line-height: 1.8;
+    color: var(--text-normal);
+    padding-block: clamp(48px, 14vh, 112px);
+}
+
+/* ==========================================
+   Footer - UIsandbox 风格
+   ========================================== */
+.sr-card-footer {
+    padding: 14px 20px;
+    background: var(--background-secondary);
+    border-top: 1px solid var(--background-modifier-border);
+    flex-shrink: 0;
+    z-index: 30;
+}
+
+.theme-dark .sr-card-footer {
+    background: #121212;
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* =================================================================
+   显示答案按钮 (Show Answer Button)
+   对应 .sr-show-answer-btn
+   ================================================================= */
+.sr-show-answer-btn {
+    /* 核心：重置 Obsidian 默认样式 */
+    box-shadow: none !important;
+
+    /* 布局 */
+    width: 100%;
+    height: 40px;
+    /* Fixed height to match Rating Buttons */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    /* 图标与文字间距 */
+    padding: 0;
+    /* Remove padding as we have fixed height */
+    margin-top: 0;
+    border-radius: 8px;
+
+    /* 字体 */
+    font-size: 14px;
+    font-weight: 500;
+    font-family: var(--font-interface);
+
+    /* 颜色主题：浅蓝色背景 + 蓝色文字 */
+    background-color: rgba(59, 130, 246, 0.1) !important;
+    /* bg-blue-500/10 */
+    border: 1px solid rgba(59, 130, 246, 0.2) !important;
+    /* border-blue-500/20 */
+    color: #2563eb !important;
+    /* text-blue-600 */
+
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+/* 深色模式适配 */
+.theme-dark .sr-show-answer-btn {
+    color: #60a5fa !important;
+    /* dark:text-blue-400 */
+}
+
+/* 悬停效果 */
+.sr-show-answer-btn:hover {
+    background-color: rgba(59, 130, 246, 0.2) !important;
+}
+
+/* 点击按压效果 */
+.sr-show-answer-btn:active {
+    transform: scale(0.99);
+}
+
+/* 按钮内的快捷键提示 (SPACE) */
+.sr-kbd {
+    font-size: 10px;
+    font-family: var(--font-monospace);
+    opacity: 0.6;
+    margin-left: 4px;
+    letter-spacing: 0.5px;
+}
+
+/* ==========================================
+   评分按钮 (Modern Flat Style - Strict UIsandbox Port)
+   ========================================== */
+.sr-rating-buttons {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    /* gap-3 */
+}
+
+/* 
+   UIsandbox Source:
+   className={`
+       group/btn relative flex items-start justify-center gap-1.5
+       py-1.5 px-2 rounded-[6px]
+       bg-white dark:bg-[rgb(18,18,18)] 
+       border border-zinc-200 dark:border-white/10
+       hover:dark:bg-white/5 
+       transition-all duration-200 
+       active:scale-[0.98]
+       shadow-sm dark:shadow-none
+   `}
+*/
+.sr-linear-btn {
+    /* Reset & Base */
+    background-image: none;
+    text-shadow: none;
+    min-width: 0;
+    user-select: none;
+    cursor: pointer;
+    font-size: inherit;
+    line-height: inherit;
+
+    /* Layout */
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    /* Default flex direction (row) based on UIsandbox 'flex' */
+    align-items: center;
+    /* items-start -> center for tall button */
+    justify-content: center;
+    /* justify-center */
+    gap: 6px;
+    /* gap-1.5 */
+
+    padding: 0 12px;
+    /* py-1.5 px-2 -> adjusted for fixed height */
+    border-radius: 6px;
+    /* rounded-[6px] */
+    height: 40px;
+    /* Fixed height 64px */
+
+    /* Colors - Light Mode */
+    background-color: #ffffff;
+    /* bg-white */
+    border: 1px solid #e4e4e7;
+    /* border-zinc-200 */
+    color: inherit;
+
+    /* Transitions */
+    transition: all 0.2s ease;
+    /* duration-200 */
+
+    /* Shadow */
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    /* shadow-sm */
+}
+
+.theme-dark .sr-linear-btn {
+    background-color: rgb(18, 18, 18);
+    /* dark:bg-[rgb(18,18,18)] */
+    border-color: rgba(255, 255, 255, 0.1);
+    /* dark:border-white/10 (Corrected from transparency) */
+    box-shadow: none;
+    /* dark:shadow-none */
+}
+
+/* Hover Effects */
+.theme-dark .sr-linear-btn:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    /* hover:dark:bg-white/5 */
+}
+
+.theme-light .sr-linear-btn:hover {
+    background-color: #fafafa;
+    /* Optional light hover */
+}
+
+/* Active Scale */
+.sr-linear-btn:active {
+    transform: scale(0.98);
+    /* active:scale-[0.98] */
+}
+
+/* Shortcut (Top Right) */
+.sr-linear-btn-shortcut {
+    position: absolute;
+    top: 4px;
+    /* top-1 */
+    right: 6px;
+    /* right-1.5 */
+    font-size: 9px;
+    /* text-[9px] */
+    font-family: var(--font-monospace);
+    /* font-mono */
+    color: #d4d4d8;
+    /* text-zinc-300 */
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.theme-dark .sr-linear-btn-shortcut {
+    color: #52525b;
+    /* dark:text-zinc-600 */
+}
+
+.sr-linear-btn:hover .sr-linear-btn-shortcut {
+    opacity: 1;
+    /* group-hover:opacity-100 */
+}
+
+/* Icon Wrapper */
+.sr-linear-btn-icon-wrapper {
+    margin-top: 2px;
+    /* mt-0.5 */
+    flex-shrink: 0;
+    opacity: 0.8;
+    transition: all 0.2s;
+    transform-origin: center;
+    color: #a1a1aa;
+    /* text-zinc-400 */
+}
+
+.sr-linear-btn:hover .sr-linear-btn-icon-wrapper {
+    opacity: 1;
+    transform: scale(1.1);
+    /* group-hover:scale-110 */
+}
+
+/* Icon Hover Colors */
+.sr-linear-btn.is-reset:hover .sr-linear-btn-icon-wrapper {
+    color: #f87171;
+}
+
+.sr-linear-btn.is-hard:hover .sr-linear-btn-icon-wrapper {
+    color: #fb923c;
+}
+
+.sr-linear-btn.is-good:hover .sr-linear-btn-icon-wrapper {
+    color: #4ade80;
+}
+
+.sr-linear-btn.is-easy:hover .sr-linear-btn-icon-wrapper {
+    color: #60a5fa;
+}
+
+/* Content Area (Text Stack) */
+.sr-linear-btn-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+/* Main Label */
+.sr-linear-btn-label {
+    font-size: 12px;
+    /* text-xs */
+    font-weight: 600;
+    /* font-semibold */
+    letter-spacing: 0.025em;
+    /* tracking-wide */
+    color: #3f3f46;
+    /* text-zinc-700 */
+    transition: color 0.2s;
+}
+
+.theme-dark .sr-linear-btn-label {
+    color: #d4d4d8;
+    /* dark:text-zinc-300 */
+}
+
+.theme-dark .sr-linear-btn:hover .sr-linear-btn-label {
+    color: #ffffff;
+    /* group-hover:dark:text-white */
+}
+
+/* Sub Label (Time) */
+.sr-linear-btn-sub {
+    font-size: 10px;
+    /* text-[10px] */
+    font-family: var(--font-monospace);
+    /* font-mono */
+    letter-spacing: -0.025em;
+    /* tracking-tight */
+    color: #a1a1aa;
+    /* text-zinc-400 */
+}
+
+.theme-dark .sr-linear-btn-sub {
+    color: #71717a;
+    /* dark:text-zinc-500 */
+}
+
+/* ==========================================
+   Debug Modal
+   ========================================== */
+.sr-debug-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.sr-debug-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+}
+
+.sr-debug-modal {
+    position: relative;
+    width: 100%;
+    max-width: 672px;
+    max-height: 85vh;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    color: var(--text-normal);
+}
+
+.sr-debug-modal-header {
+    height: 48px;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--background-primary);
+    flex-shrink: 0;
+}
+
+.sr-debug-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.sr-debug-icon {
+    color: #3b82f6;
+}
+
+.sr-debug-id {
+    font-size: 12px;
+    font-family: var(--font-monospace);
+    color: var(--text-muted);
+    padding: 2px 6px;
+    background: var(--background-modifier-hover);
+    border-radius: 4px;
+}
+
+.sr-debug-modal-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.sr-debug-btn {
+    padding: 6px;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.sr-debug-btn:hover {
+    background: var(--background-modifier-hover);
+}
+
+.sr-debug-modal-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+}
+
+.sr-debug-section {
+    padding: 20px;
+}
+
+.sr-debug-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.sr-debug-section-icon {
+    color: var(--text-muted);
+}
+
+.sr-debug-section-title {
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0;
+}
+
+.sr-debug-divider {
+    height: 1px;
+    background: var(--background-modifier-border);
+    margin: 0 20px;
+}
+
+.sr-debug-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+}
+
+.sr-debug-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sr-debug-field-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-weight: 500;
+}
+
+.sr-debug-field-value {
+    font-size: 14px;
+    font-family: var(--font-monospace);
+    color: var(--text-normal);
+    word-break: break-all;
+}
+
+.sr-debug-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: var(--font-monospace);
+}
+
+/* ==========================================
+   Anki Cloze & Standard Cloze Styles
+   Note: sr-cloze-highlight 定义在 editor.css 中
+   ========================================== */
+
+/* Flashcard Review View: Hidden (Active Cloze Front) */
+.sr-cloze-hidden {
+    color: #2196f3;
+    font-weight: bold;
+}
+
+/* Flashcard Review View: Shown (Active Cloze Back) */
+.sr-cloze-shown {
+    color: #2196f3;
+    font-weight: bold;
+}
+
+.sr-debug-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+.sr-debug-stat-box {
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.sr-debug-stat-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-weight: bold;
+}
+
+.sr-debug-stat-value {
+    font-size: 18px;
+    font-family: var(--font-monospace);
+    font-weight: bold;
+    color: var(--text-normal);
+}
+
+.sr-debug-stat-value.success {
+    color: #22c55e;
+}
+
+.sr-debug-stat-value.warning {
+    color: #f97316;
+}
+
+.sr-debug-algo-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.sr-debug-field-full {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sr-debug-label {
+    font-size: 10px;
+    font-weight: bold;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.sr-debug-input {
+    width: 100%;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 14px;
+    font-family: var(--font-monospace);
+    color: var(--text-normal);
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.sr-debug-input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.sr-debug-grid-compact {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+@media (min-width: 640px) {
+    .sr-debug-grid-compact {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+.sr-debug-input-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sr-debug-input-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    font-weight: bold;
+    color: var(--text-muted);
+}
+
+.sr-debug-input-label.danger {
+    color: #ef4444;
+}
+
+.sr-debug-input-small {
+    width: 100%;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: var(--font-monospace);
+    color: var(--text-normal);
+    outline: none;
+    transition: all 0.15s;
+}
+
+.sr-debug-input-small:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.sr-debug-input-small.danger {
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.sr-debug-input-small.danger:focus {
+    border-color: #ef4444;
+}
+
+.sr-debug-input-small.readonly {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.sr-debug-raw {
+    padding: 20px;
+    background: var(--background-primary);
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.sr-debug-raw-title {
+    font-size: 10px;
+    font-weight: bold;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+}
+
+.sr-debug-raw-content {
+    font-size: 10px;
+    font-family: var(--font-monospace);
+    color: var(--text-muted);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+}
+
+.sr-debug-modal-footer {
+    padding: 16px;
+    border-top: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.sr-debug-warning {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.1);
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.sr-debug-footer-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.sr-debug-btn-cancel {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.sr-debug-btn-cancel:hover {
+    background: var(--background-modifier-hover);
+}
+
+.sr-debug-btn-save {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    transition: opacity 0.15s;
+}
+
+.sr-debug-btn-save:hover {
+    opacity: 0.9;
+}
+
+/* ==========================================
+   Resize Handles (Border & Corner)
+   ========================================== */
+.sr-resize-handle-n,
+.sr-resize-handle-s,
+.sr-resize-handle-e,
+.sr-resize-handle-w,
+.sr-resize-handle-ne,
+.sr-resize-handle-nw,
+.sr-resize-handle-se,
+.sr-resize-handle-sw {
+    position: absolute;
+    z-index: 100;
+    touch-action: none;
+}
+
+/* Edges - Larger hit area */
+.sr-resize-handle-n {
+    top: -6px;
+    left: 0;
+    right: 0;
+    height: 12px;
+    cursor: ns-resize;
+}
+
+.sr-resize-handle-s {
+    bottom: -6px;
+    left: 0;
+    right: 0;
+    height: 12px;
+    cursor: ns-resize;
+}
+
+/* Horizontal edges need top/bottom 0 to span height */
+.sr-resize-handle-e {
+    top: 0;
+    bottom: 0;
+    right: -6px;
+    width: 12px;
+    cursor: ew-resize;
+}
+
+.sr-resize-handle-w {
+    top: 0;
+    bottom: 0;
+    left: -6px;
+    width: 12px;
+    cursor: ew-resize;
+}
+
+/* Corners - Ensure they sit on top of edges */
+.sr-resize-handle-nw {
+    top: -8px;
+    left: -8px;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    z-index: 101;
+}
+
+.sr-resize-handle-ne {
+    top: -8px;
+    right: -8px;
+    width: 16px;
+    height: 16px;
+    cursor: nesw-resize;
+    z-index: 101;
+}
+
+.sr-resize-handle-sw {
+    bottom: -8px;
+    left: -8px;
+    width: 16px;
+    height: 16px;
+    cursor: nesw-resize;
+    z-index: 101;
+}
+
+.sr-resize-handle-se {
+    bottom: -8px;
+    right: -8px;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    z-index: 101;
+}
+
+/* ==========================================
+   移动端适配 (保持卡片样式，非全屏)
+   使用 Obsidian 的 .is-mobile / .is-phone 类检测
+   ========================================== */
+
+/* ==========================================
+   移动端适配 (保持卡片样式，非全屏，位于原生窗口内)
+   使用 Obsidian 的 .is-mobile / .is-phone 类检测
+   ========================================== */
+
+/* 强制重置 Obsidian 模态框样式，防止干扰 */
+.is-mobile #sr-modal,
+.is-phone #sr-modal {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 200 !important;
+}
+
+/* 确保内部所有容器高度传递 */
+.is-mobile #sr-modal .modal-content,
+.is-mobile #sr-modal .sr-modal-content,
+.is-mobile .sr-react-app-root,
+.is-mobile .sr-review-session,
+.is-mobile .sr-card-review-view {
+    height: 100% !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+}
+
+/* 核心容器：用于定位和限制区域 */
+/* 使用 position: fixed 逃离模态框可能的定位问题 */
+.is-mobile .sr-linear-card-wrapper,
+.is-phone .sr-linear-card-wrapper {
+    position: fixed !important;
+    inset: 0 !important;
+    /* 占满整个屏幕 */
+    z-index: 500 !important;
+    /* 置于顶层 */
+
+    /* 使用 padding 定义"安全区域"和卡片边距 */
+    /* 顶部: 增加到 60px 以避开 Obsidian 顶部原生栏，防止遮挡和卡顿 */
+    padding-top: calc(env(safe-area-inset-top) + 60px) !important;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 12px) !important;
+    padding-left: calc(env(safe-area-inset-left) + 12px) !important;
+    padding-right: calc(env(safe-area-inset-right) + 12px) !important;
+
+    background: rgba(0, 0, 0, 0.5);
+    /* 遮罩层背景，略微加深 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    /* 关键：让 padding 包含在尺寸内 */
+}
+
+/* 此时卡片只需占满 wrapper 剩余空间 */
+.is-mobile .sr-linear-card,
+.is-phone .sr-linear-card {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+
+    /* 保持圆角，简化阴影以提升性能 */
+    border-radius: 12px !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+    display: flex;
+    flex-direction: column;
+
+    /* 性能优化：提示浏览器预优化 transform 动画 */
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    transform: translateZ(0);
+    /* 创建合成层 */
+}
+
+/* 移动端：Review Session 容器性能优化 */
+.is-mobile .sr-review-session,
+.is-phone .sr-review-session {
+    will-change: transform;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+/* 移动端：调整大小手柄更大触摸区域 */
+.is-mobile .sr-resize-handle-n,
+.is-mobile .sr-resize-handle-s,
+.is-phone .sr-resize-handle-n,
+.is-phone .sr-resize-handle-s {
+    height: 20px;
+}
+
+.is-mobile .sr-resize-handle-e,
+.is-mobile .sr-resize-handle-w,
+.is-phone .sr-resize-handle-e,
+.is-phone .sr-resize-handle-w {
+    width: 20px;
+}
+
+.is-mobile .sr-resize-handle-ne,
+.is-mobile .sr-resize-handle-nw,
+.is-mobile .sr-resize-handle-se,
+.is-mobile .sr-resize-handle-sw,
+.is-phone .sr-resize-handle-ne,
+.is-phone .sr-resize-handle-nw,
+.is-phone .sr-resize-handle-se,
+.is-phone .sr-resize-handle-sw {
+    width: 24px;
+    height: 24px;
+}
+
+/* 移动端：Header 优化 */
+.is-mobile .sr-card-header,
+.is-phone .sr-card-header {
+    height: 44px;
+    padding: 0 12px;
+}
+
+/* 移动端：隐藏面包屑，只显示文件名 */
+.is-mobile .sr-breadcrumb-item,
+.is-mobile .sr-breadcrumb-separator,
+.is-phone .sr-breadcrumb-item,
+.is-phone .sr-breadcrumb-separator {
+    display: none !important;
+}
+
+/* 移动端：文件名 badge 紧凑化 */
+.is-mobile .sr-filename-badge,
+.is-phone .sr-filename-badge {
+    padding: 2px 6px;
+}
+
+.is-mobile .sr-filename-badge span,
+.is-phone .sr-filename-badge span {
+    max-width: 100px;
+    font-size: 11px;
+}
+
+/* 移动端：统计面板紧凑化 */
+.is-mobile .sr-stats-panel,
+.is-phone .sr-stats-panel {
+    padding: 2px;
+    gap: 2px;
+}
+
+.is-mobile .sr-stat-badge,
+.is-phone .sr-stat-badge {
+    padding: 2px 6px;
+    gap: 4px;
+}
+
+.is-mobile .sr-stat-label,
+.is-phone .sr-stat-label {
+    display: none;
+    /* 只显示数字和点 */
+}
+
+.is-mobile .sr-stats-divider,
+.is-phone .sr-stats-divider {
+    margin: 0 2px;
+}
+
+/* 移动端：内容区域优化 */
+.is-mobile .sr-card-content-scroll,
+.is-phone .sr-card-content-scroll {
+    padding: 20px 16px;
+    scroll-padding-block: 72px;
+}
+
+.is-mobile .sr-cloze-content,
+.is-phone .sr-cloze-content {
+    padding-block: 32px 72px;
+}
+
+/* 移动端：Footer 优化 */
+.is-mobile .sr-card-footer,
+.is-phone .sr-card-footer {
+    padding: 12px;
+}
+
+/* 移动端：评分按钮更大触摸区域 */
+.is-mobile .sr-rating-buttons,
+.is-phone .sr-rating-buttons {
+    gap: 8px;
+}
+
+.is-mobile .sr-linear-btn,
+.is-phone .sr-linear-btn {
+    padding: 12px 8px;
+    min-height: 56px;
+}
+
+.is-mobile .sr-linear-btn-label,
+.is-phone .sr-linear-btn-label {
+    font-size: 13px;
+}
+
+.is-mobile .sr-linear-btn-sub,
+.is-phone .sr-linear-btn-sub {
+    font-size: 11px;
+}
+
+/* 移动端：显示答案按钮更大 */
+.is-mobile .sr-show-answer-btn,
+.is-phone .sr-show-answer-btn {
+    padding: 12px;
+    font-size: 15px;
+}
+
+/* 移动端：隐藏键盘快捷键提示 */
+.is-mobile .sr-kbd,
+.is-mobile .sr-linear-btn-shortcut,
+.is-mobile .sr-menu-item-kbd,
+.is-phone .sr-kbd,
+.is-phone .sr-linear-btn-shortcut,
+.is-phone .sr-menu-item-kbd {
+    display: none !important;
+}
+
+/* 移动端：菜单优化 */
+.is-mobile .sr-dropdown-menu,
+.is-phone .sr-dropdown-menu {
+    width: 160px;
+}
+
+.is-mobile .sr-menu-item,
+.is-phone .sr-menu-item {
+    padding: 10px 12px;
+    font-size: 14px;
+}
+
+/* 移动端：返回按钮更大触摸区域 */
+.is-mobile .sr-exit-btn,
+.is-phone .sr-exit-btn {
+    padding: 8px;
+    margin-left: -4px;
+}
+
+/* ==========================================
+   极窄屏幕适配 (< 360px)
+   ========================================== */
+@media (max-width: 359px) {
+    .sr-rating-buttons {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 6px;
+    }
+
+    .sr-linear-btn {
+        padding: 10px 6px;
+        min-height: 48px;
+    }
+
+    .sr-stat-badge {
+        padding: 2px 4px;
+    }
+}
+
+/* ==========================================
+   内联编辑器样式
+   ========================================== */
+
+/* 编辑器容器 */
+.sr-card-editor-view {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.sr-cm-container {
+    flex: 1;
+    overflow: auto;
+}
+
+.sr-cm-container .cm-editor {
+    height: 100%;
+}
+
+.sr-cm-container .cm-scroller {
+    font-family: var(--font-text);
+}
+
+/* 编辑器提示栏 */
+.sr-editor-hint {
+    padding: 8px 16px;
+    background: var(--background-primary);
+    border-top: 1px solid var(--background-modifier-border);
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.sr-key-hints {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-monospace);
+    font-size: 10px;
+    opacity: 0.7;
+}
+
+.sr-key-hints .sr-divider {
+    opacity: 0.4;
+}
+
+/* 编辑模式卡片样式 */
+.sr-card-content-area.sr-is-editing {
+    border-left: 2px solid var(--interactive-accent);
+}
+
+/* 退出编辑按钮 */
+.sr-exit-edit-btn {
+    background: rgba(34, 197, 94, 0.1) !important;
+    border-color: rgba(34, 197, 94, 0.2) !important;
+    color: #22c55e !important;
+}
+
+.sr-exit-edit-btn:hover {
+    background: rgba(34, 197, 94, 0.2) !important;
+}
+
+/* ==========================================
+   代码块 Cloze 卡片样式
+   ========================================== */
+.sr-code-block-card {
+    font-family: var(--font-monospace);
+    font-size: 13px;
+    line-height: 1.6;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    overflow: hidden;
+    max-height: 100%;
+    overflow-y: auto;
+    margin: -32px -40px -32px -40px;
+    padding: 0;
+    width: calc(100% + 80px);
+}
+
+.sr-code-block-card > div {
+    display: flex;
+    align-items: flex-start;
+    padding: 2px 12px 2px 0;
+    border-left: 3px solid transparent;
+}
+
+/* Cloze 行高亮 */
+.sr-code-cloze-line {
+    background: rgba(59, 130, 246, 0.15) !important;
+    border-left-color: #3b82f6 !important;
+    animation: sr-cloze-pulse 2s ease-in-out infinite;
+}
+
+@keyframes sr-cloze-pulse {
+    0%,
+    100% {
+        background: rgba(59, 130, 246, 0.15);
+    }
+
+    50% {
+        background: rgba(59, 130, 246, 0.25);
+    }
+}
+
+/* 上下文行 */
+.sr-code-context-line {
+    opacity: 1;
+}
+
+/* 行号样式 */
+.sr-code-line-number {
+    width: 40px;
+    min-width: 40px;
+    padding: 0 8px;
+    text-align: right;
+    color: var(--text-muted);
+    background: transparent;
+    user-select: none;
+    flex-shrink: 0;
+    opacity: 0.5;
+}
+
+.sr-code-cloze-line .sr-code-line-number {
+    color: #3b82f6;
+    font-weight: bold;
+    opacity: 1;
+}
+
+/* 行内容 */
+.sr-code-line-content {
+    flex: 1;
+    padding-left: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* 暗色主题 */
+.theme-dark .sr-code-cloze-line {
+    background: rgba(59, 130, 246, 0.2) !important;
+}
+
+/* Cloze 占位符样式 */
+.sr-cloze-placeholder {
+    color: #2196f3 !important;
+    font-weight: bold !important;
+}
+
+.sr-cloze-answer {
+    color: #2196f3 !important;
+    font-weight: bold !important;
+}
+
+/* 代码块内占位符样式 */
+.sr-code-block-card .sr-cloze-placeholder {
+    background: rgba(33, 150, 243, 0.15) !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    border: 1px solid #2196f3 !important;
+    animation: sr-placeholder-pulse 1.5s ease-in-out infinite !important;
+}
+
+.sr-code-block-card .sr-cloze-answer {
+    color: #22c55e !important;
+    background: rgba(34, 197, 94, 0.15) !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    border: 1px solid #22c55e !important;
+    box-shadow: 0 0 8px 2px rgba(34, 197, 94, 0.2) !important;
+}
+
+@keyframes sr-placeholder-pulse {
+    0%,
+    100% {
+        background: rgba(33, 150, 243, 0.15);
+        box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.4);
+    }
+
+    50% {
+        background: rgba(33, 150, 243, 0.25);
+        box-shadow: 0 0 8px 2px rgba(33, 150, 243, 0.3);
+    }
+}
+
+.sr-code-line-content .sr-cloze-placeholder,
+.sr-code-line-content .sr-cloze-answer {
+    font-family: inherit !important;
+}
+
+/* 暗色主题 */
+.theme-dark .sr-code-block-card .sr-cloze-placeholder {
+    background: rgba(33, 150, 243, 0.25) !important;
+}
+
+.theme-dark .sr-code-block-card .sr-cloze-answer {
+    background: rgba(34, 197, 94, 0.25) !important;
+}
+
+/* Cloze Wrapper：同时包含占位符和答案 */
+.sr-cloze-wrapper {
+    display: inline;
+}
+
+/* 默认显示占位符，隐藏答案 */
+.sr-cloze-wrapper .sr-cloze-placeholder {
+    display: inline !important;
+}
+
+.sr-cloze-wrapper .sr-cloze-answer {
+    display: none !important;
+}
+
+/* 翻面后：隐藏占位符，显示答案 */
+.sr-code-block-card.flipped .sr-cloze-wrapper .sr-cloze-placeholder,
+.sr-flipped .sr-cloze-wrapper .sr-cloze-placeholder {
+    display: none !important;
+}
+
+.sr-code-block-card.flipped .sr-cloze-wrapper .sr-cloze-answer,
+.sr-flipped .sr-cloze-wrapper .sr-cloze-answer {
+    display: inline !important;
+}
+
+/* ==========================================
+   LaTeX 数学公式卡片优化
+   ========================================== */
+
+/* 卡片内数学公式字号，与编辑器大小保持一致 */
+.sr-card-content-area .MathJax,
+.sr-card-content-area mjx-container {
+    font-size: 1.15em !important;
+    color: var(--text-normal);
+    outline: none;
+}
+
+/* 块级公式居中，增加间距 */
+.sr-card-content-area mjx-container[display="true"] {
+    padding: 16px 0;
+    width: 100%;
+    text-align: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-width: 100%;
+}
+
+/* 移动端公式字号适配 */
+.is-mobile .sr-card-content-area .MathJax,
+.is-mobile .sr-card-content-area mjx-container {
+    font-size: 1.1em !important;
+}
+
+/* ==========================================
+   头部图标按钮通用样式 (UIsandbox Port)
+   ========================================== */
+.sr-header-btn {
+    /* 核心：强制去除 Obsidian 默认按钮背景和边框 */
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+
+    /* 布局与尺寸 (对应 p-1.5) */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    border-radius: 6px;
+    /* rounded-md */
+    cursor: pointer;
+    transition:
+        background-color 0.2s,
+        color 0.2s;
+
+    /* 默认颜色 (对应 text-zinc-400 / dark:text-zinc-500) */
+    color: #a1a1aa;
+}
+
+/* 深色模式下的颜色适配 */
+.theme-dark .sr-header-btn {
+    color: #71717a;
+}
+
+/* 悬停状态 (对应 hover:bg-zinc-100 / dark:hover:bg-white/5) */
+.sr-header-btn:hover {
+    background-color: rgba(0, 0, 0, 0.05) !important;
+    color: #52525b;
+    /* hover:text-zinc-600 */
+}
+
+.theme-dark .sr-header-btn:hover {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    color: #d4d4d8;
+    /* dark:hover:text-zinc-300 */
+}
+
+/* 激活状态 (用于菜单打开时保持高亮) */
+.sr-header-btn.active {
+    background-color: rgba(0, 0, 0, 0.05) !important;
+    color: #18181b;
+}
+
+.theme-dark .sr-header-btn.active {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+    color: #e4e4e7;
+}
+/* Filename Badge */
+.sr-filename-badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: var(--background-primary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.sr-filename-badge:hover {
+    color: var(--text-normal);
+    background: var(--background-modifier-hover);
+    border-color: var(--text-faint);
+}

@@ -1,0 +1,367 @@
+/**
+ * LaTeX Popover Styles
+ * 
+ * Migrated from UIsandbox:
+ * - LatexClozePopover.css
+ * - SharpLatexStyles.css
+ * - LatexClozeModal.css
+ * - LatexRenderer.css
+ * 
+ * Used by: src/ui/components/LatexPopover.tsx
+ */
+
+/* ==========================================
+   CSS Variables for Sharp Design
+   ========================================== */
+.sr-latex-popover-anchor {
+    --sharp-bg: var(--background-primary, #09090b);
+    --sharp-border: var(--background-modifier-border, #27272a);
+    --sharp-text: var(--text-normal, #e4e4e7);
+    --sharp-text-dim: var(--text-muted, #52525b);
+    --sharp-accent: var(--interactive-accent, #3b82f6);
+    --font-mono: var(--font-monospace, "JetBrains Mono", "Fira Code", "Consolas", monospace);
+}
+
+/* ==========================================
+   Popover Anchor (positioned by manager)
+   ========================================== */
+
+.sr-latex-popover-anchor {
+    position: absolute;
+    z-index: 1000;
+    pointer-events: auto;
+}
+
+/* ==========================================
+   Sharp Popover Container (直角设计)
+   ========================================== */
+
+.sr-latex-popover-sharp {
+    position: relative;
+    width: 100%;
+    max-width: 400px;
+    background-color: var(--sharp-bg);
+    border: 1px solid var(--sharp-border);
+    border-radius: 0;
+    /* 直角设计 */
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: sr-latex-popover-in 0.12s ease-out;
+}
+
+@keyframes sr-latex-popover-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ==========================================
+   Tabs Bar (多 Cloze ID 切换)
+   ========================================== */
+
+.sr-latex-tabs-bar {
+    display: flex;
+    gap: 16px;
+    padding: 12px 16px;
+    background: var(--background-secondary, #141416);
+    border-bottom: 1px solid var(--sharp-border);
+}
+
+.sr-latex-tab-btn {
+    background: transparent;
+    border: none;
+    padding: 4px 0;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--sharp-text-dim);
+    position: relative;
+    transition: color 0.15s ease;
+}
+
+.sr-latex-tab-btn:hover {
+    color: var(--sharp-text);
+}
+
+.sr-latex-tab-btn.active {
+    color: var(--text-on-accent, #ffffff);
+    font-weight: 700;
+}
+
+.sr-latex-tab-btn.active::after {
+    content: "";
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background-color: var(--sharp-accent);
+    border-radius: 0;
+}
+
+/* ==========================================
+   Preview Content Area
+   ========================================== */
+
+.sr-latex-preview-content {
+    padding: 40px 20px;
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3em;
+    color: var(--sharp-text);
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.sr-latex-preview-content:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* KaTeX 样式覆盖 */
+.sr-latex-preview-content .katex,
+.sr-latex-preview-content mjx-container {
+    font-size: 1.2em;
+}
+
+.sr-latex-preview-content p {
+    margin: 0;
+    text-align: center;
+}
+
+/* ==========================================
+   Round Popover Style (圆角设计备选)
+   ========================================== */
+
+.sr-latex-popover {
+    position: fixed;
+    background: var(--background-primary, #1e1e1e);
+    border: 1px solid var(--background-modifier-border, #333);
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    padding: 16px;
+    min-width: 280px;
+    max-width: 90vw;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: sr-latex-popover-in 0.15s ease-out;
+}
+
+/* 预览框 */
+.sr-latex-preview-box {
+    background: #0a0a0a;
+    border-radius: 6px;
+    padding: 24px 32px;
+    text-align: center;
+    overflow-x: auto;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sr-latex-preview-box:hover {
+    border-color: rgba(96, 165, 250, 0.3);
+    box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.2);
+}
+
+.sr-latex-preview-box .katex {
+    font-size: 1.3em;
+}
+
+/* ==========================================
+   控制栏 & ID Badges
+   ========================================== */
+
+.sr-latex-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sr-latex-id-badges {
+    display: flex;
+    gap: 6px;
+}
+
+.sr-latex-id-badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: #71717a;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-family: monospace;
+    transition: all 0.15s ease;
+}
+
+.sr-latex-id-badge.active {
+    color: #60a5fa;
+    background: rgba(96, 165, 250, 0.15);
+}
+
+.sr-latex-actions {
+    display: flex;
+    gap: 4px;
+}
+
+/* ==========================================
+   Icon Button (通用)
+   ========================================== */
+
+.sr-icon-btn {
+    background: transparent;
+    border: none;
+    color: #71717a;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.sr-icon-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #e4e4e7;
+}
+
+.sr-icon-btn.active {
+    color: #60a5fa;
+    background: rgba(96, 165, 250, 0.15);
+}
+
+/* ==========================================
+   Preview Modal (固定定位版本)
+   ========================================== */
+
+.sr-preview-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: transparent;
+}
+
+.sr-preview-modal {
+    position: fixed;
+    min-width: 200px;
+    max-width: 600px;
+    background: #1e1e20;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.4),
+        0 0 0 1px rgba(255, 255, 255, 0.05);
+    z-index: 1000;
+    overflow: hidden;
+    animation: sr-preview-in 0.12s ease-out;
+}
+
+@keyframes sr-preview-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.sr-preview-content {
+    padding: 16px 20px;
+    background: #141416;
+    color: #e4e4e7;
+    font-size: 18px;
+    line-height: 1.6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+}
+
+.sr-preview-content .katex {
+    font-size: 1.2em;
+}
+
+.sr-preview-mode-indicator {
+    padding: 6px 12px;
+    background: #1e1e20;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 11px;
+    color: #52525b;
+    text-align: center;
+    letter-spacing: 0.5px;
+}
+
+/* ==========================================
+   Dragging State
+   ========================================== */
+
+.sr-latex-popover-anchor.dragging {
+    opacity: 0.95;
+    cursor: grabbing;
+}
+
+.sr-latex-popover-anchor.dragging .sr-latex-popover-sharp {
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+}
+
+/* ==========================================
+   LaTeX Renderer Container
+   ========================================== */
+
+.sr-latex-container {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.sr-latex-container .katex {
+    font-size: inherit;
+}
+
+.sr-latex-error {
+    color: #ef4444;
+    font-family: monospace;
+    font-size: 12px;
+    background: rgba(239, 68, 68, 0.1);
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+/* ==========================================
+   Mobile Responsive
+   ========================================== */
+
+.is-mobile .sr-latex-popover-sharp {
+    max-width: 90vw;
+}
+
+.is-mobile .sr-latex-tab-btn {
+    padding: 8px 4px;
+    font-size: 14px;
+}
+
+.is-mobile .sr-latex-preview-content {
+    padding: 24px 16px;
+    min-height: 100px;
+}

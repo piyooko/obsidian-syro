@@ -1,0 +1,74 @@
+# Intellij
+*.iml
+.idea
+
+# vscode
+.vscode
+.history
+
+# npm
+node_modules
+
+# yarn
+yarn-error.log
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# build
+build
+config.js
+
+# testing
+coverage
+tests/vaults/*/.obsidian
+/.obsidian/
+
+# mkdocs
+site/
+venv/
+.venv/
+docs/docs/en/media/~*
+.obsidian/plugins/syro-beta/*
+
+# env
+env.sh
+
+# plugin test
+plugin_test/
+
+# generated debug artifacts
+/.tsc_errors*.txt
+/build_*.log
+/build_errors.txt
+/build_result.txt
+/compile_errors.txt
+/debug_parser_output.txt
+/debug_parser_readable.txt
+/esbuild_error.log
+/jest_output.txt
+/jest_utf8.txt
+/obsidian_help.txt
+/obsidian_help_utf8.txt
+/debug-parser.ts
+/sync-opt-test.md
+/test-cards.js
+/test-inline.js
+/test-parser.ts
+/test-remove-card.ts
+/test-rendered.ts
+/test-sync.ts
+/test-output*.txt
+/tsc_error.log
+/tsc_errors*.txt
+/tsc_output.txt
+
+# local worktrees
+.worktrees/
+
+# local git history backups
+.git-backups/

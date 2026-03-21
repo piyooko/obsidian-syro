@@ -1,0 +1,10 @@
+{
+    "id": "syro",
+    "name": "Syro",
+    "version": "0.0.1",
+    "minAppVersion": "1.4.0",
+    "description": "Spaced Repetition and Incremental everything. ",
+    "author": "piyooko",
+    "authorUrl": "https://github.com/piyooko",
+    "isDesktopOnly": false
+}

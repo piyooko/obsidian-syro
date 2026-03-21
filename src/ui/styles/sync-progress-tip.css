@@ -1,0 +1,76 @@
+/* Sync progress tip styled to match Obsidian's right-top notice feel. */
+
+.sr-sync-tip-container {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    width: min(320px, calc(100vw - 32px));
+    padding: 12px 14px;
+    border: none;
+    border-radius: var(--radius-m);
+    background: var(--background-primary);
+    box-shadow: var(--shadow-s);
+    z-index: var(--layer-notice);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    opacity: 0;
+    transform: translateY(-8px);
+    transition:
+        opacity 0.18s ease-out,
+        transform 0.18s ease-out;
+    pointer-events: none;
+}
+
+.sr-sync-tip-container.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.sr-sync-tip-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.sr-sync-tip-title {
+    min-width: 0;
+    font-size: var(--font-ui-small);
+    font-weight: var(--font-semibold);
+    color: var(--text-normal);
+    line-height: 1.35;
+}
+
+.sr-sync-tip-counts {
+    flex: 0 0 auto;
+    font-size: 11px;
+    line-height: 1;
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
+    font-variant-numeric: tabular-nums;
+}
+
+.sr-sync-tip-progress-track {
+    height: 5px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--background-modifier-border-hover);
+}
+
+.sr-sync-tip-progress-fill {
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: var(--interactive-accent);
+    transition:
+        width 0.18s ease-out,
+        background-color 0.18s ease-out;
+}
+
+.is-mobile .sr-sync-tip-container {
+    top: max(12px, env(safe-area-inset-top));
+    right: 12px;
+    left: 12px;
+    width: auto;
+}

@@ -1,0 +1,243 @@
+/**
+ * 这个文件主要是干什么的：
+ * 封装了牌组的路径逻辑 (例如 `#flashcards/science/physics`)。
+ * 负责解析 Tag 字符串，处理层级关系，以及格式化输出。
+ *
+ * 它在项目中属于：工具/模型层 (Utility/Model Layer)
+ *
+ * 它会用到哪些文件：
+ * 1. src/settings.ts (获取 Tag 设置)
+ *
+ * 哪些文件会用到它：
+ * 1. src/Deck.ts (牌组的层级标识)
+ * 2. src/Question.ts (问题所属的 Tag)
+ * 3. src/NoteQuestionParser.ts (解析笔记中的 Tag)
+ */
+/**
+ * [模型] 处理牌组路径（如 #tag/subtag）。
+ */
+import { SRSettings } from "src/settings";
+import { DEFAULT_DECKNAME, OBSIDIAN_TAG_AT_STARTOFLINE_REGEX } from "./constants";
+import { ISRFile } from "./SRFile";
+import { DataStore } from "src/dataStore/data";
+
+export class TopicPath {
+    path: string[];
+
+    constructor(path: string[]) {
+        if (path == null) throw "null path";
+        if (path.some((str) => str.includes("/"))) throw "path entries must not contain '/'";
+        this.path = path;
+    }
+
+    get hasPath(): boolean {
+        return this.path.length > 0;
+    }
+
+    get isEmptyPath(): boolean {
+        return !this.hasPath;
+    }
+
+    static get emptyPath(): TopicPath {
+        return new TopicPath([]);
+    }
+
+    shift(): string {
+        if (this.isEmptyPath) throw "can't shift an empty path";
+        return this.path.shift();
+    }
+
+    clone(): TopicPath {
+        return new TopicPath([...this.path]);
+    }
+
+    formatAsTag(): string {
+        if (this.isEmptyPath) throw "Empty path";
+        const result = "#" + this.path.join("/");
+        return result;
+    }
+
+    isSameOrAncestorOf(topicPath: TopicPath): boolean {
+        if (this.isEmptyPath) return true;
+        if (this.path.length > topicPath.path.length) return false;
+        for (let i = 0; i < this.path.length; i++) {
+            if (this.path[i] != topicPath.path[i]) return false;
+        }
+        return true;
+    }
+
+    static getTopicPathFromCardText(cardText: string): TopicPath {
+        const path = cardText.trimStart().match(OBSIDIAN_TAG_AT_STARTOFLINE_REGEX)?.slice(-1)[0];
+        return path?.length > 0 ? TopicPath.getTopicPathFromTag(path) : null;
+    }
+
+    static isValidTag(tag: string): boolean {
+        if (tag == null || tag.length == 0) return false;
+        if (tag[0] != "#") return false;
+        if (tag.length == 1) return false;
+
+        return true;
+    }
+
+    static getTopicPathFromTag(tag: string): TopicPath {
+        if (tag == null || tag.length == 0) throw "Null/empty tag";
+        if (tag[0] != "#") throw "Tag must start with #";
+        if (tag.length == 1) throw "Invalid tag";
+
+        const path: string[] = tag
+            .replace("#", "")
+            .split("/")
+            .filter((str) => str);
+        return new TopicPath(path);
+    }
+
+    static getFolderPathFromFilename(noteFile: ISRFile, settings: SRSettings): TopicPath {
+        let result: TopicPath = TopicPath.emptyPath;
+
+        if (settings.convertFoldersToDecks) {
+            const deckPath: string[] = noteFile.path.split("/");
+
+            // 取出文件名，去掉后缀，作为牌组的最后一层
+            const filename = deckPath.pop();
+            if (filename) {
+                // 去除 .md 后缀 (或者其他扩展名)
+                const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
+                deckPath.push(nameWithoutExt);
+            }
+
+            if (deckPath.length != 0) {
+                result = new TopicPath(deckPath);
+            }
+        }
+        if (result.isEmptyPath) {
+            result = getTopicPathTrackedfile(result);
+        }
+
+        return result;
+
+        function getTopicPathTrackedfile(result: TopicPath) {
+            if (result.isEmptyPath && settings.trackedNoteToDecks) {
+                const tagList: TopicPath[] = TopicPathList.convertTagListToTopicPathList(
+                    noteFile.getAllTagsFromCache(),
+                ).list;
+                outer: for (const tagToReview of TopicPathList.convertTagListToTopicPathList(
+                    settings.tagsToReview,
+                ).list) {
+                    for (const tag of tagList) {
+                        if (tagToReview.isSameOrAncestorOf(tag)) {
+                            result = tag;
+                            break outer;
+                        }
+                    }
+                }
+                const store = DataStore.getInstance();
+                if (result.isEmptyPath) {
+                    if (store.isInTrackedFiles(noteFile.path)) {
+                        let deckName = store.getTrackedFile(noteFile.path).lastTag;
+                        if (deckName == null) {
+                            deckName = DEFAULT_DECKNAME;
+                        } else if (TopicPath.isValidTag(deckName)) {
+                            deckName = deckName.slice(1);
+                        }
+                        const deckPath = deckName.split("/");
+                        result = new TopicPath(deckPath);
+                    }
+                }
+            }
+            return result;
+        }
+    }
+}
+
+export class TopicPathList {
+    list: TopicPath[];
+    lineNum: number;
+
+    constructor(list: TopicPath[], lineNum: number = null) {
+        if (list == null) throw "TopicPathList null";
+        this.list = list;
+        this.lineNum = lineNum;
+    }
+
+    get length(): number {
+        return this.list.length;
+    }
+
+    isAnyElementSameOrAncestorOf(topicPath: TopicPath): boolean {
+        return this.list.some((item) => item.isSameOrAncestorOf(topicPath));
+    }
+
+    formatPsv() {
+        return this.format("|");
+    }
+
+    format(sep: string) {
+        return this.list.map((topicPath) => topicPath.formatAsTag()).join(sep);
+    }
+
+    static empty(): TopicPathList {
+        return new TopicPathList([]);
+    }
+
+    static fromPsv(str: string, lineNum: number): TopicPathList {
+        const result: TopicPathList = TopicPathList.convertTagListToTopicPathList(str.split("|"));
+        result.lineNum = lineNum;
+        return result;
+    }
+
+    //
+    // tagList is a list of tags such as:
+    //      ["#flashcards/computing", "#boring-stuff", "#news-worthy"]
+    // validTopicPathList is a list of valid tags, such as those from settings.flashcardTags,E.g.
+    //      ["#flashcards"]
+    //
+    // This returns a filtered version of tagList, containing only topic paths that are considered valid.
+    // Validity is defined as "isAnyElementSameOrAncestorOf", and "#flashcards" is considered the ancestor of
+    // "#flashcards/computing".
+    //
+    // Therefore this would return:
+    //      "#flashcards/computing" (but not "#boring-stuff" or "#news-worthy")
+    //
+    static filterValidTopicPathsFromTagList(
+        list: TopicPathList,
+        validTopicPathList: TopicPathList,
+        lineNum: number = null,
+    ): TopicPathList {
+        const result: TopicPath[] = [];
+        for (const tag of list.list) {
+            if (validTopicPathList.isAnyElementSameOrAncestorOf(tag)) result.push(tag);
+        }
+
+        return new TopicPathList(result, lineNum);
+    }
+
+    static convertTagListToTopicPathList(tagList: string[]): TopicPathList {
+        const result: TopicPath[] = [];
+        for (const tag of tagList) {
+            if (TopicPath.isValidTag(tag)) result.push(TopicPath.getTopicPathFromTag(tag));
+        }
+        return new TopicPathList(result);
+    }
+}
+
+export class TopicPathWithWs {
+    topicPath: TopicPath;
+
+    // The white space prior to the topic path
+    // We keep this so that when a question is updated, we can retain the original spacing
+    preWhitespace: string;
+
+    postWhitespace: string;
+
+    constructor(topicPath: TopicPath, preWhitespace: string, postWhitespace: string) {
+        if (!topicPath || topicPath.isEmptyPath) throw "topicPath null";
+
+        this.topicPath = topicPath;
+        this.preWhitespace = preWhitespace;
+        this.postWhitespace = postWhitespace;
+    }
+
+    formatWithWs(): string {
+        return `${this.preWhitespace}${this.topicPath.formatAsTag()}${this.postWhitespace}`;
+    }
+}
