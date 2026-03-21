@@ -1,7 +1,7 @@
 {
     "name": "syro",
-    "version": "0.0.2",
-    "description": "Spaced repetition and incremental knowledge workflows for Obsidian.",
+    "version": "0.0.3",
+    "description": "Seamless spaced repetition, flashcards, and incremental reading workflows. A stylized, modern interface alternative to Anki for your plain-text knowledge base.",
     "main": "build/main.js",
     "scripts": {
         "build": "node esbuild.config.mjs production",

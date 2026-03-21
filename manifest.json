@@ -1,9 +1,9 @@
 {
     "id": "syro",
     "name": "Syro",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "minAppVersion": "1.4.0",
-    "description": "Spaced Repetition and Incremental everything. ",
+    "description": "Seamless spaced repetition, flashcards, and incremental reading workflows. A stylized, modern interface alternative to Anki for your plain-text knowledge base.",
     "author": "piyooko",
     "authorUrl": "https://github.com/piyooko",
     "isDesktopOnly": true

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.0.3] - 2026-03-21
+
+- Finalized the plugin description for the initial community submission and aligned it across the repo, release metadata, and community submission.
+- Kept the first public release on `0.0.3` while replacing the unpublished short-description draft.
+
 ## [0.0.2] - 2026-03-21
 
 - Marked the release as desktop-only for the first community submission.
