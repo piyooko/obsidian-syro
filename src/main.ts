@@ -118,6 +118,10 @@ import {
 } from "src/cache/noteCacheStore";
 import { ReviewCommitStore } from "src/dataStore/reviewCommitStore";
 import { autoCommitReviewResponseToTimeline } from "src/ui/timeline/reviewResponseTimeline";
+import {
+    FIRST_RUN_TUTORIAL_NOTE_CONTENT,
+    FIRST_RUN_TUTORIAL_NOTE_PATH,
+} from "src/firstRunTutorial";
 
 // 每日牌组统计数据结构（持久化存储）
 // 每日牌组统计数据结构（持久化存储）
@@ -331,6 +335,11 @@ export default class SRPlugin extends Plugin {
         if (this.noteAlgorithm && this.noteAlgorithm.settings) {
             settings.algorithmSettings[settings.noteAlgorithm] = this.noteAlgorithm.settings;
         }
+
+        if (obsidianJustInstalled) {
+            await this.initializeFirstRunTutorialNote();
+        }
+
         this.savePluginData();
 
         IReviewNote.create(settings);
@@ -1064,6 +1073,37 @@ export default class SRPlugin extends Plugin {
         }
 
         return null;
+    }
+
+    private async initializeFirstRunTutorialNote(): Promise<void> {
+        let tutorialFile = this.app.vault.getAbstractFileByPath(FIRST_RUN_TUTORIAL_NOTE_PATH);
+
+        if (!tutorialFile) {
+            tutorialFile = await this.app.vault.create(
+                FIRST_RUN_TUTORIAL_NOTE_PATH,
+                FIRST_RUN_TUTORIAL_NOTE_CONTENT,
+            );
+        }
+
+        if (!(tutorialFile instanceof TFile)) {
+            console.warn(
+                "[SR] First-run tutorial path is not a markdown file:",
+                FIRST_RUN_TUTORIAL_NOTE_PATH,
+            );
+            return;
+        }
+
+        this.noteReviewStore.ensureTracked(
+            tutorialFile.path,
+            DEFAULT_DECKNAME,
+            "manual",
+            this.noteAlgorithm,
+        );
+
+        await this.noteReviewStore.save();
+        this.reviewDecks = this.noteReviewStore.buildReviewDecks(this.app.vault);
+        this.updateAndSortDueNotes();
+        this.syncEvents.emit("note-review-updated");
     }
 
     public async refreshNoteReview({

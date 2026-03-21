@@ -361,8 +361,8 @@ export const DEFAULT_SETTINGS: SRSettings = {
     // Timeline Settings
     showScrollPercentage: true,
     autoExpandTimeline: true,
-    timelineAutoCommitReviewSelection: false,
-    timelineEnableDurationPrefixSyntax: false,
+    timelineAutoCommitReviewSelection: true,
+    timelineEnableDurationPrefixSyntax: true,
 
     // License defaults
     licenseKey: "",

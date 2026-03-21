@@ -50,8 +50,8 @@ export function settingsToUIState(settings: SRSettings): UISettingsState {
         hideNoteReviewSidebarFilters: settings.hideNoteReviewSidebarFilters ?? false,
         showScrollPercentage: settings.showScrollPercentage ?? true,
         autoExpandTimeline: settings.autoExpandTimeline ?? true,
-        timelineAutoCommitReviewSelection: settings.timelineAutoCommitReviewSelection ?? false,
-        timelineEnableDurationPrefixSyntax: settings.timelineEnableDurationPrefixSyntax ?? false,
+        timelineAutoCommitReviewSelection: settings.timelineAutoCommitReviewSelection ?? true,
+        timelineEnableDurationPrefixSyntax: settings.timelineEnableDurationPrefixSyntax ?? true,
 
         // Algorithm
         cardAlgorithm: settings.cardAlgorithm || "Fsrs",
