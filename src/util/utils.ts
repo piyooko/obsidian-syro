@@ -12,8 +12,7 @@
  * 哪些文件会用到它：
  * (被项目中几乎所有模块广泛引用)
  */
-import moment from "moment";
-import { Moment } from "moment";
+import type { Moment } from "moment";
 import { sep } from "path";
 import { PREFERRED_DATE_FORMAT } from "src/constants";
 

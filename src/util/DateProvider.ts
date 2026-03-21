@@ -16,9 +16,12 @@
 /**
  * 日期处理（便于测试）。
  */
-import moment from "moment";
-import { Moment } from "moment";
+import { moment as obsidianMoment } from "obsidian";
+import type momentFactory from "moment";
+import type { Moment } from "moment";
 import { ALLOWED_DATE_FORMATS } from "src/constants";
+
+const moment = obsidianMoment as unknown as typeof momentFactory;
 
 export interface IDateProvider {
     get today(): Moment;

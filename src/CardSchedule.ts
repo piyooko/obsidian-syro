@@ -10,7 +10,7 @@
 
 
 
-import { Moment } from "moment";
+import type { Moment } from "moment";
 import {
     LEGACY_SCHEDULING_EXTRACTOR,
     MULTI_SCHEDULING_EXTRACTOR,

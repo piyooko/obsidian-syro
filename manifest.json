@@ -6,5 +6,5 @@
     "description": "Spaced Repetition and Incremental everything. ",
     "author": "piyooko",
     "authorUrl": "https://github.com/piyooko",
-    "isDesktopOnly": false
+    "isDesktopOnly": true
 }

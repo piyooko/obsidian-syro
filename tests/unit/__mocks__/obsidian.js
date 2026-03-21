@@ -1,3 +1,13 @@
+const actualMoment = require("moment");
+const moment = (...args) => actualMoment(...args);
+
+Object.assign(moment, actualMoment);
+moment.locale = jest.fn((...args) => actualMoment.locale(...args));
+
+if (typeof window !== "undefined") {
+    window.moment = moment;
+}
+
 class Plugin {}
 
 class ItemView {
@@ -129,9 +139,7 @@ module.exports = new Proxy(
         TFile,
         WorkspaceLeaf,
         getAllTags: jest.fn(() => []),
-        moment: {
-            locale: jest.fn(() => "en"),
-        },
+        moment,
         setTooltip: jest.fn(),
     },
     {
