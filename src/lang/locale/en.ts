@@ -674,6 +674,8 @@ export default {
     SETTINGS_SYNC_PROGRESS_DISPLAY_ALWAYS: "Always",
     SETTINGS_SYNC_PROGRESS_DISPLAY_FULL_ONLY: "Only on Full Rebuild",
     SETTINGS_SYNC_PROGRESS_DISPLAY_NEVER: "Never",
+    SETTINGS_CARD_CAPTURE_REBUILD_CONFIRM:
+        "**Card capture rules changed.** Existing notes need a rebuild sync before they can be reparsed with the new capture settings.\n\nRebuild now?",
     SETTINGS_SECTION_SYNC: "Sync",
     SETTINGS_AUTO_INCREMENTAL_SYNC: "Automatic Incremental Sync",
     SETTINGS_AUTO_INCREMENTAL_SYNC_DESC:

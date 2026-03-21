@@ -9,9 +9,11 @@
 import { App, PluginSettingTab } from "obsidian";
 import React from "react";
 import { createRoot, Root } from "react-dom/client";
+import { t } from "src/lang/helpers";
 import type SRPlugin from "src/main";
 import { EmbeddedSettingsPanel } from "src/ui/components/EmbeddedSettingsPanel";
 import { settingsToUIState, mergeUIStateToSettings } from "src/ui/adapters/settingsAdapter";
+import ConfirmModal from "src/ui/modals/confirm";
 import { UISettingsState } from "src/ui/types/settingsTypes";
 import { applySettingsUpdate } from "./applySettingsUpdate";
 
@@ -61,13 +63,15 @@ export class SRSettingTab extends PluginSettingTab {
      * 处理设置变更
      */
     private handleSettingsChange(newUISettings: UISettingsState): void {
+        const previousSettings = this.plugin.data.settings;
+        const mergedSettings = mergeUIStateToSettings(previousSettings, newUISettings);
+
+        // 立即更新运行时设置，保证紧接着的手动同步按新规则生效。
+        this.plugin.data.settings = mergedSettings;
+        this.plugin.markCardCaptureSettingsChange(previousSettings, mergedSettings);
+
         // 使用防抖保存
         applySettingsUpdate(async () => {
-            // 将 UI 设置合并回完整设置
-            const mergedSettings = mergeUIStateToSettings(this.plugin.data.settings, newUISettings);
-
-            // 保存设置
-            this.plugin.data.settings = mergedSettings;
             await this.plugin.savePluginData();
 
             // 实时更新状态栏样式
@@ -81,6 +85,21 @@ export class SRSettingTab extends PluginSettingTab {
                 if (leaf.view && typeof (leaf.view as any).redraw === "function") {
                     (leaf.view as any).redraw();
                 }
+            }
+
+            if (this.plugin.consumePendingCardCaptureRebuildPrompt()) {
+                new ConfirmModal(this.plugin, t("SETTINGS_CARD_CAPTURE_REBUILD_CONFIRM"), (confirmed) => {
+                    if (!confirmed) {
+                        return;
+                    }
+
+                    void this.plugin.requestSync({ trigger: "manual", mode: "full" }).catch((error) => {
+                        console.error(
+                            "[SR-Settings] Failed to rebuild after card capture setting change:",
+                            error,
+                        );
+                    });
+                }).open();
             }
         });
     }
