@@ -1406,14 +1406,14 @@ export default class SRPlugin extends Plugin {
         this.syncLock = true;
         this.syncEvents.emit("sync-start");
 
-        // --- 鏄剧ず鍚屾杩涘害鎻愮ず ---
+        // Show the sync progress tip while the cache is being rebuilt.
         const progressTip = this.shouldShowSyncProgressTip(syncMode)
-            ? new SyncProgressTip("姝ｅ湪鍚屾...")
+            ? new SyncProgressTip(t("SYNC_PROGRESS_START"), t("SYNC_PROGRESS_DONE"))
             : null;
         progressTip?.show();
         let releaseSaveSuppression: (() => void) | null = null;
         try {
-            // --- 娓呮礂鑴忔暟鎹?---
+            // Clean transient dirty items before rebuilding the sync state.
             if (this.store) {
                 this.store.cleanDirtyNewItems();
             }
@@ -1453,7 +1453,11 @@ export default class SRPlugin extends Plugin {
             const nextCache = new Map<string, { mtime: number; note: Note }>();
             this.noteCache = nextCache;
             const BATCH_SIZE = 50;
-            progressTip?.update(0, totalNotes, `姝ｅ湪瑙ｆ瀽绗旇 (0/${totalNotes})...`);
+            progressTip?.update(
+                0,
+                totalNotes,
+                t("SYNC_PROGRESS_PARSE_NOTES", { current: 0, total: totalNotes }),
+            );
             for (let i = 0; i < notes.length; i += BATCH_SIZE) {
                 const batch = notes.slice(i, i + BATCH_SIZE);
                 await Promise.all(
@@ -1482,18 +1486,21 @@ export default class SRPlugin extends Plugin {
                         progressTip?.update(
                             syncedCount,
                             totalNotes,
-                            `姝ｅ湪瑙ｆ瀽绗旇 (${syncedCount}/${totalNotes})...`,
+                            t("SYNC_PROGRESS_PARSE_NOTES", {
+                                current: syncedCount,
+                                total: totalNotes,
+                            }),
                         );
                     }),
                 );
             }
             if (settings.showSchedulingDebugMessages) {
                 console.debug(
-                    "[SR-Debug] sync鉃?: fullDeckTree 鎵€鏈夊崱鐗囨暟:",
+                    "[SR-Debug] sync: fullDeckTree total card count:",
                     fullDeckTree.getCardCount(CardListType.All, true),
                 );
             }
-            progressTip?.update(totalNotes, totalNotes, "姝ｅ湪鏋勫缓鐗岀粍鏍?..");
+            progressTip?.update(totalNotes, totalNotes, t("SYNC_PROGRESS_BUILD_TREE"));
             if (releaseSaveSuppression) {
                 releaseSaveSuppression();
                 releaseSaveSuppression = null;
@@ -1510,7 +1517,7 @@ export default class SRPlugin extends Plugin {
             this.deckTree = DeckTreeFilter.filterForReviewableCards(fullDeckTree);
             if (settings.showSchedulingDebugMessages) {
                 console.debug(
-                    "[SR-Debug] sync鉃?: deckTree (杩囨护 EditLater 鍚?:",
+                    "[SR-Debug] sync: deckTree after filtering EditLater cards:",
                     this.deckTree.getCardCount(CardListType.All, true),
                 );
             }
@@ -1530,7 +1537,7 @@ export default class SRPlugin extends Plugin {
             );
             if (settings.showSchedulingDebugMessages) {
                 console.debug(
-                    "[SR-Debug] sync鉃?: remainingDeckTree (杩囨护鏈埌鏈熷悗):",
+                    "[SR-Debug] sync: remainingDeckTree after filtering future cards:",
                     this.remainingDeckTree.getCardCount(CardListType.All, true),
                     "New:",
                     this.remainingDeckTree.getCardCount(CardListType.NewCard, true),
@@ -1597,7 +1604,7 @@ export default class SRPlugin extends Plugin {
             }
             if (this.data.settings.showSchedulingDebugMessages) {
                 console.debug(
-                    "[SR-Debug] 鍏ㄥ眬 DeckStatsService Cache 濉厖瀹屾垚锛屽叡璁＄墝缁勬暟: ",
+                    "[SR-Debug] DeckStatsService cache populated. Total decks:",
                     deckItemsMap.size,
                 );
                 this.showSyncInfo();
@@ -1620,11 +1627,9 @@ export default class SRPlugin extends Plugin {
                 return this.noteStats.getTotalCount();
             };
 
-            // 闅愯棌鍚屾杩涘害鎻愮ず
-
-            // 骞挎挱鍚屾瀹屾垚浜嬩欢锛岄€氱煡宸叉墦寮€鐨?UI 缁勪欢灞€閮ㄥ埛鏂版暟瀛?
+            // Broadcast the sync completion event so open UI surfaces can refresh.
             this.logRuntimeDebug(
-                "[SR-DynSync] plugin.sync() 瀹屾垚锛屽噯澶?emit sync-complete, remainingDeckTree subdecks:",
+                "[SR-DynSync] plugin.sync() completed, about to emit sync-complete. remainingDeckTree subdecks:",
                 this.remainingDeckTree?.subdecks?.length,
             );
             this.lastSuccessfulSyncStartedAt = syncStartedAt;
@@ -2348,7 +2353,7 @@ export default class SRPlugin extends Plugin {
                     movedCount++;
                     if (this.data.settings.showSchedulingDebugMessages) {
                         console.debug(
-                            `[SR-Debug] 绾犳瀛︿範鍗＄墖鐗╃悊浣嶇疆: ID=${card.Id} 浠?New 绉昏嚦 Learning (鐗岀粍: ${deckPath})`,
+                            `[SR-Debug] Corrected learning card placement: ID=${card.Id} moved from New to Learning (deck: ${deckPath})`,
                         );
                     }
                 }
@@ -2363,7 +2368,7 @@ export default class SRPlugin extends Plugin {
                     movedCount++;
                     if (this.data.settings.showSchedulingDebugMessages) {
                         console.debug(
-                            `[SR-Debug] 绾犳瀛︿範鍗＄墖鐗╃悊浣嶇疆: ID=${card.Id} 浠?Due 绉昏嚦 Learning (鐗岀粍: ${deckPath})`,
+                            `[SR-Debug] Corrected learning card placement: ID=${card.Id} moved from Due to Learning (deck: ${deckPath})`,
                         );
                     }
                 }

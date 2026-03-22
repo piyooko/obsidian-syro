@@ -32,6 +32,7 @@ type ViewType = "deck-list" | "review";
 interface ReviewSessionProps {
     plugin: SRPlugin;
     sequencer: IFlashcardReviewSequencer;
+    markdownOwner: Component;
     initialView?: ViewType;
     onClose?: () => void;
 }
@@ -136,6 +137,7 @@ function hasEditor(view: unknown): view is { editor: Editor } {
 export const ReviewSession: React.FC<ReviewSessionProps> = ({
     plugin,
     sequencer,
+    markdownOwner,
     initialView = "deck-list",
     onClose,
 }) => {
@@ -369,6 +371,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                             <CardReviewView
                                 sequencer={sequencer}
                                 plugin={plugin}
+                                markdownOwner={markdownOwner}
                                 onAnswer={(rating) => {
                                     void handleAnswer(rating);
                                 }}
@@ -493,14 +496,14 @@ const DeckListView: React.FC<DeckListViewProps> = ({
 
             const isTouchEvent = "touches" in event;
             const startX = isTouchEvent ? event.touches[0].clientX : event.clientX;
-            const startWidth = shell.offsetWidth || treeWidth;
+            const startWidth = Number(shell.offsetWidth || treeWidth);
             const minWidth = 320;
             const hostStyles = window.getComputedStyle(host);
             const hostPadding =
                 parseFloat(hostStyles.paddingLeft || "0") + parseFloat(hostStyles.paddingRight || "0");
             const maxWidth = Math.max(minWidth, host.clientWidth - hostPadding);
 
-            let currentWidth = startWidth;
+            let currentWidth: number = startWidth;
             shell.classList.add("sr-deck-tree-shell--resizing");
 
             const applyTreeRect = () => {
@@ -602,6 +605,7 @@ const DeckListView: React.FC<DeckListViewProps> = ({
 interface CardReviewViewProps {
     sequencer: IFlashcardReviewSequencer;
     plugin: SRPlugin;
+    markdownOwner: Component;
     onAnswer: (rating: number) => void;
     onUndo: () => void;
     onDelete: () => void;
@@ -612,27 +616,16 @@ interface CardReviewViewProps {
 const CardReviewView: React.FC<CardReviewViewProps> = ({
     sequencer,
     plugin,
+    markdownOwner,
     onAnswer,
     onUndo,
     onDelete,
     onExit,
     tick,
 }) => {
-    const markdownOwnerRef = useRef<Component | null>(null);
     const card = sequencer.currentCard;
     const question = sequencer.currentQuestion;
     const deck = sequencer.currentDeck;
-
-    useEffect(() => {
-        const owner = new Component();
-        owner.load();
-        markdownOwnerRef.current = owner;
-
-        return () => {
-            markdownOwnerRef.current = null;
-            owner.unload();
-        };
-    }, []);
 
     // Guard against transient empty state while the sequencer updates.
     if (!card || !question || !deck) {
@@ -641,16 +634,17 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
 
     const settings = plugin.data.settings;
 
-    // Compute intervals for each response button using the current scheduling state.
-    const intervals = [
-        sequencer.determineCardSchedule(ReviewResponse.Reset, card).interval,
-        sequencer.determineCardSchedule(ReviewResponse.Hard, card).interval,
-        sequencer.determineCardSchedule(ReviewResponse.Good, card).interval,
-        sequencer.determineCardSchedule(ReviewResponse.Easy, card).interval,
-    ];
-
-    // Convert intervals to button labels such as "1m" or "3d".
-    const btnLabels = intervals.map((interval) => textInterval(interval, false));
+    // Compute response labels once per card to avoid churning card props and re-render loops.
+    const btnLabels = useMemo(
+        () =>
+            [
+                sequencer.determineCardSchedule(ReviewResponse.Reset, card).interval,
+                sequencer.determineCardSchedule(ReviewResponse.Hard, card).interval,
+                sequencer.determineCardSchedule(ReviewResponse.Good, card).interval,
+                sequencer.determineCardSchedule(ReviewResponse.Easy, card).interval,
+            ].map((interval) => textInterval(interval, false)),
+        [sequencer, card],
+    );
 
     // Expand the current card text before rendering.
     const sourceText =
@@ -670,11 +664,14 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     let front = expanded[cardIdx]?.front || "";
     let back = expanded[cardIdx]?.back || "";
 
-    const cardState: CardState = {
-        front,
-        back,
-        responseButtonLabels: btnLabels,
-    };
+    const cardState: CardState = useMemo(
+        () => ({
+            front,
+            back,
+            responseButtonLabels: btnLabels,
+        }),
+        [front, back, btnLabels],
+    );
 
     // Pull deck stats for the current topic path.
     const topicPath = deck.getTopicPath();
@@ -697,7 +694,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     }
 
     // Breadcrumbs and deck-specific timing settings.
-    const breadcrumbs: string[] = question.questionContext || [];
+    const breadcrumbs = useMemo(() => question.questionContext || [], [question.questionContext]);
     const filename = question.note?.file?.basename || "Unknown";
 
     // Read the active deck preset to decide auto-advance timing.
@@ -707,7 +704,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     const autoAdvanceSeconds = preset?.autoAdvance ? preset.autoAdvanceSeconds || 10 : 0;
 
     // Collect extra debug data for the review UI when needed.
-    const getDebugInfo = () => {
+    const debugInfo = useMemo(() => {
         const item = plugin.store?.getItembyID(card.Id);
         if (!item) return null;
         return {
@@ -724,7 +721,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
             data: item.data || {},
             trace: card.debugTrace || [],
         };
-    };
+    }, [plugin.store, card.Id, card.debugTrace, deck.deckName]);
 
     // Open the source note and focus the reviewed line in the editor.
     const handleOpenNote = async () => {
@@ -768,6 +765,22 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
         onAnswer(0);
     };
 
+    const reviewStats = useMemo(
+        () => ({
+            new: stats.newCount,
+            learning: stats.learningCount,
+            due: stats.dueCount,
+        }),
+        [stats.newCount, stats.learningCount, stats.dueCount],
+    );
+
+    const sourcePath = question.note?.file?.path || "";
+    const renderCardMarkdown = useCallback(
+        (text: string, el: HTMLElement) =>
+            MarkdownRenderer.render(plugin.app, text, el, sourcePath, markdownOwner),
+        [plugin.app, sourcePath, markdownOwner],
+    );
+
     // Persist resized card dimensions.
     const handleResize = (width: number, height: number) => {
         settings.reactFlashcardWidth = width;
@@ -788,11 +801,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
         >
             <LinearCard
                 card={cardState}
-                stats={{
-                    new: stats.newCount,
-                    learning: stats.learningCount,
-                    due: stats.dueCount,
-                }}
+                stats={reviewStats}
                 cardType={cardType}
                 type={
                     question.questionType === CardType.Cloze ||
@@ -814,18 +823,10 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
                 onDelete={onDelete}
                 onExit={onExit}
                 onResize={handleResize}
-                renderMarkdown={(text, el) => {
-                    const sourcePath = question.note?.file?.path || "";
-                    const owner = markdownOwnerRef.current;
-                    if (!owner) {
-                        return Promise.resolve();
-                    }
-
-                    return MarkdownRenderer.render(plugin.app, text, el, sourcePath, owner);
-                }}
+                renderMarkdown={renderCardMarkdown}
                 width={settings.reactFlashcardWidth}
                 height={settings.reactFlashcardHeight}
-                debugInfo={getDebugInfo()}
+                debugInfo={debugInfo}
                 isMobile={Platform.isMobile}
                 plugin={plugin}
                 rawContent={question.questionText?.actualQuestion || ""}

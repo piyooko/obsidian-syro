@@ -221,13 +221,16 @@ export default class Commands {
                 let cleanedGhostItems = 0;
 
                 const progressTip = plugin.shouldShowSyncProgressTip("incremental")
-                    ? new SyncProgressTip("閸戝棗顦崥灞绢劄閺佺増宓?..")
+                    ? new SyncProgressTip(
+                          t("SYNC_PROGRESS_PREPARE_DATA"),
+                          t("SYNC_PROGRESS_DONE"),
+                      )
                     : null;
                 progressTip?.show();
                 console.debug("[GlobalSync] Start. Tracked files:", Object.keys(trackedFiles).length);
 
-                // ====== 缁?濮濄儻绱伴崥?path 閺傚洣娆㈤崢濠氬櫢閿涘牅绻氶悾娆忓幢閻楀洦娓舵径姘辨畱閺夛紕娲伴敍?======
-                progressTip?.update(0, 100, "濮濓絽婀崢濠氬櫢閺傚洣娆㈤弶锛勬窗...");
+                // Step 0: deduplicate entries that point to the same path.
+                progressTip?.update(0, 100, t("SYNC_PROGRESS_DEDUP_FILES"));
                 const pathMap = new Map<string, string[]>(); // path -> fileIDs
                 for (const [fileID, tf] of Object.entries(trackedFiles)) {
                     if (tf == null) continue;
@@ -237,10 +240,10 @@ export default class Commands {
                     pathMap.get(tf.path).push(fileID);
                 }
                 let deduped = 0;
-                // 閸掔娀娅庨柌宥咁槻閺夛紕娲伴敍鍫滅箽閻?trackedItems 閺堚偓婢舵氨娈戦柇锝嗘蒋閿?
+                // Merge duplicate entries and keep the one with the most tracked cards.
                 for (const [path, fileIDs] of pathMap) {
                     if (fileIDs.length <= 1) continue;
-                    // 閹垫儳鍤?trackedItems 閺堚偓婢舵氨娈戦弶锛勬窗娴ｆ粈璐?娑撶粯娼惄?
+                    // Pick the entry with the largest tracked item set as the survivor.
                     let bestID = fileIDs[0];
                     let bestCardCount = trackedFiles[bestID]?.trackedItems?.length ?? 0;
                     for (let k = 1; k < fileIDs.length; k++) {
@@ -250,7 +253,7 @@ export default class Commands {
                             bestID = fileIDs[k];
                         }
                     }
-                    // 閹跺﹤鍙炬禒鏍ㄦ蒋閻╊喚娈?trackedItems 閸氬牆鑻熼崚棰佸瘜閺夛紕娲版稉?
+                    // Move the duplicate tracked items onto the surviving entry.
                     const best = trackedFiles[bestID];
                     if (!best.trackedItems) best.trackedItems = [];
                     for (const fid of fileIDs) {
@@ -260,7 +263,7 @@ export default class Commands {
                             best.trackedItems.push(...dup.trackedItems);
                         }
                         delete trackedFiles[fid];
-                        // 娴?fileOrder 娑擃厾些闂?
+                        // Remove the duplicate from the persisted file order.
                         const orderIdx = store.data.fileOrder?.indexOf(fid);
                         if (orderIdx !== undefined && orderIdx >= 0) {
                             store.data.fileOrder.splice(orderIdx, 1);
@@ -275,8 +278,8 @@ export default class Commands {
                     console.debug(`[GlobalSync] Removed ${deduped} duplicate file entries`);
                 }
 
-                // ====== 缁?濮濄儻绱板〒鍛存珟楠炵晫浼掗弬鍥︽ ======
-                progressTip?.update(10, 100, "濞撳懐鎮婃稉銏犮亼閻ㄥ嫭鏋冩禒?..");
+                // Step 1: remove invalid tracked files and orphaned items.
+                progressTip?.update(10, 100, t("SYNC_PROGRESS_CLEAN_GHOST_FILES"));
                 for (const [fileID, tkfile] of Object.entries(trackedFiles)) {
                     if (tkfile == null) {
                         delete trackedFiles[fileID];
@@ -289,7 +292,7 @@ export default class Commands {
 
                     const file = plugin.app.vault.getAbstractFileByPath(tkfile.path);
                     if (!(file instanceof TFile)) {
-                        // 閺傚洣娆㈠韫瑝鐎涙ê婀?閳?濞撳懐鎮婇崗瀹犱粓閻?items
+                        // Remove orphaned items that belong to a missing file.
                         let itemsCleaned = 0;
                         for (const key in tkfile.items) {
                             const id = tkfile.items[key];
@@ -325,7 +328,7 @@ export default class Commands {
                 );
                 const totalFiles = filesToSync.length || 1;
 
-                // ====== 缁?濮濄儻绱伴崥灞绢劄閸撯晙缍戦惃鍕箒閸楋紕澧栭惃鍕瀮娴?======
+                // Step 2: rescan each tracked file and reconcile its cards.
                 for (const tkfile of Object.values(trackedFiles)) {
                     if (tkfile == null || !tkfile.hasCards) continue;
                     totalCardFiles++;
@@ -333,16 +336,18 @@ export default class Commands {
                     progressTip?.update(
                         syncedFiles,
                         totalFiles,
-                        `閸氬本顒為崡锛勫: ${tkfile.path.split("/").pop()}`,
+                        t("SYNC_PROGRESS_SYNC_FILE", {
+                            fileName: tkfile.path.split("/").pop() || tkfile.path,
+                        }),
                     );
 
                     const file = plugin.app.vault.getAbstractFileByPath(tkfile.path);
-                    if (!(file instanceof TFile)) continue; // 娑撳秴绨茬拠銉ュ煂鏉╂瑩鍣?
+                    if (!(file instanceof TFile)) continue; // The file vanished during the scan.
                     try {
                         const fileText = await plugin.app.vault.read(file);
                         const oldCount = tkfile.trackedItems?.length ?? 0;
 
-                        // 閺€鍫曟肠閸氬本顒為崜宥囨畱閹碘偓閺?card item IDs
+                        // Capture the previous card ids so removed cards can be untracked.
                         const oldItemIds = new Set<number>();
                         for (const item of tkfile.trackedItems || []) {
                             if (item.reviewId >= 0) {
@@ -350,13 +355,13 @@ export default class Commands {
                             }
                         }
 
-                        // 閹笛嗩攽閸氬本顒為敍鍫濆敶闁劋濞囬悽?matchItems 閹稿洨姹楅崠褰掑帳閿?
+                        // Rebuild tracked items for the current file contents.
                         tkfile.syncNoteCardsIndex(fileText, settings);
 
                         const newCount = tkfile.trackedItems?.length ?? 0;
                         const diff = oldCount - newCount;
 
-                        // 閺€鍫曟肠閸氬本顒為崥搴濈矝閻掕泛鐡ㄩ崷銊ф畱 card item IDs
+                        // Collect the new card ids so removed items can be detected.
                         const newItemIds = new Set<number>();
                         for (const item of tkfile.trackedItems || []) {
                             if (item.reviewId >= 0) {
@@ -364,7 +369,7 @@ export default class Commands {
                             }
                         }
 
-                        // 濞撳懐鎮婄€涖倕鍔?items閿涘牊妫弫鐗堝祦娑擃厽婀佹担鍡樻煀閺佺増宓佹稉顓熺梾閺堝娈戦敍?
+                        // Untrack any items that disappeared from the file after resync.
                         for (const oldId of oldItemIds) {
                             if (!newItemIds.has(oldId)) {
                                 store.unTrackItem(oldId);
@@ -388,8 +393,8 @@ export default class Commands {
                     }
                 }
 
-                // ====== 缁?濮濄儻绱板〒鍛倞 items 閺佹壆绮嶆稉顓熸弓鐞氼偂鎹㈡担?trackedFile 瀵洜鏁ら惃鍕蒋閻?(閸ㄥ啫婧囬崶鐐存暪) ======
-                progressTip?.update(syncedFiles, totalFiles, "閹笛嗩攽閸ㄥ啫婧囬崶鐐存暪...");
+                // Step 3: perform a final garbage collection pass for lingering state.
+                progressTip?.update(syncedFiles, totalFiles, t("SYNC_PROGRESS_GARBAGE_COLLECT"));
                 await store.performGlobalGarbageCollection();
 
                 progressTip?.hide(1000);

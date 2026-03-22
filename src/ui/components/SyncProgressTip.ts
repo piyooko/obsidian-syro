@@ -7,8 +7,10 @@ export class SyncProgressTip {
     private fillEl: HTMLElement;
     private countsEl: HTMLElement;
     private titleEl: HTMLElement;
+    private completeTitle: string;
 
-    constructor(initialTitle: string = "正在同步...") {
+    constructor(initialTitle: string = "正在同步...", completeTitle: string = "同步完成") {
+        this.completeTitle = completeTitle;
         this.buildDOM(initialTitle);
     }
 
@@ -41,7 +43,7 @@ export class SyncProgressTip {
 
     public hide(delayMs: number = 800) {
         this.containerEl.addClass("is-complete");
-        this.titleEl.innerText = "同步完成";
+        this.titleEl.innerText = this.completeTitle;
 
         setTimeout(() => {
             this.containerEl.removeClass("is-visible");

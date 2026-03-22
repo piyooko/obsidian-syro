@@ -605,6 +605,11 @@
     color: var(--text-muted);
 }
 
+.sr-markdown-fallback {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 .sr-answer-section {
     overflow: hidden;
 }

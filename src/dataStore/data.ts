@@ -368,7 +368,7 @@ export class DataStore {
 
             this.data.trackedFiles = newFiles;
             this.data.fileOrder = fileOrder;
-            this.logInfo(`[SR] 鏁版嵁杩佺Щ瀹屾垚: ${oldFiles.length} 鈫?${fileOrder.length} 鏂囦欢`);
+            this.logInfo(`[SR] Data migration completed: ${oldFiles.length} -> ${fileOrder.length} files`);
         } else {
             // 鏂版牸寮忥細灏?TrackedFile 瀵硅薄杞负瀹炰緥
             for (const fileID in this.data.trackedFiles) {

@@ -7,7 +7,7 @@
  */
 
 import { createRoot, Root } from "react-dom/client";
-import { App } from "obsidian";
+import { App, Component } from "obsidian";
 import type SRPlugin from "src/main";
 import { IFlashcardReviewSequencer } from "src/FlashcardReviewSequencer";
 import { ReviewSession } from "./containers/ReviewSession";
@@ -19,18 +19,21 @@ export class ReactReviewApp {
     private containerEl: HTMLElement;
     private root: Root | null = null;
     private onCloseCallback?: () => void;
+    private markdownOwner: Component;
 
     constructor(
         app: App,
         plugin: SRPlugin,
         sequencer: IFlashcardReviewSequencer,
         containerEl: HTMLElement,
+        markdownOwner: Component,
         onClose?: () => void,
     ) {
         this.app = app;
         this.plugin = plugin;
         this.sequencer = sequencer;
         this.containerEl = containerEl;
+        this.markdownOwner = markdownOwner;
         this.onCloseCallback = onClose;
     }
 
@@ -51,6 +54,7 @@ export class ReactReviewApp {
             <ReviewSession
                 plugin={this.plugin}
                 sequencer={this.sequencer}
+                markdownOwner={this.markdownOwner}
                 onClose={this.onCloseCallback}
             />,
         );
@@ -76,6 +80,7 @@ export class ReactReviewApp {
                 <ReviewSession
                     plugin={this.plugin}
                     sequencer={this.sequencer}
+                    markdownOwner={this.markdownOwner}
                     onClose={this.onCloseCallback}
                 />,
             );

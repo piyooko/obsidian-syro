@@ -65,6 +65,15 @@ export default {
     NOTICE_CLOZE_CREATED: "Cloze c${nextId} created",
     DECK_TREE_FULL_SYNC_TITLE: "Sync cache (incremental)",
     CMD_GLOBAL_SYNC_FULL: "Rebuild Cache (Full Parse)",
+    SYNC_PROGRESS_START: "Syncing...",
+    SYNC_PROGRESS_PARSE_NOTES: "Parsing notes (${current}/${total})...",
+    SYNC_PROGRESS_BUILD_TREE: "Building deck tree...",
+    SYNC_PROGRESS_DONE: "Sync complete",
+    SYNC_PROGRESS_PREPARE_DATA: "Preparing sync data...",
+    SYNC_PROGRESS_DEDUP_FILES: "Deduplicating tracked files...",
+    SYNC_PROGRESS_CLEAN_GHOST_FILES: "Cleaning invalid files...",
+    SYNC_PROGRESS_SYNC_FILE: "Syncing file: ${fileName}",
+    SYNC_PROGRESS_GARBAGE_COLLECT: "Cleaning invalid data...",
 
     // scheduling.ts
     DAYS_STR_IVL: "${interval}d",

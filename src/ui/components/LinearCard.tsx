@@ -16,7 +16,15 @@
  * - 鎻愪緵鏇村閫夐」鑿滃崟锛堟挙閿€/缂栬緫/鎺ㄨ繜/鍒犻櫎绛夛級
  * - 鍝嶅簲寮忚璁★紝閫傞厤妗岄潰鍜岀Щ鍔ㄧ
  */
-import React, { useState, useEffect, useCallback, useRef, Fragment, ReactNode } from "react";
+import React, {
+    useState,
+    useEffect,
+    useLayoutEffect,
+    useCallback,
+    useRef,
+    Fragment,
+    ReactNode,
+} from "react";
 import type { FC, PropsWithChildren } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -265,11 +273,11 @@ export const LinearCard: FC<LinearCardProps> = ({
         setToasts([]);
         setIsDeleted(false);
         setTimeExpired(false);
-    }, [card]);
+    }, [card?.front, card?.back, card?.responseButtonLabels]);
 
     useEffect(() => {
         setStats(initialStats);
-    }, [initialStats]);
+    }, [initialStats.new, initialStats.learning, initialStats.due]);
 
     const showToast = useCallback((text: string, icon: ReactNode) => {
         const id = Date.now();
@@ -1064,10 +1072,23 @@ const MarkdownDisplay = ({
     renderMarkdown?: (text: string, el: HTMLElement) => Promise<void> | void;
     onRendered?: (el: HTMLDivElement) => void;
 }) => {
+    const [hasRenderedContent, setHasRenderedContent] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
+
     useEffect(() => {
+        setHasRenderedContent(false);
+    }, [content]);
+
+    useLayoutEffect(() => {
+        let cancelled = false;
+        const waitForPaint = () =>
+            new Promise<void>((resolve) => {
+                requestAnimationFrame(() => resolve());
+            });
+
         const renderAsync = async () => {
-            if (!ref.current) return;
+            const target = ref.current;
+            if (!target) return;
 
             // 妫€鏌ユ槸鍚︽湁浠ｇ爜鍧?cloze 鏍囪
             const clozeMatch = content.match(/<!--SR_CODE_CLOZE:(\d+):(\d+)-->/);
@@ -1097,12 +1118,30 @@ const MarkdownDisplay = ({
             // 銆怢aTeX 濉┖澶勭悊銆戝湪娓叉煋鍓嶏紝灏嗘暟瀛﹀叕寮忎腑鐨?marker 杞负 LaTeX \color{} 鍛戒护
             cleanContent = preprocessMathCloze(cleanContent);
 
-            if (renderMarkdown) {
-                // 1. 鍒涘缓绂荤嚎缂撳啿鍖?
-                const buffer = document.createElement("div");
+            if (!renderMarkdown) {
+                target.replaceChildren(document.createTextNode(toFallbackText(cleanContent)));
+                setHasRenderedContent(true);
+                onRendered?.(target);
+                return;
+            }
 
-                // 2. 寮傛娓叉煋 Markdown 鍒扮紦鍐插尯
-                await renderMarkdown(cleanContent, buffer);
+            const buffer = document.createElement("div");
+            buffer.hidden = true;
+            target.appendChild(buffer);
+
+            try {
+                const renderResult = renderMarkdown(cleanContent, buffer);
+                void Promise.resolve(renderResult).catch((error: unknown) => {
+                    if (!cancelled && ref.current === target) {
+                        console.error("[LinearCard] Failed to render markdown", error);
+                    }
+                });
+                await waitForPaint();
+                await waitForPaint();
+
+                if (cancelled || ref.current !== target) {
+                    return;
+                }
 
                 // 3. 鍚屾鎵ц鎵€鏈夊悗澶勭悊鍣?
                 postProcessMarkers(buffer);
@@ -1112,31 +1151,66 @@ const MarkdownDisplay = ({
                     postProcessCodeBlock(buffer, clozeLine || 1, startLine);
                 }
 
-                // 4. 鍘熷瓙绾у唴瀹规浛鎹紙鍘熷瓙浜ゆ崲锛屾秷闄や腑闂存€侀棯鐑侊級
-                if (ref.current) {
-                    ref.current.innerHTML = "";
-                    while (buffer.firstChild) {
-                        ref.current.appendChild(buffer.firstChild);
-                    }
-                    onRendered?.(ref.current);
+                const renderedNodes = Array.from(buffer.childNodes);
+                if (renderedNodes.length > 0 || buffer.textContent?.trim()) {
+                    target.replaceChildren(...renderedNodes);
+                    setHasRenderedContent(true);
+                } else {
+                    target.replaceChildren();
+                    buffer.remove();
+                    setHasRenderedContent(false);
                 }
-            } else {
-                ref.current.textContent = cleanContent;
-                onRendered?.(ref.current);
+
+                if (!cancelled && ref.current === target) {
+                    onRendered?.(target);
+                }
+            } catch (error) {
+                if (cancelled || ref.current !== target) {
+                    return;
+                }
+
+                console.error("[LinearCard] Failed to render markdown", error);
+                target.replaceChildren();
+                setHasRenderedContent(false);
+                onRendered?.(target);
             }
         };
 
         void renderAsync();
+        return () => {
+            cancelled = true;
+        };
     }, [content, renderMarkdown, onRendered]);
 
     return (
         <div
             className="sr-markdown-content markdown-preview-view markdown-rendered"
-            ref={ref}
             style={{ textAlign: "left" }}
-        />
+        >
+            {!hasRenderedContent && (
+                <div className="sr-markdown-fallback">{toFallbackText(content)}</div>
+            )}
+            <div ref={ref} hidden={!hasRenderedContent && !!renderMarkdown} />
+        </div>
     );
 };
+
+function toFallbackText(content: string): string {
+    const normalized = normalizeSrMarkers(content.replace(/<!--SR_CODE_CLOZE:\d+:\d+-->\n?/g, ""));
+    const decodeMarker = (encoded: string, hiddenText: string) => {
+        try {
+            return decodeURIComponent(encoded);
+        } catch {
+            return hiddenText;
+        }
+    };
+
+    return normalized
+        .replace(/««SR_CLOZE:([^»]+)»»/g, (_match, encoded) => `[${decodeMarker(encoded, "...")}]`)
+        .replace(/««SR_H:([^»]+)»»/g, () => "[...]")
+        .replace(/««SR_S:([^»]+)»»/g, (_match, encoded) => decodeMarker(encoded, ""))
+        .replace(/{{c\d+::(.*?)(?:::.*)?}}/g, "[...]");
+}
 
 /**
  * 棰勫鐞嗘暟瀛﹀叕寮忎腑鐨?cloze HTML 鏍囩

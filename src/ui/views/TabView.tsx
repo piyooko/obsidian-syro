@@ -99,6 +99,7 @@ export class TabView extends ItemView {
                     this.plugin,
                     this.reviewSequencer,
                     this.viewContentEl,
+                    this,
                 );
                 this.reactApp.mount();
             }

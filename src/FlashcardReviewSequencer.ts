@@ -388,7 +388,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         } else {
             this.processReview_CramMode(response);
         }
-        this.logRuntimeDebug(`[SR-DynSync] sequencer.processReview: 澶勭悊瀹屾垚`);
+        this.logRuntimeDebug("[SR-DynSync] sequencer.processReview: completed");
     }
 
     async processReview_ReviewMode(
