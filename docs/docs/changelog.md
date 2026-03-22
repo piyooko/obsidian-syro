@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.5] - 2026-03-22
+
+- Fixed the sync progress toast so runtime status text uses locale keys instead of corrupted hard-coded strings.
+- Fixed the review session first-card render path so the front side appears on the initial screen without reopening or switching cards.
+- Added a reviewer-aligned mojibake audit script and kept the release repository file delta limited to the intended tracked additions.
+
 ## [0.0.4] - 2026-03-21
 
 - Removed the default Anki-cloze hotkeys from the shipped command metadata for community review compliance.

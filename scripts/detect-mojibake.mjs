@@ -6,6 +6,7 @@ import path from "node:path";
 
 const DEFAULT_BASE = "51db186";
 const DEFAULT_HEAD = "HEAD";
+const SELF_SCRIPT_PATH = "scripts/detect-mojibake.mjs";
 const TEXT_FILE_PATTERN =
     /\.(?:ts|tsx|js|jsx|mjs|cjs|json|css|scss|md|txt|yml|yaml)$/i;
 const PRIORITY_FILE_PATTERN =
@@ -46,6 +47,10 @@ const filesToScan = candidateFiles.length > 0 ? candidateFiles : [...trackedFile
 const findings = [];
 
 for (const file of filesToScan) {
+    if (file === SELF_SCRIPT_PATH) {
+        continue;
+    }
+
     const absPath = path.join(repoRoot, file);
     if (!fs.existsSync(absPath) || !fs.statSync(absPath).isFile()) {
         continue;
