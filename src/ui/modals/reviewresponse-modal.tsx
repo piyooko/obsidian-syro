@@ -1,5 +1,5 @@
 // https://img.shields.io/github/v/release/chetachiezikeuzor/cMenu-Plugin
-import { App, MarkdownView, Menu, MenuItem, Platform, TFile, setIcon, Notice } from "obsidian";
+import { App, MarkdownView, Platform, setIcon, Notice } from "obsidian";
 import { textInterval } from "src/scheduling";
 import { SRSettings } from "src/settings";
 import { t } from "src/lang/helpers";
@@ -275,8 +275,7 @@ export class reviewResponseModal {
     // ... (闂佺绻戝﹢鍦垝椤掑嫭鍎?createButton 闂佸搫鍊介～澶屾兜閸撲胶灏甸悹浣芥珪婵⊙囨煥濞戞鐏遍柡鍡樺姈濞煎宕堕宥呮疁缂傚倷绀佸Λ娆撳极閻愮儤鐓?
 
     /**
-     * 闂備焦顑欓崰姘鸿箛鏃傤洸閻庯絺鏅滈钘夘熆鐠哄搫顏柟?
-     * 闂佽　鍋撴い鏍ㄧ☉閻?Numpad 闂?Digit 闂備焦顑欓崰娑氭崲濡吋鍋樼€光偓閸愵亝顫栭梺?
+     * Support both Digit and Numpad keyboard events for the same shortcuts.
      */
     private _keydownHandler = (e: KeyboardEvent) => {
         // 缂佺虎鍙庨崰鏇犳崲濮橆厾鈻旂€广儱瀚粣妤呮煕閿斿搫濡跨紒槌栦簼濞煎繘骞嬪┑鍥╁綔闁哄鐗婇幐鎼佸矗閸℃稑绫嶉柟顖炴緩閺囥垹鐭?

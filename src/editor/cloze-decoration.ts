@@ -103,7 +103,6 @@ function getExistingClozeIdsInContext(contextText: string): Map<string, string> 
 }
 
 // Chevron 图标 SVG
-const CHEVRON_ICON = `<svg viewBox="0 0 24 24" width="8" height="8" stroke="currentColor" stroke-width="3" fill="none"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
 
 /**
  * 下拉按钮 Widget - 放在 Cloze 内容末尾（高亮内部）
@@ -122,7 +121,21 @@ class ClozeButtonWidget extends WidgetType {
     toDOM(view: EditorView): HTMLElement {
         const button = document.createElement("span");
         button.addClass("sr-cloze-button");
-        button.innerHTML = CHEVRON_ICON;
+        const icon = button.createSvg("svg", {
+            attr: {
+                viewBox: "0 0 24 24",
+                width: "8",
+                height: "8",
+                fill: "none",
+                stroke: "currentColor",
+                "stroke-width": "3",
+            },
+        });
+        icon.createSvg("polyline", {
+            attr: {
+                points: "6 9 12 15 18 9",
+            },
+        });
         button.title = "管理填空";
 
         // 阻止所有鼠标事件冒泡，防止 CodeMirror 接管

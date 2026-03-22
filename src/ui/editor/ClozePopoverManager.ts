@@ -17,6 +17,11 @@ interface Segment {
     clozeId?: string;
 }
 
+type AppLocalStorageApi = App & {
+    loadLocalStorage?: (key: string) => string | null;
+    saveLocalStorage?: (key: string, value: string | null) => void;
+};
+
 /**
  * Cloze Popover 管理器
  * 不继承 Modal，创建浮动 div 作为 Popover
@@ -271,6 +276,11 @@ export class ClozePopoverManager {
                 onClose: () => this.close(),
                 renderMarkdown: (text, el) => {
                     void MarkdownRenderer.render(this.app, text, el, "", this.renderComponent);
+                },
+                storage: {
+                    load: (key) => (this.app as AppLocalStorageApi).loadLocalStorage?.(key) ?? null,
+                    save: (key, value) =>
+                        (this.app as AppLocalStorageApi).saveLocalStorage?.(key, value),
                 },
             }),
         );

@@ -56,7 +56,7 @@ export const LatexPopover: React.FC<LatexPopoverProps> = ({
     // 渲染 MathJax
     useEffect(() => {
         if (renderRef.current) {
-            renderRef.current.innerHTML = "";
+            renderRef.current.replaceChildren();
             void MarkdownRenderer.render(app, `$$${previewLatex}$$`, renderRef.current, "", component);
         }
     }, [previewLatex, app, component]);

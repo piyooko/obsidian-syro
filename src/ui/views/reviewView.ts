@@ -1,7 +1,6 @@
 import { Notice } from "obsidian";
 import { t } from "src/lang/helpers";
 import SRPlugin from "src/main";
-import { IReviewNote } from "src/reviewNote/review-note";
 import { SRSettings } from "src/settings";
 
 export class ReviewView {

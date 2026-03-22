@@ -1,6 +1,7 @@
 import { Setting } from "obsidian";
 import { t } from "src/lang/helpers";
 import SRPlugin from "src/main";
+import { createSanitizedHtmlFragment } from "src/util/safeHtml";
 
 export function addTrackedNoteToDecksSetting(containerEl: HTMLElement, plugin: SRPlugin) {
     // const plugin = this.plugin;
@@ -20,7 +21,12 @@ export function addUntrackSetting(containerEl: HTMLElement, plugin: SRPlugin) {
     // const plugin = this.plugin;
     const settings = plugin.data.settings;
     const desc = createFragment((frag) => {
-        frag.createDiv().innerHTML = t("UNTRACK_WITH_REVIEWTAG_DESC");
+        const descEl = frag.createDiv();
+        descEl.replaceChildren(
+            createSanitizedHtmlFragment(t("UNTRACK_WITH_REVIEWTAG_DESC"), {
+                allowedTags: ["b", "br", "strong"],
+            }),
+        );
     });
     new Setting(containerEl)
         .setName(t("UNTRACK_WITH_REVIEWTAG"))

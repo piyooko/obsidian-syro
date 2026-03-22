@@ -29,7 +29,7 @@ import {
     setTooltip,
     WorkspaceLeaf,
 } from "obsidian";
-import * as graph from "pagerank.js";
+import graph from "pagerank.js";
 
 import {
     DEFAULT_SETTINGS,
@@ -38,7 +38,6 @@ import {
     SyncProgressDisplayMode,
     upgradeSettings,
 } from "src/settings";
-import { StatsModal } from "src/ui/views/StatsModal";
 import {
     REACT_REVIEW_QUEUE_VIEW_TYPE as REVIEW_QUEUE_VIEW_TYPE,
     ReactNoteReviewView,
@@ -71,7 +70,7 @@ import { DeckTreeStatsCalculator } from "./DeckTreeStatsCalculator";
 import { NoteEaseList } from "./NoteEaseList";
 import { QuestionPostponementList } from "./QuestionPostponementList";
 import { TextDirection } from "./util/TextDirection";
-import { convertToStringOrEmpty, isEqualOrSubPath } from "./util/utils";
+import { convertToStringOrEmpty } from "./util/utils";
 import { setDebugParser } from "src/parser";
 
 // Legacy migration note retained from the pre-Syro codebase.
@@ -79,7 +78,7 @@ import { DataStore } from "./dataStore/data";
 import { DataLocation } from "./dataStore/dataLocation";
 import { NoteReviewStore, NoteReviewSource } from "./dataStore/noteReviewStore";
 import Commands from "./commands";
-import { algorithmNames, SrsAlgorithm } from "src/algorithms/algorithms";
+import { SrsAlgorithm } from "src/algorithms/algorithms";
 
 import { reviewResponseModal } from "src/ui/modals/reviewresponse-modal";
 import { debug, isIgnoredPath, isVersionNewerThanOther } from "./util/utils_recall";
@@ -91,7 +90,6 @@ import { addFileMenuEvt, registerTrackFileEvents } from "./Events/trackFileEvent
 import { SyncEvents } from "./Events/SyncEvents";
 import { ItemTrans, itemToShedNote } from "./dataStore/itemTrans";
 import { LinkRank } from "src/algorithms/priorities/linkPageranks";
-import { Queue } from "./dataStore/queue";
 import { ReviewDeckSelectionModal } from "./ui/modals/reviewDeckSelectionModal";
 import { setDueDates } from "./algorithms/balance/balance";
 import { RepetitionItem, RPITEMTYPE } from "./dataStore/repetitionItem";
@@ -108,6 +106,7 @@ import { latexPopoverExtension, initializeLatexPopover } from "./editor/latex-po
 import { latexClozePreprocessorPlugin } from "./editor/latex-cloze-preprocessor";
 import { clozePostProcessor } from "./editor/cloze-postprocessor";
 import { LicenseManager } from "./services/LicenseManager";
+import { getArrayProp, getNumberProp, getStringProp, isRecord, parseJsonUnknown } from "./util/typeGuards";
 import { SyncProgressTip } from "src/ui/components/SyncProgressTip";
 import { Tags } from "./tags";
 import {
@@ -206,6 +205,9 @@ export default class SRPlugin extends Plugin {
     // eTextScheduleStore: TextScheduleStore;  // 宸茬粡鍦ㄤ笅闈㈢殑浠ｇ爜涓畾涔?
     public tabViewManager: TabViewManager;
     public syncLock = false;
+    private readonly activeLeafChangeHandler = (leaf: WorkspaceLeaf | null): void => {
+        this.handleFocusChange(leaf);
+    };
 
     public reviewDecks: { [deckKey: string]: ReviewDeck } = {};
     public lastSelectedReviewDeck: string;
@@ -481,7 +483,7 @@ export default class SRPlugin extends Plugin {
                             if (noteItem) {
                                 intervals = this.noteAlgorithm.calcAllOptsIntervals(noteItem);
                             }
-                        } catch (e) {
+                        } catch {
                             // 濡傛灉鑾峰彇澶辫触锛堜緥濡傜瑪璁版湭琚拷韪級锛屽垯涓嶆樉绀洪棿闅?
                         }
 
@@ -1019,11 +1021,18 @@ export default class SRPlugin extends Plugin {
             const raw = await adapter.read(path);
             if (!raw) return null;
 
-            const parsed: PersistedNoteCacheFile = JSON.parse(raw);
-            if (parsed.version !== NOTE_CACHE_VERSION || !Array.isArray(parsed.items)) {
+            const parsed = parseJsonUnknown(raw);
+            if (!isRecord(parsed)) {
                 return null;
             }
-            return parsed;
+
+            const version = getNumberProp(parsed, "version");
+            const signature = getStringProp(parsed, "signature");
+            const items = getArrayProp(parsed, "items");
+            if (version !== NOTE_CACHE_VERSION || !signature || !items) {
+                return null;
+            }
+            return parsed as unknown as PersistedNoteCacheFile;
         } catch (error) {
             console.warn("[SR-Cache] Failed to load note_cache.json:", error);
             return null;
@@ -2035,7 +2044,7 @@ export default class SRPlugin extends Plugin {
     }
 
     async loadPluginData(): Promise<void> {
-        const loadedData: PluginData = await this.loadData();
+        const loadedData = (await this.loadData()) as Partial<PluginData> | null;
         if (loadedData?.settings) upgradeSettings(loadedData.settings);
         this.data = Object.assign({}, DEFAULT_DATA, loadedData);
         this.data.settings = Object.assign({}, DEFAULT_SETTINGS, this.data.settings);
@@ -2239,14 +2248,12 @@ export default class SRPlugin extends Plugin {
     }
 
     public registerSRFocusListener() {
-        this.registerEvent(
-            this.app.workspace.on("active-leaf-change", this.handleFocusChange.bind(this)),
-        );
+        this.registerEvent(this.app.workspace.on("active-leaf-change", this.activeLeafChangeHandler));
     }
 
     public removeSRFocusListener() {
         this.setSRViewInFocus(false);
-        this.app.workspace.off("active-leaf-change", this.handleFocusChange.bind(this));
+        this.app.workspace.off("active-leaf-change", this.activeLeafChangeHandler);
     }
 
     public async getPreparedDecksForSingleNoteReview(

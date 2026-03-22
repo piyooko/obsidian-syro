@@ -26,8 +26,7 @@ import { ReviewDeck, SchedNote } from "src/ReviewDeck";
 import { SrTFile } from "src/SRFile";
 import { TopicPath } from "src/TopicPath";
 import { DataStore } from "src/dataStore/data";
-import { BlockUtils, debug, logExecutionTime } from "src/util/utils_recall";
-import { TrackedFile, TrackedItem } from "./trackedFile";
+import { BlockUtils } from "src/util/utils_recall";
 import { RPITEMTYPE, RepetitionItem } from "./repetitionItem";
 import { CardType } from "src/Question";
 import { Card } from "src/Card";
@@ -119,7 +118,6 @@ export class ItemTrans {
     private static _toRevDeck(rdeck: ReviewDeck, note: TFile, now?: number) {
         // const plugin = plugin;
         const store = DataStore.getInstance();
-        const ind = store.getFileIndex(note.path);
         const trackedFile = store.getTrackedFile(note.path);
         const item = store.getNoteItem(note.path);
 
@@ -271,7 +269,6 @@ function updateCardObjs(cards: Card[], scheduling: RegExpMatchArray[]) {
 
     let update = false;
     for (let i = 0; i < cards.length; i++) {
-        const cardObj = cards[i];
         const hasScheduleInfo: boolean = i < schedInfoList.length;
         const schedule: CardScheduleInfo = schedInfoList[i];
         const hassched = hasScheduleInfo && !schedule.isDummyScheduleForNewCard();

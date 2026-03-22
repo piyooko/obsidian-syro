@@ -13,6 +13,7 @@
  * 2. src/main.ts (初始化和构建列表)
  */
 import { SRSettings } from "./settings";
+import { hasOwn } from "./util/typeGuards";
 
 export interface INoteEaseList {
     hasEaseForPath(path: string): boolean;
@@ -33,11 +34,11 @@ export class NoteEaseList implements INoteEaseList {
     }
 
     hasEaseForPath(path: string): boolean {
-        return Object.prototype.hasOwnProperty.call(this.dict, path);
+        return hasOwn(this.dict, path);
     }
 
     getEaseByPath(path: string): number | null {
-        let ease: number = null;
+        let ease: number | null = null;
         if (this.hasEaseForPath(path)) {
             ease = Math.round(this.dict[path]);
         }
@@ -46,7 +47,8 @@ export class NoteEaseList implements INoteEaseList {
 
     setEaseForPath(path: string, ease: number): void {
         if (this.hasEaseForPath(path)) {
-            ease = (this.getEaseByPath(path) + ease) / 2;
+            const currentEase = this.getEaseByPath(path);
+            ease = ((currentEase ?? ease) + ease) / 2;
         }
         this.dict[path] = ease;
     }

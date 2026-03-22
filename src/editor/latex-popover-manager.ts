@@ -74,7 +74,7 @@ class LatexPopoverPlugin {
         this.component.load();
 
         // 鐠佸墽鐤嗗姘З閻╂垵鎯?
-        this.scrollHandler = this.handleScroll.bind(this);
+        this.scrollHandler = () => this.handleScroll();
         view.scrollDOM.addEventListener("scroll", this.scrollHandler);
     }
 
@@ -93,7 +93,7 @@ class LatexPopoverPlugin {
                     this.container.style.left = `${coords.left}px`;
                     this.container.style.top = `${coords.top}px`;
                 }
-            } catch (e) {
+            } catch {
                 // 韫囩晫鏆愰柨娆掝嚖
             }
         });
@@ -152,7 +152,7 @@ class LatexPopoverPlugin {
         let coords;
         try {
             coords = view.coordsAtPos(node.from);
-        } catch (e) {
+        } catch {
             return;
         }
         if (!coords) return;

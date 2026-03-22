@@ -31,6 +31,10 @@ interface ClozePopoverProps {
     onMergeAll: () => void;
     onClose: () => void;
     renderMarkdown: (text: string, el: HTMLElement) => void;
+    storage: {
+        load: (key: string) => string | null | Promise<string | null>;
+        save: (key: string, value: string) => void | Promise<void>;
+    };
 }
 
 // 閻庢稒锚閸嬪秶浜搁崫鍕靛殶闁?key
@@ -52,7 +56,7 @@ const MarkdownBlock: React.FC<{
 
     useEffect(() => {
         if (containerRef.current) {
-            containerRef.current.innerHTML = "";
+            containerRef.current.replaceChildren();
             renderMarkdown(content, containerRef.current);
         }
     }, [content, renderMarkdown]);
@@ -117,11 +121,13 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
     onMergeAll,
     onClose,
     renderMarkdown,
+    storage,
 }) => {
     const popoverRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState({ top: 0, left: 0 });
     const [size, setSize] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
     const isResizing = useRef(false);
+    const sizeRef = useRef(size);
 
     // 闂佸じ绀侀悾鍓р偓闈涚秺缂嶅牓寮悷鐗堝€?
     const alignmentRef = useRef<"top" | "bottom" | null>(null);
@@ -135,20 +141,33 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
         return Array.from(ids).sort((a, b) => parseInt(a) - parseInt(b));
     }, [segments]);
 
+    useEffect(() => {
+        sizeRef.current = size;
+    }, [size]);
+
     // 闁告梻濮惧ù鍥╂媼閺夎法绠撻柣銊ュ閺勫倻鈧?
     useEffect(() => {
-        try {
-            const saved = localStorage.getItem(SIZE_STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved);
+        let isMounted = true;
+
+        void Promise.resolve(storage.load(SIZE_STORAGE_KEY))
+            .then((saved) => {
+                if (!isMounted || !saved) {
+                    return;
+                }
+
+                const parsed = JSON.parse(saved) as Partial<typeof size>;
                 if (parsed.width && parsed.height) {
                     setSize({ width: parsed.width, height: parsed.height });
                 }
-            }
-        } catch (e) {
-            // ignore
-        }
-    }, []);
+            })
+            .catch(() => {
+                return;
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, [storage]);
 
     // 閻犱緤绱曢悾鑽も偓瑙勭煯缂嶅懘鏁嶅棰濇禃婵炲棌鍓濆▍銈夋嚄閽樺鐏查柡鍌ゅ弿缁辨繃绋婄€ｎ亝鍊甸梺澶哥閻ｉ箖寮悷鐗堝€?
     const updatePosition = useCallback(() => {
@@ -272,11 +291,11 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
             isResizing.current = false;
             document.removeEventListener("mousemove", handleMouseMove);
             document.removeEventListener("mouseup", handleMouseUp);
-            try {
-                localStorage.setItem(SIZE_STORAGE_KEY, JSON.stringify(size));
-            } catch {
-                return;
-            }
+            void Promise.resolve(storage.save(SIZE_STORAGE_KEY, JSON.stringify(sizeRef.current))).catch(
+                () => {
+                    return;
+                },
+            );
         };
 
         document.addEventListener("mousemove", handleMouseMove);

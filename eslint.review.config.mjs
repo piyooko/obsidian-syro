@@ -1,14 +1,30 @@
-import js from "@eslint/js";
 import eslintComments from "eslint-plugin-eslint-comments";
 import obsidianmd from "eslint-plugin-obsidianmd";
 import tseslint from "typescript-eslint";
+
+const reviewGlobals = {
+    cancelAnimationFrame: "readonly",
+    clearTimeout: "readonly",
+    console: "readonly",
+    crypto: "readonly",
+    createEl: "readonly",
+    createFragment: "readonly",
+    document: "readonly",
+    DOMParser: "readonly",
+    getComputedStyle: "readonly",
+    navigator: "readonly",
+    performance: "readonly",
+    process: "readonly",
+    requestAnimationFrame: "readonly",
+    setTimeout: "readonly",
+    window: "readonly",
+};
 
 export default tseslint.config(
     {
         ignores: ["build/**", "coverage/**", "docs/**", "site/**", "plugin_test/**"],
     },
-    js.configs.recommended,
-    ...tseslint.configs.recommended,
+    ...obsidianmd.configs.recommendedWithLocalesEn,
     {
         files: ["src/**/*.ts", "src/**/*.tsx"],
         languageOptions: {
@@ -16,17 +32,16 @@ export default tseslint.config(
             parserOptions: {
                 project: "./tsconfig.json",
             },
+            globals: reviewGlobals,
         },
         plugins: {
             "eslint-comments": eslintComments,
             obsidianmd,
         },
         rules: {
-            ...obsidianmd.configs.recommendedWithLocalesEn,
             "obsidianmd/prefer-file-manager-trash-file": "error",
             "no-console": ["error", { allow: ["warn", "error", "debug"] }],
             "no-empty": "error",
-            "no-irregular-whitespace": "off",
             "prefer-const": "off",
             "no-restricted-imports": [
                 "error",
@@ -46,7 +61,6 @@ export default tseslint.config(
             "@typescript-eslint/no-floating-promises": "error",
             "@typescript-eslint/no-misused-promises": "error",
             "@typescript-eslint/no-require-imports": "error",
-            "@typescript-eslint/no-unused-vars": "off",
             "@typescript-eslint/no-unnecessary-type-assertion": "error",
             "@typescript-eslint/no-unsafe-enum-comparison": "error",
             "@typescript-eslint/only-throw-error": "error",

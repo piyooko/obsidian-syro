@@ -89,4 +89,3 @@ export class WeightedRandomNumber {
 }
 
 export let globalRandomNumberProvider: IRandomNumberProvider = new RandomNumberProvider();
-const staticRandomNumberProvider: StaticRandomNumberProvider = new StaticRandomNumberProvider();

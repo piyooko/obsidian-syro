@@ -1,5 +1,10 @@
 import { CardType } from "src/Question";
-import { CardFrontBack, CardFrontBackUtil, QuestionTypeClozeFormatter } from "src/question-type";
+import {
+    CardFrontBack,
+    CardFrontBackUtil,
+    QuestionTypeClozeFormatter,
+    QuestionTypeReviewFormatter,
+} from "src/question-type";
 import { DEFAULT_SETTINGS, SRSettings } from "src/settings";
 
 test("CardType.SingleLineBasic", () => {
@@ -38,6 +43,7 @@ test("CardType.MultiLineReversed", () => {
 
 test("CardType.Cloze", () => {
     const clozeFormatter = new QuestionTypeClozeFormatter();
+    const reviewFormatter = new QuestionTypeReviewFormatter();
 
     expect(
         CardFrontBackUtil.expand(
@@ -49,6 +55,7 @@ test("CardType.Cloze", () => {
         new CardFrontBack(
             "This is a very " + clozeFormatter.asking() + " test",
             "This is a very " + clozeFormatter.showingAnswer("interesting") + " test",
+            "This is a very " + reviewFormatter.asking("interesting") + " test",
         ),
     ]);
 
@@ -65,6 +72,7 @@ test("CardType.Cloze", () => {
         new CardFrontBack(
             "This is a very " + clozeFormatter.asking() + " test",
             "This is a very " + clozeFormatter.showingAnswer("interesting") + " test",
+            "This is a very " + reviewFormatter.asking("interesting") + " test",
         ),
     ]);
 
@@ -74,6 +82,7 @@ test("CardType.Cloze", () => {
         new CardFrontBack(
             "This is a very " + clozeFormatter.asking() + " test",
             "This is a very " + clozeFormatter.showingAnswer("interesting") + " test",
+            "This is a very " + reviewFormatter.asking("interesting") + " test",
         ),
     ]);
 
@@ -89,6 +98,9 @@ test("CardType.Cloze", () => {
             "This is a really very interesting and " +
                 clozeFormatter.showingAnswer("fascinating") +
                 " and great test",
+            "This is a really very interesting and " +
+                reviewFormatter.asking("fascinating") +
+                " and great test",
         ),
         new CardFrontBack(
             "This is a really very interesting and fascinating and " +
@@ -97,11 +109,17 @@ test("CardType.Cloze", () => {
             "This is a really very interesting and fascinating and " +
                 clozeFormatter.showingAnswer("great") +
                 " test",
+            "This is a really very interesting and fascinating and " +
+                reviewFormatter.asking("great") +
+                " test",
         ),
         new CardFrontBack(
             "This is a really very " + clozeFormatter.asking() + " and fascinating and great test",
             "This is a really very " +
                 clozeFormatter.showingAnswer("interesting") +
+                " and fascinating and great test",
+            "This is a really very " +
+                reviewFormatter.asking("interesting") +
                 " and fascinating and great test",
         ),
     ]);

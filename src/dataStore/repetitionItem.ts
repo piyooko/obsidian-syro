@@ -23,8 +23,8 @@ import { Notice } from "obsidian";
 import { AnkiData } from "src/algorithms/anki";
 import { balance } from "src/algorithms/balance/balance";
 import { FsrsData } from "src/algorithms/fsrs";
-import { globalDateProvider } from "src/util/DateProvider";
-import { DateUtils, debug } from "src/util/utils_recall";
+import { DateUtils } from "src/util/utils_recall";
+import { isRecord } from "src/util/typeGuards";
 
 export enum RPITEMTYPE {
     NOTE = "note",
@@ -164,7 +164,6 @@ export class RepetitionItem {
                 newItem.nextReview = data.due.getTime();
             }
         } else if (newItem.itemType === RPITEMTYPE.CARD) {
-            const data = newItem.data as AnkiData;
             const legacyItem = item as { nextReviewStr?: string };
             if (newItem.nextReview === 0 && legacyItem.nextReviewStr) {
                 // Legacy support if needed
@@ -260,7 +259,7 @@ export class RepetitionItem {
     }
 
     get isFsrs(): boolean {
-        const has = this.data && Object.prototype.hasOwnProperty.call(this.data, "state");
+        const has = isRecord(this.data) && "state" in this.data;
         if (this.ID === 4) {
             // console.debug(`[SR-Debug] item4.isFsrs check: hasState=${has}, data=`, this.data);
         }
@@ -392,7 +391,7 @@ export class RepetitionItem {
             } else {
                 return false;
             }
-        } catch (error) {
+        } catch {
             return false;
         }
     }

@@ -2,8 +2,8 @@
  * [杈呭姪] 璁＄畻绗旇閲嶈鎬э紙PageRank锛夛紝鐢ㄤ簬绗旇澶嶄範鐨勬帓搴忋€?
  */
 import { MetadataCache, TFile } from "obsidian";
+import graph from "pagerank.js";
 import { NoteEaseList } from "src/NoteEaseList";
-import * as graph from "pagerank.js";
 import { SRSettings } from "src/settings";
 import { Iadapter } from "src/dataStore/adapter";
 

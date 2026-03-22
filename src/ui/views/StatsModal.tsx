@@ -1,6 +1,5 @@
 import { Modal, App, Platform } from "obsidian";
  
-import h from "vhtml";
 // 寮曞叆 Chart.js 鐩稿叧缁勪欢銆侰hart.js 鏄竴涓潪甯告祦琛岀殑 JS 鍥捐〃搴撱€?
 import {
     Chart,
@@ -65,24 +64,20 @@ export class StatsModal extends Modal {
         // 1. 绫诲瀷閫夋嫨锛堝崱鐗?Flashcards / 绗旇 Notes锛?
         // 2. 鏃堕棿鑼冨洿閫夋嫨锛堟湀 / 瀛ｅ害 / 骞?/ 鍏ㄩ儴锛?
         // 杩欓噷浣跨敤浜?JSX 璇硶 (h 鍑芥暟)
-        this.titleEl.innerHTML += (
-            <div>
-                <select id="sr-chart-type">
-                    <option value={RPITEMTYPE.CARD} selected>
-                        {t("FLASHCARDS")}
-                    </option>
-                    <option value={RPITEMTYPE.NOTE}>{t("NOTES")}</option>
-                </select>
-                <select id="sr-chart-period">
-                    <option value="month" selected>
-                        {t("MONTH")}
-                    </option>
-                    <option value="quarter">{t("QUARTER")}</option>
-                    <option value="year">{t("YEAR")}</option>
-                    <option value="lifetime">{t("LIFETIME")}</option>
-                </select>
-            </div>
-        );
+        const controlsEl = this.titleEl.createDiv();
+        const chartTypeSelect = controlsEl.createEl("select", {
+            attr: { id: "sr-chart-type" },
+        });
+        this.createOption(chartTypeSelect, RPITEMTYPE.CARD, t("FLASHCARDS"), true);
+        this.createOption(chartTypeSelect, RPITEMTYPE.NOTE, t("NOTES"));
+
+        const chartPeriodSelect = controlsEl.createEl("select", {
+            attr: { id: "sr-chart-period" },
+        });
+        this.createOption(chartPeriodSelect, "month", t("MONTH"), true);
+        this.createOption(chartPeriodSelect, "quarter", t("QUARTER"));
+        this.createOption(chartPeriodSelect, "year", t("YEAR"));
+        this.createOption(chartPeriodSelect, "lifetime", t("LIFETIME"));
 
         // 璁剧疆妯℃€佹澶у皬鍏呮弧浜?
         this.modalEl.addClass("syro-stats-modal");
@@ -102,29 +97,12 @@ export class StatsModal extends Modal {
 
         // 鍒涘缓鍥捐〃瀹瑰櫒 Canvas 鍏冪礌
         // 渚濇鏄細浠婃棩缁熻銆佹湭鏉ラ娴嬨€侀棿闅斿垎甯冦€丒ase鍒嗗竷銆佸崱鐗囩被鍨嬮ゼ鍥?
-        contentEl.innerHTML += (
-            <div>
-                <canvas id="todayReviewedChart"></canvas>
-                <span id="todayReviewedChartSummary"></span>
-                <br />
-                <br />
-                <canvas id="forecastChart"></canvas>
-                <span id="forecastChartSummary"></span>
-                <br />
-                <br />
-                <canvas id="intervalsChart"></canvas>
-                <span id="intervalsChartSummary"></span>
-                <br />
-                <br />
-                <canvas id="easesChart"></canvas>
-                <span id="easesChartSummary"></span>
-                <br />
-                <br />
-                <canvas id="cardTypesChart"></canvas>
-                <br />
-                <span id="cardTypesChartSummary"></span>
-            </div>
-        );
+        const chartsEl = contentEl.createDiv();
+        this.createChartSlot(chartsEl, "todayReviewedChart", "todayReviewedChartSummary", true);
+        this.createChartSlot(chartsEl, "forecastChart", "forecastChartSummary", true);
+        this.createChartSlot(chartsEl, "intervalsChart", "intervalsChartSummary", true);
+        this.createChartSlot(chartsEl, "easesChart", "easesChartSummary", true);
+        this.createChartSlot(chartsEl, "cardTypesChart", "cardTypesChartSummary", false);
 
         // 缁戝畾绫诲瀷閫夋嫨涓嬫媺妗嗙殑浜嬩欢
         const chartTypeEl = document.getElementById("sr-chart-type") as HTMLSelectElement;
@@ -159,6 +137,40 @@ export class StatsModal extends Modal {
     onClose(): void {
         const { contentEl } = this;
         contentEl.empty();
+    }
+
+    private createOption(
+        selectEl: HTMLSelectElement,
+        value: string | number,
+        label: string,
+        selected = false,
+    ) {
+        const optionEl = selectEl.createEl("option", {
+            text: label,
+        });
+        optionEl.value = String(value);
+        optionEl.selected = selected;
+    }
+
+    private createChartSlot(
+        containerEl: HTMLElement,
+        canvasId: string,
+        summaryId: string,
+        includeDoubleBreak: boolean,
+    ) {
+        containerEl.createEl("canvas", {
+            attr: { id: canvasId },
+        });
+        containerEl.createSpan({
+            attr: { id: summaryId },
+        });
+
+        if (includeDoubleBreak) {
+            containerEl.createEl("br");
+            containerEl.createEl("br");
+        } else {
+            containerEl.createEl("br");
+        }
     }
 
     /**

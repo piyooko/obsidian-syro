@@ -4,7 +4,7 @@
  * 将 plugin.reviewDecks 转换为 React 组件所需的数据结构
  */
 
-import { TFile, CachedMetadata } from "obsidian";
+import { CachedMetadata } from "obsidian";
 import type SRPlugin from "src/main";
 import { ReviewDeck, SchedNote } from "src/ReviewDeck";
 import { NoteReviewSection, NoteReviewItem, NoteReviewSidebarState } from "../types/noteReview";
@@ -28,7 +28,7 @@ const COLORS = {
  */
 function extractTags(fileCache: CachedMetadata | null): string[] {
     if (!fileCache?.frontmatter?.tags) return [];
-    const tags = fileCache.frontmatter.tags;
+    const tags: unknown = fileCache.frontmatter.tags;
     // 处理字符串或数组格式
     if (Array.isArray(tags)) {
         return tags.map((t) => String(t).replace(/^#/, ""));

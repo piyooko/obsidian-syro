@@ -17,7 +17,7 @@
 /**
  * [数据层：负责数据的持久化、读取和内存状态管理] [工具] 封装 Obsidian 的文件系统 API，提供统一的读写接口。
  */
-import { App, DataAdapter, Keymap, MetadataCache, Vault } from "obsidian";
+import { App, DataAdapter, MetadataCache, Vault } from "obsidian";
 
 export abstract class Iadapter {
     metadataCache: MetadataCache;

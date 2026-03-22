@@ -8,7 +8,6 @@ import {
     EditorView,
     ViewPlugin,
     ViewUpdate,
-    WidgetType,
 } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
 
@@ -112,7 +111,6 @@ function processBold(
     while ((match = BOLD_REGEX.exec(text)) !== null) {
         const start = offset + match.index;
         const end = start + match[0].length;
-        const content = match[1];
         const contentStart = start + 2; // 跳过 **
         const contentEnd = end - 2; // 跳过 **
 

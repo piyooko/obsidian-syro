@@ -10,6 +10,7 @@ import { TrackedFile } from "src/dataStore/trackedFile";
 import { ReviewDeck } from "src/ReviewDeck";
 import { SRSettings } from "src/settings";
 import { Tags } from "src/tags";
+import { parseJsonUnknown } from "src/util/typeGuards";
 
 export type NoteReviewSource = "manual" | "tag";
 
@@ -34,7 +35,8 @@ export interface NoteReviewEntry {
 const NOTE_REVIEW_STORE_VERSION = 1;
 
 function cloneItem(item: RepetitionItem): RepetitionItem {
-    return RepetitionItem.create(JSON.parse(JSON.stringify(item)));
+    const cloned = parseJsonUnknown(JSON.stringify(item)) as RepetitionItem;
+    return RepetitionItem.create(cloned);
 }
 
 export class NoteReviewStore {

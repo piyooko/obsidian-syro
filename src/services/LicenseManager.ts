@@ -17,6 +17,7 @@
 
 import { Notice, Platform, Plugin, requestUrl } from "obsidian";
 import type { SRSettings } from "src/settings";
+import { getBooleanProp, getRecordProp, getStringProp, isRecord } from "src/util/typeGuards";
 
 type FileSystemAdapterLike = {
     basePath: string;
@@ -24,6 +25,27 @@ type FileSystemAdapterLike = {
 
 type LicenseSettingsLike = Pick<SRSettings, "licenseKey" | "isPro"> &
     Partial<Pick<SRSettings, "vaultId" | "licenseToken" | "lastVerification">>;
+
+type LicenseVerificationPayload = {
+    valid: boolean;
+    token?: string;
+};
+
+function parseLicenseVerificationPayload(value: unknown): LicenseVerificationPayload | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+
+    const valid = getBooleanProp(value, "valid");
+    if (valid === undefined) {
+        return null;
+    }
+
+    return {
+        valid,
+        token: getStringProp(value, "token"),
+    };
+}
 
 function getVaultPlatform(): string {
     if (Platform.isWin) return "windows";
@@ -136,14 +158,14 @@ export class LicenseManager {
                 }),
             });
 
-            const data = response.json;
+            const data = parseLicenseVerificationPayload(response.json as unknown);
 
-            if (data.valid) {
+            if (data?.valid) {
                 // 激活成功，更新本地设置
                 settings.licenseKey = key;
                 settings.isPro = true;
                 settings.vaultId = vaultId;
-                settings.licenseToken = data.token || "";
+                settings.licenseToken = data.token ?? "";
                 settings.lastVerification = Date.now();
                 return true;
             }
@@ -193,11 +215,11 @@ export class LicenseManager {
                 }),
             });
 
-            const result = response.json;
+            const result = parseLicenseVerificationPayload(response.json as unknown);
 
-            if (result && result.valid) {
+            if (result?.valid) {
                 // 刷新验证时间和 token
-                settings.licenseToken = result.token || settings.licenseToken;
+                settings.licenseToken = result.token ?? settings.licenseToken;
                 settings.vaultId = vaultId;
                 settings.lastVerification = Date.now();
                 return true;
@@ -298,8 +320,9 @@ export class LicenseManager {
     async checkFeatureAccess(featureName: string): Promise<boolean> {
         try {
             // 通过 plugin 拿到最新的 settings
-            const pluginData = await this.plugin.loadData();
-            const isPro = pluginData?.settings?.isPro ?? false;
+            const pluginData = (await this.plugin.loadData()) as unknown;
+            const pluginSettings = isRecord(pluginData) ? getRecordProp(pluginData, "settings") : undefined;
+            const isPro = pluginSettings ? getBooleanProp(pluginSettings, "isPro") === true : false;
 
             if (isPro) {
                 return true;

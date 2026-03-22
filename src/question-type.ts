@@ -26,12 +26,33 @@ import { findLineIndexOfSearchStringIgnoringWs } from "src/util/utils";
 export class CardFrontBack {
     front: string;
     back: string;
+    review?: string;
 
     // The caller is responsible for any required trimming of leading/trailing spaces
-    constructor(front: string, back: string) {
+    constructor(front: string, back: string, review?: string) {
         this.front = front;
         this.back = back;
+        this.review = review;
     }
+}
+
+const SR_MARKER_OPEN = "\u00ab\u00ab";
+const SR_MARKER_CLOSE = "\u00bb\u00bb";
+
+function buildClozePlaceholder(hint?: string): string {
+    return !hint ? "[...]" : `[${hint}]`;
+}
+
+function encodeHiddenMarker(hiddenText: string): string {
+    return `${SR_MARKER_OPEN}SR_H:${encodeURIComponent(hiddenText)}${SR_MARKER_CLOSE}`;
+}
+
+function encodeShownMarker(shownText: string): string {
+    return `${SR_MARKER_OPEN}SR_S:${encodeURIComponent(shownText)}${SR_MARKER_CLOSE}`;
+}
+
+function encodeUnifiedMarker(placeholderText: string, answerText: string): string {
+    return `${SR_MARKER_OPEN}SR_C:${encodeURIComponent(placeholderText)}:${encodeURIComponent(answerText)}${SR_MARKER_CLOSE}`;
 }
 
 export interface CardExpansionContext {
@@ -196,19 +217,23 @@ class QuestionTypeCloze implements IQuestionTypeHandler {
         return matches.map((activeMatch, activeIndex) => {
             let front = "";
             let back = "";
+            let review = "";
             let lastEnd = 0;
 
             matches.forEach((match, index) => {
                 front += questionText.substring(lastEnd, match.index);
                 back += questionText.substring(lastEnd, match.index);
+                review += questionText.substring(lastEnd, match.index);
 
                 if (index === activeIndex) {
-                    front += `««SR_H:${encodeURIComponent("[...]")}»»`;
-                    back += `««SR_S:${encodeURIComponent(match.text)}»»`;
+                    front += encodeHiddenMarker("[...]");
+                    back += encodeShownMarker(match.text);
+                    review += encodeUnifiedMarker("[...]", match.text);
                 } else {
                     const rendered = this.keepStandardMatchVisual(match, settings);
                     front += rendered;
                     back += rendered;
+                    review += rendered;
                 }
 
                 lastEnd = match.index + match.fullMatch.length;
@@ -216,7 +241,8 @@ class QuestionTypeCloze implements IQuestionTypeHandler {
 
             front += questionText.substring(lastEnd);
             back += questionText.substring(lastEnd);
-            return new CardFrontBack(front, back);
+            review += questionText.substring(lastEnd);
+            return new CardFrontBack(front, back, review);
         });
     }
 
@@ -232,13 +258,15 @@ class QuestionTypeCloze implements IQuestionTypeHandler {
         }
 
         const clozeFormatter = new QuestionTypeClozeFormatter();
+        const reviewFormatter = new QuestionTypeReviewFormatter();
 
-        let front: string, back: string;
+        let front: string, back: string, review: string;
         const result: CardFrontBack[] = [];
         for (let i = 0; i < clozeNote.numCards; i++) {
             front = clozeNote.getCardFront(i, clozeFormatter);
             back = clozeNote.getCardBack(i, clozeFormatter);
-            result.push(new CardFrontBack(front, back));
+            review = clozeNote.getCardFront(i, reviewFormatter);
+            result.push(new CardFrontBack(front, back, review));
         }
 
         return result;
@@ -247,17 +275,29 @@ class QuestionTypeCloze implements IQuestionTypeHandler {
 
 export class QuestionTypeClozeFormatter implements IClozeFormatter {
     asking(answer?: string, hint?: string): string {
-        const h = !hint ? "[...]" : `[${hint}]`;
-        return `««SR_H:${encodeURIComponent(h)}»»`;
+        return encodeHiddenMarker(buildClozePlaceholder(hint));
     }
 
     showingAnswer(answer: string, _hint?: string): string {
-        return `««SR_S:${encodeURIComponent(answer)}»»`;
+        return encodeShownMarker(answer);
     }
 
     hiding(answer?: string, hint?: string): string {
-        const h = !hint ? "[...]" : `[${hint}]`;
-        return `««SR_H:${encodeURIComponent(h)}»»`;
+        return encodeHiddenMarker(buildClozePlaceholder(hint));
+    }
+}
+
+export class QuestionTypeReviewFormatter implements IClozeFormatter {
+    asking(answer?: string, hint?: string): string {
+        return encodeUnifiedMarker(buildClozePlaceholder(hint), answer ?? "");
+    }
+
+    showingAnswer(answer: string, hint?: string): string {
+        return encodeUnifiedMarker(buildClozePlaceholder(hint), answer);
+    }
+
+    hiding(answer?: string, hint?: string): string {
+        return encodeHiddenMarker(buildClozePlaceholder(hint));
     }
 }
 
@@ -381,7 +421,8 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                 const contextInfos = this.extractClozeInfos(contextText);
                 const front = this.generateFront(contextText, contextInfos, activeId, settings);
                 const back = this.generateBack(contextText, contextInfos, activeId, settings);
-                result.push(new CardFrontBack(front, back));
+                const review = this.generateReview(contextText, contextInfos, activeId, settings);
+                result.push(new CardFrontBack(front, back, review));
             });
         }
 
@@ -434,7 +475,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                     contextText,
                     activeMatch.start,
                     activeMatch.end,
-                    `««SR_H:${encodeURIComponent("[...]")}»»`,
+                    encodeHiddenMarker("[...]"),
                 ),
                 settings,
             );
@@ -443,11 +484,20 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                     contextText,
                     activeMatch.start,
                     activeMatch.end,
-                    `««SR_S:${encodeURIComponent(match.text)}»»`,
+                    encodeShownMarker(match.text),
                 ),
                 settings,
             );
-            result.push(new CardFrontBack(front, back));
+            const review = this.applyOtherClozeVisibility(
+                this.replaceMatchAt(
+                    contextText,
+                    activeMatch.start,
+                    activeMatch.end,
+                    encodeUnifiedMarker("[...]", match.text),
+                ),
+                settings,
+            );
+            result.push(new CardFrontBack(front, back, review));
         });
 
         return result;
@@ -637,7 +687,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
             result += text.substring(lastEnd, info.start);
             if (info.id === activeId) {
                 // 褰撳墠 ID锛氫娇鐢ㄦ爣璁?
-                result += `««SR_H:${encodeURIComponent("[...]")}»»`;
+                result += encodeHiddenMarker("[...]");
             } else {
                 // 鍏朵粬 ID锛氬幓鎺?{{cN::...}} 鏍煎紡锛屽彧鏄剧ず绾枃鏈唴瀹?
                 result += this.shouldKeepOtherAnkiClozeVisual(settings)
@@ -669,9 +719,34 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
             result += text.substring(lastEnd, info.start);
             if (info.id === activeId) {
                 // 褰撳墠 ID锛氫娇鐢ㄦ爣璁?
-                result += `««SR_S:${encodeURIComponent(info.content)}»»`;
+                result += encodeShownMarker(info.content);
             } else {
                 // 鍏朵粬 ID锛氬幓鎺夋牸寮忥紝鍙樉绀虹函鏂囨湰鍐呭
+                result += this.shouldKeepOtherAnkiClozeVisual(settings)
+                    ? text.substring(info.start, info.end)
+                    : info.content;
+            }
+            lastEnd = info.end;
+        }
+
+        result += text.substring(lastEnd);
+        return result;
+    }
+
+    private generateReview(
+        text: string,
+        infos: { id: number; content: string; start: number; end: number }[],
+        activeId: number,
+        settings: SRSettings,
+    ): string {
+        let result = "";
+        let lastEnd = 0;
+
+        for (const info of infos) {
+            result += text.substring(lastEnd, info.start);
+            if (info.id === activeId) {
+                result += encodeUnifiedMarker("[...]", info.content);
+            } else {
                 result += this.shouldKeepOtherAnkiClozeVisual(settings)
                     ? text.substring(info.start, info.end)
                     : info.content;

@@ -15,7 +15,7 @@
  * 2. src/stats.ts
  */
 import { Notice, Platform } from "obsidian";
-import { cyrb53, isEqualOrSubPath } from "src/util/utils";
+import { cyrb53 } from "src/util/utils";
 import { SRSettings } from "src/settings";
 
 export class DateUtils {
@@ -309,7 +309,7 @@ export class MiscUtils {
                 }
             });
         }
-        return newObj as T;
+        return newObj;
     }
 
     /**
@@ -361,7 +361,7 @@ export class MiscUtils {
     notice(message: string | DocumentFragment, duration?: number): void {
         try {
             new Notice(message, duration);
-        } catch (error) {
+        } catch {
             console.debug(message);
         }
     }
@@ -374,14 +374,7 @@ export class MiscUtils {
  * @function
  */
 export function isArray<T = unknown>(value: unknown): value is T[] {
-    if (Array.isArray && Array.isArray(value)) {
-        return true;
-    }
-    const type = Object.prototype.toString.call(value);
-    if (type.slice(0, 7) === "[object" && type.slice(-6) === "Array]") {
-        return true;
-    }
-    return false;
+    return Array.isArray(value) || ArrayBuffer.isView(value);
 }
 
 // https://github.com/zsviczian/obsidian-excalidraw-plugin/
@@ -446,17 +439,29 @@ export const logExecutionTime = () => {
         propertyKey: string | symbol,
         propertyDescriptor: PropertyDescriptor,
     ) {
-        const originalFunc = propertyDescriptor.value;
+        const originalFunc = propertyDescriptor.value as
+            | ((this: unknown, ...args: unknown[]) => unknown)
+            | undefined;
+
+        if (typeof originalFunc !== "function") {
+            return propertyDescriptor;
+        }
 
         // 娣囶喗鏁奸崢鐔告箒function閻ㄥ嫬鐣炬稊?
-        propertyDescriptor.value = async function (...args: unknown[]) {
+        propertyDescriptor.value = async function (this: unknown, ...args: unknown[]) {
             // const startTime = new Date().getTime();
             const startTime = performance.now();
-            const results = await originalFunc.apply(this, args);
+            const results = (await originalFunc.apply(this, args)) as unknown;
             // const endTime = new Date().getTime();
             const endTime = performance.now();
             const msg = `*** ${propertyKey.toString()} took ${endTime - startTime} msec to run ***`;
-            if (endTime - startTime > 10) debug(originalFunc.name, undefined, { msg });
+            if (endTime - startTime > 10) {
+                const functionName =
+                    typeof originalFunc.name === "string" && originalFunc.name.length > 0
+                        ? originalFunc.name
+                        : propertyKey.toString();
+                debug(functionName, undefined, { msg });
+            }
             return results;
         };
         return propertyDescriptor;

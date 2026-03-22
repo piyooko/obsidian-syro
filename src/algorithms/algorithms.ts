@@ -16,7 +16,7 @@
  * [绠楁硶灞傦細璐熻矗璁＄畻涓嬩竴娆″涔犵殑鏃堕棿銆侀棿闅斿拰闅惧害] [鏍稿績] 绠楁硶鐨勬娊璞″熀绫伙紙Interface锛夛紝瀹氫箟鎵€鏈夌畻娉曞繀椤诲疄鐜扮殑鏂规硶銆?
  */
 import { MiscUtils } from "src/util/utils_recall";
-import { RPITEMTYPE, RepetitionItem, ReviewResult } from "src/dataStore/repetitionItem";
+import { RepetitionItem, ReviewResult } from "src/dataStore/repetitionItem";
 
 export enum algorithmNames {
     Default = "Default",

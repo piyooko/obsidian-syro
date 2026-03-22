@@ -390,7 +390,7 @@ export class DeckTreeIterator implements IDeckTreeIterator {
                     }
                 }
                 if (hasDeck) {
-                    const [deckIdx, _] = this.weightedRandomNumber.getRandomValues(weights);
+                    const [deckIdx] = this.weightedRandomNumber.getRandomValues(weights);
                     this.deckIdx = deckIdx;
                 } else {
                     // Our signal that no deck with cards present

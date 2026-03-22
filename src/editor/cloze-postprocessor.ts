@@ -4,7 +4,6 @@
 import { MarkdownPostProcessorContext } from "obsidian";
 
 export const clozePostProcessor = (el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
-    const clozes = el.querySelectorAll("code");
     // Only process text nodes, skip code blocks?
     // Actually, we should iterate text nodes.
 
@@ -30,7 +29,6 @@ export const clozePostProcessor = (el: HTMLElement, ctx: MarkdownPostProcessorCo
                 replacements.push(text.slice(lastIndex, match.index));
             }
 
-            const id = match[1];
             const content = match[2];
             const hint = match[3];
 

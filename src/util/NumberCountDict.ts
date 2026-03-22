@@ -12,7 +12,8 @@
  * 哪些文件会用到它：
  * 1. src/stats.ts (统计部分)
  */
-import { getKeysPreserveType, getTypedObjectEntries } from "./utils";
+import { getTypedObjectEntries } from "./utils";
+import { hasOwn } from "./typeGuards";
 
 export class ValueCountDict {
     dict: Record<number, number> = {}; // Record<value, count>
@@ -22,7 +23,7 @@ export class ValueCountDict {
     }
 
     hasValue(value: number): boolean {
-        return Object.prototype.hasOwnProperty.call(this.dict, value);
+        return hasOwn(this.dict, value);
     }
 
     incrementCount(value: number): void {
@@ -37,7 +38,8 @@ export class ValueCountDict {
     }
 
     getMaxValue(): number {
-        return Math.max(...getKeysPreserveType(this.dict)) || 0;
+        const keys = Object.keys(this.dict).map((key) => Number(key));
+        return keys.length > 0 ? Math.max(...keys) : 0;
     }
 
     getTotalOfValueMultiplyCount(): number {

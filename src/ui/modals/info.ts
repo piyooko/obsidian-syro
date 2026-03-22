@@ -22,7 +22,7 @@ function formatDebugValue(value: unknown): string {
     try {
         return JSON.stringify(value);
     } catch {
-        return Object.prototype.toString.call(value);
+        return "[unserializable object]";
     }
 }
 
@@ -124,7 +124,7 @@ export class ItemInfoModal extends Modal {
         tkfile.cardItems.forEach((cinfo) => {
             const ln = cinfo.lineNo + 1;
             // 鏄剧ず姣忎竴寮犲崱鐗囩殑鎽樿锛圛tem IDs 鍙兘鍖呭惈澶氫釜锛屽洜涓哄彲鑳芥湁 cloze锛?
-            const ids = Object.values(cinfo.itemMap || {}).filter((id) => id >= 0);
+            const ids = Object.values(cinfo.itemMap).filter((id) => id >= 0);
             this.displayitemWithSummary(contentEl, this.store.getItems(ids), stext + ln);
         });
     }

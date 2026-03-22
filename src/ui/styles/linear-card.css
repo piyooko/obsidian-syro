@@ -573,9 +573,9 @@
     flex: 1;
     overflow-y: auto;
     padding:
-        var(--syro-review-content-padding-y, 32px)
+        var(--syro-review-content-padding-y, 24px)
         var(--syro-review-content-padding-x, 40px);
-    scroll-padding-block: clamp(48px, 14vh, 112px);
+    scroll-padding-block: clamp(32px, 10vh, 72px);
 }
 
 /* 基础卡片内容 */
@@ -626,7 +626,7 @@
     font-size: 18px;
     line-height: 1.8;
     color: var(--text-normal);
-    padding-block: clamp(48px, 14vh, 112px);
+    padding-block: 0;
 }
 
 /* ==========================================
@@ -1603,14 +1603,14 @@ body.syro-review-compact-actions .sr-linear-btn-sub {
 .is-mobile .sr-card-content-scroll,
 .is-phone .sr-card-content-scroll {
     padding:
-        max(20px, calc(var(--syro-review-content-padding-y, 32px) - 12px))
+        max(20px, calc(var(--syro-review-content-padding-y, 24px) - 8px))
         max(16px, calc(var(--syro-review-content-padding-x, 40px) - 24px));
     scroll-padding-block: 72px;
 }
 
 .is-mobile .sr-cloze-content,
 .is-phone .sr-cloze-content {
-    padding-block: 32px 72px;
+    padding-block: 0;
 }
 
 /* 移动端：Footer 优化 */
@@ -1834,6 +1834,11 @@ body.syro-review-compact-actions .sr-linear-btn-sub {
     padding-left: 12px;
     white-space: pre-wrap;
     word-break: break-all;
+}
+
+.sr-code-line-content-ellipsis {
+    opacity: 0.5;
+    font-style: italic;
 }
 
 /* 暗色主题 */

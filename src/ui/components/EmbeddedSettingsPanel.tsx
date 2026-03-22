@@ -18,19 +18,10 @@
 /** @jsxImportSource react */
 import { Notice } from "obsidian";
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
 import {
-    Layers,
     FileText,
-    Calendar,
     Layout,
-    HelpCircle,
     Shield,
-    PieChart,
-    ChevronDown,
-    ChevronRight,
-    Search,
-    X,
     Cpu,
 } from "lucide-react";
 import { t } from "src/lang/helpers";
@@ -43,7 +34,6 @@ import {
     SelectRow,
     ColorPickerRow,
     SliderRow,
-    LinkRow,
 } from "./common/SettingsComponents";
 
 // ==========================================
@@ -1316,7 +1306,7 @@ const LicenseTab: React.FC<LicenseTabProps> = ({ settings, onChange }) => {
             } else {
                 new Notice(t("SETTINGS_MSG_VERIFY_FAIL"));
             }
-        } catch (err) {
+        } catch {
             new Notice(t("SETTINGS_MSG_NET_ERROR"));
         }
         setLoading(false);

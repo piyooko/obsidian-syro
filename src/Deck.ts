@@ -23,7 +23,6 @@ import { Card } from "./Card";
 import { FlashcardReviewMode } from "./scheduling";
 import { Question } from "./Question";
 import { IQuestionPostponementList } from "./QuestionPostponementList";
-import { SRSettings } from "./settings";
 import { TopicPath, TopicPathList } from "./TopicPath";
 import type SRPlugin from "./main";
 
@@ -212,7 +211,6 @@ export class Deck {
     private getQuestionCardCountForCardListType(question: Question, cards: Card[]): number {
         let result: number = 0;
         for (let i = 0; i < cards.length; i++) {
-            const card = cards[i];
             if (Object.is(question, cards[i].question)) result++;
         }
         return result;

@@ -1,8 +1,6 @@
 /**
  * [事件层：监听系统事件] [交互] 移动端触摸手势处理。
  */
-import { debug } from "src/util/utils_recall";
-
 interface IminTouch {
     identifier: number;
     pageX: number;

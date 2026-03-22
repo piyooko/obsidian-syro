@@ -663,14 +663,16 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     const cardIdx = card.cardIdx;
     let front = expanded[cardIdx]?.front || "";
     let back = expanded[cardIdx]?.back || "";
+    const review = expanded[cardIdx]?.review;
 
     const cardState: CardState = useMemo(
         () => ({
             front,
             back,
+            review,
             responseButtonLabels: btnLabels,
         }),
-        [front, back, btnLabels],
+        [front, back, review, btnLabels],
     );
 
     // Pull deck stats for the current topic path.

@@ -27,7 +27,7 @@ import { MiscUtils, debug } from "src/util/utils_recall";
 import { SRSettings } from "../settings";
 import SRPlugin from "src/main";
 
-import { TFile, TFolder, getAllTags } from "obsidian";
+import { TFile, TFolder } from "obsidian";
 
 import { FsrsData } from "src/algorithms/fsrs";
 import { AnkiData } from "src/algorithms/anki";
@@ -35,12 +35,13 @@ import { AnkiData } from "src/algorithms/anki";
 import { getStorePath } from "src/dataStore/dataLocation";
 import { Tags } from "src/tags";
 import { SrsAlgorithm, algorithmNames } from "src/algorithms/algorithms";
-import { TrackedFile, TrackedItem } from "./trackedFile";
+import { TrackedFile } from "./trackedFile";
 import { RPITEMTYPE, RepetitionItem, ReviewResult, CardQueue } from "./repetitionItem";
 import { DEFAULT_QUEUE_DATA, Queue } from "./queue";
 import { Iadapter } from "./adapter";
 import { t } from "src/lang/helpers";
 import { createEmptyCard } from "ts-fsrs";
+import { getArrayProp, getNumberProp, isRecord, parseJsonUnknown } from "src/util/typeGuards";
 
 /**
  * SrsData.
@@ -261,11 +262,17 @@ export class DataStore {
             if (!(await adapter.exists(overlayPath))) return null;
             const raw = await adapter.read(overlayPath);
             if (!raw) return null;
-            const parsed: ReviewItemOverlayFile = JSON.parse(raw);
-            if (parsed?.version !== REVIEW_ITEM_OVERLAY_VERSION || !Array.isArray(parsed.items)) {
+            const parsed = parseJsonUnknown(raw);
+            if (!isRecord(parsed)) {
                 return null;
             }
-            return parsed;
+
+            const version = getNumberProp(parsed, "version");
+            const items = getArrayProp(parsed, "items");
+            if (version !== REVIEW_ITEM_OVERLAY_VERSION || !items) {
+                return null;
+            }
+            return parsed as unknown as ReviewItemOverlayFile;
         } catch (error) {
             console.warn("[SR-Overlay] Failed to load review overlay:", error);
             return null;
@@ -379,7 +386,6 @@ export class DataStore {
             }
         }
         // 1. Cleanup fileOrder: remove ghost IDs that don't exist in trackedFiles
-        const originalOrderCount = this.data.fileOrder?.length || 0;
         this.data.fileOrder = (this.data.fileOrder || []).filter((id) => {
             if (this.data.trackedFiles[id]) return true;
             this.logInfo(`[SR-Cleanup] Removed ghost fileID from fileOrder: ${id}`);
@@ -495,11 +501,12 @@ export class DataStore {
                     this.logError("Unable to read SRS data!");
                     this.data = Object.assign({}, DEFAULT_SRS_DATA);
                 } else {
-                    const parsed = JSON.parse(data);
-                    this.data = Object.assign(Object.assign({}, DEFAULT_SRS_DATA), parsed);
+                    const parsed = parseJsonUnknown(data);
+                    const parsedData = isRecord(parsed) ? (parsed as Partial<SrsData>) : null;
+                    this.data = Object.assign(Object.assign({}, DEFAULT_SRS_DATA), parsedData);
                     this.logDebug(
                         "[SR-Debug] Data loaded from disk. Items in JSON:",
-                        parsed.items?.length,
+                        parsedData && Array.isArray(parsedData.items) ? parsedData.items.length : 0,
                     );
                     this.data.mtime = await this.getmtime();
                     const overlay = await this.loadReviewOverlayFromDisk(path);
@@ -717,7 +724,7 @@ export class DataStore {
         return file?.tags?.length > 0 ? this.getItems(file.itemIDs) : [];
     }
     getItems = (ids: number[]): RepetitionItem[] => {
-        return ids.map(this.getItembyID.bind(this));
+        return ids.map((id) => this.getItembyID(id));
     };
     getNoteItem(path: string): RepetitionItem {
         const tkFile = this.getTrackedFile(path);
@@ -936,13 +943,8 @@ export class DataStore {
         const trackedFile = this.getTrackedFile(path);
         const abstractFile = Iadapter.instance.vault.getAbstractFileByPath(path);
         const note = abstractFile instanceof TFile ? abstractFile : null;
-        let cardName: string = null;
-
         if (note != null && trackedFile) {
-            const fileCachedData = Iadapter.instance.metadataCache.getFileCache(note) || {};
-            const tags = getAllTags(fileCachedData) || [];
             const deckname = Tags.getNoteDeckName(note, this.settings);
-            cardName = Tags.getTagFromSettingTags(tags, this.settings.flashcardTags);
             if (deckname !== null) {
                 // || cardName !== null
                 // it's taged file, can't untrack by this.
@@ -1255,12 +1257,9 @@ export class DataStore {
     /**
      * pruneData: delete unused storedata, fsrs's optimizer/writeRevlog() will be affected if using this func.
      * NulltFiles/NullItems
-     * @returns
+    * @returns
      */
     async pruneData() {
-        const oldFileCount = Object.keys(this.data.trackedFiles).length;
-        let removedItems = this.itemSize;
-
         this.data = MiscUtils.assignOnly(DEFAULT_SRS_DATA, this.data);
 
         // 杩囨护鏃犳晥鐨?trackedFiles
@@ -1291,8 +1290,6 @@ export class DataStore {
         this.markItemByIdIndexDirty();
         this.reviewItemOverlayById.clear();
 
-        const removedtkfiles = oldFileCount - Object.keys(this.data.trackedFiles).length;
-        removedItems = removedItems - this.itemSize;
         this.data.queues.clearQueue();
         await this.save();
 

@@ -25,7 +25,7 @@ import React, {
     Fragment,
     ReactNode,
 } from "react";
-import type { FC, PropsWithChildren } from "react";
+import type { FC } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     RotateCcw,
@@ -51,11 +51,13 @@ import type SRPlugin from "src/main";
 import "../styles/linear-card.css";
 import { t } from "src/lang/helpers";
 import { transformLatex } from "../../utils/latexTransformer";
+import { createSanitizedHtmlFragment } from "src/util/safeHtml";
 
 // 鍗＄墖鐘舵€佺被鍨?
 export interface CardState {
     front: string;
     back: string;
+    review?: string;
     responseButtonLabels?: string[];
 }
 
@@ -143,6 +145,15 @@ export const LinearCard: FC<LinearCardProps> = ({
     const [stats, setStats] = useState(initialStats);
     const [currentType, setCurrentType] = useState<"new" | "learning" | "due">(cardType || "due");
     const [isFlipped, setIsFlipped] = useState(false);
+    const cardUiResetKey = [
+        card?.front || "",
+        card?.back || "",
+        card?.review || "",
+        ...(card?.responseButtonLabels || []),
+    ].join("\u001f");
+    const lastCardUiResetKeyRef = useRef(cardUiResetKey);
+    const isCardUiResetPending = lastCardUiResetKeyRef.current !== cardUiResetKey;
+    const renderIsFlipped = isCardUiResetPending ? false : isFlipped;
 
     // 鍚屾 cardType prop 鐨勫彉鍖?
     useEffect(() => {
@@ -265,7 +276,12 @@ export const LinearCard: FC<LinearCardProps> = ({
     }, [isFlipped]);
 
     // 閲嶇疆鍗＄墖鐩稿叧鐨勫眬閮?UI 鐘舵€侊紝閬垮厤鍒囧崱鍚庢畫鐣欎笂涓€寮犲崱鐨勮彍鍗?鎻愮ず/鍒犻櫎鎬?
-    useEffect(() => {
+    useLayoutEffect(() => {
+        if (lastCardUiResetKeyRef.current === cardUiResetKey) {
+            return;
+        }
+
+        lastCardUiResetKeyRef.current = cardUiResetKey;
         setIsFlipped(false);
         setIsEditing(false);
         setShowMenu(false);
@@ -273,7 +289,7 @@ export const LinearCard: FC<LinearCardProps> = ({
         setToasts([]);
         setIsDeleted(false);
         setTimeExpired(false);
-    }, [card?.front, card?.back, card?.responseButtonLabels]);
+    }, [cardUiResetKey]);
 
     useEffect(() => {
         setStats(initialStats);
@@ -682,7 +698,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                             <div className="sr-timer-bar-container">
                                 <AnimatePresence mode="wait">
                                     {
-                                        (!isFlipped && autoAdvanceSeconds > 0 && (
+                                        (!renderIsFlipped && autoAdvanceSeconds > 0 && (
                                             <TimerBar
                                                 duration={autoAdvanceSeconds}
                                                 onComplete={() => {
@@ -715,7 +731,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                     <div className="sr-card-content-scroll">
                                         {type === "cloze" ? (
                                             <ClozeContent
-                                                isFlipped={isFlipped}
+                                                isFlipped={renderIsFlipped}
                                                 card={card}
                                                 renderMarkdown={renderMarkdown}
                                                 showOtherAnkiClozeVisual={
@@ -745,7 +761,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             />
                                         ) : (
                                             <BasicContent
-                                                isFlipped={isFlipped}
+                                                isFlipped={renderIsFlipped}
                                                 card={card || { front: "Q", back: "A" }}
                                                 renderMarkdown={renderMarkdown}
                                             />
@@ -774,7 +790,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                     <span className="sr-kbd">ESC</span>
                                                 </button>
                                             </motion.div>
-                                        ) : !isFlipped ? (
+                                        ) : !renderIsFlipped ? (
                                             <motion.div
                                                 key="show-answer"
                                                 initial={{ opacity: 0, y: 5 }}
@@ -1067,24 +1083,18 @@ const MarkdownDisplay = ({
     content,
     renderMarkdown,
     onRendered,
+    showAnswer = false,
 }: {
     content: string;
     renderMarkdown?: (text: string, el: HTMLElement) => Promise<void> | void;
     onRendered?: (el: HTMLDivElement) => void;
+    showAnswer?: boolean;
 }) => {
-    const [hasRenderedContent, setHasRenderedContent] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        setHasRenderedContent(false);
-    }, [content]);
+    const shouldRefreshForFlip = requiresFlipAwareMathRender(content);
 
     useLayoutEffect(() => {
         let cancelled = false;
-        const waitForPaint = () =>
-            new Promise<void>((resolve) => {
-                requestAnimationFrame(() => resolve());
-            });
 
         const renderAsync = async () => {
             const target = ref.current;
@@ -1116,28 +1126,21 @@ const MarkdownDisplay = ({
             }
 
             // 銆怢aTeX 濉┖澶勭悊銆戝湪娓叉煋鍓嶏紝灏嗘暟瀛﹀叕寮忎腑鐨?marker 杞负 LaTeX \color{} 鍛戒护
-            cleanContent = preprocessMathCloze(cleanContent);
+            cleanContent = preprocessMathCloze(
+                cleanContent,
+                shouldRefreshForFlip ? (showAnswer ? "highlight" : "mask") : "highlight",
+            );
 
             if (!renderMarkdown) {
                 target.replaceChildren(document.createTextNode(toFallbackText(cleanContent)));
-                setHasRenderedContent(true);
                 onRendered?.(target);
                 return;
             }
 
             const buffer = document.createElement("div");
-            buffer.hidden = true;
-            target.appendChild(buffer);
 
             try {
-                const renderResult = renderMarkdown(cleanContent, buffer);
-                void Promise.resolve(renderResult).catch((error: unknown) => {
-                    if (!cancelled && ref.current === target) {
-                        console.error("[LinearCard] Failed to render markdown", error);
-                    }
-                });
-                await waitForPaint();
-                await waitForPaint();
+                await renderMarkdown(cleanContent, buffer);
 
                 if (cancelled || ref.current !== target) {
                     return;
@@ -1154,11 +1157,8 @@ const MarkdownDisplay = ({
                 const renderedNodes = Array.from(buffer.childNodes);
                 if (renderedNodes.length > 0 || buffer.textContent?.trim()) {
                     target.replaceChildren(...renderedNodes);
-                    setHasRenderedContent(true);
                 } else {
-                    target.replaceChildren();
-                    buffer.remove();
-                    setHasRenderedContent(false);
+                    target.replaceChildren(document.createTextNode(toFallbackText(cleanContent)));
                 }
 
                 if (!cancelled && ref.current === target) {
@@ -1170,8 +1170,9 @@ const MarkdownDisplay = ({
                 }
 
                 console.error("[LinearCard] Failed to render markdown", error);
-                target.replaceChildren();
-                setHasRenderedContent(false);
+                if (target.childNodes.length === 0) {
+                    target.replaceChildren(document.createTextNode(toFallbackText(cleanContent)));
+                }
                 onRendered?.(target);
             }
         };
@@ -1180,20 +1181,43 @@ const MarkdownDisplay = ({
         return () => {
             cancelled = true;
         };
-    }, [content, renderMarkdown, onRendered]);
+    }, [content, renderMarkdown, onRendered, shouldRefreshForFlip ? showAnswer : undefined]);
 
     return (
         <div
             className="sr-markdown-content markdown-preview-view markdown-rendered"
             style={{ textAlign: "left" }}
-        >
-            {!hasRenderedContent && (
-                <div className="sr-markdown-fallback">{toFallbackText(content)}</div>
-            )}
-            <div ref={ref} hidden={!hasRenderedContent && !!renderMarkdown} />
-        </div>
+            ref={ref}
+        />
     );
 };
+
+function containsMathExpression(content: string): boolean {
+    return /\$\$[\s\S]*?\$\$|(?<!\\)\$(?!\$)[^$\n]+?(?<!\\)\$(?!\$)/.test(content);
+}
+
+function requiresFlipAwareMathRender(content: string): boolean {
+    const normalized = normalizeSrMarkers(content.replace(/<!--SR_CODE_CLOZE:\d+:\d+-->\n?/g, ""));
+    return normalized.includes("««SR_C:") && containsMathExpression(normalized);
+}
+
+function decodeUnifiedMarkerPayload(
+    payload: string,
+): { placeholderText: string; answerText: string } | null {
+    const separatorIndex = payload.indexOf(":");
+    if (separatorIndex === -1) {
+        return null;
+    }
+
+    try {
+        return {
+            placeholderText: decodeURIComponent(payload.slice(0, separatorIndex)),
+            answerText: decodeURIComponent(payload.slice(separatorIndex + 1)),
+        };
+    } catch {
+        return null;
+    }
+}
 
 function toFallbackText(content: string): string {
     const normalized = normalizeSrMarkers(content.replace(/<!--SR_CODE_CLOZE:\d+:\d+-->\n?/g, ""));
@@ -1206,9 +1230,15 @@ function toFallbackText(content: string): string {
     };
 
     return normalized
-        .replace(/««SR_CLOZE:([^»]+)»»/g, (_match, encoded) => `[${decodeMarker(encoded, "...")}]`)
+        .replace(/««SR_C:([^»]+)»»/g, (_match: string, payload: string) => {
+            return decodeUnifiedMarkerPayload(payload)?.placeholderText ?? "[...]";
+        })
+        .replace(
+            /««SR_CLOZE:([^»]+)»»/g,
+            (_match: string, encoded: string) => `[${decodeMarker(encoded, "...")}]`,
+        )
         .replace(/««SR_H:([^»]+)»»/g, () => "[...]")
-        .replace(/««SR_S:([^»]+)»»/g, (_match, encoded) => decodeMarker(encoded, ""))
+        .replace(/««SR_S:([^»]+)»»/g, (_match: string, encoded: string) => decodeMarker(encoded, ""))
         .replace(/{{c\d+::(.*?)(?:::.*)?}}/g, "[...]");
 }
 
@@ -1224,7 +1254,10 @@ function toFallbackText(content: string): string {
  * 杩欐牱 MathJax 鏀跺埌鐨勬槸绾?LaTeX 浠ｇ爜锛岃兘姝ｇ‘娓叉煋甯﹂鑹茬殑濉┖鏁堟灉銆?
  * 澶嶇敤浜?latex-cloze-preprocessor.ts 鐨勬覆鏌撴€濊矾銆?
  */
-function preprocessMathCloze(content: string): string {
+function preprocessMathCloze(
+    content: string,
+    latexMode: "highlight" | "mask" = "highlight",
+): string {
     content = normalizeSrMarkers(content);
 
     // 蹇€熸鏌ワ細濡傛灉涓嶅寘鍚暟瀛﹀畾鐣岀鎴?marker 鏍囪锛岀洿鎺ヨ繑鍥?
@@ -1236,16 +1269,17 @@ function preprocessMathCloze(content: string): string {
     let result = content;
 
     // 澶勭悊鍧楃骇鍏紡 $$...$$
-    result = result.replace(/\$\$([\s\S]*?)\$\$/g, (fullMatch, inner) => {
+    result = result.replace(/\$\$([\s\S]*?)\$\$/g, (_fullMatch: string, inner: string) => {
         // 浣跨敤 transformLatex 鏇夸唬鑴嗗急鐨勬鍒欐浛鎹?
         // 鍦ㄥ崱鐗囧涔犲満鏅笅锛屼笉闇€瑕佸尯鍒?activeId锛屽洜涓?question-type 宸茬粡澶勭悊濂戒簡
-        return `$$${transformLatex(inner, "highlight", null)}$$`;
+        return `$$${transformLatex(inner, latexMode, null)}$$`;
     });
 
     // 澶勭悊琛屽唴鍏紡 $...$锛堥伩鍏嶅尮閰?$$锛?
-    result = result.replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g, (fullMatch, inner) => {
-        return `$${transformLatex(inner, "highlight", null)}$`;
-    });
+    result = result.replace(
+        /(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g,
+        (_fullMatch: string, inner: string) => `$${transformLatex(inner, latexMode, null)}$`,
+    );
 
     return result;
 }
@@ -1287,7 +1321,7 @@ function postProcessMarkers(container: HTMLElement) {
 
         const fragments: (Text | HTMLElement)[] = [];
         let lastEnd = 0;
-        const regex = /««SR_([HS]):([^»]+)»»/g;
+        const regex = /««SR_([HSC]):([^»]+)»»/g;
         let match;
 
         while ((match = regex.exec(text)) !== null) {
@@ -1298,19 +1332,43 @@ function postProcessMarkers(container: HTMLElement) {
 
             const type = match[1];
             const encoded = match[2];
-            try {
-                const content = decodeURIComponent(encoded);
-                const span = document.createElement("span");
-                if (type === "H") {
-                    span.className = "sr-cloze-hidden";
-                    span.textContent = content;
-                } else {
-                    span.className = "sr-cloze-shown sr-is-active";
-                    span.textContent = content;
+            if (type === "C") {
+                const unifiedMarker = decodeUnifiedMarkerPayload(encoded);
+                if (!unifiedMarker) {
+                    fragments.push(document.createTextNode(match[0]));
+                    lastEnd = regex.lastIndex;
+                    continue;
                 }
-                fragments.push(span);
-            } catch {
-                fragments.push(document.createTextNode(match[0]));
+
+                const wrapper = document.createElement("span");
+                wrapper.className = "sr-cloze-wrapper";
+
+                const placeholder = document.createElement("span");
+                placeholder.className = "sr-cloze-placeholder";
+                placeholder.textContent = unifiedMarker.placeholderText;
+
+                const answer = document.createElement("span");
+                answer.className = "sr-cloze-answer";
+                answer.textContent = unifiedMarker.answerText;
+
+                wrapper.appendChild(placeholder);
+                wrapper.appendChild(answer);
+                fragments.push(wrapper);
+            } else {
+                try {
+                    const content = decodeURIComponent(encoded);
+                    const span = document.createElement("span");
+                    if (type === "H") {
+                        span.className = "sr-cloze-hidden";
+                        span.textContent = content;
+                    } else {
+                        span.className = "sr-cloze-shown sr-is-active";
+                        span.textContent = content;
+                    }
+                    fragments.push(span);
+                } catch {
+                    fragments.push(document.createTextNode(match[0]));
+                }
             }
             lastEnd = regex.lastIndex;
         }
@@ -1332,6 +1390,28 @@ function postProcessMarkers(container: HTMLElement) {
             parent.removeChild(node);
         }
     });
+}
+
+const CODE_LINE_HTML_OPTIONS = {
+    allowedTags: ["span"],
+    allowedAttributes: {
+        span: ["class"],
+    },
+} as const;
+
+function setCodeLineContent(target: HTMLElement, html: string) {
+    if (!html) {
+        target.textContent = " ";
+        return;
+    }
+
+    const fragment = createSanitizedHtmlFragment(html, CODE_LINE_HTML_OPTIONS);
+    if (!fragment.hasChildNodes()) {
+        target.textContent = html;
+        return;
+    }
+
+    target.replaceChildren(fragment);
 }
 
 /**
@@ -1407,7 +1487,7 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
             /««SR_CLOZE_FRONT»»/g,
             '<span class="sr-cloze-placeholder">[...]</span>',
         );
-        codeContent = codeContent.replace(/««SR_CLOZE_BACK:([^»]+)»»/g, (match, encoded) => {
+        codeContent = codeContent.replace(/««SR_CLOZE_BACK:([^»]+)»»/g, (match: string, encoded: string) => {
             try {
                 const decoded = decodeURIComponent(encoded);
                 return `<span class="sr-cloze-answer">${decoded}</span>`;
@@ -1436,7 +1516,15 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
             if (trimmedLine.startsWith("// ...")) {
                 const lineDiv = document.createElement("div");
                 lineDiv.className = "sr-code-context-line sr-code-ellipsis";
-                lineDiv.innerHTML = `<span class="sr-code-line-number"></span><span class="sr-code-line-content" style="opacity:0.5; font-style:italic;">${lineContent}</span>`;
+                const lineNumSpan = document.createElement("span");
+                lineNumSpan.className = "sr-code-line-number";
+
+                const lineContentSpan = document.createElement("span");
+                lineContentSpan.className = "sr-code-line-content sr-code-line-content-ellipsis";
+                setCodeLineContent(lineContentSpan, lineContent);
+
+                lineDiv.appendChild(lineNumSpan);
+                lineDiv.appendChild(lineContentSpan);
                 wrapper.appendChild(lineDiv);
                 return;
             }
@@ -1455,7 +1543,7 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
             // 琛屽唴瀹?
             const lineContentSpan = document.createElement("span");
             lineContentSpan.className = "sr-code-line-content";
-            lineContentSpan.innerHTML = lineContent || " ";
+            setCodeLineContent(lineContentSpan, lineContent);
 
             lineDiv.appendChild(lineNumSpan);
             lineDiv.appendChild(lineContentSpan);
@@ -1604,16 +1692,20 @@ const ClozeContent = ({
                 frameRef.current = null;
             }
         };
-    }, [card, isFlipped, scheduleCenterActiveCloze]);
+    }, [card?.front, card?.back, card?.review, isFlipped, scheduleCenterActiveCloze]);
 
     // 鏍规嵁鏄惁涓轰唬鐮佸潡 Cloze 閫夋嫨娓叉煋绛栫暐
     const frontContent = card?.front || "";
     const backContent = card?.back || frontContent;
+    const reviewContent = card?.review || "";
+    const hasReviewContent = reviewContent.length > 0;
     const contentToRender = isCodeBlockCloze
         ? frontContent
-        : isFlipped
-          ? backContent
-          : frontContent;
+        : hasReviewContent
+          ? reviewContent
+          : isFlipped
+            ? backContent
+            : frontContent;
 
     // [Mod] Filter out other clozes if setting is disabled.
     // DOM manipulation is used to handle styles added by Obsidian's post-processors.
@@ -1687,7 +1779,9 @@ const ClozeContent = ({
         showOtherBoldClozeVisual,
         isFlipped,
         isCodeBlockCloze,
-        card,
+        card?.front,
+        card?.back,
+        card?.review,
     ]);
 
     return (
@@ -1696,6 +1790,7 @@ const ClozeContent = ({
                 content={contentToRender}
                 renderMarkdown={renderMarkdown}
                 onRendered={scheduleCenterActiveCloze}
+                showAnswer={isFlipped}
             />
         </div>
     );

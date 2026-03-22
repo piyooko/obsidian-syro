@@ -28,10 +28,6 @@ export function setDueDates(
     dueDatesDict[RPITEMTYPE.CARD] = carddueDates;
 }
 
-function getDueDates(itemType: string) {
-    return dueDatesDict && itemType in dueDatesDict ? dueDatesDict[itemType] : undefined;
-}
-
 /**
  * balance review counts in a day, return new interval day.
  * @param interval days till next review

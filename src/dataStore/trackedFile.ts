@@ -1,36 +1,36 @@
-/**
+﻿/**
  * ============================================================================
- * 鏂囦欢锛歍rackedFile.ts
- * ============================================================================
- *
- * 銆愬叏鏂版灦鏋勶細浠ユ寚绾逛负鏍稿績鐨勫瓟绾ц拷韪郴缁熴€?
- *
- * 杩欎釜鏂囦欢鏄?鍗＄墖杩借釜"鐨勬牳蹇冿紝鍋氫簡涓や欢澶т簨锛?
- * 1. 绠＄悊鍝簺鏂囦欢琚拷韪紙TrackedFile锛夛紝骞跺皢鏂囦欢鍐呭鎷嗚В涓烘渶缁嗙矑搴︾殑鈥滃瓟锛圱rackedItem锛夆€濄€?
- * 2. 閫氳繃"鏄庢枃鎸囩汗鍖归厤 + 灞€閮ㄤ笂涓嬫枃娑堟"鐨勬柟寮忥紝鎶婃棫鐨勫涔犺褰曞拰鏂扮殑瀛斿唴瀹瑰搴旇捣鏉ャ€?
- *
- * ============================================================================
- * 鏍稿績璁捐鐞嗗康锛堜笌鏃х増鐨勫尯鍒級锛?
+ * 閺傚洣娆㈤敍姝峳ackedFile.ts
  * ============================================================================
  *
- * 1. 銆愬瓟绾х矑搴︺€戯細
- *    浠ュ墠涓€鏉¤褰曚唬琛ㄢ€滀竴鏁磋/娈佃惤鈥濓紙鍖呭惈澶氫釜瀛旓級锛岀幇鍦ㄤ竴鏉¤褰曪紙TrackedItem锛夊彧浠ｈ〃鈥滀竴涓瓟鈥濇垨鈥滀竴涓瓟妗堚€濄€?
- *    濡傛灉涓€娈佃瘽鏈?涓～绌猴紝灏变細鐢熸垚3鏉＄嫭绔嬬殑 TrackedItem銆?
+ * 閵嗘劕鍙忛弬鐗堢仸閺嬪嫸绱版禒銉﹀瘹缁鹃€涜礋閺嶇绺鹃惃鍕摕缁狙嗘嫹闊亞閮寸紒鐔粹偓?
  *
- * 2. 銆愭槑鏂囨寚绾癸紝鎷掔粷鍝堝笇銆戯細
- *    鎸囩汗锛坒ingerprint锛変笉鍐嶆槸鍘嬬缉鍚庣殑8浣嶅搱甯屽瓧绗︼紝鑰屾槸瀛?绛旀鐨?*绾槑鏂?*銆?
- *    渚嬪锛歚鍗＄墖淇{c2::鎭瘆}` 鐨勬寚绾瑰氨鏄?`"鎭?`銆?
- *    闂瓟鍗＄殑鎸囩汗灏辨槸 `"绛旀鍏ㄦ枃"`銆?
+ * 鏉╂瑤閲滈弬鍥︽閺?閸楋紕澧栨潻鍊熼嚋"閻ㄥ嫭鐗宠箛鍐跨礉閸嬫矮绨℃稉銈勬婢堆傜皑閿?
+ * 1. 缁狅紕鎮婇崫顏冪昂閺傚洣娆㈢悮顐ユ嫹闊亷绱橳rackedFile閿涘绱濋獮璺虹殺閺傚洣娆㈤崘鍛啇閹峰棜袙娑撶儤娓剁紒鍡欑煈鎼达妇娈戦垾婊冪摕閿涘湵rackedItem閿涘鈧縿鈧?
+ * 2. 闁俺绻?閺勫孩鏋冮幐鍥╂睏閸栧綊鍘?+ 鐏炩偓闁劋绗傛稉瀣瀮濞戝牊顒?閻ㄥ嫭鏌熷蹇ョ礉閹跺﹥妫惃鍕槻娑旂姾顔囪ぐ鏇炴嫲閺傛壆娈戠€涙柨鍞寸€圭懓顕惔鏃囨崳閺夈儯鈧?
  *
- * 3. 銆愬眬閮ㄤ笂涓嬫枃锛圕ontext锛夈€戯細
- *    涓婁笅鏂囦笉鍐嶆槸鏁翠釜娈佃惤鐨勫墠鍚庯紝鑰屾槸**绱ц创鎸囩汗鎵€鍦ㄤ綅缃?*鐨勫墠50涓瓧绗﹀拰鍚?0涓瓧绗︺€?
- *    杩欎娇寰楀悓涓€琛岄噷鍑虹幇涓や釜鐩稿悓鐨勮瘝锛堝涓や釜"鏄?锛変篃鑳借瀹岀編鍖哄垎銆?
+ * ============================================================================
+ * 閺嶇绺剧拋鎹愵吀閻炲棗搴烽敍鍫滅瑢閺冄呭閻ㄥ嫬灏崚顐礆閿?
+ * ============================================================================
  *
- * 4. 銆愮簿纭潗鏍囷紙Span锛変笌鍥為€€鏈哄埗銆戯細
- *    寮曞叆浜?span锛堝瓧绗﹀亸绉婚噺锛夎褰曟寚绾瑰湪鏂囦欢涓殑绮剧‘浣嶇疆锛屾柟渚垮涔犳椂楂樹寒/閬僵銆?
- *    濡傛灉鍦ㄥ涔犳椂鍙戠幇 span 澶勭殑鏂囧瓧鍙樹簡锛堢敤鎴风紪杈戜簡鏂囦欢瀵艰嚧鍋忕Щ锛夛紝
- *    绯荤粺浼氬埄鐢?RepetitionItem锛堝涔犺皟搴︽暟鎹級涓繚瀛樼殑 lastKnown(閿氱偣) 閲嶆柊鎵撳垎锛?
- *    鎵惧埌瀹冪幇鍦ㄧ殑鏂颁綅缃紝骞惰嚜鍔ㄤ慨澶?span銆?
+ * 1. 閵嗘劕鐡熺痪褏鐭戞惔锔衡偓鎴窗
+ *    娴犮儱澧犳稉鈧弶陇顔囪ぐ鏇氬敩鐞涖劉鈧粈绔撮弫纾嬵攽/濞堜絻鎯ら垾婵撶礄閸栧懎鎯堟径姘嚋鐎涙棑绱氶敍宀€骞囬崷銊ょ閺壜ゎ唶瑜版洩绱橳rackedItem閿涘褰ф禒锝堛€冮垾婊€绔存稉顏勭摕閳ユ繃鍨ㄩ垾婊€绔存稉顏嗙摕濡楀牃鈧縿鈧?
+ *    婵″倹鐏夋稉鈧▓浣冪樈閺?娑擃亜锝炵粚鐚寸礉鐏忓彉绱伴悽鐔稿灇3閺夛紕瀚粩瀣畱 TrackedItem閵?
+ *
+ * 2. 閵嗘劖妲戦弬鍥ㄥ瘹缁剧櫢绱濋幏鎺旂卜閸濆牆绗囬妴鎴窗
+ *    閹稿洨姹楅敍鍧抜ngerprint閿涘绗夐崘宥嗘Ц閸樺缂夐崥搴ｆ畱8娴ｅ秴鎼辩敮灞界摟缁楋讣绱濋懓灞炬Ц鐎?缁涙梹顢嶉惃?*缁绢垱妲戦弬?*閵?
+ *    娓氬顩ч敍姝氶崡锛勫娣囶攣{c2::閹槅}` 閻ㄥ嫭瀵氱痪鐟版皑閺?`"閹?`閵?
+ *    闂傤喚鐡熼崡锛勬畱閹稿洨姹楃亸杈ㄦЦ `"缁涙梹顢嶉崗銊︽瀮"`閵?
+ *
+ * 3. 閵嗘劕鐪柈銊ょ瑐娑撳鏋冮敍鍦昽ntext閿涘鈧埊绱?
+ *    娑撳﹣绗呴弬鍥︾瑝閸愬秵妲搁弫缈犻嚋濞堜絻鎯ら惃鍕閸氬函绱濋懓灞炬Ц**缁毖嗗垱閹稿洨姹楅幍鈧崷銊ょ秴缂?*閻ㄥ嫬澧?0娑擃亜鐡х粭锕€鎷伴崥?0娑擃亜鐡х粭锔衡偓?
+ *    鏉╂瑤濞囧妤€鎮撴稉鈧悰宀勫櫡閸戣櫣骞囨稉銈勯嚋閻╃鎮撻惃鍕槤閿涘牆顩ф稉銈勯嚋"閺?閿涘绡冮懗鍊燁潶鐎瑰瞼绶ㄩ崠鍝勫瀻閵?
+ *
+ * 4. 閵嗘劗绨跨涵顔兼綏閺嶅浄绱橲pan閿涘绗岄崶鐐衡偓鈧張鍝勫煑閵嗘埊绱?
+ *    瀵洖鍙嗘禍?span閿涘牆鐡х粭锕€浜哥粔濠氬櫤閿涘顔囪ぐ鏇熷瘹缁剧懓婀弬鍥︽娑擃厾娈戠划鍓р€樻担宥囩枂閿涘本鏌熸笟鍨槻娑旂姵妞傛妯瑰瘨/闁喚鍍甸妴?
+ *    婵″倹鐏夐崷銊ヮ槻娑旂姵妞傞崣鎴犲箛 span 婢跺嫮娈戦弬鍥х摟閸欐ü绨￠敍鍫㈡暏閹撮绱潏鎴滅啊閺傚洣娆㈢€佃壈鍤ч崑蹇曅╅敍澶涚礉
+ *    缁崵绮烘导姘焺閻?RepetitionItem閿涘牆顦叉稊鐘虹殶鎼达附鏆熼幑顕嗙礆娑擃厺绻氱€涙娈?lastKnown(闁挎氨鍋? 闁插秵鏌婇幍鎾冲瀻閿?
+ *    閹垫儳鍩岀€瑰啰骞囬崷銊ф畱閺傞缍呯純顕嗙礉楠炴儼鍤滈崝銊ゆ叏婢?span閵?
  *
  * ============================================================================
  */
@@ -40,40 +40,39 @@ import { CardType, QuestionText } from "src/Question";
 import { parse, ParsedQuestionInfo } from "src/parser";
 import { RPITEMTYPE } from "./repetitionItem";
 import { DEFAULT_DECKNAME } from "src/constants";
-import { Tags } from "src/tags";
 
 // ============================================================================
-// 绫诲瀷瀹氫箟鍖哄煙
+// 缁鐎风€规矮绠熼崠鍝勭厵
 // ============================================================================
 
 /**
- * TrackedSpan 鈥斺€?绮剧‘鐨勭墿鐞嗗潗鏍?
+ * TrackedSpan 閳ユ柡鈧?缁墽鈥橀惃鍕⒖閻炲棗娼楅弽?
  *
- * 鐢ㄤ簬璁板綍璇ユ寚绾瑰湪 Markdown 鏂囦欢涓殑鍏蜂綋瀛楃璧锋浣嶇疆銆?
- * - 涓轰粈涔堣璁板綍 block 鐨勫潗鏍囷紵 涓轰簡澶嶄範鏃惰兘鎶婃暣鍙ヨ瘽/鏁翠釜鍧楀彇鍑烘潵灞曠ず銆?
- * - 涓轰粈涔堣璁板綍 start/end Offset锛?涓轰簡鍦ㄦ暣鍙ヨ瘽閲岀簿鍑嗗湴鎶婅繖涓瓟鎸栨帀/楂樹寒銆?
+ * 閻劋绨拋鏉跨秿鐠囥儲瀵氱痪鐟版躬 Markdown 閺傚洣娆㈡稉顓犳畱閸忚渹缍嬬€涙顑佺挧閿嬵剾娴ｅ秶鐤嗛妴?
+ * - 娑撹桨绮堟稊鍫ｎ洣鐠佹澘缍?block 閻ㄥ嫬娼楅弽鍥风吹 娑撹桨绨℃径宥勭瘎閺冩儼鍏橀幎濠冩殻閸欍儴鐦?閺佺繝閲滈崸妤€褰囬崙鐑樻降鐏炴洜銇氶妴?
+ * - 娑撹桨绮堟稊鍫ｎ洣鐠佹澘缍?start/end Offset閿?娑撹桨绨￠崷銊︽殻閸欍儴鐦介柌宀€绨块崙鍡楁勾閹跺﹨绻栨稉顏勭摕閹告牗甯€/妤傛ü瀵掗妴?
  */
 export interface TrackedSpan {
-    startOffset: number; // 鎸囩汗(瀛?鏈韩鐨勮捣濮嬪瓧绗︾储寮曪紙鐩稿浜庡叏鏂囦欢锛?
-    endOffset: number; // 鎸囩汗(瀛?鏈韩鐨勭粨鏉熷瓧绗︾储寮?
-    blockStartOffset: number; // 璇ュ崱鐗囨墍鍦ㄦ钀?鍧楃殑璧峰瀛楃绱㈠紩
-    blockEndOffset: number; // 璇ュ崱鐗囨墍鍦ㄦ钀?鍧楃殑缁撴潫瀛楃绱㈠紩
+    startOffset: number; // 閹稿洨姹?鐎?閺堫剝闊╅惃鍕崳婵鐡х粭锔惧偍瀵洩绱欓惄绋款嚠娴滃骸鍙忛弬鍥︽閿?
+    endOffset: number; // 閹稿洨姹?鐎?閺堫剝闊╅惃鍕波閺夌喎鐡х粭锔惧偍瀵?
+    blockStartOffset: number; // 鐠囥儱宕遍悧鍥ㄥ閸︺劍顔岄拃?閸ф娈戠挧宄邦潗鐎涙顑佺槐銏犵穿
+    blockEndOffset: number; // 鐠囥儱宕遍悧鍥ㄥ閸︺劍顔岄拃?閸ф娈戠紒鎾存将鐎涙顑佺槐銏犵穿
 }
 
 /**
- * TrackedItem 鈥斺€?鏈€缁嗙矑搴︾殑杩借釜鍗曞厓锛堝瓟/绛旀锛?
+ * TrackedItem 閳ユ柡鈧?閺堚偓缂佸棛鐭戞惔锔炬畱鏉╁€熼嚋閸楁洖鍘撻敍鍫濈摕/缁涙梹顢嶉敍?
  *
- * 褰诲簳鍙栦唬浜嗘棫鐨?CardInfo銆?
- * 涓€鏉?TrackedItem = 涓€涓嫭绔嬬殑澶嶄範瀹炰綋銆?
+ * 瑜拌绨抽崣鏍﹀敩娴滃棙妫惃?CardInfo閵?
+ * 娑撯偓閺?TrackedItem = 娑撯偓娑擃亞瀚粩瀣畱婢跺秳绡勭€圭偘缍嬮妴?
  */
 export class TrackedItem {
-    fingerprint: string; // 鏍稿績锛氭槑鏂囨寚绾癸紙濡?"涔?銆?闂瓟鍗＄殑绛旀"锛?
-    reviewId: number; // 鍏ㄥ眬澶嶄範椤?ID锛?1 琛ㄧず鏂板彂鐜扮殑銆佽繕娌¤繘闃熷垪鐨勬柊鍗★級
-    lineNo: number; // 鎵€鍦ㄨ鍙凤紙鐢ㄤ簬鍒濇鎵撳垎鍜屽畾浣嶏級
-    context: string; // 灞€閮ㄤ笂涓嬫枃锛堢揣璐存寚绾圭殑鍓?0 + 鍚?0瀛楃锛?
-    cardType: CardType; // 绫诲瀷锛欳LOZE 鎴?QA
-    clozeId: string | null; // 浠呯敤浜?CLOZE锛屽 "c1"銆?c2"锛屾樉绀烘椂浣跨敤锛屼笉鍙備笌鍖归厤
-    span: TrackedSpan; // 绮剧‘鐨勭墿鐞嗗潗鏍?
+    fingerprint: string; // 閺嶇绺鹃敍姘閺傚洦瀵氱痪鐧哥礄婵?"娑?閵?闂傤喚鐡熼崡锛勬畱缁涙梹顢?閿?
+    reviewId: number; // 閸忋劌鐪径宥勭瘎妞?ID閿?1 鐞涖劎銇氶弬鏉垮絺閻滄壆娈戦妴浣界箷濞屄ょ箻闂冪喎鍨惃鍕煀閸椻槄绱?
+    lineNo: number; // 閹碘偓閸︺劏顢戦崣鍑ょ礄閻劋绨崚婵囶劄閹垫挸鍨庨崪灞界暰娴ｅ稄绱?
+    context: string; // 鐏炩偓闁劋绗傛稉瀣瀮閿涘牏鎻ｇ拹瀛樺瘹缁惧湱娈戦崜?0 + 閸?0鐎涙顑侀敍?
+    cardType: CardType; // 缁鐎烽敍娆矻OZE 閹?QA
+    clozeId: string | null; // 娴犲懐鏁ゆ禍?CLOZE閿涘苯顩?"c1"閵?c2"閿涘本妯夌粈鐑樻娴ｈ法鏁ら敍灞肩瑝閸欏倷绗岄崠褰掑帳
+    span: TrackedSpan; // 缁墽鈥橀惃鍕⒖閻炲棗娼楅弽?
 
     constructor(
         fingerprint: string,
@@ -97,24 +96,45 @@ export class TrackedItem {
 export type CardInfo = TrackedItem;
 
 /**
- * ITrackedFile 鎺ュ彛锛堢敤浜?JSON 搴忓垪鍖栵級
+ * ITrackedFile 閹恒儱褰涢敍鍫㈡暏娴?JSON 鎼村繐鍨崠鏍电礆
  */
 export interface ITrackedFile {
     path: string;
-    items: Record<string, number>; // 绗旇绾у埆鐨勫涔?ID
-    trackedItems?: TrackedItem[]; // 鍙栦唬浜嗘棫鐨?cardItems
+    items: Record<string, number>; // 缁楁棁顔囩痪褍鍩嗛惃鍕槻娑?ID
+    trackedItems?: TrackedItem[]; // 閸欐牔鍞禍鍡樻＋閻?cardItems
     tags: string[];
 }
 
 // ============================================================================
-// TrackedFile 绫?鈥斺€?鏂囦欢杩借釜鐨勬牳蹇冪被
+// TrackedFile 缁?閳ユ柡鈧?閺傚洣娆㈡潻鍊熼嚋閻ㄥ嫭鐗宠箛鍐
 // ============================================================================
+
+export interface CardItemSummary {
+    lineNo: number;
+    itemMap: Record<string, number>;
+}
 
 export class TrackedFile implements ITrackedFile {
     path: string;
     items: Record<string, number>;
     trackedItems?: TrackedItem[];
     tags: string[];
+
+    get cardItems(): CardItemSummary[] {
+        const groupedItems = new Map<number, Record<string, number>>();
+
+        for (const trackedItem of this.trackedItems ?? []) {
+            const itemMap = groupedItems.get(trackedItem.lineNo) ?? {};
+            const fallbackKey = `c${Object.keys(itemMap).length + 1}`;
+            const key = trackedItem.clozeId ?? (itemMap["c1"] === undefined ? "c1" : fallbackKey);
+            itemMap[key] = trackedItem.reviewId;
+            groupedItems.set(trackedItem.lineNo, itemMap);
+        }
+
+        return [...groupedItems.entries()]
+            .sort(([left], [right]) => left - right)
+            .map(([lineNo, itemMap]) => ({ lineNo, itemMap }));
+    }
 
     static create(data: ITrackedFile): TrackedFile {
         let tf = new TrackedFile(data.path);
@@ -123,7 +143,7 @@ export class TrackedFile implements ITrackedFile {
         tf.setTracked(type, dname);
         tf.items = data.items || { file: -1 };
 
-        // 瀹炰緥鍖?TrackedItems
+        // 鐎圭偘绶ラ崠?TrackedItems
         if (data.trackedItems) {
             tf.trackedItems = data.trackedItems.map(
                 (item) =>
@@ -200,33 +220,33 @@ export class TrackedFile implements ITrackedFile {
     }
 
     /**
-     * 鑾峰彇鎸囧畾琛屽彿鍜?holeId 鐨?TrackedItem锛堟柊鏋舵瀯鐢ㄤ簬鏄犲皠澶嶄範瀵硅薄鐨勫叆鍙ｏ級
+     * 閼惧嘲褰囬幐鍥х暰鐞涘苯褰块崪?holeId 閻?TrackedItem閿涘牊鏌婇弸鑸电€悽銊ょ艾閺勭姴鐨犳径宥勭瘎鐎电钖勯惃鍕弳閸欙綇绱?
      */
     getTrackedItem(lineNo: number, clozeId: string): TrackedItem | undefined {
         if (!this.trackedItems) return undefined;
-        // 鍏煎澶勭悊锛氬浜庢棫鏁版嵁鎴栨病鏈夊瓟浣嶇殑闂瓟鍗★紝瀹冪殑 clozeId 鍙兘鏄?null 鎴?undefined銆傜粺涓€鐪嬩綔 "c1"
+        // 閸忕厧顔愭径鍕倞閿涙艾顕禍搴㈡＋閺佺増宓侀幋鏍ㄧ梾閺堝鐡熸担宥囨畱闂傤喚鐡熼崡鈽呯礉鐎瑰啰娈?clozeId 閸欘垵鍏橀弰?null 閹?undefined閵嗗倻绮烘稉鈧惇瀣╃稊 "c1"
         const normCloze = (id: string | null | undefined) =>
             id === null || id === undefined ? "c1" : id;
         const targetCloze = normCloze(clozeId);
 
-        // 鍏堢簿纭尮閰嶏細琛屽彿 + clozeId
+        // 閸忓牏绨跨涵顔煎爱闁板稄绱扮悰灞藉娇 + clozeId
         let item = this.trackedItems.find(
             (i) => i.lineNo === lineNo && normCloze(i.clozeId) === targetCloze,
         );
 
-        // 濡傛灉瀛樺湪杞诲井閿欒锛屽厑璁镐竴瀹氳寖鍥寸殑寮规€ф煡鎵?
-        // 鍏抽敭淇锛氬脊鎬у眰鏌ユ壘蹇呴』涓ユ牸鍖归厤 clozeId锛屽惁鍒欏悓涓€涓棶绛旈鐨勫涓寲绌鸿姹備細鍏ㄦ尋鍒板悓涓€涓?reviewId 涓婏紙鍥犱负璺濈鐩哥瓑锛?
+        // 婵″倹鐏夌€涙ê婀潪璇蹭簳闁挎瑨顢戦敍灞藉帒鐠侀晲绔寸€规俺瀵栭崶瀵告畱瀵鈧勭叀閹?
+        // 閸忔娊鏁穱顔碱槻閿涙艾鑴婇幀褍鐪伴弻銉﹀韫囧懘銆忔稉銉︾壐閸栧綊鍘?clozeId閿涘苯鎯侀崚娆忔倱娑撯偓娑擃亪妫剁粵鏃堫暯閻ㄥ嫬顦挎稉顏呭缁岄缚顕Ч鍌欑窗閸忋劍灏嬮崚鏉挎倱娑撯偓娑?reviewId 娑撳绱欓崶鐘辫礋鐠烘繄顬囬惄鍝ョ搼閿?
         if (!item) {
             const candidates = this.trackedItems.filter(
                 (i) => normCloze(i.clozeId) === targetCloze,
             );
             if (candidates.length > 0) {
-                // 瀵绘壘璺濈鏈€杩戠殑
+                // 鐎电粯澹樼捄婵堫瀲閺堚偓鏉╂垹娈?
                 item = candidates.reduce((a, b) =>
                     Math.abs(a.lineNo - lineNo) < Math.abs(b.lineNo - lineNo) ? a : b,
                 );
 
-                // 涓轰簡闃叉澶氶噸鎸栫┖鏃剁殑鎭舵€у悎骞讹紝濡傛灉鎵惧埌鐨勫璞¤窛绂荤洰鏍囪澶繙锛堝 > 5 琛岋級锛屾嫆缁濆惛闄?
+                // 娑撹桨绨￠梼鍙夘剾婢舵岸鍣搁幐鏍敄閺冨墎娈戦幁鑸碘偓褍鎮庨獮璁圭礉婵″倹鐏夐幍鎯у煂閻ㄥ嫬顕挒陇绐涚粋鑽ゆ窗閺嶅洩顢戞径顏囩箼閿涘牆顩?> 5 鐞涘矉绱氶敍灞惧珕缂佹繂鎯涢梽?
                 if (item && Math.abs(item.lineNo - lineNo) > 5) {
                     item = undefined;
                 }
@@ -236,11 +256,11 @@ export class TrackedFile implements ITrackedFile {
     }
 
     /**
-     * 銆愭牳蹇冨叆鍙ｃ€戝悓姝ユ枃浠朵腑鐨勬墍鏈夊瓟绾ц褰?
+     * 閵嗘劖鐗宠箛鍐ㄥ弳閸欙絻鈧垵鎮撳銉︽瀮娴犳湹鑵戦惃鍕閺堝鐡熺痪褑顔囪ぐ?
      *
-     * 1. 瑙ｆ瀽鏂囦欢鑾峰彇鏂版暟鎹?-> expandToCandidates 灏嗘钀芥媶鍒嗘垚涓€涓釜鐨勫瓟
-     * 2. 鏃ц褰?vs 鏂板€欓€変汉 -> matchItems 鎵ц 鎸囩汗鍖归厤+鎵撳垎娑堟
-     * 3. 璁＄畻鍒犻櫎浜嗗摢浜涘涔犺褰?
+     * 1. 鐟欙絾鐎介弬鍥︽閼惧嘲褰囬弬鐗堟殶閹?-> expandToCandidates 鐏忓棙顔岄拃鑺ュ閸掑棙鍨氭稉鈧稉顏冮嚋閻ㄥ嫬鐡?
+     * 2. 閺冄嗩唶瑜?vs 閺傛澘鈧瑩鈧姹?-> matchItems 閹笛嗩攽 閹稿洨姹楅崠褰掑帳+閹垫挸鍨庡☉鍫燁劆
+     * 3. 鐠侊紕鐣婚崚鐘绘珟娴滃棗鎽㈡禍娑橆槻娑旂姾顔囪ぐ?
      *
      * @returns { hasChange, removedIds }
      */
@@ -249,7 +269,7 @@ export class TrackedFile implements ITrackedFile {
         settings: SRSettings,
         callback?: (cardText: string, cardInfo: unknown) => void,
     ): { hasChange: boolean; removedIds: number[] } {
-        // 1. 璁板綍鍚屾鍓嶇殑鏈夋晥澶嶄範 ID
+        // 1. 鐠佹澘缍嶉崥灞绢劄閸撳秶娈戦張澶嬫櫏婢跺秳绡?ID
         const oldIdSet = new Set<number>();
         if (this.trackedItems) {
             this.trackedItems.forEach((item) => {
@@ -257,23 +277,23 @@ export class TrackedFile implements ITrackedFile {
             });
         }
 
-        // 2. 璋冪敤 parser.ts 瑙ｆ瀽锛堣幏鍙栨钀界骇鐨勫崱鐗囩粨鏋勶級
-        // 杩欓噷娌跨敤鏃ч€昏緫锛屽睆钄戒簡 HTML 璋冨害娉ㄩ噴
+        // 2. 鐠嬪啰鏁?parser.ts 鐟欙絾鐎介敍鍫ｅ箯閸欐牗顔岄拃鐣岄獓閻ㄥ嫬宕遍悧鍥╃波閺嬪嫸绱?
+        // 鏉╂瑩鍣峰▽璺ㄦ暏閺冄団偓鏄忕帆閿涘苯鐫嗛拕鎴掔啊 HTML 鐠嬪啫瀹冲▔銊╁櫞
         const parsedQuestions: ParsedQuestionInfo[] = parse(fileText, settings);
 
-        // 3. 灏嗏€滄钀界骇鈥濈粨鏋滐紝灞曞紑涓衡€滃瓟绾р€濈殑鍊欓€夎€?(Candidate Items)
+        // 3. 鐏忓棌鈧粍顔岄拃鐣岄獓閳ユ繄绮ㄩ弸婊愮礉鐏炴洖绱戞稉琛♀偓婊冪摕缁狙€鈧繄娈戦崐娆撯偓澶庘偓?(Candidate Items)
         const candidates = expandToCandidates(parsedQuestions, fileText, settings);
 
         if (!this.trackedItems) this.trackedItems = [];
         const oldCardCount = this.trackedItems.length;
 
-        // 4. 鎵ц鏍稿績鍖归厤绠楁硶锛氭棫璁板綍 涓?鏂板€欓€?杩涜鍖归厤
+        // 4. 閹笛嗩攽閺嶇绺鹃崠褰掑帳缁犳纭堕敍姘＋鐠佹澘缍?娑?閺傛澘鈧瑩鈧?鏉╂稖顢戦崠褰掑帳
         this.trackedItems = matchItems(this.trackedItems, candidates);
 
-        // 鎸夎鍙锋帓搴忥紝淇濇寔鐗╃悊椤哄簭
+        // 閹稿顢戦崣閿嬪笓鎼村骏绱濇穱婵囧瘮閻椻晝鎮婃い鍝勭碍
         this.trackedItems.sort((a, b) => a.lineNo - b.lineNo);
 
-        // 5. 璁＄畻琚垹闄ょ殑 ID锛堜互鍓嶆湁锛岀幇鍦ㄥ尮閰嶄笉涓婁簡 = 骞界伒鍗?宸茶鍒狅級
+        // 5. 鐠侊紕鐣荤悮顐㈠灩闂勩倗娈?ID閿涘牅浜掗崜宥嗘箒閿涘瞼骞囬崷銊ュ爱闁板秳绗夋稉濠佺啊 = 楠炵晫浼掗崡?瀹歌尪顫﹂崚鐙呯礆
         const newIdSet = new Set<number>();
         this.trackedItems.forEach((item) => {
             if (item.reviewId >= 0) newIdSet.add(item.reviewId);
@@ -298,7 +318,7 @@ export class TrackedFile implements ITrackedFile {
             });
         }
 
-        // 鍙戠幇鏂板崱锛坮eviewId == -1锛夋垨鏁伴噺鍙樺寲鎴栨湁鍒犻櫎锛岄兘绠楁湁鍙樺寲
+        // 閸欐垹骞囬弬鏉垮幢閿涘澁eviewId == -1閿涘鍨ㄩ弫浼村櫤閸欐ê瀵查幋鏍ㄦ箒閸掔娀娅庨敍宀勫厴缁犳婀侀崣妯哄
         const hasNewCards = this.trackedItems.some((i) => i.reviewId === -1);
         const hasChange =
             oldCardCount !== this.trackedItems.length || hasNewCards || removedIds.length > 0;
@@ -308,11 +328,11 @@ export class TrackedFile implements ITrackedFile {
 }
 
 // ============================================================================
-// 绗竴闃舵锛氬皢瑙ｆ瀽缁撴灉灞曞紑涓哄瓟绾э紙Candidate锛?
+// 缁楊兛绔撮梼鑸殿唽閿涙艾鐨㈢憴锝嗙€界紒鎾寸亯鐏炴洖绱戞稉鍝勭摕缁狙嶇礄Candidate閿?
 // ============================================================================
 
 /**
- * 灏嗚В鏋愬嚭鐨勬钀界骇 Question 灞曞紑涓轰竴涓釜鐙珛鐨勨€滃瓟鍊欓€夎€呪€?
+ * 鐏忓棜袙閺嬫劕鍤惃鍕唽閽€鐣岄獓 Question 鐏炴洖绱戞稉杞扮娑擃亙閲滈悪顒傜彌閻ㄥ嫧鈧粌鐡熼崐娆撯偓澶庘偓鍛偓?
  */
 function expandToCandidates(
     parsedQuestions: ParsedQuestionInfo[],
@@ -321,14 +341,14 @@ function expandToCandidates(
 ): TrackedItem[] {
     const candidates: TrackedItem[] = [];
 
-    // 妫€娴嬫崲琛岀闀垮害浠ョ簿纭绠楀亸绉?
+    // 濡偓濞村宕茬悰宀€顑侀梹鍨娴犮儳绨跨涵顔款吀缁犳浜哥粔?
     const lineBreakLen = fileText.includes("\r\n") ? 2 : 1;
     const lines = fileText.split(/\r?\n/);
 
     for (const question of parsedQuestions) {
         if (question.text.includes(settings.editLaterTag)) continue;
 
-        // 璁＄畻杩欎釜鍧楋紙娈佃惤锛夌殑绮剧‘璧峰鍜岀粨鏉熷亸绉婚噺
+        // 鐠侊紕鐣绘潻娆庨嚋閸ф绱欏▓浣冩儰閿涘娈戠划鍓р€樼挧宄邦潗閸滃瞼绮ㄩ弶鐔蜂焊缁夊鍣?
         let blockStartOffset = 0;
         for (let i = 0; i < question.firstLineNum && i < lines.length; i++) {
             blockStartOffset += lines[i].length + lineBreakLen;
@@ -339,36 +359,36 @@ function expandToCandidates(
         }
         if (blockEndOffset > blockStartOffset) blockEndOffset -= lineBreakLen;
 
-        const cleanText = QuestionText.splitText(question.text, settings)[1]; // 鍓ョ璋冨害淇℃伅
+        const cleanText = QuestionText.splitText(question.text, settings)[1]; // 閸撱儳顬囩拫鍐ㄥ娣団剝浼?
 
         if (question.cardType === CardType.Cloze || question.cardType === CardType.AnkiCloze) {
-            // 鎻愬彇鎵€鏈夊～绌哄瓟銆傚亣璁惧唴閮ㄨ緟鍔╁嚱鏁拌兘鎻愬彇鍑哄瓟鐨勫唴瀹瑰拰灞€閮ㄥ亸绉?
+            // 閹绘劕褰囬幍鈧張澶婏綖缁屽搫鐡熼妴鍌氫海鐠佹儳鍞撮柈銊ㄧ窡閸斺晛鍤遍弫鎷屽厴閹绘劕褰囬崙鍝勭摕閻ㄥ嫬鍞寸€圭懓鎷扮仦鈧柈銊ヤ焊缁?
             const holes = extractHolesWithOffsets(cleanText, settings);
 
             for (const hole of holes) {
-                // 璁＄畻璇ュ瓟鍦ㄥ叏鏂囦腑鐨勭粷瀵瑰亸绉?
+                // 鐠侊紕鐣荤拠銉ョ摕閸︺劌鍙忛弬鍥﹁厬閻ㄥ嫮绮风€电懓浜哥粔?
                 const startOffset = blockStartOffset + hole.localStart;
                 const endOffset = blockStartOffset + hole.localEnd;
 
                 candidates.push(
                     new TrackedItem(
-                        hole.answerText, // 鎸囩汗锛氬瓟鐨勬槑鏂囧唴瀹?
+                        hole.answerText, // 閹稿洨姹楅敍姘摕閻ㄥ嫭妲戦弬鍥у敶鐎?
                         question.firstLineNum,
-                        extractContext(fileText, startOffset, endOffset), // 绱ц创瀛旂殑鍓嶅悗 50 瀛楃
+                        extractContext(fileText, startOffset, endOffset), // 缁毖嗗垱鐎涙梻娈戦崜宥呮倵 50 鐎涙顑?
                         CardType.Cloze,
                         { startOffset, endOffset, blockStartOffset, blockEndOffset },
                         hole.clozeId,
-                        -1, // 鏂板€欓€夎€呭皻鏈垎閰?reviewId
+                        -1, // 閺傛澘鈧瑩鈧鈧懎鐨婚張顏勫瀻闁?reviewId
                     ),
                 );
             }
         } else {
-            // 闂瓟鍗?(QA / Reversed QA)
-            // 鎸囩汗鐩存帴浣跨敤鈥滅瓟妗堝叏鏂団€?
+            // 闂傤喚鐡熼崡?(QA / Reversed QA)
+            // 閹稿洨姹楅惄瀛樺复娴ｈ法鏁ら垾婊呯摕濡楀牆鍙忛弬鍥ｂ偓?
             const answerText = extractQAAnswer(cleanText, settings, question.cardType);
 
-            // 涓轰簡绠€鍖栵紝闂瓟鍗＄殑瀛斿潗鏍囧氨璁句负鏁翠釜鍧楃殑鍚庡崐閮ㄥ垎鎴栨暣浣?
-            // (濡傛灉闇€瑕侀珮浜暣涓瓟妗堬紝鍙互鍦ㄨ繖閲屽仛绮惧噯鏌ユ壘绛旀鎵€鍦ㄧ殑 localOffset)
+            // 娑撹桨绨＄粻鈧崠鏍电礉闂傤喚鐡熼崡锛勬畱鐎涙柨娼楅弽鍥ф皑鐠佸彞璐熼弫缈犻嚋閸ф娈戦崥搴″磹闁劌鍨庨幋鏍ㄦ殻娴?
+            // (婵″倹鐏夐棁鈧憰渚€鐝禍顔芥殻娑擃亞鐡熷鍫礉閸欘垯浜掗崷銊ㄧ箹闁插苯浠涚划鎯у櫙閺屻儲澹樼粵鏃€顢嶉幍鈧崷銊ф畱 localOffset)
             const answerIndex = cleanText.indexOf(answerText);
             const startOffset =
                 answerIndex !== -1 ? blockStartOffset + answerIndex : blockStartOffset;
@@ -392,14 +412,14 @@ function expandToCandidates(
 }
 
 // ============================================================================
-// 绗簩闃舵锛氭牳蹇冨尮閰嶆墦鍒嗙畻娉曪紙matchItems锛?
+// 缁楊兛绨╅梼鑸殿唽閿涙碍鐗宠箛鍐ㄥ爱闁板秵澧﹂崚鍡欑暬濞夋洩绱檓atchItems閿?
 // ============================================================================
 
 /**
- * 灏嗙幇鏈夌殑鏃ц褰曚笌鏂拌В鏋愮殑鍊欓€夎褰曡繘琛屽尮閰嶏紝缁ф壙澶嶄範杩涘害锛坮eviewId锛?
+ * 鐏忓棛骞囬張澶屾畱閺冄嗩唶瑜版洑绗岄弬鎷屝掗弸鎰畱閸婃瑩鈧顔囪ぐ鏇＄箻鐞涘苯灏柊宥忕礉缂佈勫婢跺秳绡勬潻娑樺閿涘澁eviewId閿?
  */
 function matchItems(oldItems: TrackedItem[], candidates: TrackedItem[]): TrackedItem[] {
-    // 1. 鍒嗗埆鎸?fingerprint 杩涜鍒嗙粍
+    // 1. 閸掑棗鍩嗛幐?fingerprint 鏉╂稖顢戦崚鍡欑矋
     const oldByFp = new Map<string, TrackedItem[]>();
     for (const old of oldItems) {
         if (!oldByFp.has(old.fingerprint)) oldByFp.set(old.fingerprint, []);
@@ -415,35 +435,35 @@ function matchItems(oldItems: TrackedItem[], candidates: TrackedItem[]): Tracked
     const result: TrackedItem[] = [];
     const usedNew = new Set<TrackedItem>();
 
-    // 2. 鍦ㄥ悓鎸囩汗缁勫唴杩涜鍖归厤
+    // 2. 閸︺劌鎮撻幐鍥╂睏缂佸嫬鍞存潻娑滎攽閸栧綊鍘?
     for (const [fp, oldGroup] of oldByFp.entries()) {
         const newGroup = (newByFp.get(fp) || []).filter((c) => !usedNew.has(c));
 
-        if (newGroup.length === 0) continue; // 鏃х殑杩欎釜鎸囩汗娌′簡 -> 骞界伒鍗′涪寮?
+        if (newGroup.length === 0) continue; // 閺冄呮畱鏉╂瑤閲滈幐鍥╂睏濞屸€茬啊 -> 楠炵晫浼掗崡鈥叉丢瀵?
 
-        // 蹇€熷尮閰嶏細1瀵?
+        // 韫囶偊鈧喎灏柊宥忕窗1鐎?
         if (oldGroup.length === 1 && newGroup.length === 1) {
             const oldC = oldGroup[0];
             const newC = newGroup[0];
             usedNew.add(newC);
-            newC.reviewId = oldC.reviewId; // 缁ф壙澶嶄範杩涘害
+            newC.reviewId = oldC.reviewId; // 缂佈勫婢跺秳绡勬潻娑樺
             result.push(newC);
             continue;
         }
 
-        // 鎵撳垎鍖归厤锛氬瀵瑰 鎴?1瀵瑰
+        // 閹垫挸鍨庨崠褰掑帳閿涙艾顦跨€电懓顦?閹?1鐎电懓顦?
         type Pair = { old: TrackedItem; cand: TrackedItem; score: number };
         const allPairs: Pair[] = [];
 
         for (const oldC of oldGroup) {
             const lineScores = calculateLineScores(oldC.lineNo, newGroup);
             for (const newC of newGroup) {
-                // 涓婁笅鏂囩浉浼煎害鍗?50 鍒?
+                // 娑撳﹣绗呴弬鍥╂祲娴肩厧瀹抽崡?50 閸?
                 const ctxScore = stringSimilarity(oldC.context, newC.context) * 50;
-                // 琛屽彿鎺ヨ繎搴﹀崰 50 鍒?
+                // 鐞涘苯褰块幒銉ㄧ箮鎼达箑宕?50 閸?
                 const lineScore = lineScores.get(newC) || 0;
 
-                // 骞冲垎鍒ゆ嵁锛氬鏋?clozeId 涔熶竴鏍凤紝缁欏井灏忓姞鍒嗘墦鐮村钩琛?(澶勭悊鍚屼竴琛屾湁瀹屽叏涓€鏍峰唴瀹圭殑涓や釜瀛?
+                // 楠炲啿鍨庨崚銈嗗祦閿涙艾顩ч弸?clozeId 娑旂喍绔撮弽鍑ょ礉缂佹瑥浜曠亸蹇撳閸掑棙澧﹂惍鏉戦挬鐞?(婢跺嫮鎮婇崥灞肩鐞涘本婀佺€瑰苯鍙忔稉鈧弽宄板敶鐎瑰湱娈戞稉銈勯嚋鐎?
                 const tieBreaker = oldC.clozeId === newC.clozeId ? 1 : 0;
 
                 allPairs.push({ old: oldC, cand: newC, score: ctxScore + lineScore + tieBreaker });
@@ -458,15 +478,15 @@ function matchItems(oldItems: TrackedItem[], candidates: TrackedItem[]): Tracked
 
             matchedOld.add(pair.old);
             usedNew.add(pair.cand);
-            pair.cand.reviewId = pair.old.reviewId; // 缁ф壙
+            pair.cand.reviewId = pair.old.reviewId; // 缂佈勫
             result.push(pair.cand);
         }
     }
 
-    // 3. 鎵€鏈夋湭琚尮閰嶇殑鏂板€欓€夛紝閮芥槸鍏ㄦ柊鐨勫崱鐗?
+    // 3. 閹碘偓閺堝婀悮顐㈠爱闁板秶娈戦弬鏉库偓娆撯偓澶涚礉闁姤妲搁崗銊︽煀閻ㄥ嫬宕遍悧?
     for (const cand of candidates) {
         if (!usedNew.has(cand)) {
-            // cand.reviewId 鐩墠鏄?-1锛屼繚鎸佸師鏍峰姞鍏?
+            // cand.reviewId 閻╊喖澧犻弰?-1閿涘奔绻氶幐浣稿斧閺嶅嘲濮為崗?
             result.push(cand);
         }
     }
@@ -475,79 +495,18 @@ function matchItems(oldItems: TrackedItem[], candidates: TrackedItem[]): Tracked
 }
 
 // ============================================================================
-// 绗笁闃舵锛氬涔犳湡闂寸殑 Span 鏍￠獙涓庡洖閫€閲嶅畾浣?(鍩轰簬閿氱偣)
+// 缁楊兛绗侀梼鑸殿唽閿涙艾顦叉稊鐘虫埂闂傚娈?Span 閺嶏繝鐛欐稉搴℃礀闁偓闁插秴鐣炬担?(閸╄桨绨柨姘卞仯)
 // ============================================================================
 
 /**
- * 鎺ュ彛锛氱敤浜庡涔犻槦鍒椾紶鍏ョ殑鈥滃巻鍙查敋鐐光€濓紝涔熷氨鏄綘璇磋繃鐨?lastKnown.context / lineNo
+ * 閹恒儱褰涢敍姘辨暏娴滃骸顦叉稊鐘绘Е閸掓ぞ绱堕崗銉ф畱閳ユ粌宸婚崣鏌ユ晪閻愬厜鈧繐绱濇稊鐔锋皑閺勵垯缍樼拠纾嬬箖閻?lastKnown.context / lineNo
  */
-/**
- * 鍦ㄥ涔犳椂锛屽垽鏂綋鍓嶇殑 Span 鏄惁宸茬粡澶辨晥锛堟瘮濡傚師鏂囪淇敼銆佸亸绉昏秺鐣屻€佹垨鑰?span 澶勭殑鏂囨湰璺熸寚绾瑰涓嶄笂锛?
- */
-function isSpanValid(fileText: string, item: TrackedItem): boolean {
-    const { startOffset, endOffset } = item.span;
-    if (startOffset < 0 || endOffset > fileText.length) return false;
-
-    // 鍒ゆ柇璇ヤ綅缃殑鏂囨湰锛屾槸鍚︿粛鐒剁瓑浜庢寚绾?
-    const spanText = fileText.substring(startOffset, endOffset);
-    return spanText === item.fingerprint;
-}
-
-/**
- * 銆愰噸瀹氫綅鍏滃簳鏂规銆?
- * 褰撳涔犳煇涓?dueItem 鏃讹紝鍙戠幇鍏?span 澶辨晥銆?
- * 杩欎釜鍑芥暟浼氶噸鏂拌В鏋愭枃浠讹紝骞跺湪鍚屾寚绾瑰€欓€変腑锛屽埄鐢ㄨ dueItem 璁板綍鐨勫巻鍙查敋鐐癸紙IAnchor锛夋墦鍒嗘秷姝э紝
- * 鎵惧嚭瀹冪幇鍦ㄧ殑鏂颁綅缃€?
- *
- * @param dueItemAnchor 澶嶄範璋冨害璁板綍涓繚瀛樼殑鍘嗗彶閿氱偣 (context + lineNo)
- * @param fingerprint   姝ｅ湪鎵剧殑澶嶄範鍐呭锛?涔?锛?
- * @param fileText      鏂囦欢鏈€鏂版枃鏈?
- * @param settings      璁剧疆
- * @returns 鎵惧洖鐨勬柊鍊欓€夊瓟 TrackedItem (鍖呭惈鏈€鏂扮殑 span/context/lineNo)
- */
-function relocateItemByAnchor(
-    dueItemAnchor: { lineNo: number; context: string },
-    fingerprint: string,
-    fileText: string,
-    settings: SRSettings,
-): TrackedItem | null {
-    // 閲嶆柊鎶婃渶鏂版枃浠惰В鏋愭媶鍒嗘垚瀛?
-    const questions = parse(fileText, settings);
-    const allCandidates = expandToCandidates(questions, fileText, settings);
-
-    // 杩囨护鍑烘墍鏈夋寚绾逛竴鑷寸殑鍊欓€変綅缃?
-    const fpCandidates = allCandidates.filter((c) => c.fingerprint === fingerprint);
-    if (fpCandidates.length === 0) return null; // 璇ユ寚绾瑰交搴曡浠庢枃浠堕噷鍒犻櫎浜?
-
-    // 濡傛灉鍙湁涓€涓綅缃紝鐩存帴杩斿洖锛堣櫧鐒跺畠璺?anchor 鍙兘鏈変綅绉伙紝浣嗗畠鏄敮涓€鐨勫瓨娲昏€咃級
-    if (fpCandidates.length === 1) return fpCandidates[0];
-
-    // 濡傛灉鏈夊涓綅缃紝鍒╃敤 dueItem 鐨勫巻鍙查敋鐐硅繘琛屾墦鍒?
-    let bestMatch: TrackedItem | null = null;
-    let bestScore = -Infinity;
-
-    const lineScores = calculateLineScores(dueItemAnchor.lineNo, fpCandidates);
-
-    for (const cand of fpCandidates) {
-        const ctxScore = stringSimilarity(dueItemAnchor.context, cand.context) * 50;
-        const lineScore = lineScores.get(cand) || 0;
-        const total = ctxScore + lineScore;
-
-        if (total > bestScore) {
-            bestScore = total;
-            bestMatch = cand;
-        }
-    }
-
-    return bestMatch;
-}
-
 // ============================================================================
-// 宸ュ叿鍑芥暟锛氭彁鍙栫浉鍏?
+// 瀹搞儱鍙块崙鑺ユ殶閿涙碍褰侀崣鏍祲閸?
 // ============================================================================
 
 /**
- * 鎻愬彇灞€閮ㄤ笂涓嬫枃锛氱揣璐存寚绾逛綅缃殑鍓?50 鍜?鍚?50
+ * 閹绘劕褰囩仦鈧柈銊ょ瑐娑撳鏋冮敍姘辨彛鐠愬瓨瀵氱痪閫涚秴缂冾喚娈戦崜?50 閸?閸?50
  */
 function extractContext(fileText: string, startOffset: number, endOffset: number): string {
     const preContext = fileText.substring(Math.max(0, startOffset - 50), startOffset);
@@ -556,8 +515,8 @@ function extractContext(fileText: string, startOffset: number, endOffset: number
 }
 
 /**
- * 鍗犱綅妯℃嫙鎻愬彇濉┖瀛旂殑浣嶇疆锛堝疄闄呴渶瑕佹牴鎹?settings.clozePatterns 杩愯姝ｅ垯锛?
- * 杩斿洖鏍煎紡锛歿 answerText: "涔?, localStart: 10, localEnd: 11, clozeId: "c1" }
+ * 閸楃姳缍呭Ο鈩冨珯閹绘劕褰囨繅顐も敄鐎涙梻娈戞担宥囩枂閿涘牆鐤勯梽鍛存付鐟曚焦鐗撮幑?settings.clozePatterns 鏉╂劘顢戝锝呭灟閿?
+ * 鏉╂柨娲栭弽鐓庣础閿涙 answerText: "娑?, localStart: 10, localEnd: 11, clozeId: "c1" }
  */
 function extractHolesWithOffsets(
     cleanText: string,
@@ -570,7 +529,7 @@ function extractHolesWithOffsets(
         clozeId: string;
     }> = [];
 
-    const ankiMatches = [...cleanText.matchAll(/\{\{c(\d+)(?:::|锛氾細)(.*?)(?:::|锛氾細)?\}\}/gi)];
+    const ankiMatches = [...cleanText.matchAll(/\{\{c(\d+)(?:::|：：)(.*?)(?:::|：：)?\}\}/gi)];
     ankiMatches.forEach((match) => {
         const raw = match[0];
         const answerText = match[2];
@@ -610,34 +569,21 @@ function extractHolesWithOffsets(
     }
 
     return holes;
-    // 绀轰緥姝ｅ垯琛ㄨ揪寮忥紝鍖归厤 {{c1::绛旀}}
-    const clozeRegex = /{{(c\d+)::([^}]+)}}/g;
-    let match;
-    while ((match = clozeRegex.exec(cleanText)) !== null) {
-        // match[1] = "c1", match[2] = "绛旀"
-        holes.push({
-            answerText: match[2],
-            localStart: match.index + match[0].indexOf(match[2]), // 绮楃暐璁＄畻绛旀鏈綋鍦?block 涓殑浣嶇疆
-            localEnd: match.index + match[0].indexOf(match[2]) + match[2].length,
-            clozeId: match[1],
-        });
-    }
-    return holes;
 }
 
 /**
- * 鍗犱綅妯℃嫙鎻愬彇闂瓟鍗＄殑绛旀鍐呭
+ * 閸楃姳缍呭Ο鈩冨珯閹绘劕褰囬梻顔剧摕閸楋紕娈戠粵鏃€顢嶉崘鍛啇
  */
 function extractQAAnswer(cleanText: string, settings: SRSettings, type: CardType): string {
-    // 闂瓟鍗¤瀵瑰簲鐨勫垎闅旂鍒嗘垚鍓嶅悗涓ら儴鍒嗐€傚亣璁?parser.ts 鐨勯€昏緫锛屾垜浠彲浠ョ畝鍖栦负锛?
-    // 濡傛灉鏄?QA锛岀瓟妗堝湪鍒嗛殧绗﹀悗闈€傝繖閮ㄥ垎闇€渚濊禆鍏蜂綋鍒嗛殧绗﹀疄鐜帮紝杩欓噷鍋氫吉浠ｇ爜婕旂ず锛?
+    // 闂傤喚鐡熼崡陇顫︾€电懓绨查惃鍕瀻闂呮梻顑侀崚鍡樺灇閸撳秴鎮楁稉銈夊劥閸掑棎鈧倸浜ｇ拋?parser.ts 閻ㄥ嫰鈧槒绶敍灞惧灉娴狀剙褰叉禒銉х暆閸栨牔璐熼敍?
+    // 婵″倹鐏夐弰?QA閿涘瞼鐡熷鍫濇躬閸掑棝娈х粭锕€鎮楅棃顫偓鍌濈箹闁劌鍨庨棁鈧笟婵婄閸忚渹缍嬮崚鍡涙缁楋箑鐤勯悳甯礉鏉╂瑩鍣烽崑姘悏娴狅絿鐖滃鏃傘仛閿?
     const parts = cleanText.split(settings.singleLineCardSeparator);
     if (parts.length > 1) return parts[1].trim();
-    return cleanText; // 鍏滃簳
+    return cleanText; // 閸忔粌绨?
 }
 
 // ============================================================================
-// 宸ュ叿鍑芥暟锛氱浉浼煎害鎵撳垎璁＄畻
+// 瀹搞儱鍙块崙鑺ユ殶閿涙氨娴夋导鐓庡閹垫挸鍨庣拋锛勭暬
 // ============================================================================
 
 function stringSimilarity(str1: string, str2: string): number {

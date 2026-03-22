@@ -7,7 +7,7 @@
  *
  * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
  * 1. src/algorithms/algorithms.ts
- * 2. src/algorithms/balance/balance.ts (璐熻浇鍧囪　)
+ * 2. src/algorithms/balance/balance.ts (load balancing)
  *
  * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
  * 1. src/algorithms/algorithms_switch.ts
@@ -24,7 +24,6 @@ import { SrsAlgorithm, algorithmNames } from "./algorithms";
 import deepcopy from "deepcopy";
 import { AnkiData } from "./anki";
 import { FsrsData } from "./fsrs";
-import { balance } from "./balance/balance";
 import { RepetitionItem, ReviewResult } from "src/dataStore/repetitionItem";
 
 // https://github.com/mgmeyers/obsidian-kanban/blob/main/src/Settings.ts

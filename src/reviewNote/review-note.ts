@@ -189,7 +189,6 @@ export class RNonTrackfiles extends IReviewNote {
         const plugin = SRPlugin.getInstance();
         const algorithm = plugin.noteAlgorithm;
         const option = algorithm.srsOptions()[response];
-        const now = Date.now();
 
         const trackedFile = store.getTrackedFile(note.path);
         let itemId = trackedFile?.items?.file ?? -1;

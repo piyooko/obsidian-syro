@@ -37,7 +37,8 @@ import { DataStore } from "./data";
 import { Tags } from "src/tags";
 
 import { Stats } from "src/stats";
-import { BlockUtils, DateUtils, isIgnoredPath } from "src/util/utils_recall";
+import { isIgnoredPath } from "src/util/utils_recall";
+import { getNumberProp, hasOwn, isNumberRecord, isRecord } from "src/util/typeGuards";
 import { RPITEMTYPE } from "./repetitionItem";
 import deepcopy from "deepcopy";
 import { NoteCardScheduleParser } from "src/CardSchedule";
@@ -249,7 +250,7 @@ export class LocationSwitch {
             const trackedFile = store.getTrackedFile(note.path);
             // let fileText: string = await note.vault.read(note);
             // let fileChanged = false;
-            trackedFile.syncNoteCardsIndex(fileText, this.settings, (cardText, cardinfo) => {
+            trackedFile.syncNoteCardsIndex(fileText, settings, (cardText, cardinfo) => {
                 let scheduling: RegExpMatchArray[] = [
                     ...cardText.matchAll(MULTI_SCHEDULING_EXTRACTOR),
                 ];
@@ -537,17 +538,23 @@ export function cardTextReplace(fileText: string, cardText: string, newCardText:
  * @returns number[] | [0, due, interval, ease];
  */
 function getReviewNoteHeaderData(frontmatter: FrontMatterCache): number[] {
+    const frontmatterRecord = frontmatter as Record<string, unknown>;
+    const dueValue = frontmatterRecord["sr-due"];
+    const interval = getNumberProp(frontmatterRecord, "sr-interval");
+    const ease = getNumberProp(frontmatterRecord, "sr-ease");
+
     // file has scheduling information
     if (
-        Object.prototype.hasOwnProperty.call(frontmatter, "sr-due") &&
-        Object.prototype.hasOwnProperty.call(frontmatter, "sr-interval") &&
-        Object.prototype.hasOwnProperty.call(frontmatter, "sr-ease")
+        hasOwn(frontmatterRecord, "sr-due") &&
+        hasOwn(frontmatterRecord, "sr-interval") &&
+        hasOwn(frontmatterRecord, "sr-ease") &&
+        (typeof dueValue === "string" || typeof dueValue === "number" || dueValue instanceof Date) &&
+        interval !== undefined &&
+        ease !== undefined
     ) {
         const dueUnix: number = window
-            .moment(frontmatter["sr-due"], ["YYYY-MM-DD", "DD-MM-YYYY", "ddd MMM DD YYYY"])
+            .moment(dueValue, ["YYYY-MM-DD", "DD-MM-YYYY", "ddd MMM DD YYYY"])
             .valueOf();
-        const interval: number = frontmatter["sr-interval"] as number;
-        const ease: number = frontmatter["sr-ease"] as number;
         const sched = [null, dueUnix, interval, ease];
         return sched;
     } else {
@@ -723,18 +730,15 @@ type CardIndexInfo = {
 };
 
 function normalizeCardIndexInfo(cardinfo: unknown): CardIndexInfo | null {
-    if (typeof cardinfo !== "object" || cardinfo === null) {
+    if (!isRecord(cardinfo)) {
         return null;
     }
 
-    const lineNo = Reflect.get(cardinfo, "lineNo");
-    const itemMap = Reflect.get(cardinfo, "itemMap");
+    const lineNo = cardinfo["lineNo"];
+    const itemMap = cardinfo["itemMap"];
 
     return {
         lineNo: typeof lineNo === "number" ? lineNo : -1,
-        itemMap:
-            typeof itemMap === "object" && itemMap !== null
-                ? (itemMap as Record<string, number>)
-                : undefined,
+        itemMap: isNumberRecord(itemMap) ? itemMap : undefined,
     };
 }

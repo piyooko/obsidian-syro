@@ -20,9 +20,7 @@
  */
 import { MarkdownView, Notice, TFile } from "obsidian";
 import ObsidianSrsPlugin from "./main";
-import { ItemInfoModal } from "src/ui/modals/info";
 import { Queue } from "./dataStore/queue";
-import { debug } from "./util/utils_recall";
 import { RPITEMTYPE, RepetitionItem } from "./dataStore/repetitionItem";
 import { postponeItems } from "./algorithms/balance/postpone";
 import { GetInputModal } from "./ui/modals/getInputModal";
@@ -218,7 +216,6 @@ export default class Commands {
                 let syncedFiles = 0;
                 let deletedGhostCards = 0;
                 let cleanedGhostFiles = 0;
-                let cleanedGhostItems = 0;
 
                 const progressTip = plugin.shouldShowSyncProgressTip("incremental")
                     ? new SyncProgressTip(
@@ -318,7 +315,6 @@ export default class Commands {
                             store.data.fileOrder.splice(orderIdx, 1);
                         }
                         cleanedGhostFiles++;
-                        cleanedGhostItems += itemsCleaned;
                     }
                 }
 
@@ -373,7 +369,6 @@ export default class Commands {
                         for (const oldId of oldItemIds) {
                             if (!newItemIds.has(oldId)) {
                                 store.unTrackItem(oldId);
-                                cleanedGhostItems++;
                             }
                         }
 
@@ -435,7 +430,8 @@ export default class Commands {
             id: "debug-print-view-state",
             name: t("CMD_PRINT_VIEW_STATE"),
             callback: () => {
-                const state = plugin.app.workspace.getActiveViewOfType(MarkdownView).getState();
+                const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
+                const state: unknown = view?.getState() ?? null;
                 console.debug(state);
             },
         });

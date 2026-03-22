@@ -15,11 +15,10 @@
  * [算法层：负责计算下一次复习的时间、间隔和难度] [核心] 另一种加权乘数算法实现。
  */
 import { Setting, Notice } from "obsidian";
-import { DateUtils, MiscUtils } from "src/util/utils_recall";
+import { DateUtils } from "src/util/utils_recall";
 import { SrsAlgorithm, algorithmNames } from "./algorithms";
 import deepcopy from "deepcopy";
 import { RepetitionItem, ReviewResult } from "src/dataStore/repetitionItem";
-import { t } from "src/lang/helpers";
 
 /**
  * WMSData - 加权乘数算法的数据结构
@@ -210,14 +209,42 @@ export class WeightedMultiplierAlgorithm extends SrsAlgorithm {
         containerEl: HTMLElement,
         update: (settings: WMSSettings, refresh?: boolean) => void,
     ): void {
-        containerEl.createDiv().innerHTML = `<p><strong>加权乘数算法 (Weighted Multiplier Scheduler)</strong></p>
-            <p>专为渐进阅读设计的调度算法，通过重要性权重和间隔继承机制提供灵活的复习节奏。</p>
-            <p><strong>核心特性：</strong></p>
-            <ul>
-                <li><strong>逻辑分离</strong>：Hard/Again 不应用重要性乘数，确保"较难"永远缩短间隔</li>
-                <li><strong>间隔继承</strong>：手动推迟时更新当前间隔，算法基于新间隔计算</li>
-                <li><strong>重要性映射</strong>：1=最重要(复习频繁), 10=最不重要(快速推远)</li>
-            </ul>`;
+        const introEl = containerEl.createDiv();
+        introEl.createEl("p").createEl("strong", {
+            text: "Weighted multiplier scheduler",
+        });
+        introEl.createEl("p", {
+            text:
+                "Designed for incremental reading. It adjusts review intervals with priority weighting and interval inheritance.",
+        });
+        introEl.createEl("p").createEl("strong", {
+            text: "Key behaviors:",
+        });
+        const behaviorListEl = introEl.createEl("ul");
+
+        const separationEl = behaviorListEl.createEl("li");
+        separationEl.createEl("strong", {
+            text: "Logic separation:",
+        });
+        separationEl.appendText(
+            " Hard and Again do not use the importance multiplier, so \"Hard\" always shortens the interval.",
+        );
+
+        const inheritanceEl = behaviorListEl.createEl("li");
+        inheritanceEl.createEl("strong", {
+            text: "Interval inheritance:",
+        });
+        inheritanceEl.appendText(
+            " Manual postpones update the current interval, and later calculations continue from the new interval.",
+        );
+
+        const mappingEl = behaviorListEl.createEl("li");
+        mappingEl.createEl("strong", {
+            text: "Importance mapping:",
+        });
+        mappingEl.appendText(
+            " 1 is the highest priority with the most frequent reviews, while 10 is the lowest priority.",
+        );
 
         new Setting(containerEl)
             .setName("最小乘数 (重要性1)")
@@ -260,14 +287,28 @@ export class WeightedMultiplierAlgorithm extends SrsAlgorithm {
             );
 
         // 添加公式说明
-        containerEl.createDiv().innerHTML = `<p style="margin-top: 1em; padding: 0.5em; background: var(--background-secondary); border-radius: 4px;">
-                <strong>公式说明：</strong><br/>
-                • Again: I_next = 1 天<br/>
-                • Hard: I_next = Round(I_current × 0.7)<br/>
-                • Good: I_next = Round(I_current × 1.3 × F_importance)<br/>
-                • Easy: I_next = Round(I_current × 2.0 × F_importance)<br/>
-                <br/>
-                其中 F_importance = impMin + (priority - 1) × (impMax - impMin) / 9
-            </p>`;
+        const formulaEl = containerEl.createDiv();
+        formulaEl.setCssProps({
+            marginTop: "1em",
+            padding: "0.5em",
+            background: "var(--background-secondary)",
+            borderRadius: "4px",
+        });
+        formulaEl.createEl("strong", {
+            text: "Formula summary:",
+        });
+        formulaEl.createEl("br");
+        formulaEl.appendText("Again: I_next = 1 day");
+        formulaEl.createEl("br");
+        formulaEl.appendText("Hard: I_next = Round(I_current x 0.7)");
+        formulaEl.createEl("br");
+        formulaEl.appendText("Good: I_next = Round(I_current x 1.3 x F_importance)");
+        formulaEl.createEl("br");
+        formulaEl.appendText("Easy: I_next = Round(I_current x 2.0 x F_importance)");
+        formulaEl.createEl("br");
+        formulaEl.createEl("br");
+        formulaEl.appendText(
+            "F_importance = impMin + (priority - 1) x (impMax - impMin) / 9",
+        );
     }
 }

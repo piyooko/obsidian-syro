@@ -13,7 +13,108 @@
  */
 // English
 
-export default {
+const PROTECTED_SEGMENT_REGEX = /\$\{[^}]+\}|`[^`]*`|<\/?[^>]+>/g;
+
+const SENTENCE_CASE_OVERRIDES: Array<[RegExp, string]> = [
+    [/\bgithub\b/gi, "GitHub"],
+    [/\bobsidian\b/gi, "Obsidian"],
+    [/\banki\b/gi, "Anki"],
+    [/\bsupermemo\b/gi, "SuperMemo"],
+    [/\bmarkdown\b/gi, "Markdown"],
+    [/\blatex\b/gi, "LaTeX"],
+    [/\bmathjax\b/gi, "MathJax"],
+    [/\bcodemirror\b/gi, "CodeMirror"],
+    [/\bpagerank\b/gi, "PageRank"],
+    [/\bfsrs\b/gi, "FSRS"],
+    [/\bsm-2\b/gi, "SM-2"],
+    [/\bsm2\b/gi, "SM2"],
+    [/\bosr\b/gi, "OSR"],
+    [/\bq&a\b/gi, "Q&A"],
+    [/\bhtml\b/gi, "HTML"],
+    [/\bcss\b/gi, "CSS"],
+    [/\bjson\b/gi, "JSON"],
+    [/\bapi\b/gi, "API"],
+    [/\bui\b/gi, "UI"],
+    [/\burl\b/gi, "URL"],
+    [/\buri\b/gi, "URI"],
+    [/\bcsv\b/gi, "CSV"],
+    [/\bpdf\b/gi, "PDF"],
+    [/\ba-z\b/g, "A-Z"],
+    [/\bz-a\b/g, "Z-A"],
+    [/\bi\.e\.\b/gi, "i.e."],
+    [/\be\.g\.\b/gi, "e.g."],
+];
+
+function sentenceCaseSegment(
+    value: string,
+    capitalizeNext: boolean,
+): { text: string; capitalizeNext: boolean } {
+    let result = "";
+
+    for (const char of value) {
+        if (/[A-Za-z]/.test(char)) {
+            result += capitalizeNext ? char.toUpperCase() : char.toLowerCase();
+            capitalizeNext = false;
+            continue;
+        }
+
+        result += char;
+
+        if (/[.!?]/.test(char)) {
+            capitalizeNext = true;
+        }
+    }
+
+    return { text: result, capitalizeNext };
+}
+
+function toSentenceCase(value: string): string {
+    let result = "";
+    let lastIndex = 0;
+    let capitalizeNext = !/^\$\{[^}]+\}/.test(value);
+
+    for (const match of value.matchAll(PROTECTED_SEGMENT_REGEX)) {
+        const index = match.index ?? 0;
+        const transformed = sentenceCaseSegment(value.slice(lastIndex, index), capitalizeNext);
+        result += transformed.text;
+        result += match[0];
+        capitalizeNext = transformed.capitalizeNext;
+        lastIndex = index + match[0].length;
+    }
+
+    const transformed = sentenceCaseSegment(value.slice(lastIndex), capitalizeNext);
+    result += transformed.text;
+
+    return SENTENCE_CASE_OVERRIDES.reduce(
+        (current, [pattern, replacement]) => current.replace(pattern, replacement),
+        result,
+    );
+}
+
+function normalizeSentenceCaseLocale<T>(value: T): T {
+    if (typeof value === "string") {
+        return toSentenceCase(value) as T;
+    }
+
+    if (Array.isArray(value)) {
+        const normalizedEntries = value.map((entry): unknown => normalizeSentenceCaseLocale(entry));
+        return normalizedEntries as T;
+    }
+
+    if (value && typeof value === "object") {
+        const normalizedObject = Object.fromEntries(
+            Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+                key,
+                normalizeSentenceCaseLocale(entry),
+            ]),
+        );
+        return normalizedObject as T;
+    }
+
+    return value;
+}
+
+export default normalizeSentenceCaseLocale({
     // flashcard-modal.tsx
     DECKS: "Decks",
     DUE_CARDS: "Due Cards",
@@ -866,4 +967,4 @@ export default {
     // locationSetting.ts
     LOC_CONFIRM_NOTES: "### Review Notes\n",
     LOC_CONFIRM_FLASHCARDS: "\n---\n### Flashcards\n",
-};
+});

@@ -1,4 +1,4 @@
-import { App, Modal, ButtonComponent, Component, MarkdownRenderer } from "obsidian";
+import { Modal, ButtonComponent, Component, MarkdownRenderer } from "obsidian";
 import SRPlugin from "src/main";
 
 // 确认回调函数类型定义

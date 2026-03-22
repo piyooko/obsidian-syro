@@ -121,7 +121,7 @@ export class ReleaseNotes extends Modal {
                 );
             }
         } catch (e) {
-            errorlog({ where: "Utils/checkVersion", error: e });
+            errorlog({ where: "Utils/checkVersion", error: e as unknown });
         }
         return latestVersionInfo;
     }

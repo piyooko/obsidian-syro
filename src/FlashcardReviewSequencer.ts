@@ -35,7 +35,7 @@ import { DataStore } from "./dataStore/data";
 import { DataLocation } from "./dataStore/dataLocation";
 import { RPITEMTYPE, CardQueue, RepetitionItem, ReviewResult } from "./dataStore/repetitionItem";
 import { Notice } from "obsidian";
-import SRPlugin, { LearningQueueItem } from "./main";
+import SRPlugin from "./main";
 import { FsrsData } from "./algorithms/fsrs";
 import { DeckStatsService } from "./dataStore/deckStatsService";
 
@@ -420,7 +420,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         }
 
         // FSRS 鏇存柊鐘舵€?
-        const reviewResult = this._processReviewbyAlgo(response);
+        this._processReviewbyAlgo(response);
 
         let nextStep: number | null = currentStep;
         let nextIntervalMinutes: number = 0;
@@ -462,12 +462,6 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
             if (nextIntervalMinutes < 1440) {
                 // < 1澶╋紝Intraday
-                const dueTime = Date.now() + nextIntervalMinutes * 60 * 1000;
-                const cardDeckName =
-                    card.question?.topicPathList?.list[0]?.formatAsTag() ||
-                    this.currentDeck?.getTopicPath().formatAsTag() ||
-                    "default";
-
                 const plugin = SRPlugin.getInstance();
                 if (item) {
                     plugin.cardAlgorithm.onSelection(
@@ -792,8 +786,6 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         // 3. Restore to Queues
         if (lastAction.fromLearningQueue) {
             // --- Case: Was in Learning Queue ---
-            const deckPath = deck?.getTopicPath().formatAsTag() || "default";
-
             // Fix: Add back to Deck's learning list (for UI counters) if missing
             // (e.g., if it graduated and was removed from the deck list)
             if (deck && !deck.learningFlashcards.includes(card)) {
