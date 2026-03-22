@@ -1,5 +1,11 @@
 import type { App } from "obsidian";
-import { autoCommitReviewResponseToTimeline } from "src/ui/timeline/reviewResponseTimeline";
+import {
+    autoCommitReviewResponseToTimeline,
+    buildTimelineCommitEditPayload,
+    extractTimelineReviewResponseBody,
+    materializeTimelineReviewResponseEditMessage,
+    parseTimelineReviewResponseEditMessage,
+} from "src/ui/timeline/reviewResponseTimeline";
 import { ReviewResponse } from "src/scheduling";
 import type { ReviewCommitStore } from "src/dataStore/reviewCommitStore";
 
@@ -48,7 +54,7 @@ describe("reviewResponseTimeline", () => {
         expect(committed).toBe(true);
         expect(commitStore.addCommit).toHaveBeenCalledWith(
             "note.md",
-            "Hard:",
+            "",
             undefined,
             undefined,
             {
@@ -57,5 +63,53 @@ describe("reviewResponseTimeline", () => {
                 displayDuration: { raw: "9d", totalDays: 9 },
             },
         );
+    });
+
+    it("materializes review-response edits into atomic token text", () => {
+        expect(
+            materializeTimelineReviewResponseEditMessage({
+                message: "Hard: extra detail",
+                entryType: "review-response",
+                reviewResponse: "Hard",
+                displayDuration: { raw: "35d", totalDays: 35 },
+            }),
+        ).toBe("Hard:35d:: extra detail");
+    });
+
+    it("splits legacy review-response message bodies away from the pill", () => {
+        expect(
+            extractTimelineReviewResponseBody({
+                message: "Hard: extra detail",
+                entryType: "review-response",
+                reviewResponse: "Hard",
+                displayDuration: { raw: "35d", totalDays: 35 },
+            }),
+        ).toBe("extra detail");
+    });
+
+    it("parses review-response edit text back into structured metadata", () => {
+        expect(parseTimelineReviewResponseEditMessage("Hard:35d:: next step")).toEqual({
+            message: "next step",
+            entryType: "review-response",
+            reviewResponse: "Hard",
+            displayDuration: { raw: "35d", totalDays: 35 },
+        });
+    });
+
+    it("downgrades to a manual entry when the token is deleted", () => {
+        expect(
+            buildTimelineCommitEditPayload(
+                {
+                    message: "",
+                    entryType: "review-response",
+                    reviewResponse: "Hard",
+                    displayDuration: { raw: "35d", totalDays: 35 },
+                },
+                "",
+            ),
+        ).toEqual({
+            message: "",
+            entryType: "manual",
+        });
     });
 });

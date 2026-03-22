@@ -1,6 +1,7 @@
 import {
     buildTimelineRenderModel,
     findTimelineLivePreviewSegments,
+    getTimelineAtomicPrefixSegment,
     getTimelineDurationPrefixSegment,
     parseTimelineMessage,
     sanitizeTimelineInlineMarkdown,
@@ -149,6 +150,31 @@ describe("timelineMessage", () => {
             raw: "9d:: ",
             text: "9d",
             duration: { raw: "9d", totalDays: 9 },
+        });
+    });
+
+    it("collects review-response prefix segments when edit token text is provided", () => {
+        const prefixText = "Hard:35d:: ";
+
+        expect(findTimelineLivePreviewSegments(`${prefixText}note`, false, prefixText)[0]).toEqual({
+            kind: "review-response-prefix",
+            from: 0,
+            to: prefixText.length,
+            raw: prefixText,
+            text: "Hard:35d",
+            title: "Hard:35d",
+        });
+        expect(
+            getTimelineAtomicPrefixSegment({
+                message: `${prefixText}note`,
+                enableDurationPrefixSyntax: false,
+                reviewResponsePrefixText: prefixText,
+            }),
+        ).toMatchObject({
+            kind: "review-response-prefix",
+            from: 0,
+            to: prefixText.length,
+            text: "Hard:35d",
         });
     });
 

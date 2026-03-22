@@ -24,8 +24,12 @@ import React from "react";
 import type SRPlugin from "src/main";
 import { NoteReviewSidebar } from "src/ui/components/NoteReviewSidebar";
 import { reviewDecksToSidebarState } from "src/ui/adapters/noteReviewAdapter";
-import { NoteReviewItem, NoteReviewSidebarState } from "src/ui/types/noteReview";
-import { ReviewCommitStore, ReviewCommitLog } from "src/dataStore/reviewCommitStore";
+import { NoteReviewItem } from "src/ui/types/noteReview";
+import {
+    ReviewCommitStore,
+    ReviewCommitLog,
+    type ReviewCommitEditPayload,
+} from "src/dataStore/reviewCommitStore";
 import { t } from "src/lang/helpers";
 import { ContextAnchorService } from "src/util/ContextAnchor";
 import { MarkdownView } from "obsidian";
@@ -226,9 +230,9 @@ export class ReactNoteReviewView extends ItemView {
                 },
                 onCommitContextMenu: (e, commitId) => this.handleCommitContextMenu(e, commitId),
                 editingId: this.editingId,
-                onEditCommit: (commitId, newMessage) => {
+                onEditCommit: (commitId, payload) => {
                     this.runAsync(
-                        this.handleEditCommit(commitId, newMessage),
+                        this.handleEditCommit(commitId, payload),
                         "edit timeline commit",
                     );
                 },
@@ -680,9 +684,9 @@ export class ReactNoteReviewView extends ItemView {
     private async handleCommit(path: string, message: string): Promise<void> {
         if (!this.commitStore) return;
 
-        // Free users are limited to five timeline entries per note.
+        // Free users are limited to ten timeline entries per note.
         const existingCommits = this.commitStore.getCommits(path);
-        if (existingCommits.length >= 5) {
+        if (existingCommits.length >= 10) {
             const hasAccess = await LicenseManager.getInstance(this.plugin).checkFeatureAccess(
                 "Timeline",
             );
@@ -833,9 +837,12 @@ export class ReactNoteReviewView extends ItemView {
     /**
      * Save edits to an existing timeline entry.
      */
-    private async handleEditCommit(commitId: string, newMessage: string): Promise<void> {
+    private async handleEditCommit(
+        commitId: string,
+        payload: ReviewCommitEditPayload,
+    ): Promise<void> {
         if (!this.commitStore || !this.selectedItem) return;
-        await this.commitStore.editCommit(this.selectedItem.path, commitId, newMessage);
+        await this.commitStore.editCommit(this.selectedItem.path, commitId, payload);
         this.commitLogs = this.commitStore.getCommits(this.selectedItem.path);
         this.editingId = null;
         this.redraw();

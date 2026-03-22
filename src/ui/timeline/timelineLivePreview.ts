@@ -13,8 +13,7 @@ import { App, Component, MarkdownRenderer } from "obsidian";
 
 import {
     findTimelineLivePreviewSegments,
-    getTimelineDurationPrefixSegment,
-    type TimelineDisplayDuration,
+    getTimelineAtomicPrefixSegment,
     type TimelineLivePreviewSegment,
 } from "./timelineMessage";
 
@@ -74,8 +73,11 @@ export function resolveDurationTokenDeletion(opts: {
     };
 }
 
-class TimelineDurationWidget extends WidgetType {
-    constructor(private readonly duration: TimelineDisplayDuration) {
+class TimelinePillWidget extends WidgetType {
+    constructor(
+        private readonly text: string,
+        private readonly title?: string,
+    ) {
         super();
     }
 
@@ -85,8 +87,10 @@ class TimelineDurationWidget extends WidgetType {
 
         const pill = document.createElement("span");
         pill.className = "sr-timeline-duration-pill";
-        pill.title = `${this.duration.totalDays}d`;
-        pill.textContent = this.duration.raw;
+        if (this.title) {
+            pill.title = this.title;
+        }
+        pill.textContent = this.text;
 
         wrap.appendChild(pill);
         return wrap;
@@ -144,7 +148,14 @@ function createTimelineSegmentDecoration(
         case "duration-prefix":
             if (!segment.duration) return null;
             return Decoration.replace({
-                widget: new TimelineDurationWidget(segment.duration),
+                widget: new TimelinePillWidget(
+                    segment.duration.raw,
+                    `${segment.duration.totalDays}d`,
+                ),
+            });
+        case "review-response-prefix":
+            return Decoration.replace({
+                widget: new TimelinePillWidget(segment.text, segment.title),
             });
         case "bold":
             return Decoration.replace({
@@ -186,15 +197,20 @@ function buildTimelineDecorations(
     view: EditorView,
     app: App,
     enableDurationPrefixSyntax: boolean,
+    reviewResponsePrefixText?: string | null,
 ): { decorations: DecorationSet; atomicRanges: DecorationSet } {
     const decorationBuilder = new RangeSetBuilder<Decoration>();
     const atomicBuilder = new RangeSetBuilder<Decoration>();
     const text = view.state.doc.toString();
     const selection = view.state.selection.main;
-    const segments = findTimelineLivePreviewSegments(text, enableDurationPrefixSyntax);
+    const segments = findTimelineLivePreviewSegments(
+        text,
+        enableDurationPrefixSyntax,
+        reviewResponsePrefixText,
+    );
 
     for (const segment of segments) {
-        if (segment.kind === "duration-prefix") {
+        if (segment.kind === "duration-prefix" || segment.kind === "review-response-prefix") {
             const decoration = createTimelineSegmentDecoration(app, segment);
             if (decoration) {
                 decorationBuilder.add(segment.from, segment.to, decoration);
@@ -220,8 +236,13 @@ function deleteDurationToken(
     view: EditorView,
     enableDurationPrefixSyntax: boolean,
     direction: "backward" | "forward",
+    reviewResponsePrefixText?: string | null,
 ): boolean {
-    const token = getTimelineDurationPrefixSegment(view.state.doc.toString(), enableDurationPrefixSyntax);
+    const token = getTimelineAtomicPrefixSegment({
+        message: view.state.doc.toString(),
+        enableDurationPrefixSyntax,
+        reviewResponsePrefixText,
+    });
     if (!token) return false;
 
     const selection = view.state.selection.main;
@@ -250,8 +271,9 @@ function deleteDurationToken(
 export function createTimelineLivePreviewExtensions(opts: {
     app: App;
     enableDurationPrefixSyntax: boolean;
+    reviewResponsePrefixText?: string | null;
 }): Extension[] {
-    const { app, enableDurationPrefixSyntax } = opts;
+    const { app, enableDurationPrefixSyntax, reviewResponsePrefixText } = opts;
 
     const plugin = ViewPlugin.fromClass(
         class {
@@ -263,6 +285,7 @@ export function createTimelineLivePreviewExtensions(opts: {
                     view,
                     app,
                     enableDurationPrefixSyntax,
+                    reviewResponsePrefixText,
                 );
                 this.decorations = sets.decorations;
                 this.atomicRanges = sets.atomicRanges;
@@ -274,6 +297,7 @@ export function createTimelineLivePreviewExtensions(opts: {
                         update.view,
                         app,
                         enableDurationPrefixSyntax,
+                        reviewResponsePrefixText,
                     );
                     this.decorations = sets.decorations;
                     this.atomicRanges = sets.atomicRanges;
@@ -329,12 +353,22 @@ export function createTimelineLivePreviewExtensions(opts: {
             {
                 key: "Backspace",
                 run: (view) =>
-                    deleteDurationToken(view, enableDurationPrefixSyntax, "backward"),
+                    deleteDurationToken(
+                        view,
+                        enableDurationPrefixSyntax,
+                        "backward",
+                        reviewResponsePrefixText,
+                    ),
             },
             {
                 key: "Delete",
                 run: (view) =>
-                    deleteDurationToken(view, enableDurationPrefixSyntax, "forward"),
+                    deleteDurationToken(
+                        view,
+                        enableDurationPrefixSyntax,
+                        "forward",
+                        reviewResponsePrefixText,
+                    ),
             },
         ]),
         theme,

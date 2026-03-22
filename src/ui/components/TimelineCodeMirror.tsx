@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { FC } from "react";
 import { EditorState } from "@codemirror/state";
 import {
@@ -54,6 +54,7 @@ interface TimelineCodeMirrorProps {
     onChange: (value: string) => void;
     placeholder?: string;
     enableDurationPrefixSyntax: boolean;
+    reviewResponsePrefixText?: string | null;
     className?: string;
     maxHeight?: number;
     minHeight?: number;
@@ -69,6 +70,7 @@ export const TimelineCodeMirror: FC<TimelineCodeMirrorProps> = ({
     onChange,
     placeholder,
     enableDurationPrefixSyntax,
+    reviewResponsePrefixText,
     className,
     maxHeight = 200,
     minHeight = 36,
@@ -118,6 +120,7 @@ export const TimelineCodeMirror: FC<TimelineCodeMirrorProps> = ({
                 ...createTimelineLivePreviewExtensions({
                     app,
                     enableDurationPrefixSyntax,
+                    reviewResponsePrefixText,
                 }),
                 EditorView.updateListener.of((update) => {
                     if (update.docChanged) {
@@ -199,7 +202,15 @@ export const TimelineCodeMirror: FC<TimelineCodeMirrorProps> = ({
             view.destroy();
             viewRef.current = null;
         };
-    }, [app, autoFocus, enableDurationPrefixSyntax, maxHeight, minHeight, placeholder]);
+    }, [
+        app,
+        autoFocus,
+        enableDurationPrefixSyntax,
+        maxHeight,
+        minHeight,
+        placeholder,
+        reviewResponsePrefixText,
+    ]);
 
     useEffect(() => {
         const view = viewRef.current;

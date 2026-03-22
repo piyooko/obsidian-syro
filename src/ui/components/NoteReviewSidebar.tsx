@@ -21,8 +21,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from "react"
 import { flushSync } from "react-dom";
 import { App, Component, MarkdownRenderer } from "obsidian";
 import { NoteReviewSection, NoteReviewItem, NoteReviewSidebarState } from "../types/noteReview";
-import { ReviewCommitLog } from "src/dataStore/reviewCommitStore";
-import { ArrowDownAZ, BarChart3, GripVertical, Menu } from "lucide-react";
+import { ReviewCommitLog, type ReviewCommitEditPayload } from "src/dataStore/reviewCommitStore";
 import "../styles/note-review-sidebar.css";
 import { t } from "src/lang/helpers";
 import { TimelineCodeMirror } from "./TimelineCodeMirror";
@@ -32,6 +31,13 @@ import {
     TimelineDisplayDuration,
     normalizeTimelineInlineLines,
 } from "src/ui/timeline/timelineMessage";
+import {
+    buildTimelineCommitEditPayload,
+    extractTimelineReviewResponseBody,
+    getTimelineReviewResponsePillText,
+    getTimelineReviewResponsePrefixText,
+    materializeTimelineReviewResponseEditMessage,
+} from "src/ui/timeline/reviewResponseTimeline";
 
 type DocumentWithViewTransition = Document & {
     startViewTransition?: (callback: () => void) => void;
@@ -714,7 +720,7 @@ interface TimelinePaneProps {
     onCommit: (message: string) => void;
     onCommitContextMenu?: (e: React.MouseEvent, commitId: string) => void;
     editingId?: string | null;
-    onEditCommit?: (commitId: string, newMessage: string) => void;
+    onEditCommit?: (commitId: string, payload: ReviewCommitEditPayload) => void;
     onStartEdit?: (commitId: string) => void;
     onCancelEdit?: () => void;
     onCommitSelect?: (log: ReviewCommitLog) => void;
@@ -726,52 +732,68 @@ const TimelineRenderedMessage: React.FC<{
     message: string;
     enableDurationPrefixSyntax: boolean;
     displayDuration?: TimelineDisplayDuration | null;
+    reviewResponse?: ReviewCommitLog["reviewResponse"];
     durationPlacement?: "top" | "inline-after-label";
 }> = ({
     app,
     message,
     enableDurationPrefixSyntax,
     displayDuration,
+    reviewResponse,
     durationPlacement = "top",
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
+    const reviewResponsePillText = useMemo(
+        () =>
+            reviewResponse && displayDuration
+                ? getTimelineReviewResponsePillText(reviewResponse, displayDuration)
+                : null,
+        [displayDuration, reviewResponse],
+    );
+    const renderedMessage = useMemo(
+        () =>
+            reviewResponse && displayDuration
+                ? extractTimelineReviewResponseBody({
+                      message,
+                      entryType: "review-response",
+                      reviewResponse,
+                      displayDuration,
+                  })
+                : message,
+        [displayDuration, message, reviewResponse],
+    );
     const renderModel = useMemo(
         () =>
             buildTimelineRenderModel({
-                message,
+                message: renderedMessage,
                 enableDurationPrefixSyntax,
-                displayDuration,
+                displayDuration: reviewResponsePillText ? null : displayDuration,
             }),
-        [displayDuration, enableDurationPrefixSyntax, message],
+        [displayDuration, enableDurationPrefixSyntax, renderedMessage, reviewResponsePillText],
     );
     const hasBody = renderModel.body.length > 0;
+    const shouldRenderEmptyPlaceholder = !hasBody && !reviewResponsePillText;
     const durationChip = renderModel.duration ? (
         <span className="sr-timeline-duration-pill" title={`${renderModel.duration.totalDays}d`}>
             {renderModel.duration.raw}
         </span>
     ) : null;
     const isInlineDuration = durationPlacement === "inline-after-label" && !!durationChip;
-    const inlineDurationChip =
-        isInlineDuration && renderModel.duration ? (
-            <span
-                className="sr-timeline-duration-pill"
-                title={`${renderModel.duration.totalDays}d`}
-            >
-                {`${renderModel.body} ${renderModel.duration.raw}`.trim()}
-            </span>
-        ) : null;
 
     useEffect(() => {
         const container = containerRef.current;
-        if (!container || !hasBody) return;
+        if (!container) return;
 
         container.replaceChildren();
+        if (!hasBody && !shouldRenderEmptyPlaceholder) return;
         const renderComponent = new Component();
         renderComponent.load();
         let cancelled = false;
 
         const render = async () => {
-            const lines = normalizeTimelineInlineLines(renderModel.body);
+            const lines = shouldRenderEmptyPlaceholder
+                ? [""]
+                : normalizeTimelineInlineLines(renderModel.body);
 
             for (const line of lines) {
                 if (cancelled) return;
@@ -781,7 +803,7 @@ const TimelineRenderedMessage: React.FC<{
 
                 if (!line) {
                     lineEl.classList.add("is-empty");
-                    lineEl.innerHTML = "&nbsp;";
+                    lineEl.textContent = "\u00A0";
                     container.appendChild(lineEl);
                     continue;
                 }
@@ -803,20 +825,34 @@ const TimelineRenderedMessage: React.FC<{
             cancelled = true;
             renderComponent.unload();
         };
-    }, [app, hasBody, renderModel.body]);
+    }, [app, hasBody, renderModel.body, shouldRenderEmptyPlaceholder]);
 
     return (
         <div className="sr-timeline-message-rendered">
-            {inlineDurationChip}
             {durationChip && durationPlacement === "top" && durationChip}
-            {!inlineDurationChip && hasBody && (
+            {(reviewResponsePillText ||
+                hasBody ||
+                shouldRenderEmptyPlaceholder ||
+                durationPlacement === "inline-after-label") && (
                 <div
                     className={`sr-timeline-message-content ${isInlineDuration ? "is-inline-duration" : ""}`}
                 >
-                    <div
-                        className={`sr-timeline-message-content-text ${isInlineDuration ? "is-inline-duration" : ""}`}
-                        ref={containerRef}
-                    />
+                    {reviewResponsePillText && (
+                        <div className="sr-timeline-inline-duration-wrap">
+                            <span
+                                className="sr-timeline-duration-pill"
+                                title={reviewResponsePillText}
+                            >
+                                {reviewResponsePillText}
+                            </span>
+                        </div>
+                    )}
+                    {(hasBody || shouldRenderEmptyPlaceholder) && (
+                        <div
+                            className={`sr-timeline-message-content-text ${isInlineDuration ? "is-inline-duration" : ""}`}
+                            ref={containerRef}
+                        />
+                    )}
                     {durationChip && durationPlacement === "inline-after-label" && (
                         <div className="sr-timeline-inline-duration-wrap">{durationChip}</div>
                     )}
@@ -865,6 +901,20 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
 }) => {
     const [message, setMessage] = useState("");
     const [editText, setEditText] = useState("");
+    const editingLog = useMemo(
+        () => logs.find((log) => log.id === editingId) ?? null,
+        [editingId, logs],
+    );
+    const reviewResponsePrefixText = useMemo(
+        () =>
+            editingLog
+                ? getTimelineReviewResponsePrefixText(
+                      editingLog.reviewResponse,
+                      editingLog.displayDuration,
+                  )
+                : null,
+        [editingLog],
+    );
 
     // 选中项变化时清空输入
     useEffect(() => {
@@ -873,13 +923,12 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
 
     // 进入编辑模式时初始化文本并聚焦
     useEffect(() => {
-        if (editingId) {
-            const log = logs.find((l) => l.id === editingId);
-            if (log) {
-                setEditText(log.message);
-            }
+        if (editingLog) {
+            setEditText(materializeTimelineReviewResponseEditMessage(editingLog));
+        } else {
+            setEditText("");
         }
-    }, [editingId, logs]);
+    }, [editingLog]);
 
     const handleCommit = useCallback(() => {
         if (!message.trim()) return;
@@ -888,13 +937,10 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
     }, [message, onCommit]);
 
     const submitEdit = useCallback(() => {
-        if (editingId && onEditCommit) {
-            const trimmed = editText.trim();
-            if (trimmed) {
-                onEditCommit(editingId, trimmed);
-            }
+        if (editingId && onEditCommit && editingLog) {
+            onEditCommit(editingId, buildTimelineCommitEditPayload(editingLog, editText));
         }
-    }, [editText, editingId, onEditCommit]);
+    }, [editText, editingId, editingLog, onEditCommit]);
 
     const handleEditBlur = useCallback(() => {
         submitEdit();
@@ -1009,6 +1055,9 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
                                                             enableDurationPrefixSyntax={
                                                                 enableDurationPrefixSyntax
                                                             }
+                                                            reviewResponsePrefixText={
+                                                                reviewResponsePrefixText
+                                                            }
                                                             className="sr-timeline-edit-textarea"
                                                             maxHeight={150}
                                                             minHeight={32}
@@ -1028,6 +1077,7 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
                                                                 displayDuration={
                                                                     log.displayDuration
                                                                 }
+                                                                reviewResponse={log.reviewResponse}
                                                                 durationPlacement={
                                                                     log.displayDuration
                                                                         ? "inline-after-label"
@@ -1334,7 +1384,7 @@ interface NoteReviewSidebarProps {
     onNoteDoubleClick?: (item: NoteReviewItem) => void;
     onCommitContextMenu?: (e: React.MouseEvent, commitId: string) => void;
     editingId?: string | null;
-    onEditCommit?: (commitId: string, newMessage: string) => void;
+    onEditCommit?: (commitId: string, payload: ReviewCommitEditPayload) => void;
     onStartEdit?: (commitId: string) => void;
     onCancelEdit?: () => void;
     onCommitSelect?: (log: ReviewCommitLog) => void;
@@ -1383,7 +1433,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
 }) => {
     const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
     const [currentHeight, setCurrentHeight] = useState(filterBarHeight);
-    const [draggedTag, setDraggedTag] = useState<string | null>(null);
+    const [, setDraggedTag] = useState<string | null>(null);
     const sidebarRef = useRef<HTMLDivElement>(null);
 
     // 同步外部高度变化

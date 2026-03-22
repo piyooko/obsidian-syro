@@ -51,4 +51,21 @@ describe("timelineLivePreview", () => {
             anchor: 0,
         });
     });
+
+    it("deletes a review-response token as one atomic block", () => {
+        expect(
+            resolveDurationTokenDeletion({
+                selectionFrom: 11,
+                selectionTo: 11,
+                tokenFrom: 0,
+                tokenTo: 11,
+                docLength: 17,
+                direction: "backward",
+            }),
+        ).toEqual({
+            from: 0,
+            to: 11,
+            anchor: 0,
+        });
+    });
 });

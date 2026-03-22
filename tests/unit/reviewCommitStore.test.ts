@@ -36,7 +36,10 @@ describe("reviewCommitStore", () => {
         expect(entry.entryType).toBe("manual");
         expect(entry.reviewResponse).toBeUndefined();
 
-        await store.editCommit("note.md", entry.id, "manual note updated");
+        await store.editCommit("note.md", entry.id, {
+            message: "manual note updated",
+            entryType: "manual",
+        });
 
         const [saved] = store.getCommits("note.md");
         expect(saved.message).toBe("manual note updated");

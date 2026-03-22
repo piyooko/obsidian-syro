@@ -30,6 +30,7 @@ export interface TimelineRenderModel {
 
 export type TimelineLivePreviewSegmentKind =
     | "duration-prefix"
+    | "review-response-prefix"
     | "bold"
     | "italic"
     | "strikethrough"
@@ -43,6 +44,7 @@ export interface TimelineLivePreviewSegment {
     to: number;
     raw: string;
     text: string;
+    title?: string;
     duration?: TimelineDisplayDuration;
 }
 
@@ -65,6 +67,41 @@ export function formatTimelineDurationDays(totalDays: number): string {
     return `${Math.max(0, Math.round(totalDays))}d`;
 }
 
+export function parseTimelineDurationPrefixRaw(rawPrefix: string): TimelineDurationPrefix | null {
+    const parts: TimelineDurationPart[] = [];
+    let consumed = "";
+    let totalDays = 0;
+
+    for (const partMatch of rawPrefix.matchAll(PREFIX_SEGMENT)) {
+        const value = Number(partMatch[1]);
+        const rawUnit = partMatch[2].toLowerCase();
+        const unit = DURATION_UNIT_ALIASES[rawUnit];
+        if (!unit || !Number.isFinite(value)) {
+            return null;
+        }
+
+        parts.push({ value, unit });
+        consumed += `${partMatch[1]}${rawUnit}`;
+        totalDays += unit === "year" ? value * 365 : unit === "month" ? value * 30 : value;
+    }
+
+    const compactRawPrefix = rawPrefix.replace(/\s+/g, "").toLowerCase();
+    if (parts.length === 0 || consumed !== compactRawPrefix) {
+        return null;
+    }
+
+    return {
+        raw: rawPrefix.replace(/\s+/g, ""),
+        normalized: parts
+            .map((part) =>
+                `${part.value}${part.unit === "year" ? "y" : part.unit === "month" ? "mo" : "d"}`,
+            )
+            .join(""),
+        totalDays,
+        parts,
+    };
+}
+
 export function parseTimelineMessage(message: string): ParsedTimelineMessage {
     const raw = message ?? "";
     const match = raw.match(PREFIX_CAPTURE);
@@ -76,30 +113,8 @@ export function parseTimelineMessage(message: string): ParsedTimelineMessage {
         };
     }
 
-    const rawPrefix = match[1];
-    const parts: TimelineDurationPart[] = [];
-    let consumed = "";
-    let totalDays = 0;
-
-    for (const partMatch of rawPrefix.matchAll(PREFIX_SEGMENT)) {
-        const value = Number(partMatch[1]);
-        const rawUnit = partMatch[2].toLowerCase();
-        const unit = DURATION_UNIT_ALIASES[rawUnit];
-        if (!unit || !Number.isFinite(value)) {
-            return {
-                raw,
-                body: raw,
-                durationPrefix: null,
-            };
-        }
-
-        parts.push({ value, unit });
-        consumed += `${partMatch[1]}${rawUnit}`;
-        totalDays += unit === "year" ? value * 365 : unit === "month" ? value * 30 : value;
-    }
-
-    const compactRawPrefix = rawPrefix.replace(/\s+/g, "").toLowerCase();
-    if (parts.length === 0 || consumed !== compactRawPrefix) {
+    const durationPrefix = parseTimelineDurationPrefixRaw(match[1]);
+    if (!durationPrefix) {
         return {
             raw,
             body: raw,
@@ -107,21 +122,10 @@ export function parseTimelineMessage(message: string): ParsedTimelineMessage {
         };
     }
 
-    const normalized = parts
-        .map((part) =>
-            `${part.value}${part.unit === "year" ? "y" : part.unit === "month" ? "mo" : "d"}`,
-        )
-        .join("");
-
     return {
         raw,
         body: raw.slice(match[0].length),
-        durationPrefix: {
-            raw: rawPrefix.replace(/\s+/g, ""),
-            normalized,
-            totalDays,
-            parts,
-        },
+        durationPrefix,
     };
 }
 
@@ -165,7 +169,7 @@ function collectTimelineRegexSegments(
     message: string,
     offset: number,
     regex: RegExp,
-    kind: Exclude<TimelineLivePreviewSegmentKind, "duration-prefix">,
+    kind: Exclude<TimelineLivePreviewSegmentKind, "duration-prefix" | "review-response-prefix">,
 ): TimelineLivePreviewSegment[] {
     const segments: TimelineLivePreviewSegment[] = [];
     regex.lastIndex = 0;
@@ -191,12 +195,23 @@ function collectTimelineRegexSegments(
 export function findTimelineLivePreviewSegments(
     message: string,
     enableDurationPrefixSyntax: boolean,
+    reviewResponsePrefixText?: string | null,
 ): TimelineLivePreviewSegment[] {
     const raw = message ?? "";
     const segments: TimelineLivePreviewSegment[] = [];
     let bodyOffset = 0;
 
-    if (enableDurationPrefixSyntax) {
+    if (reviewResponsePrefixText && raw.startsWith(reviewResponsePrefixText)) {
+        bodyOffset = reviewResponsePrefixText.length;
+        segments.push({
+            kind: "review-response-prefix",
+            from: 0,
+            to: bodyOffset,
+            raw: reviewResponsePrefixText,
+            text: reviewResponsePrefixText.replace(/::\s*$/, ""),
+            title: reviewResponsePrefixText.replace(/::\s*$/, ""),
+        });
+    } else if (enableDurationPrefixSyntax) {
         const parsed = parseTimelineMessage(raw);
         if (parsed.durationPrefix) {
             const prefixMatch = raw.match(PREFIX_CAPTURE);
@@ -244,6 +259,23 @@ export function getTimelineDurationPrefixSegment(
     return (
         findTimelineLivePreviewSegments(message, enableDurationPrefixSyntax).find(
             (segment) => segment.kind === "duration-prefix",
+        ) ?? null
+    );
+}
+
+export function getTimelineAtomicPrefixSegment(opts: {
+    message: string;
+    enableDurationPrefixSyntax: boolean;
+    reviewResponsePrefixText?: string | null;
+}): TimelineLivePreviewSegment | null {
+    return (
+        findTimelineLivePreviewSegments(
+            opts.message,
+            opts.enableDurationPrefixSyntax,
+            opts.reviewResponsePrefixText,
+        ).find(
+            (segment) =>
+                segment.kind === "duration-prefix" || segment.kind === "review-response-prefix",
         ) ?? null
     );
 }
