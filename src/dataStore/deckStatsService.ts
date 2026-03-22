@@ -1,4 +1,6 @@
 import { SyncEvents } from "../Events/SyncEvents";
+import { Card } from "../Card";
+import { Deck } from "../Deck";
 import { RepetitionItem } from "./repetitionItem";
 
 export interface DeckStats {
@@ -26,7 +28,12 @@ export class DeckStatsService {
         this.syncEvents = syncEvents;
     }
 
-    public calculateDeckStats(deckName: string, items: RepetitionItem[]): void {
+    public calculateDeckStats(
+        deckName: string,
+        items: RepetitionItem[],
+        learnAheadMillis: number = 0,
+        now: number = Date.now(),
+    ): void {
         let newCount = 0;
         let learnCount = 0;
         let dueCount = 0;
@@ -39,7 +46,7 @@ export class DeckStatsService {
 
             if (item.isNew) {
                 newCount++;
-            } else if (item.isInLearningPhase) {
+            } else if (item.isReviewableLearning(now, learnAheadMillis)) {
                 learnCount++;
             } else if (item.isDue) {
                 dueCount++;
@@ -58,7 +65,11 @@ export class DeckStatsService {
         }
     }
 
-    public recalculateDeck(deck: any): void {
+    public recalculateDeck(
+        deck: Deck | null | undefined,
+        learnAheadMillis: number = 0,
+        now: number = Date.now(),
+    ): void {
         if (!deck) return;
 
         const deckName =
@@ -68,10 +79,10 @@ export class DeckStatsService {
                   ? deck.getTopicPath().path.join("/")
                   : deck.deckName;
         const items = [...deck.newFlashcards, ...deck.dueFlashcards, ...deck.learningFlashcards]
-            .map((c: any) => c.repetitionItem)
-            .filter((i: any) => i);
+            .map((card: Card) => card.repetitionItem)
+            .filter((item): item is RepetitionItem => Boolean(item));
 
-        this.calculateDeckStats(deckName, items);
+        this.calculateDeckStats(deckName, items, learnAheadMillis, now);
     }
 
     public getStatsForDeck(deckName: string, includeChildren: boolean = false): DeckStats {

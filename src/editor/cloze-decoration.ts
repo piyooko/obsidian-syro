@@ -9,8 +9,8 @@ import {
     ViewUpdate,
     WidgetType,
 } from "@codemirror/view";
-import { RangeSetBuilder, Text } from "@codemirror/state";
-import { App, setIcon } from "obsidian";
+import { RangeSetBuilder } from "@codemirror/state";
+import { App } from "obsidian";
 import { ClozePopoverManager } from "../ui/editor/ClozePopoverManager";
 
 // 全局 App 实例引用
@@ -75,7 +75,7 @@ function isInsideLatexFormula(text: string, position: number): boolean {
 /**
  * 获取当前位置所在的"卡片上下文"（段落边界）
  */
-function getCardContext(doc: Text, pos: number): { from: number; to: number; text: string } {
+function getCardContext(doc: { toString(): string }, pos: number): { from: number; to: number; text: string } {
     const docText = doc.toString();
     let from = pos;
     while (from > 0) {
@@ -103,6 +103,7 @@ function getExistingClozeIdsInContext(contextText: string): Map<string, string> 
 }
 
 // Chevron 图标 SVG
+const CHEVRON_ICON = `<svg viewBox="0 0 24 24" width="8" height="8" stroke="currentColor" stroke-width="3" fill="none"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
 
 /**
  * 下拉按钮 Widget - 放在 Cloze 内容末尾（高亮内部）
@@ -121,7 +122,7 @@ class ClozeButtonWidget extends WidgetType {
     toDOM(view: EditorView): HTMLElement {
         const button = document.createElement("span");
         button.addClass("sr-cloze-button");
-        setIcon(button, "chevron-down");
+        button.innerHTML = CHEVRON_ICON;
         button.title = "管理填空";
 
         // 阻止所有鼠标事件冒泡，防止 CodeMirror 接管
@@ -190,7 +191,7 @@ export const clozeDecorationPlugin = ViewPlugin.fromClass(
             const cursorFrom = selection.from;
             const cursorTo = selection.to;
 
-            const decorations: { from: number; to: number; decoration: Decoration }[] = [];
+            const decorations: Array<{ from: number; to: number; decoration: Decoration }> = [];
 
             for (const { from, to } of view.visibleRanges) {
                 const text = doc.sliceString(from, to);

@@ -12,7 +12,7 @@ export function addReviewNoteDirectlySetting(containerEl: HTMLElement, plugin: S
             toggle.setValue(plugin.data.settings.reviewingNoteDirectly);
             toggle.onChange((newValue) => {
                 plugin.data.settings.reviewingNoteDirectly = newValue;
-                plugin.savePluginData();
+                void plugin.savePluginData();
             });
         });
 }

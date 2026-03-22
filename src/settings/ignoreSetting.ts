@@ -10,12 +10,12 @@ export function addignoreSetting(containerEl: HTMLElement, plugin: SRPlugin) {
         .setDesc(t("TAGS_TO_IGNORE_DESC"))
         .addTextArea((text) =>
             text.setValue(settings.tagsToIgnore.join("\n")).onChange((value) => {
-                applySettingsUpdate(async () => {
+                applySettingsUpdate(() => {
                     settings.tagsToIgnore = value
                         .split(/\n+/)
                         .map((v) => v.trim())
                         .filter((v) => v);
-                    await plugin.savePluginData();
+                    void plugin.savePluginData();
                 });
             }),
         );

@@ -59,11 +59,7 @@ export class TabView extends ItemView {
 
             // 应用用户设置的尺寸 -> 强制全屏
             // 之前的逻辑会导致 TabView 内容被限制在 80% 高度 / 40% 宽度，造成布局错乱
-            this.viewContentEl.style.height = "100%";
-            this.viewContentEl.style.maxHeight = "100%";
-            this.viewContentEl.style.width = "100%";
-            this.viewContentEl.style.maxWidth = "100%";
-            this.viewContentEl.style.overflow = "hidden";
+            this.viewContentEl.addClass("syro-tab-view-content");
 
             this.viewContainerEl.appendChild(this.viewContentEl);
         }
@@ -125,13 +121,13 @@ export class TabView extends ItemView {
      * 当视图关闭时触发
      * 清理资源
      */
-    async onClose() {
+    onClose(): Promise<void> {
         if (this.reactApp) {
             this.reactApp.unmount();
             this.reactApp = null;
         }
 
         // 保存数据
-        this.plugin.savePluginData();
+        return this.plugin.savePluginData();
     }
 }

@@ -36,7 +36,7 @@ export class SyncEvents {
         if (!this.listeners.has(event)) {
             this.listeners.set(event, new Set());
         }
-        this.listeners.get(event)!.add(listener);
+        this.listeners.get(event).add(listener);
 
         // 返回取消订阅函数
         return () => {

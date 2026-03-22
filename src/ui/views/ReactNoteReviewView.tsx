@@ -1,4 +1,4 @@
-/**
+﻿/**
  * React-based note review sidebar view.
  * It renders the note review queue and timeline interactions inside an Obsidian item view.
  */
@@ -18,22 +18,13 @@
 
 
 
-import {
-    ItemView,
-    WorkspaceLeaf,
-    Menu,
-    TFile,
-    Notice,
-    Scope,
-    type KeymapEventHandler,
-    type Modifier,
-} from "obsidian";
+import { ItemView, WorkspaceLeaf, Menu, TFile, Notice, Scope, type Modifier } from "obsidian";
 import { createRoot, Root } from "react-dom/client";
 import React from "react";
 import type SRPlugin from "src/main";
 import { NoteReviewSidebar } from "src/ui/components/NoteReviewSidebar";
 import { reviewDecksToSidebarState } from "src/ui/adapters/noteReviewAdapter";
-import { NoteReviewItem } from "src/ui/types/noteReview";
+import { NoteReviewItem, NoteReviewSidebarState } from "src/ui/types/noteReview";
 import { ReviewCommitStore, ReviewCommitLog } from "src/dataStore/reviewCommitStore";
 import { t } from "src/lang/helpers";
 import { ContextAnchorService } from "src/util/ContextAnchor";
@@ -43,18 +34,6 @@ import { captureTimelineContext } from "src/ui/timeline/timelineContext";
 
 // Stable view type id used when registering the sidebar view.
 export const REACT_REVIEW_QUEUE_VIEW_TYPE = "react-review-queue-list-view";
-
-interface RenameCapableFileManager {
-    promptForFileRename?: (file: TFile) => void;
-}
-
-interface WarningCapableMenuItem {
-    setWarning?: () => void;
-}
-
-interface ScrollableMarkdownEditor {
-    scrollTo?: (x: number, y: number) => void;
-}
 
 /**
  * React item view for the note review queue.
@@ -74,23 +53,36 @@ export class ReactNoteReviewView extends ItemView {
     private editingId: string | null = null;
     private unsubscribeSyncEvent: (() => void) | null = null;
     private isLoading: boolean = false;
-    private timelineScopeHandlers: KeymapEventHandler[] = [];
+    private timelineScopeHandlers: Array<Parameters<Scope["unregister"]>[0]> = [];
+
+    private runAsync(task: Promise<void>, label: string): void {
+        void task.catch((error: unknown) => {
+            console.error(`[ReactNoteReviewView] ${label} failed`, error);
+        });
+    }
 
     constructor(leaf: WorkspaceLeaf, plugin: SRPlugin) {
         super(leaf);
         this.plugin = plugin;
 
         // Restore the last saved timeline height.
-        this.timelineHeight = this.plugin.data.settings.sidebarTimelineHeight || 300;
+        const sidebarSettings = this.plugin.data.settings as typeof this.plugin.data.settings & {
+            sidebarTimelineHeight?: number;
+        };
+        this.timelineHeight = sidebarSettings.sidebarTimelineHeight ?? 300;
 
         // Register workspace and vault listeners.
-        this.registerEvent(this.app.workspace.on("file-open", () => this.handleFileOpen()));
+        this.registerEvent(
+            this.app.workspace.on("file-open", () => {
+                this.handleFileOpen();
+            }),
+        );
         this.registerEvent(
             this.app.vault.on("rename", (file, oldPath) => {
                 // Keep timeline entries in sync with renamed files.
                 if (this.commitStore && oldPath) {
                     this.commitStore.renameFile(oldPath, file.path);
-                    this.commitStore.save();
+                    this.runAsync(this.commitStore.save(), "save renamed commit store");
                 }
                 this.redraw();
             }),
@@ -128,10 +120,11 @@ export class ReactNoteReviewView extends ItemView {
     /**
      * Open the view and mount the React root.
      */
-    async onOpen(): Promise<void> {
+    onOpen(): Promise<void> {
         const contentEl = this.containerEl.children[1] as HTMLElement;
         contentEl.empty();
         contentEl.addClass("sr-react-note-review-view");
+        contentEl.setCssProps({ padding: "0" });
 
         this.commitStore = this.plugin.reviewCommitStore;
 
@@ -153,12 +146,14 @@ export class ReactNoteReviewView extends ItemView {
         this.unsubscribeSyncEvent = this.plugin.syncEvents.on("note-review-updated", () => {
             this.redraw();
         });
+
+        return Promise.resolve();
     }
 
     /**
      * Close the view and clean up resources.
      */
-    async onClose(): Promise<void> {
+    onClose(): Promise<void> {
         // Unsubscribe from sync events.
         if (this.unsubscribeSyncEvent) {
             this.unsubscribeSyncEvent();
@@ -171,6 +166,8 @@ export class ReactNoteReviewView extends ItemView {
             this.root.unmount();
             this.root = null;
         }
+
+        return Promise.resolve();
     }
 
     /**
@@ -190,11 +187,19 @@ export class ReactNoteReviewView extends ItemView {
                 app: this.app,
                 data,
                 activeFilePath: activeFile?.path,
-                onNoteClick: (item) => this.handleNoteClick(item),
+                onNoteClick: (item) => {
+                    this.runAsync(this.handleNoteClick(item), "open note");
+                },
                 onNoteContextMenu: (item, event) => this.handleNoteContextMenu(item, event),
-                onTagDrop: (item, tag) => this.handleTagDrop(item, tag),
-                onPriorityChange: (item, newPriority) =>
-                    this.handlePriorityChange(item, newPriority),
+                onTagDrop: (item, tag) => {
+                    this.runAsync(this.handleTagDrop(item, tag), "drop tag");
+                },
+                onPriorityChange: (item, newPriority) => {
+                    this.runAsync(
+                        this.handlePriorityChange(item, newPriority),
+                        "change priority",
+                    );
+                },
                 ignoredTags: this.plugin.data.settings.sidebarIgnoredTags || [],
                 sortMode: this.plugin.data.settings.sidebarTagSortMode || "frequency",
                 onSortModeChange: (mode) => this.handleSortModeChange(mode),
@@ -208,19 +213,30 @@ export class ReactNoteReviewView extends ItemView {
                     this.plugin.data.settings.hideNoteReviewSidebarFilters || false,
                 selectedItem: this.selectedItem,
                 commitLogs: this.commitLogs,
-                onCommit: (path, message) => this.handleCommit(path, message),
+                onCommit: (path, message) => {
+                    this.runAsync(this.handleCommit(path, message), "create timeline commit");
+                },
                 isTimelineOpen: this.isTimelineOpen,
                 onTimelineToggle: () => this.handleTimelineToggle(),
                 timelineHeight: this.timelineHeight,
                 onTimelineHeightChange: (height) => this.handleTimelineHeightChange(height),
                 onNoteSelect: (item) => this.handleNoteSelect(item),
-                onNoteDoubleClick: (item) => this.handleNoteClick(item),
+                onNoteDoubleClick: (item) => {
+                    this.runAsync(this.handleNoteClick(item), "open note on double click");
+                },
                 onCommitContextMenu: (e, commitId) => this.handleCommitContextMenu(e, commitId),
                 editingId: this.editingId,
-                onEditCommit: (commitId, newMessage) => this.handleEditCommit(commitId, newMessage),
+                onEditCommit: (commitId, newMessage) => {
+                    this.runAsync(
+                        this.handleEditCommit(commitId, newMessage),
+                        "edit timeline commit",
+                    );
+                },
                 onStartEdit: (commitId) => this.handleStartEdit(commitId),
                 onCancelEdit: () => this.handleCancelEdit(),
-                onCommitSelect: (log) => this.handleCommitSelect(log),
+                onCommitSelect: (log) => {
+                    this.runAsync(this.handleCommitSelect(log), "select timeline commit");
+                },
                 isLoading: this.isLoading,
                 showScrollPercentage: this.plugin.data.settings.showScrollPercentage,
                 enableDurationPrefixSyntax:
@@ -249,7 +265,7 @@ export class ReactNoteReviewView extends ItemView {
         const hotkeyActions: Array<{
             action: "bold" | "italic" | "strikethrough" | "highlight" | "inline-code" | "math";
             commandIds: string[];
-            fallback: Array<{ modifiers: Modifier[]; key: string }>;
+            fallback: Array<{ modifiers: string[]; key: string }>;
         }> = [
             {
                 action: "bold",
@@ -290,7 +306,7 @@ export class ReactNoteReviewView extends ItemView {
             );
             for (const hotkey of hotkeys) {
                 this.timelineScopeHandlers.push(
-                    this.scope.register(hotkey.modifiers, hotkey.key, (evt: KeyboardEvent) => {
+                    this.scope.register(hotkey.modifiers as Modifier[], hotkey.key, (evt: KeyboardEvent) => {
                         const timelineTarget = this.getTimelineEventTarget(document.activeElement);
                         if (!timelineTarget) {
                             return true;
@@ -320,22 +336,22 @@ export class ReactNoteReviewView extends ItemView {
 
     private resolveTimelineHotkeys(
         commandIds: readonly string[],
-        fallback: ReadonlyArray<{ modifiers: Modifier[]; key: string }>,
-    ): Array<{ modifiers: Modifier[]; key: string }> {
+        fallback: ReadonlyArray<{ modifiers: string[]; key: string }>,
+    ): Array<{ modifiers: string[]; key: string }> {
         const appWithCommands = this.app as typeof this.app & {
             commands?: {
-                commands?: Record<string, { hotkeys?: Array<{ modifiers: Modifier[]; key: string }> }>;
+                commands?: Record<string, { hotkeys?: Array<{ modifiers: string[]; key: string }> }>;
             };
             hotkeyManager?: {
-                customKeys?: Record<string, Array<{ modifiers: Modifier[]; key: string }>>;
+                customKeys?: Record<string, Array<{ modifiers: string[]; key: string }>>;
             };
         };
         const commandsApi = appWithCommands.commands;
         const hotkeyManager = appWithCommands.hotkeyManager;
-        const collected: Array<{ modifiers: Modifier[]; key: string }> = [];
+        const collected: Array<{ modifiers: string[]; key: string }> = [];
         const seen = new Set<string>();
 
-        const pushHotkey = (hotkey?: { modifiers: Modifier[]; key: string }) => {
+        const pushHotkey = (hotkey: { modifiers: string[]; key: string } | null | undefined) => {
             if (!hotkey || !hotkey.key || !Array.isArray(hotkey.modifiers)) return;
             const signature = `${hotkey.modifiers.join("+")}::${hotkey.key}`;
             if (seen.has(signature)) return;
@@ -424,7 +440,7 @@ export class ReactNoteReviewView extends ItemView {
                 .setTitle(t("OPEN_IN_TAB"))
                 .setIcon("file-plus")
                 .onClick(() => {
-                    this.app.workspace.getLeaf("tab").openFile(item.noteFile);
+                    this.runAsync(this.app.workspace.getLeaf("tab").openFile(item.noteFile), "open in tab");
                 });
         });
 
@@ -433,7 +449,10 @@ export class ReactNoteReviewView extends ItemView {
                 .setTitle(t("OPEN_TO_RIGHT"))
                 .setIcon("separator-vertical")
                 .onClick(() => {
-                    this.app.workspace.getLeaf("split").openFile(item.noteFile);
+                    this.runAsync(
+                        this.app.workspace.getLeaf("split").openFile(item.noteFile),
+                        "open to right",
+                    );
                 });
         });
 
@@ -442,7 +461,10 @@ export class ReactNoteReviewView extends ItemView {
                 .setTitle(t("OPEN_IN_NEW_WINDOW") || "Open in new window")
                 .setIcon("scan-line")
                 .onClick(() => {
-                    this.app.workspace.openPopoutLeaf().openFile(item.noteFile);
+                    this.runAsync(
+                        this.app.workspace.openPopoutLeaf().openFile(item.noteFile),
+                        "open in new window",
+                    );
                 });
         });
 
@@ -452,12 +474,13 @@ export class ReactNoteReviewView extends ItemView {
         // User specifically asked for "System commands".
         // Let's add Rename as it's standard.
         fileMenu.addItem((menuItem) => {
-            const fileManager = this.app.fileManager as typeof this.app.fileManager &
-                RenameCapableFileManager;
             menuItem
                 .setTitle(t("RENAME") || "Rename")
                 .setIcon("pencil")
                 .onClick(() => {
+                    const fileManager = this.app.fileManager as typeof this.app.fileManager & {
+                        promptForFileRename?: (file: TFile) => void;
+                    };
                     fileManager.promptForFileRename?.(item.noteFile);
                 });
         });
@@ -471,13 +494,18 @@ export class ReactNoteReviewView extends ItemView {
 
         // 4. Danger actions (Delete) at the very bottom
         fileMenu.addItem((menuItem) => {
-            const warningMenuItem = menuItem as typeof menuItem & WarningCapableMenuItem;
             menuItem.setTitle(t("DELETE")).setIcon("trash");
+            const warningMenuItem = menuItem as typeof menuItem & {
+                setWarning?: () => void;
+            };
             if (typeof warningMenuItem.setWarning === "function") {
                 warningMenuItem.setWarning();
             }
-            menuItem.onClick(async () => {
-                await this.app.fileManager.trashFile(item.noteFile);
+            menuItem.onClick(() => {
+                this.runAsync(
+                    this.app.fileManager.trashFile(item.noteFile),
+                    "trash note review file",
+                );
             });
         });
 
@@ -584,19 +612,19 @@ export class ReactNoteReviewView extends ItemView {
 
     private handleSortModeChange(mode: "a-z" | "frequency" | "custom"): void {
         this.plugin.data.settings.sidebarTagSortMode = mode;
-        this.plugin.savePluginData();
+        this.runAsync(this.plugin.savePluginData(), "save sidebar sort mode");
         this.redraw();
     }
 
     private handleCustomTagOrderChange(order: string[]): void {
         this.plugin.data.settings.sidebarCustomTagOrder = order;
-        this.plugin.savePluginData();
+        this.runAsync(this.plugin.savePluginData(), "save custom tag order");
         this.redraw();
     }
 
     private handleFilterBarHeightChange(height: number): void {
         this.plugin.data.settings.sidebarFilterBarHeight = height;
-        this.plugin.savePluginData();
+        this.runAsync(this.plugin.savePluginData(), "save filter bar height");
     }
 
     private handleIgnoreTag(tag: string): void {
@@ -604,7 +632,7 @@ export class ReactNoteReviewView extends ItemView {
         if (!ignoredTags.includes(tag)) {
             ignoredTags.push(tag);
             this.plugin.data.settings.sidebarIgnoredTags = ignoredTags;
-            this.plugin.savePluginData();
+            this.runAsync(this.plugin.savePluginData(), "save ignored tags");
             new Notice(t("SIDEBAR_TAG_IGNORED", { tag }));
             this.redraw();
         }
@@ -621,7 +649,7 @@ export class ReactNoteReviewView extends ItemView {
                 });
         });
 
-        menu.showAtMouseEvent(e.nativeEvent as MouseEvent);
+        menu.showAtMouseEvent(e.nativeEvent);
     }
 
     // ==========================================
@@ -685,8 +713,11 @@ export class ReactNoteReviewView extends ItemView {
      */
     private handleTimelineHeightChange(height: number): void {
         this.timelineHeight = height;
-        this.plugin.data.settings.sidebarTimelineHeight = height;
-        this.plugin.savePluginData();
+        const sidebarSettings = this.plugin.data.settings as typeof this.plugin.data.settings & {
+            sidebarTimelineHeight?: number;
+        };
+        sidebarSettings.sidebarTimelineHeight = height;
+        this.runAsync(this.plugin.savePluginData(), "save timeline height");
     }
 
     /**
@@ -706,16 +737,22 @@ export class ReactNoteReviewView extends ItemView {
         menu.addItem((item) => {
             item.setTitle(t("SIDEBAR_DELETE_COMMIT"))
                 .setIcon("trash-2")
-                .onClick(async () => {
+                .onClick(() => {
                     if (!this.commitStore || !this.selectedItem) return;
-                    await this.commitStore.deleteCommit(this.selectedItem.path, commitId);
-                    this.commitLogs = this.commitStore.getCommits(this.selectedItem.path);
-                    this.redraw();
-                    new Notice(t("SIDEBAR_COMMIT_DELETED"));
+                    const selectedPath = this.selectedItem.path;
+                    this.runAsync(
+                        (async () => {
+                            await this.commitStore.deleteCommit(selectedPath, commitId);
+                            this.commitLogs = this.commitStore.getCommits(selectedPath);
+                            this.redraw();
+                            new Notice(t("SIDEBAR_COMMIT_DELETED"));
+                        })(),
+                        "delete timeline commit",
+                    );
                 });
         });
 
-        menu.showAtMouseEvent(e.nativeEvent as MouseEvent);
+        menu.showAtMouseEvent(e.nativeEvent);
     }
 
     /**
@@ -778,7 +815,9 @@ export class ReactNoteReviewView extends ItemView {
                           clientHeight: number;
                       })
                     : null;
-                const scrollableEditor = editor as typeof editor & ScrollableMarkdownEditor;
+                const scrollableEditor = editor as typeof editor & {
+                    scrollTo?: (x: number, y: number) => void;
+                };
                 if (scrollInfo && scrollableEditor.scrollTo) {
                     const targetTop =
                         log.scrollPercentage * (scrollInfo.height - scrollInfo.clientHeight);
@@ -805,7 +844,7 @@ export class ReactNoteReviewView extends ItemView {
     /**
      * Auto-select and expand the timeline when a reviewed file opens.
      */
-    private async handleFileOpen(): Promise<void> {
+    private handleFileOpen(): void {
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile) {
             this.redraw();
@@ -840,3 +879,4 @@ export class ReactNoteReviewView extends ItemView {
         this.redraw();
     }
 }
+

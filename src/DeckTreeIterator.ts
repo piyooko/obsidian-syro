@@ -1,21 +1,21 @@
 /**
- * 这个文件主要是干什么的：
- * 实现了“迭代器模式”，负责在复习过程中遍历牌组树。
- * 它决定了在复习时“下一张卡片”是谁，支持不同的遍历顺序（如顺序、随机、优先新卡/复习卡）。
- * 同时也支持跨牌组（Deck）的遍历。
+ * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
+ * 瀹炵幇浜嗏€滆凯浠ｅ櫒妯″紡鈥濓紝璐熻矗鍦ㄥ涔犺繃绋嬩腑閬嶅巻鐗岀粍鏍戙€?
+ * 瀹冨喅瀹氫簡鍦ㄥ涔犳椂鈥滀笅涓€寮犲崱鐗団€濇槸璋侊紝鏀寔涓嶅悓鐨勯亶鍘嗛『搴忥紙濡傞『搴忋€侀殢鏈恒€佷紭鍏堟柊鍗?澶嶄範鍗★級銆?
+ * 鍚屾椂涔熸敮鎸佽法鐗岀粍锛圖eck锛夌殑閬嶅巻銆?
  *
- * 它在项目中属于：逻辑层 (Logic Layer)
+ * 瀹冨湪椤圭洰涓睘浜庯細閫昏緫灞?(Logic Layer)
  *
- * 它会用到哪些文件：
- * 1. src/Deck.ts (被遍历的数据结构)
- * 2. src/Card.ts (遍历返回的元素)
+ * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
+ * 1. src/Deck.ts (琚亶鍘嗙殑鏁版嵁缁撴瀯)
+ * 2. src/Card.ts (閬嶅巻杩斿洖鐨勫厓绱?
  *
- * 哪些文件会用到它：
- * 1. src/FlashcardReviewSequencer.ts (复习流程控制器依赖它来获取卡片)
- * 2. src/DeckTreeStatsCalculator.ts (依赖它来遍历统计数据)
+ * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
+ * 1. src/FlashcardReviewSequencer.ts (澶嶄範娴佺▼鎺у埗鍣ㄤ緷璧栧畠鏉ヨ幏鍙栧崱鐗?
+ * 2. src/DeckTreeStatsCalculator.ts (渚濊禆瀹冩潵閬嶅巻缁熻鏁版嵁)
  */
 /**
- * [逻辑] 迭代器模式，负责在复习时遍历牌组树，决定下一张卡片。
+ * [閫昏緫] 杩唬鍣ㄦā寮忥紝璐熻矗鍦ㄥ涔犳椂閬嶅巻鐗岀粍鏍戯紝鍐冲畾涓嬩竴寮犲崱鐗囥€?
  */
 import { Card } from "./Card";
 import { CardListType, Deck } from "./Deck";
@@ -48,14 +48,14 @@ export interface IDeckTreeIterator {
     get currentDeck(): Deck;
     get currentCard(): Card;
     get hasCurrentCard(): boolean;
-    get currentTopicPath(): TopicPath; // 新增：用于卡组隔离过滤
+    get currentTopicPath(): TopicPath; // 鏂板锛氱敤浜庡崱缁勯殧绂昏繃婊?
     setBaseDeck(baseDeck: Deck): void;
     setIteratorTopicPath(topicPath: TopicPath): void;
     deleteCurrentCardFromAllDecks(): boolean;
     deleteCurrentQuestionFromAllDecks(): boolean;
     moveCurrentCardToEndOfList(): void;
     nextCard(): boolean;
-    setCurrentCard(card: Card, deck: Deck): void; // 新增：用于撤销功能
+    setCurrentCard(card: Card, deck: Deck): void; // 鏂板锛氱敤浜庢挙閿€鍔熻兘
 }
 
 class SingleDeckIterator {
@@ -223,7 +223,7 @@ class SingleDeckIterator {
     }
 
     ensureCurrentCard() {
-        if (this.cardIdx == null || this.cardListType == null) throw "no current card";
+        if (this.cardIdx == null || this.cardListType == null) throw new Error("no current card");
     }
 
     private static getCardListTypeForIterator(iteratorOrder: IIteratorOrder): CardListType | null {
@@ -451,22 +451,22 @@ export class DeckTreeIterator implements IDeckTreeIterator {
         }
     }
 
-    // 新增：直接设置当前卡片（用于撤销功能）
+    // 鏂板锛氱洿鎺ヨ缃綋鍓嶅崱鐗囷紙鐢ㄤ簬鎾ら攢鍔熻兘锛?
     setCurrentCard(card: Card, deck: Deck): void {
-        // 1. 找到卡片所在的牌组在 deckArray 中的索引
+        // 1. 鎵惧埌鍗＄墖鎵€鍦ㄧ殑鐗岀粍鍦?deckArray 涓殑绱㈠紩
         const deckIdx = this.deckArray.findIndex((d) => d === deck);
         if (deckIdx === -1) {
-            // 如果牌组不在当前数组中，需要更新 deckArray
+            // 濡傛灉鐗岀粍涓嶅湪褰撳墠鏁扮粍涓紝闇€瑕佹洿鏂?deckArray
             this.setIteratorTopicPath(deck.getTopicPath());
         }
 
-        // 2. 设置当前牌组
+        // 2. 璁剧疆褰撳墠鐗岀粍
         const newDeckIdx = this.deckArray.findIndex((d) => d === deck);
         if (newDeckIdx >= 0) {
             this.setDeckIdx(newDeckIdx);
         }
 
-        // 3. 在卡片列表中找到卡片并设置索引
+        // 3. 鍦ㄥ崱鐗囧垪琛ㄤ腑鎵惧埌鍗＄墖骞惰缃储寮?
         const cardListType = card.cardListType;
         const cardList = deck.getCardListForCardType(cardListType);
         const cardIdx = cardList.findIndex((c) => c === card);

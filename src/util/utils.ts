@@ -1,20 +1,20 @@
 /**
- * 这个文件主要是干什么的：
- * [工具层] 通用工具函数集合。
- * 包含了大量基础的辅助函数，如：哈希计算 (cyrb53)、日期格式化、路径比较、Frontmatter 提取、字符串相似度计算等。
- * 是项目中最底层的工具库之一。
+ * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
+ * [宸ュ叿灞俔 閫氱敤宸ュ叿鍑芥暟闆嗗悎銆?
+ * 鍖呭惈浜嗗ぇ閲忓熀纭€鐨勮緟鍔╁嚱鏁帮紝濡傦細鍝堝笇璁＄畻 (cyrb53)銆佹棩鏈熸牸寮忓寲銆佽矾寰勬瘮杈冦€丗rontmatter 鎻愬彇銆佸瓧绗︿覆鐩镐技搴﹁绠楃瓑銆?
+ * 鏄」鐩腑鏈€搴曞眰鐨勫伐鍏峰簱涔嬩竴銆?
  *
- * 它在项目中属于：工具层 (Utils) / 通用 (Common)
+ * 瀹冨湪椤圭洰涓睘浜庯細宸ュ叿灞?(Utils) / 閫氱敤 (Common)
  *
- * 它会用到哪些文件：
+ * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
  * 1. src/constants.ts
  *
- * 哪些文件会用到它：
- * (被项目中几乎所有模块广泛引用)
+ * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
+ * (琚」鐩腑鍑犱箮鎵€鏈夋ā鍧楀箍娉涘紩鐢?
  */
-import type { Moment } from "moment";
 import { sep } from "path";
 import { PREFERRED_DATE_FORMAT } from "src/constants";
+import type { MomentValue } from "./DateProvider";
 
 type Hex = number;
 
@@ -92,9 +92,9 @@ export function cyrb53(str: string, seed = 0): string {
     return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
 }
 
-// 👇️ format as "YYYY-MM-DD"
+// 馃憞锔?format as "YYYY-MM-DD"
 // https://bobbyhadz.com/blog/typescript-date-format
-export function formatDate_YYYY_MM_DD(ticks: Moment): string {
+export function formatDate_YYYY_MM_DD(ticks: MomentValue): string {
     return ticks.format(PREFERRED_DATE_FORMAT);
 }
 
@@ -109,13 +109,30 @@ export function stringTrimStart(str: string): [string, string] {
     return [ws, trimmed];
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function convertToStringOrEmpty(v: any): string {
-    let result: string = "";
-    if (v != null && v != undefined) {
-        result = v + "";
+export function convertToStringOrEmpty(v: unknown): string {
+    if (v == null) {
+        return "";
     }
-    return result;
+    if (typeof v === "string") {
+        return v;
+    }
+    if (typeof v === "number" || typeof v === "boolean" || typeof v === "bigint") {
+        return String(v);
+    }
+    if (v instanceof Error) {
+        return v.message;
+    }
+    if (typeof v === "object") {
+        try {
+            return JSON.stringify(v);
+        } catch {
+            return Object.prototype.toString.call(v);
+        }
+    }
+    if (typeof v === "symbol") {
+        return v.description ?? "";
+    }
+    return "";
 }
 
 //
@@ -304,6 +321,6 @@ export function parseObsidianFrontmatterTag(tagStr: string): string[] {
 }
 
 /**
- * 计算两个字符串的相似度 (0.0 到 1.0)
- * 使用 Dice Coefficient 算法 (基于双字符组 bigrams)
+ * 璁＄畻涓や釜瀛楃涓茬殑鐩镐技搴?(0.0 鍒?1.0)
+ * 浣跨敤 Dice Coefficient 绠楁硶 (鍩轰簬鍙屽瓧绗︾粍 bigrams)
  */

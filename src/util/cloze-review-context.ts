@@ -62,7 +62,7 @@ function extractContextByMode(
     }
 
     const activeAbsoluteLines = input.activeLinesInQuestion
-        .map((line) => input.firstLineNum! + Math.max(0, line - 1))
+        .map((line) => input.firstLineNum + Math.max(0, line - 1))
         .filter((line) => line >= 0 && line < noteLines.length);
 
     if (activeAbsoluteLines.length === 0) {

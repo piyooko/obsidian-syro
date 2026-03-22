@@ -9,7 +9,7 @@ export function addMultiClozeSetting(containerEl: HTMLElement, plugin: SRPlugin)
         .addToggle((toggle) => {
             toggle.setValue(plugin.data.settings.multiClozeCard).onChange((newValue) => {
                 plugin.data.settings.multiClozeCard = newValue;
-                plugin.savePluginData();
+                void plugin.savePluginData();
             });
         });
 }

@@ -20,14 +20,90 @@ import { motion, AnimatePresence } from "framer-motion";
 import { AlertCircle, Save } from "lucide-react";
 import { t } from "src/lang/helpers";
 
+interface DebugTraceEntry {
+    phase?: string;
+    timestamp?: string | number | Date;
+    action?: string;
+    details?: unknown;
+}
+
+export interface CardDebugData {
+    basic?: Record<string, string | number | boolean | null | undefined>;
+    data?: unknown;
+    trace?: DebugTraceEntry[];
+}
+
+interface AlgorithmDebugData {
+    due?: string | number | Date;
+    stability?: string | number;
+    difficulty?: string | number;
+    reps?: string | number;
+    lapses?: string | number;
+    state?: string | number;
+    elapsed_days?: string | number;
+}
+
+function getAlgorithmDebugData(value: unknown): AlgorithmDebugData | null {
+    if (typeof value !== "object" || value === null) {
+        return null;
+    }
+
+    const candidate = value as Record<string, unknown>;
+
+    return {
+        due:
+            valueToDisplay(candidate.due) === "N/A"
+                ? undefined
+                : (candidate.due as string | number | Date),
+        stability: valueToDisplay(candidate.stability) === "N/A" ? undefined : toDebugValue(candidate.stability),
+        difficulty:
+            valueToDisplay(candidate.difficulty) === "N/A"
+                ? undefined
+                : toDebugValue(candidate.difficulty),
+        reps: valueToDisplay(candidate.reps) === "N/A" ? undefined : toDebugValue(candidate.reps),
+        lapses: valueToDisplay(candidate.lapses) === "N/A" ? undefined : toDebugValue(candidate.lapses),
+        state: valueToDisplay(candidate.state) === "N/A" ? undefined : toDebugValue(candidate.state),
+        elapsed_days:
+            valueToDisplay(candidate.elapsed_days) === "N/A"
+                ? undefined
+                : toDebugValue(candidate.elapsed_days),
+    };
+}
+
+function toDebugValue(value: unknown): string | number | undefined {
+    if (typeof value === "string" || typeof value === "number") {
+        return value;
+    }
+
+    return undefined;
+}
+
+function valueToDisplay(value: unknown): string {
+    if (value === null || value === undefined) {
+        return "N/A";
+    }
+
+    if (value instanceof Date) {
+        return value.toISOString();
+    }
+
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        return String(value);
+    }
+
+    return "N/A";
+}
+
 interface CardDebugModalProps {
     isOpen: boolean;
     onClose: () => void;
-    data: any;
+    data: CardDebugData | null;
 }
 
 export const CardDebugModal: FC<CardDebugModalProps> = ({ isOpen, onClose, data }) => {
     if (!data) return null;
+
+    const algorithmData = getAlgorithmDebugData(data.data);
 
     return (
         <AnimatePresence>
@@ -113,7 +189,7 @@ export const CardDebugModal: FC<CardDebugModalProps> = ({ isOpen, onClose, data 
                             )}
 
                             {/* Section 3: Algorithm Data */}
-                            {data.data && (
+                            {algorithmData && (
                                 <>
                                     <div className="sr-debug-divider" />
                                     <Section
@@ -127,37 +203,38 @@ export const CardDebugModal: FC<CardDebugModalProps> = ({ isOpen, onClose, data 
                                                 <input
                                                     type="text"
                                                     className="sr-debug-input"
-                                                    defaultValue={data.data.due || "N/A"}
+                                                    defaultValue={valueToDisplay(algorithmData.due)}
                                                     readOnly
                                                 />
                                             </div>
                                             <div className="sr-debug-grid-compact">
                                                 <DebugInput
                                                     label={t("DEBUG_STABILITY")}
-                                                    value={data.data.stability}
+                                                    value={algorithmData.stability}
                                                 />
                                                 <DebugInput
                                                     label={t("DEBUG_DIFFICULTY")}
-                                                    value={data.data.difficulty}
+                                                    value={algorithmData.difficulty}
                                                 />
                                                 <DebugInput
                                                     label={t("DEBUG_REPS")}
-                                                    value={data.data.reps}
+                                                    value={algorithmData.reps}
                                                 />
                                                 <DebugInput
                                                     label={t("DEBUG_LAPSES")}
-                                                    value={data.data.lapses}
+                                                    value={algorithmData.lapses}
                                                     intent="danger"
                                                 />
                                                 <DebugInput
                                                     label={t("DEBUG_STATE")}
-                                                    value={data.data.state}
+                                                    value={algorithmData.state}
                                                 />
                                                 <DebugInput
                                                     label={t("DEBUG_ELAPSED_DAYS")}
                                                     value={
-                                                        data.data.elapsed_days +
-                                                        t("DEBUG_DAYS_SUFFIX")
+                                                        algorithmData.elapsed_days !== undefined
+                                                            ? `${algorithmData.elapsed_days}${t("DEBUG_DAYS_SUFFIX")}`
+                                                            : "N/A"
                                                     }
                                                     readOnly
                                                 />
@@ -173,7 +250,7 @@ export const CardDebugModal: FC<CardDebugModalProps> = ({ isOpen, onClose, data 
                                     <div className="sr-debug-divider" />
                                     <Section title="生命周期追踪 (Object Trace)">
                                         <div className="sr-debug-trace-timeline">
-                                            {data.trace.map((entry: any, i: number) => (
+                                            {data.trace.map((entry: DebugTraceEntry, i: number) => (
                                                 <div key={i} className="sr-debug-trace-item">
                                                     <div className="sr-trace-point"></div>
                                                     <div className="sr-trace-content">
@@ -302,7 +379,7 @@ export const CardDebugModal: FC<CardDebugModalProps> = ({ isOpen, onClose, data 
 
 // --- Sub Components ---
 
-const Section = ({ title, children }: any) => (
+const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
     <div className="sr-debug-section">
         <div className="sr-debug-section-header">
             <h3 className="sr-debug-section-title">{title}</h3>
@@ -311,7 +388,15 @@ const Section = ({ title, children }: any) => (
     </div>
 );
 
-const DebugField = ({ label, value, isBadge }: any) => (
+const DebugField = ({
+    label,
+    value,
+    isBadge,
+}: {
+    label: string;
+    value: React.ReactNode;
+    isBadge?: boolean;
+}) => (
     <div className="sr-debug-field">
         <span className="sr-debug-field-label">{label}</span>
         {isBadge ? (
@@ -322,14 +407,32 @@ const DebugField = ({ label, value, isBadge }: any) => (
     </div>
 );
 
-const StatBox = ({ label, value, color }: any) => (
+const StatBox = ({
+    label,
+    value,
+    color,
+}: {
+    label: string;
+    value: React.ReactNode;
+    color?: string;
+}) => (
     <div className="sr-debug-stat-box">
         <span className="sr-debug-stat-label">{label}</span>
         <span className={`sr-debug-stat-value ${color || ""}`}>{value}</span>
     </div>
 );
 
-const DebugInput = ({ label, value, readOnly, intent }: any) => (
+const DebugInput = ({
+    label,
+    value,
+    readOnly,
+    intent,
+}: {
+    label: string;
+    value?: string | number;
+    readOnly?: boolean;
+    intent?: string;
+}) => (
     <div className="sr-debug-input-field">
         <span className={`sr-debug-input-label ${intent || ""}`}>{label}</span>
         <input

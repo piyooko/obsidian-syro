@@ -16,46 +16,73 @@
 /**
  * 日期处理（便于测试）。
  */
-import { moment as obsidianMoment } from "obsidian";
-import type momentFactory from "moment";
-import type { Moment } from "moment";
+import { moment } from "obsidian";
 import { ALLOWED_DATE_FORMATS } from "src/constants";
 
-const moment = obsidianMoment as unknown as typeof momentFactory;
+export interface MomentValue {
+    add(amount: number, unit: string): MomentValue;
+    clone(): MomentValue;
+    endOf(unit: string): MomentValue;
+    format(pattern: string): string;
+    isSameOrBefore(value: unknown): boolean;
+    startOf(unit: string): MomentValue;
+    unix?: unknown;
+    valueOf(): number;
+}
+
+function momentFactory(...args: unknown[]): MomentValue {
+    const runtimeMoment =
+        typeof window !== "undefined" &&
+        "moment" in window &&
+        typeof window.moment === "function"
+            ? (window.moment as (...momentArgs: unknown[]) => MomentValue)
+            : null;
+
+    if (runtimeMoment) {
+        return runtimeMoment(...args);
+    }
+
+    const obsidianMoment = moment as unknown;
+    if (typeof obsidianMoment === "function") {
+        return (obsidianMoment as (...momentArgs: unknown[]) => MomentValue)(...args);
+    }
+
+    throw new Error("moment runtime unavailable");
+}
 
 export interface IDateProvider {
-    get today(): Moment;
-    get startofToday(): Moment;
-    get endofToday(): Moment;
+    get today(): MomentValue;
+    get startofToday(): MomentValue;
+    get endofToday(): MomentValue;
 }
 
 export class LiveDateProvider implements IDateProvider {
-    get today(): Moment {
+    get today(): MomentValue {
         // return moment().startOf("day");
-        return moment();
+        return momentFactory();
     }
-    get startofToday(): Moment {
-        return moment().startOf("day");
+    get startofToday(): MomentValue {
+        return momentFactory().startOf("day");
     }
-    get endofToday(): Moment {
-        return moment().endOf("day");
+    get endofToday(): MomentValue {
+        return momentFactory().endOf("day");
     }
 }
 
 export class StaticDateProvider implements IDateProvider {
-    private moment: Moment;
+    private moment: MomentValue;
 
-    constructor(moment: Moment) {
+    constructor(moment: MomentValue) {
         this.moment = moment;
     }
 
-    get today(): Moment {
+    get today(): MomentValue {
         return this.moment.clone();
     }
-    get startofToday(): Moment {
+    get startofToday(): MomentValue {
         return this.moment.clone().startOf("day");
     }
-    get endofToday(): Moment {
+    get endofToday(): MomentValue {
         return this.moment.clone().endOf("day");
     }
 
@@ -65,9 +92,9 @@ export class StaticDateProvider implements IDateProvider {
 }
 
 export class DateUtil {
-    static dateStrToMoment(str: string): Moment {
-        return moment(str, ALLOWED_DATE_FORMATS);
+    static dateStrToMoment(str: string): MomentValue {
+        return momentFactory(str, ALLOWED_DATE_FORMATS);
     }
 }
 
-export let globalDateProvider: IDateProvider = new LiveDateProvider();
+export const globalDateProvider: IDateProvider = new LiveDateProvider();

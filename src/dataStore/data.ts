@@ -1,30 +1,31 @@
-/**
- * 这个文件主要是干什么的：
- * [核心] 数据中心单例 (DataStore)。
- * 它是整个插件内存数据的“总仓库”，管理所有的复习项(Items)、追踪文件(TrackedFiles)和复习队列(Queues)。
- * 负责数据的加载(Load)、保存(Save)以及与磁盘文件的同步。
- * 创建新的复习项时，会根据项目类型（卡片用 FSRS，笔记用加权乘法）选择正确的算法来生成初始数据。
- * 追踪文件使用唯一的 fileID 字符串作为键（而不是数组下标），
- * 这样无论文件怎么增删排序，复习项和文件的关联关系都不会错位。
+﻿/**
+ * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
+ * [鏍稿績] 鏁版嵁涓績鍗曚緥 (DataStore)銆?
+ * 瀹冩槸鏁翠釜鎻掍欢鍐呭瓨鏁版嵁鐨勨€滄€讳粨搴撯€濓紝绠＄悊鎵€鏈夌殑澶嶄範椤?Items)銆佽拷韪枃浠?TrackedFiles)鍜屽涔犻槦鍒?Queues)銆?
+ * 璐熻矗鏁版嵁鐨勫姞杞?Load)銆佷繚瀛?Save)浠ュ強涓庣鐩樻枃浠剁殑鍚屾銆?
+ * 鍒涘缓鏂扮殑澶嶄範椤规椂锛屼細鏍规嵁椤圭洰绫诲瀷锛堝崱鐗囩敤 FSRS锛岀瑪璁扮敤鍔犳潈涔樻硶锛夐€夋嫨姝ｇ‘鐨勭畻娉曟潵鐢熸垚鍒濆鏁版嵁銆?
+ * 杩借釜鏂囦欢浣跨敤鍞竴鐨?fileID 瀛楃涓蹭綔涓洪敭锛堣€屼笉鏄暟缁勪笅鏍囷級锛?
+ * 杩欐牱鏃犺鏂囦欢鎬庝箞澧炲垹鎺掑簭锛屽涔犻」鍜屾枃浠剁殑鍏宠仈鍏崇郴閮戒笉浼氶敊浣嶃€?
  *
- * 它在项目中属于：数据层 (Data Layer)
+ * 瀹冨湪椤圭洰涓睘浜庯細鏁版嵁灞?(Data Layer)
  *
- * 它会用到哪些文件：
- * 1. src/dataStore/queue.ts (队列管理)
- * 2. src/dataStore/repetitionItem.ts (复习项数据模型)
- * 3. src/dataStore/adapter.ts (文件系统适配器)
- * 4. src/main.ts (获取卡片/笔记对应的算法实例)
+ * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
+ * 1. src/dataStore/queue.ts (闃熷垪绠＄悊)
+ * 2. src/dataStore/repetitionItem.ts (澶嶄範椤规暟鎹ā鍨?
+ * 3. src/dataStore/adapter.ts (鏂囦欢绯荤粺閫傞厤鍣?
+ * 4. src/main.ts (鑾峰彇鍗＄墖/绗旇瀵瑰簲鐨勭畻娉曞疄渚?
  *
- * 哪些文件会用到它：
- * 1. src/FlashcardReviewSequencer.ts (获取卡片对应的调度数据)
- * 2. src/algorithms/*.ts (算法需要读取历史数据)
- * 3. 几乎所有需要访问全局状态的 UI 组件
+ * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
+ * 1. src/FlashcardReviewSequencer.ts (鑾峰彇鍗＄墖瀵瑰簲鐨勮皟搴︽暟鎹?
+ * 2. src/algorithms/*.ts (绠楁硶闇€瑕佽鍙栧巻鍙叉暟鎹?
+ * 3. 鍑犱箮鎵€鏈夐渶瑕佽闂叏灞€鐘舵€佺殑 UI 缁勪欢
  */
 /**
- * [数据层：负责数据的持久化、读取和内存状态管理] [核心] 数据中心单例 (DataStore)，管理内存中的所有数据（卡片、队列、文件追踪）。
+ * [鏁版嵁灞傦細璐熻矗鏁版嵁鐨勬寔涔呭寲銆佽鍙栧拰鍐呭瓨鐘舵€佺鐞哴 [鏍稿績] 鏁版嵁涓績鍗曚緥 (DataStore)锛岀鐞嗗唴瀛樹腑鐨勬墍鏈夋暟鎹紙鍗＄墖銆侀槦鍒椼€佹枃浠惰拷韪級銆?
  */
 import { MiscUtils, debug } from "src/util/utils_recall";
 import { SRSettings } from "../settings";
+import SRPlugin from "src/main";
 
 import { TFile, TFolder, getAllTags } from "obsidian";
 
@@ -63,11 +64,11 @@ export interface SrsData {
      */
     items: RepetitionItem[];
     /**
-     * key = fileID（如 "f_8d29aa"），用唯一字符串作为键，不再使用数组下标
+     * key = fileID锛堝 "f_8d29aa"锛夛紝鐢ㄥ敮涓€瀛楃涓蹭綔涓洪敭锛屼笉鍐嶄娇鐢ㄦ暟缁勪笅鏍?
      */
     trackedFiles: Record<string, TrackedFile>;
     /**
-     * 仅用于展示顺序，元素是 fileID
+     * 浠呯敤浜庡睍绀洪『搴忥紝鍏冪礌鏄?fileID
      */
     fileOrder: string[];
 
@@ -80,7 +81,7 @@ export interface SrsData {
 export type ReviewedCounts = Record<string, { new: number; due: number }>;
 
 /**
- * 生成一个唯一的文件 ID，格式为 "f_" + 6 位随机字符
+ * 鐢熸垚涓€涓敮涓€鐨勬枃浠?ID锛屾牸寮忎负 "f_" + 6 浣嶉殢鏈哄瓧绗?
  */
 export function generateFileID(): string {
     return "f_" + Math.random().toString(36).substring(2, 8);
@@ -115,6 +116,11 @@ interface ReviewItemOverlayFile {
     items: ReviewItemDelta[];
 }
 
+type LegacyFileIndexItem = RepetitionItem & {
+    fileIndex?: string | number;
+    fileID?: string;
+};
+
 /**
  * DataStore.
  */
@@ -140,6 +146,14 @@ export class DataStore {
     private itemByIdIndex: Map<number, RepetitionItem> = new Map();
     private itemByIdIndexDirty = true;
     private reviewItemOverlayById: Map<number, ReviewItemDelta> = new Map();
+
+    private getAlgorithmForItemType(itemType: RPITEMTYPE): SrsAlgorithm {
+        try {
+            return SRPlugin.getInstance()?.getAlgorithmForItem(itemType) ?? SrsAlgorithm.getInstance();
+        } catch {
+            return SrsAlgorithm.getInstance();
+        }
+    }
 
     public static getInstance(): DataStore {
         if (!DataStore.instance) {
@@ -172,11 +186,13 @@ export class DataStore {
 
     private logInfo(...args: unknown[]): void {
         if (this.shouldLogDebug()) {
+            console.debug(...args);
         }
     }
 
     private logDebug(...args: unknown[]): void {
         if (this.shouldLogDebug()) {
+            console.debug(...args);
         }
     }
 
@@ -322,7 +338,7 @@ export class DataStore {
     }
 
     toInstances() {
-        // ██ 数据迁移：旧格式（数组）→ 新格式（Record + fileOrder）██
+        // 鈻堚枅 鏁版嵁杩佺Щ锛氭棫鏍煎紡锛堟暟缁勶級鈫?鏂版牸寮忥紙Record + fileOrder锛夆枅鈻?
         if (Array.isArray(this.data.trackedFiles)) {
             const oldFiles = this.data.trackedFiles as unknown as TrackedFile[];
             const newFiles: Record<string, TrackedFile> = {};
@@ -337,21 +353,24 @@ export class DataStore {
                 indexToID.set(i, fileID);
             }
 
-            // 迁移所有 item 的 fileIndex → fileID
+            // 杩佺Щ鎵€鏈?item 鐨?fileIndex 鈫?fileID
             for (const item of this.data.items) {
                 if (item == null) continue;
-                const oldIndex = (item as any).fileIndex;
+                const legacyItem = item as LegacyFileIndexItem;
+                const oldIndex = legacyItem.fileIndex;
+                const normalizedOldIndex = typeof oldIndex === "number" ? oldIndex : Number(oldIndex);
                 if (oldIndex !== undefined) {
-                    (item as any).fileID = indexToID.get(oldIndex) || "";
-                    delete (item as any).fileIndex;
+                    legacyItem.fileID =
+                        Number.isNaN(normalizedOldIndex) ? "" : indexToID.get(normalizedOldIndex) || "";
+                    delete legacyItem.fileIndex;
                 }
             }
 
             this.data.trackedFiles = newFiles;
             this.data.fileOrder = fileOrder;
-            this.logInfo(`[SR] 数据迁移完成: ${oldFiles.length} → ${fileOrder.length} 文件`);
+            this.logInfo(`[SR] 鏁版嵁杩佺Щ瀹屾垚: ${oldFiles.length} 鈫?${fileOrder.length} 鏂囦欢`);
         } else {
-            // 新格式：将 TrackedFile 对象转为实例
+            // 鏂版牸寮忥細灏?TrackedFile 瀵硅薄杞负瀹炰緥
             for (const fileID in this.data.trackedFiles) {
                 this.data.trackedFiles[fileID] = TrackedFile.create(this.data.trackedFiles[fileID]);
             }
@@ -385,7 +404,7 @@ export class DataStore {
         this.data.items = items;
         this.data.queues = Queue.create(this.data.queues);
         this.rebuildItemByIdIndex();
-        // 迁移：修复 CARD 类型 item 使用了错误算法初始数据的问题
+        // 杩佺Щ锛氫慨澶?CARD 绫诲瀷 item 浣跨敤浜嗛敊璇畻娉曞垵濮嬫暟鎹殑闂
         this.migrateCardItemsToFsrs();
         this.logDebug(
             `[SR-Debug] toInstances complete. Final items count: ${this.data.items.length}`,
@@ -393,23 +412,23 @@ export class DataStore {
     }
 
     /**
-     * 数据迁移：将 CARD 类型 item 中错误的 WMS 数据格式转换为 FSRS 格式。
-     * 只对新卡（从未复习过的）执行重置，已复习的卡片只记录警告。
+     * 鏁版嵁杩佺Щ锛氬皢 CARD 绫诲瀷 item 涓敊璇殑 WMS 鏁版嵁鏍煎紡杞崲涓?FSRS 鏍煎紡銆?
+     * 鍙鏂板崱锛堜粠鏈涔犺繃鐨勶級鎵ц閲嶇疆锛屽凡澶嶄範鐨勫崱鐗囧彧璁板綍璀﹀憡銆?
      */
     private migrateCardItemsToFsrs() {
         let migratedCount = 0;
         for (const item of this.data.items) {
             if (item == null) continue;
             if (item.itemType !== RPITEMTYPE.CARD) continue;
-            // 如果已经是 FSRS 格式（含 state 字段），跳过
+            // 濡傛灉宸茬粡鏄?FSRS 鏍煎紡锛堝惈 state 瀛楁锛夛紝璺宠繃
             if (item.isFsrs) continue;
 
             if (item.timesReviewed === 0) {
-                // 新卡：安全地重置为 FSRS 空卡数据
+                // 鏂板崱锛氬畨鍏ㄥ湴閲嶇疆涓?FSRS 绌哄崱鏁版嵁
                 item.data = createEmptyCard();
                 migratedCount++;
             } else {
-                // 已复习过的卡：不做破坏性修改，仅记录警告
+                // 宸插涔犺繃鐨勫崱锛氫笉鍋氱牬鍧忔€т慨鏀癸紝浠呰褰曡鍛?
                 console.warn(
                     "[SR] migrateCardItemsToFsrs: CARD item",
                     item.ID,
@@ -425,7 +444,7 @@ export class DataStore {
     }
 
     /**
-     * 清理脏数据：将 timesReviewed === 0 但包含残留调度数据或学习状态的 Item 重置为干净的 New 状态
+     * 娓呯悊鑴忔暟鎹細灏?timesReviewed === 0 浣嗗寘鍚畫鐣欒皟搴︽暟鎹垨瀛︿範鐘舵€佺殑 Item 閲嶇疆涓哄共鍑€鐨?New 鐘舵€?
      */
     public cleanDirtyNewItems() {
         let cleanedCount = 0;
@@ -438,7 +457,7 @@ export class DataStore {
                     needsClean = true;
                 } else if (item.isFsrs) {
                     const data = item.data as FsrsData;
-                    if (data && data.state !== 0) needsClean = true;
+                    if (data && Number(data.state) !== 0) needsClean = true;
                 } else if (item.itemType === RPITEMTYPE.CARD) {
                     const data = item.data as AnkiData;
                     if (data && (data.lastInterval !== 0 || data.iteration !== 0))
@@ -450,16 +469,7 @@ export class DataStore {
                     item.learningStep = null;
                     item.queue = CardQueue.New;
 
-                    let algorithm: SrsAlgorithm;
-                    try {
-                        // eslint-disable-next-line @typescript-eslint/no-var-requires
-                        const plugin = (require("src/main") as any).default.getInstance();
-                        algorithm = plugin.getAlgorithmForItem(item.itemType);
-                    } catch {
-                        algorithm = SrsAlgorithm.getInstance();
-                    }
-
-                    item.data = algorithm.defaultData();
+                    item.data = this.getAlgorithmForItemType(item.itemType).defaultData();
                     cleanedCount++;
                 }
             }
@@ -515,7 +525,7 @@ export class DataStore {
         } catch (error) {
             this.logError("Error loading data", error);
             this.data = Object.assign({}, DEFAULT_SRS_DATA);
-            await this.save(); // 强制持久化一次，以防再次加载时仍丢失
+            await this.save(); // 寮哄埗鎸佷箙鍖栦竴娆★紝浠ラ槻鍐嶆鍔犺浇鏃朵粛涓㈠け
         } finally {
             this.toInstances();
         }
@@ -602,7 +612,7 @@ export class DataStore {
     }
 
     /**
-     * getFileID — 根据文件路径查找对应的 fileID。
+     * getFileID 鈥?鏍规嵁鏂囦欢璺緞鏌ユ壘瀵瑰簲鐨?fileID銆?
      *
      * @param {string} path
      * @returns {string} fileID | ""
@@ -617,8 +627,8 @@ export class DataStore {
     }
 
     /**
-     * 兼容方法：返回数字型 fileIndex，用于尚未完全迁移的外部调用。
-     * 找到返回 0，找不到返回 -1。
+     * 鍏煎鏂规硶锛氳繑鍥炴暟瀛楀瀷 fileIndex锛岀敤浜庡皻鏈畬鍏ㄨ縼绉荤殑澶栭儴璋冪敤銆?
+     * 鎵惧埌杩斿洖 0锛屾壘涓嶅埌杩斿洖 -1銆?
      */
     getFileIndex(path: string): number {
         return this.getFileID(path) !== "" ? 0 : -1;
@@ -689,10 +699,10 @@ export class DataStore {
     }
 
     /**
-     * 兼容方法：保留旧接口，内部不再使用。
+     * 鍏煎鏂规硶锛氫繚鐣欐棫鎺ュ彛锛屽唴閮ㄤ笉鍐嶄娇鐢ㄣ€?
      */
     getFileByIndex(idx: number): TrackedFile {
-        // 兼容性保留，实际不应再被调用
+        // 鍏煎鎬т繚鐣欙紝瀹為檯涓嶅簲鍐嶈璋冪敤
         console.warn("[SR] getFileByIndex is deprecated, use getFileByID instead");
         return null;
     }
@@ -753,24 +763,17 @@ export class DataStore {
      * @param {number} itemId
      * @param {string} option
      */
-    reviewId(itemId: number, option: string | number) {
+    reviewId(itemId: number, option: string | number): ReviewResult | null {
         const item = this.getItembyID(itemId);
         let result: ReviewResult;
         if (item == null) {
-            return -1;
+            return null;
         }
 
         // [fix] select algorithm by item type: CARD -> FSRS, NOTE -> WMS
-        let algorithm: SrsAlgorithm;
-        try {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const plugin = (require("src/main") as any).default.getInstance();
-            algorithm = plugin.getAlgorithmForItem(item.itemType);
-        } catch {
-            algorithm = SrsAlgorithm.getInstance();
-        }
+        const algorithm = this.getAlgorithmForItemType(item.itemType);
         if (typeof option === "number") {
-            option = algorithm.srsOptions()[option] as string;
+            option = algorithm.srsOptions()[option];
         }
         if (this.data.queues.isInRepeatQueue(itemId)) {
             result = algorithm.onSelection(item, option, true);
@@ -782,6 +785,7 @@ export class DataStore {
         if (item.timesReviewed < 1) {
             debug("save review data error when reviewId");
         }
+        return result;
     }
 
     /**
@@ -791,9 +795,8 @@ export class DataStore {
      * @param {boolean} recursive
      */
     untrackFilesInFolderPath(path: string, recursive?: boolean) {
-        const folder: TFolder = Iadapter.instance.vault.getAbstractFileByPath(path) as TFolder;
-
-        if (folder != null) {
+        const folder = Iadapter.instance.vault.getAbstractFileByPath(path);
+        if (folder instanceof TFolder) {
             this.untrackFilesInFolder(folder, recursive);
         }
     }
@@ -842,9 +845,8 @@ export class DataStore {
      * @param {boolean} recursive
      */
     trackFilesInFolderPath(path: string, recursive?: boolean) {
-        const folder: TFolder = Iadapter.instance.vault.getAbstractFileByPath(path) as TFolder;
-
-        if (folder != null) {
+        const folder = Iadapter.instance.vault.getAbstractFileByPath(path);
+        if (folder instanceof TFolder) {
             this.trackFilesInFolder(folder, recursive);
         }
     }
@@ -932,7 +934,8 @@ export class DataStore {
         }
 
         const trackedFile = this.getTrackedFile(path);
-        const note = Iadapter.instance.vault.getAbstractFileByPath(path) as TFile;
+        const abstractFile = Iadapter.instance.vault.getAbstractFileByPath(path);
+        const note = abstractFile instanceof TFile ? abstractFile : null;
         let cardName: string = null;
 
         if (note != null && trackedFile) {
@@ -953,7 +956,7 @@ export class DataStore {
         const lastTag = trackedFile.tags[trackedFile.tags.length - 1]; // Fallback for lastTag usage
         trackedFile.setUnTracked();
 
-        // 1. 彻底清理 Note 级别的 items
+        // 1. 褰诲簳娓呯悊 Note 绾у埆鐨?items
         for (const key in trackedFile.items) {
             const id = trackedFile.items[key];
             if (id >= 0) {
@@ -963,7 +966,7 @@ export class DataStore {
         }
         trackedFile.items = { file: -1 };
 
-        // 2. 彻底清理所有的 Card items (不需要区分 cardName 或 setting 条件，既然 untrack，必须全清)
+        // 2. 褰诲簳娓呯悊鎵€鏈夌殑 Card items (涓嶉渶瑕佸尯鍒?cardName 鎴?setting 鏉′欢锛屾棦鐒?untrack锛屽繀椤诲叏娓?
         if (trackedFile.hasCards) {
             const allCardIds = trackedFile.itemIDs;
             allCardIds
@@ -971,7 +974,7 @@ export class DataStore {
                 .forEach((id: number) => this.unTrackItem(id));
             numItems += allCardIds.length;
 
-            // 3. 将 trackedItems 置空，彻底消除 JSON 幽灵卡残留
+            // 3. 灏?trackedItems 缃┖锛屽交搴曟秷闄?JSON 骞界伒鍗℃畫鐣?
             trackedFile.trackedItems = [];
         }
 
@@ -1020,14 +1023,7 @@ export class DataStore {
         let item: RepetitionItem;
 
         // [fix] select algorithm by item type: CARD -> FSRS, NOTE -> WMS
-        let algorithm: SrsAlgorithm;
-        try {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const plugin = (require("src/main") as any).default.getInstance();
-            algorithm = plugin.getAlgorithmForItem(itemType);
-        } catch {
-            algorithm = SrsAlgorithm.getInstance();
-        }
+        const algorithm = this.getAlgorithmForItemType(itemType);
 
         const newItem = new RepetitionItem(id, fileID, itemType, deckName, algorithm.defaultData());
 
@@ -1128,18 +1124,18 @@ export class DataStore {
         let removed = 0;
 
         if (trackedItem.reviewId === -1) {
-            // 新卡（内容变了，或者新增的）：分配新 ID
+            // 鏂板崱锛堝唴瀹瑰彉浜嗭紝鎴栬€呮柊澧炵殑锛夛細鍒嗛厤鏂?ID
             const cardId = this._updateItem(undefined, fileID, RPITEMTYPE.CARD, deckName);
             trackedItem.reviewId = cardId;
             added++;
         } else {
-            // 旧卡（内容没变）：尝试获取现有 item
+            // 鏃у崱锛堝唴瀹规病鍙橈級锛氬皾璇曡幏鍙栫幇鏈?item
             const item = this.getItembyID(trackedItem.reviewId);
             if (item) {
                 item.setTracked(fileID);
                 item.updateDeckName(deckName, true);
             } else {
-                // 异常情况：ID 存在但找不到 Item（可能是数据库损坏），视为新卡重新创建
+                // 寮傚父鎯呭喌锛欼D 瀛樺湪浣嗘壘涓嶅埌 Item锛堝彲鑳芥槸鏁版嵁搴撴崯鍧忥級锛岃涓烘柊鍗￠噸鏂板垱寤?
                 const cardId = this._updateItem(undefined, fileID, RPITEMTYPE.CARD, deckName);
                 trackedItem.reviewId = cardId;
                 added++;
@@ -1161,12 +1157,14 @@ export class DataStore {
     async verifyItems() {
         const items = this.data.items;
         await Promise.all(
-            items.map(async (item, _idx) => {
+            items.map((item, _idx) => {
                 if (item != null && item.isTracked) {
                     // console.debug("verifyItems:", item, id);
                     const itemType = !this.isCardItem(item.ID) ? RPITEMTYPE.NOTE : RPITEMTYPE.CARD;
                     this._updateItem(item.ID, item.fileID, itemType, item.deckName);
                 }
+
+                return Promise.resolve();
             }),
         );
         MiscUtils.notice(t("DATA_ALL_ITEMS_UPDATED"));
@@ -1186,7 +1184,7 @@ export class DataStore {
         }
         const item = this.getItembyID(id);
         if (item.isDue) {
-            if (this.settings.algorithm === algorithmNames.Fsrs) {
+            if (String(this.settings.algorithm) === String(algorithmNames.Fsrs)) {
                 const data: FsrsData = item.data as FsrsData;
                 if (new Date(data.last_review) < new Date(date)) {
                     rc[date].due++;
@@ -1265,7 +1263,7 @@ export class DataStore {
 
         this.data = MiscUtils.assignOnly(DEFAULT_SRS_DATA, this.data);
 
-        // 过滤无效的 trackedFiles
+        // 杩囨护鏃犳晥鐨?trackedFiles
         const newTrackedFiles: Record<string, TrackedFile> = {};
         const newFileOrder: string[] = [];
         for (const fileID of this.data.fileOrder || Object.keys(this.data.trackedFiles)) {
@@ -1279,7 +1277,7 @@ export class DataStore {
         this.data.trackedFiles = newTrackedFiles;
         this.data.fileOrder = newFileOrder;
 
-        // 重建 items，确保 fileID 正确
+        // 閲嶅缓 items锛岀‘淇?fileID 姝ｇ‘
         this.data.items = Object.entries(this.data.trackedFiles)
             .map(([fileID, tkfile]) => {
                 return this.getItems(tkfile.itemIDs)
@@ -1296,30 +1294,30 @@ export class DataStore {
         const removedtkfiles = oldFileCount - Object.keys(this.data.trackedFiles).length;
         removedItems = removedItems - this.itemSize;
         this.data.queues.clearQueue();
-        this.save();
+        await this.save();
 
         return;
     }
 
     /**
-     * 全局垃圾回收 (Global Garbage Collection)
-     * 扫描所有 items，物理删除未被任何 TrackedFile 引用的条目。
-     * 这是一个高开销操作 O(N)，应在低频场景调用。
+     * 鍏ㄥ眬鍨冨溇鍥炴敹 (Global Garbage Collection)
+     * 鎵弿鎵€鏈?items锛岀墿鐞嗗垹闄ゆ湭琚换浣?TrackedFile 寮曠敤鐨勬潯鐩€?
+     * 杩欐槸涓€涓珮寮€閿€鎿嶄綔 O(N)锛屽簲鍦ㄤ綆棰戝満鏅皟鐢ㄣ€?
      */
     async performGlobalGarbageCollection(): Promise<void> {
-        this.logInfo("[SR-GC] 开始执行全局垃圾回收...");
+        this.logInfo("[SR-GC] 寮€濮嬫墽琛屽叏灞€鍨冨溇鍥炴敹...");
         const trackedFiles = this.data.trackedFiles;
 
-        // 1. 收集所有活跃的 ID (White List)
+        // 1. 鏀堕泦鎵€鏈夋椿璺冪殑 ID (White List)
         const referencedIds = new Set<number>();
         for (const tkf of Object.values(trackedFiles)) {
             if (tkf == null) continue;
-            // 收集 Note ID
+            // 鏀堕泦 Note ID
             for (const key in tkf.items) {
                 const id = tkf.items[key];
                 if (typeof id === "number" && id >= 0) referencedIds.add(id);
             }
-            // 收集 Card IDs
+            // 鏀堕泦 Card IDs
             if (tkf.hasCards && tkf.trackedItems) {
                 for (const item of tkf.trackedItems) {
                     if (item.reviewId >= 0) referencedIds.add(item.reviewId);
@@ -1329,7 +1327,7 @@ export class DataStore {
 
         const oldItemCount = this.data.items.length;
 
-        // 2. 重建 items 数组 (Compact)
+        // 2. 閲嶅缓 items 鏁扮粍 (Compact)
         const idMap = new Map<number, number>();
         const keptItems: RepetitionItem[] = [];
 
@@ -1339,7 +1337,7 @@ export class DataStore {
                 const oldID = item.ID;
                 const newID = keptItems.length;
                 idMap.set(oldID, newID);
-                item.ID = newID; // 更新 item 自身的 ID 属性
+                item.ID = newID; // 鏇存柊 item 鑷韩鐨?ID 灞炴€?
                 keptItems.push(item);
             }
         }
@@ -1347,11 +1345,11 @@ export class DataStore {
         const purgedCount = oldItemCount - keptItems.length;
 
         if (purgedCount > 0) {
-            // 3. 更新所有 TrackedFiles 中的引用
+            // 3. 鏇存柊鎵€鏈?TrackedFiles 涓殑寮曠敤
             for (const tkf of Object.values(trackedFiles)) {
                 if (tkf == null) continue;
 
-                // 更新 Note ID
+                // 鏇存柊 Note ID
                 for (const key in tkf.items) {
                     const oldId = tkf.items[key];
                     if (idMap.has(oldId)) {
@@ -1359,7 +1357,7 @@ export class DataStore {
                     }
                 }
 
-                // 更新 Card IDs
+                // 鏇存柊 Card IDs
                 if (tkf.hasCards && tkf.trackedItems) {
                     for (const item of tkf.trackedItems) {
                         if (item.reviewId >= 0 && idMap.has(item.reviewId)) {
@@ -1369,7 +1367,7 @@ export class DataStore {
                 }
             }
 
-            // 4. 替换全局 items
+            // 4. 鏇挎崲鍏ㄥ眬 items
             this.data.items = keptItems;
             this.markItemByIdIndexDirty();
             this.reviewItemOverlayById.clear();
@@ -1377,10 +1375,12 @@ export class DataStore {
                 `[SR-GC] GC completed. Purged ${purgedCount} orphan items (${oldItemCount} -> ${keptItems.length})`,
             );
 
-            // 5. 保存
+            // 5. 淇濆瓨
             await this.save();
         } else {
             this.logInfo("[SR-GC] No cleanup needed.");
         }
     }
 }
+
+

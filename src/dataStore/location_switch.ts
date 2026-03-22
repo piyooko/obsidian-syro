@@ -1,21 +1,21 @@
 /**
- * 这个文件主要是干什么的：
- * [数据层] 数据迁移管理器。
- * 负责在不同的数据存储模式之间（例如：从 JSON 文件迁移到 Note Frontmatter，或反之）迁移数据。
- * 它会批量读取笔记文件，修改或删除其中的调度信息头（YAML）和 HTML 注释。
+ * 闁哄鏅滈悷銈夋煂濠婂牆妫橀柛銉檮椤愯棄鈽夐幘瀛橆潡妞も晪绠撳浼搭敍濮橆剙褰欐繛瀵稿Л閸嬫挸鈽夐弬璺ㄥⅱ婵炲牊鍨块弫?
+ * [闂佽桨鑳舵晶妤€鐣垫担杞版勃濞?闂佽桨鑳舵晶妤€鐣垫担瑙勪氦濞达絿娲呴埡鍐笉闁挎稑瀚崐鐐烘煕閿濆啫濡搁柍?
+ * 闁荤姵鍔楅崰鏇㈡儗濡ゅ懎鎹堕柕濞垮€楅悷婵嬫煕濮橆剛鐏辨繛鍫熷灴瀵偊鎮ч崼婵堛偊闁诲孩绋掗敋闁稿绉磋灒闁炽儱纾涵鈧繛鎴炴煥椤戝螞閸ф鏅柛顐ｇ矌娴兼劕鈹戦垾鍐蹭喊缂佽京澧楃粋?JSON 闂佸搫鍊稿ú锝呪枎閵忊剝浜ゅù锝囨磪閳哄懎绀?Note Frontmatter闂佹寧绋戦張顒勫垂閵娾晛鐭楃€广儱瀚娲煥濞戞﹩妲肩紒楦垮亹缁梻绱掑Ο缁橆啀闂佺顕栭崰鎾诲焵?
+ * 闁诲海鎳撻崯鈺冩娴兼潙绠ョ憸鐗堝笒濞呫倝鎮归崶顏嶅殭鐟滄澘娲ㄧ划顓㈠籍閸ヨ泛鏁归梺鍝勫€稿ú锝呪枎閵忋倖鏅悘鐐插悑閸欏繘鏌￠埀顒傛喆閸曨偆浠愰梺鍛婂笧婵炩偓婵炲懎閰ｅ畷妤呭嫉娴ｅ啫骞€闂佹眹鍔岀€氼垶鎯冮悢鍛婂劅闁挎柨銇樼换鍡涙煙椤撗冪仩闁靛洦妫冮弫宥夊捶缁嬬兂L闂佹寧绋戦ˇ顖炲箯?HTML 濠电偛顦崝鎴﹀闯閹绢喖违?
  *
- * 它在项目中属于：数据层 (Data Layer) / 迁移逻辑 (Migration)
+ * 闁诲海鎳撻崯顐耿椤忓懌浜滈柛锔诲幗缁愭鈽夐幙鍐ㄥ箹闁活偅蓱缁傚秵鎯旈婊呯崶闂佽桨鑳舵晶妤€鐣垫担杞版勃?(Data Layer) / 闁哄鏅欓懗鏈电昂闂備緡鍋呭Σ鎺旀?(Migration)
  *
- * 它会用到哪些文件：
+ * 闁诲海鎳撻崯鈺冩娴煎瓨鍋ㄩ柕濞垮劚閻撳倿鏌涘┑鎰胺缂併劍妞藉顒勫炊閿旂瓔鍋ㄩ梺?
  * 1. src/dataStore/data.ts
  * 2. src/dataStore/trackedFile.ts
  * 3. src/SRFile.ts
  *
- * 哪些文件会用到它：
- * 1. src/settings.ts (用户在设置界面切换存储位置时调用)
+ * 闂佸憡绻嶆禍娆戣姳濞差亜妫橀柛銉檮椤愯棄霉閸忓吋鐨戦柡浣靛€濆畷姘跺级鐠恒劍娈滈梺?
+ * 1. src/settings.ts (闂佹椿娼块崝宥夊春濞戙垹鎹堕柕濠庣厛閸熷海绱撻崘鎯ф灓闁哄拋鍋婂Λ鍐閻樿尙鈧ジ鏌熼獮鍨仼闁宦板姂瀹曟帡濡搁妶鍥┬㈢紓鍌氬枤閸犳顪冮崒婊勫闁告劦浜濋弳?
  */
 /**
- * [数据层：负责数据的持久化、读取和内存状态管理] [迁移] 负责在不同数据存储位置之间迁移数据的逻辑。
+ * [闂佽桨鑳舵晶妤€鐣垫担杞版勃闁稿矉濡囩粣妤呮偣閹邦喖鏋欓柣顓燁殜瀵偊鎮ч崼婵堛偊闂佹眹鍔岀€氼厾鈧灚姊圭粙濠囧川椤撶儐鍤欓梺闈涙濞村洭顢氭导鏉戠煑闁哄诞鍕伅闂佸憡鍔曢幊搴ㄦ偤閵娾晜鍋愰柤鍝ヮ暯閸嬫挻鎷呮笟顖氭倎闂佽崵鍋涢幗?[闁哄鏅欓懗鏈电昂] 闁荤姵鍔楅崰鏇㈡儗濡ゅ懎鎹堕柕濞垮€楅悷婵嬫煕濮橆剚婀伴柡鍡欏枛楠炴垿顢欓懖鈺傛喖闂佺琚崝瀣礊閸涱垳纾炬い鏃囧吹椤撴椽姊婚崒婊庢缂侀缚鍋愮划鏃傜磼濡粯顔嶉梺纭咁嚃閸犳艾鈻撻幋锔界劵闁哄嫬绻掔敮鍡涙煏?
  */
 import { CachedMetadata, FrontMatterCache, Notice, TFile } from "obsidian";
 import { TopicPath } from "src/TopicPath";
@@ -82,21 +82,18 @@ export class LocationSwitch {
         if (newPath === store.dataPath) {
             return false;
         }
-        let exist = false;
-        store.verify(newPath).then(async (v) => {
-            exist = v;
-            if (exist) {
-                const suffix = "-" + new Date().toISOString().replace(/[:.]/g, "");
-                await adapter.rename(newPath, newPath + suffix).then(() => {
-                    if (this.settings.showSchedulingDebugMessages) {
-                    }
-                });
+        const exist = await store.verify(newPath);
+        if (exist) {
+            const suffix = "-" + new Date().toISOString().replace(/[:.]/g, "");
+            await adapter.rename(newPath, newPath + suffix);
+            if (this.settings.showSchedulingDebugMessages) {
+                console.debug("orginal file: " + newPath + " renamed to: " + newPath + suffix);
             }
-        });
+        }
 
         try {
             await store.save(newPath);
-            adapter.remove(store.dataPath).then(
+            await adapter.remove(store.dataPath).then(
                 () => {
                     store.setdataPath(newPath);
                     new Notice(t("DATA_FILE_MOVED_SUCCESS"));
@@ -186,7 +183,7 @@ export class LocationSwitch {
 
             if (deckname !== null) {
                 const fileCachedData = Iadapter.instance.metadataCache.getFileCache(noteFile) || {};
-                fileText = await _convertFrontMatter(noteFile, fileCachedData, deckname, fileText);
+                fileText = _convertFrontMatter(noteFile, fileCachedData, deckname, fileText);
                 if (fileText == null) {
                     console.warn("_convertFrontMatter: fileText null: ");
                     // throw new Error("_convertFrontMatter fileText null: " + fileText);
@@ -203,7 +200,7 @@ export class LocationSwitch {
             }
 
             if (topicPath.hasPath) {
-                fileText = await _convertCardsSched(noteFile, fileText, topicPath.path[0]);
+                fileText = _convertCardsSched(noteFile, fileText, topicPath.path[0]);
                 if (fileText == null) {
                     console.warn("fileText null");
                     throw new Error(fileText);
@@ -247,7 +244,7 @@ export class LocationSwitch {
             new Notice(msg);
         }
 
-        async function _convertCardsSched(note: TFile, fileText: string, deckName: string) {
+        function _convertCardsSched(note: TFile, fileText: string, deckName: string) {
             // console.debug("_convertCardsSched: ", note.basename);
             const trackedFile = store.getTrackedFile(note.path);
             // let fileText: string = await note.vault.read(note);
@@ -259,14 +256,19 @@ export class LocationSwitch {
                 if (scheduling.length === 0)
                     scheduling = [...cardText.matchAll(LEGACY_SCHEDULING_EXTRACTOR)];
                 if (scheduling.length > 0) {
+                    const normalizedCardInfo = normalizeCardIndexInfo(cardinfo);
+                    if (!normalizedCardInfo) {
+                        return;
+                    }
+
                     const relatedItems = (trackedFile.trackedItems || [])
-                        .filter((item) => item.lineNo === cardinfo.lineNo)
+                        .filter((item) => item.lineNo === normalizedCardInfo.lineNo)
                         .slice(0, scheduling.length);
                     relatedItems.forEach((item) => {
                         store.updateCardItems(trackedFile, item, deckName);
                     });
                     const schedInfoList = NoteCardScheduleParser.createInfoList_algo(scheduling);
-                    const itemMap = cardinfo.itemMap || {};
+                    const itemMap = normalizedCardInfo.itemMap || {};
                     const keys = Object.keys(itemMap);
                     scheduling.forEach((sched: RegExpMatchArray, index) => {
                         if (!schedInfoList[index].isDummyScheduleForNewCard) {
@@ -293,7 +295,7 @@ export class LocationSwitch {
             return fileText;
         }
 
-        async function _convertFrontMatter(
+        function _convertFrontMatter(
             note: TFile,
             fileCachedData: CachedMetadata,
             deckname: string,
@@ -332,7 +334,7 @@ export class LocationSwitch {
 
         await store.pruneData();
 
-        // eslint-disable-next-line prefer-const
+         
         let tracked_files = Object.values(store.data.trackedFiles);
         const dueIds: number[] = [];
         await Promise.all(
@@ -341,12 +343,13 @@ export class LocationSwitch {
                 .filter((tkfile) => !isIgnoredPath(this.settings.noteFoldersToIgnore, tkfile.path))
                 .map(async (tkfile) => {
                     const item = store.getItembyID(tkfile.items.file);
-                    const note = Iadapter.instance.vault.getAbstractFileByPath(
+                    const noteEntry = Iadapter.instance.vault.getAbstractFileByPath(
                         tkfile.path,
-                    ) as TFile;
-                    if (!(note instanceof TFile)) {
+                    );
+                    if (!(noteEntry instanceof TFile)) {
                         return;
                     }
+                    const note = noteEntry;
                     const deckPath: string[] = TopicPath.getFolderPathFromFilename(
                         plugin.createSrTFile(note),
                         this.settings,
@@ -355,14 +358,15 @@ export class LocationSwitch {
                     let fileChanged = false;
                     if (deckPath.length !== 0) {
                         tkfile.syncNoteCardsIndex(fileText, this.settings, (cardText, cardinfo) => {
-                            if (cardinfo == null || cardinfo?.itemMap == null) {
+                            const normalizedCardInfo = normalizeCardIndexInfo(cardinfo);
+                            if (normalizedCardInfo?.itemMap == null) {
                                 return;
                             }
-                            const itemMap = cardinfo.itemMap;
+                            const itemMap = normalizedCardInfo.itemMap;
                             const scheduling: RegExpMatchArray[] = [];
-                            (Object.values(itemMap) as number[])
-                                .filter((id) => id >= 0)
-                                .map((id: number) => store.getItembyID(id))
+                            (Object.values(itemMap))
+                                .filter((id): id is number => typeof id === "number" && id >= 0)
+                                .map((id) => store.getItembyID(id))
                                 .filter((citem) => citem?.isTracked)
                                 .forEach((citem) => {
                                     // const citem = store.getItembyID(id);
@@ -433,10 +437,11 @@ export class LocationSwitch {
                     }
                 }),
         );
-        store.save();
+        await store.save();
         plugin.syncLock = false;
         const msg = "converteTrackfileToNoteSched success!";
         if (this.settings.showSchedulingDebugMessages) {
+            console.debug("dueids after: ", dueIds, store.data.trackedFiles, store.data.items);
         }
         if (dryrun) {
             // const settings = plugin.data.settings;
@@ -476,6 +481,14 @@ export class LocationSwitch {
             this.compare(noteStats, afternoteStats, "note") ||
             this.compare(cardStats, aftercardStats, "card")
         ) {
+            console.debug(
+                "before chang noteStats, cardStats:\n",
+                noteStats,
+                cardStats,
+                "\nafter change:\n",
+                afternoteStats,
+                aftercardStats,
+            );
             new Notice(t("DATA_LOST_WARNING"));
         }
     }
@@ -538,7 +551,7 @@ function getReviewNoteHeaderData(frontmatter: FrontMatterCache): number[] {
         const sched = [null, dueUnix, interval, ease];
         return sched;
     } else {
-        // console.log(
+        // console.debug(
         //     "getReviewNoteHeaderData --> note: %s doesn't have sr frontmatter. ",
         //     frontmatter,
         // );
@@ -702,4 +715,26 @@ export function delDefaultTag(fileText: string, revTag: string) {
         }
     }
     return fileText;
+}
+
+type CardIndexInfo = {
+    lineNo: number;
+    itemMap?: Record<string, number>;
+};
+
+function normalizeCardIndexInfo(cardinfo: unknown): CardIndexInfo | null {
+    if (typeof cardinfo !== "object" || cardinfo === null) {
+        return null;
+    }
+
+    const lineNo = Reflect.get(cardinfo, "lineNo");
+    const itemMap = Reflect.get(cardinfo, "itemMap");
+
+    return {
+        lineNo: typeof lineNo === "number" ? lineNo : -1,
+        itemMap:
+            typeof itemMap === "object" && itemMap !== null
+                ? (itemMap as Record<string, number>)
+                : undefined,
+    };
 }

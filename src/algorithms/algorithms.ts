@@ -1,19 +1,19 @@
 /**
- * 这个文件主要是干什么的：
- * [算法层] 间隔重复算法 (SRS) 的抽象基类接口。
- * 定义了所有具体算法（如 Anki, FSRS, SM2）必须实现的方法，例如 `onSelection` (处理评分), `calcAllOptsIntervals` (计算预览), `displaySettings` (显示设置)。
+ * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
+ * [绠楁硶灞俔 闂撮殧閲嶅绠楁硶 (SRS) 鐨勬娊璞″熀绫绘帴鍙ｃ€?
+ * 瀹氫箟浜嗘墍鏈夊叿浣撶畻娉曪紙濡?Anki, FSRS, SM2锛夊繀椤诲疄鐜扮殑鏂规硶锛屼緥濡?`onSelection` (澶勭悊璇勫垎), `calcAllOptsIntervals` (璁＄畻棰勮), `displaySettings` (鏄剧ず璁剧疆)銆?
  *
- * 它在项目中属于：算法层 (Algorithms) / 接口 (Interface)
+ * 瀹冨湪椤圭洰涓睘浜庯細绠楁硶灞?(Algorithms) / 鎺ュ彛 (Interface)
  *
- * 它会用到哪些文件：
+ * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
  * 1. src/dataStore/repetitionItem.ts
  *
- * 哪些文件会用到它：
- * 1. src/algorithms/*.ts (具体实现)
+ * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
+ * 1. src/algorithms/*.ts (鍏蜂綋瀹炵幇)
  * 2. src/algorithms/algorithms_switch.ts
  */
 /**
- * [算法层：负责计算下一次复习的时间、间隔和难度] [核心] 算法的抽象基类（Interface），定义所有算法必须实现的方法。
+ * [绠楁硶灞傦細璐熻矗璁＄畻涓嬩竴娆″涔犵殑鏃堕棿銆侀棿闅斿拰闅惧害] [鏍稿績] 绠楁硶鐨勬娊璞″熀绫伙紙Interface锛夛紝瀹氫箟鎵€鏈夌畻娉曞繀椤诲疄鐜扮殑鏂规硶銆?
  */
 import { MiscUtils } from "src/util/utils_recall";
 import { RPITEMTYPE, RepetitionItem, ReviewResult } from "src/dataStore/repetitionItem";
@@ -39,20 +39,21 @@ export abstract class SrsAlgorithm {
         return SrsAlgorithm.instance;
     }
 
-    updateSettings(settings: any) {
-        this.settings = MiscUtils.assignOnly(this.defaultSettings(), settings);
+    updateSettings(settings: unknown): void {
+        const normalizedSettings = typeof settings === "object" && settings !== null ? settings : {};
+        this.settings = MiscUtils.assignOnly(this.defaultSettings(), normalizedSettings);
         // this.plugin = plugin;
         SrsAlgorithm.instance = this;
     }
 
-    abstract defaultSettings(): any;
-    abstract defaultData(): any;
+    abstract defaultSettings(): object;
+    abstract defaultData(): object;
     abstract onSelection(item: RepetitionItem, option: string, repeat: boolean): ReviewResult;
     abstract calcAllOptsIntervals(item: RepetitionItem): number[];
     abstract srsOptions(): string[];
     abstract importer(fromAlgo: algorithmNames, items: RepetitionItem[]): void;
     abstract displaySettings(
         containerEl: HTMLElement,
-        update: (settings: any, refresh?: boolean) => void,
+        update: (settings: unknown, refresh?: boolean) => void,
     ): void;
 }

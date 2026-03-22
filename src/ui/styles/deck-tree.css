@@ -85,7 +85,7 @@
    ========================================== */
 .sr-deck-tree {
     --sr-deck-row-inline-margin: 4px;
-    --sr-deck-row-inline-padding: 8px;
+    --sr-deck-row-inline-padding: var(--syro-deck-row-inline-padding, 8px);
     --sr-deck-collapse-btn-size: 18px;
     --sr-deck-collapse-btn-center-offset: 9px;
     --sr-deck-children-guide-offset: calc(
@@ -143,7 +143,7 @@
 
 /* 移动端：去除卡片样式，贴边显示 */
 .is-mobile .sr-deck-tree {
-    --sr-deck-row-inline-padding: 2px;
+    --sr-deck-row-inline-padding: max(2px, calc(var(--syro-deck-row-inline-padding, 8px) - 6px));
     --sr-deck-children-inline-padding: 4px;
     background: transparent;
     border: none;
@@ -281,7 +281,7 @@
     transition: background 0.1s ease;
     user-select: none;
     position: relative;
-    min-height: 28px;
+    min-height: var(--syro-deck-row-min-height, 28px);
     border-radius: var(--syro-deck-row-radius, 4px);
     margin: 1px var(--sr-deck-row-inline-margin);
 }
@@ -309,7 +309,7 @@
 .is-mobile .sr-deck-row {
     padding-block: 2px;
     /* Reduced padding-left to 2px for tighter fit */
-    min-height: 32px;
+    min-height: max(32px, calc(var(--syro-deck-row-min-height, 28px) + 4px));
     margin-block: 0;
 }
 
@@ -553,46 +553,3 @@ body.syro-deck-tree-square-corners .sr-deck-settings-btn,
 body.syro-deck-tree-square-corners .is-mobile .sr-deck-stats-group {
     border-radius: 0 !important;
 }
-
-/* @settings
-
-name: Syro Deck Tree
-id: syro-deck-tree-style
-settings:
-  -
-    id: syro-deck-tree-style-heading
-    title: Deck Tree
-    type: heading
-    level: 2
-    collapsed: false
-  -
-    id: syro-deck-tree-shape-info
-    title: Shape controls
-    description: Use the toggle for fully square corners, or sliders for custom curvature.
-    type: info-text
-  -
-    id: syro-deck-tree-square-corners
-    title: Square corners
-    description: Force the deck tree container, rows, and controls to use 0 radius.
-    type: class-toggle
-  -
-    id: syro-deck-tree-radius
-    title: Container corner radius
-    description: Set to 0 for square corners.
-    type: variable-number-slider
-    default: 12
-    format: px
-    min: 0
-    max: 24
-    step: 1
-  -
-    id: syro-deck-row-radius
-    title: Row corner radius
-    description: Controls the row and small button corners in the deck tree.
-    type: variable-number-slider
-    default: 4
-    format: px
-    min: 0
-    max: 16
-    step: 1
-*/

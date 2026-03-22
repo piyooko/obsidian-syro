@@ -1,10 +1,11 @@
 /**
- * [业务逻辑层：笔记复习] [核心] 处理“整篇笔记复习”的特定逻辑，与单张卡片复习区分开。
+ * [娑撴艾濮熼柅鏄忕帆鐏炲偊绱扮粭鏃囶唶婢跺秳绡刔 [閺嶇绺綸 婢跺嫮鎮婇垾婊勬殻缁″洨鐟拋鏉款槻娑旂姭鈧繄娈戦悧鐟扮暰闁槒绶敍灞肩瑢閸楁洖绱堕崡锛勫婢跺秳绡勯崠鍝勫瀻瀵偓閵?
  */
 import { Notice, TFile } from "obsidian";
 import { DataStore } from "src/dataStore/data";
 import { ItemTrans } from "src/dataStore/itemTrans";
 import { t } from "src/lang/helpers";
+import SRPlugin from "src/main";
 import { NoteEaseList } from "src/NoteEaseList";
 import { Decks, ReviewDeck, SchedNote } from "src/ReviewDeck";
 import { ReviewResponse } from "src/scheduling";
@@ -90,7 +91,7 @@ export abstract class IReviewNote {
         // console.debug("itemId: ", itemId);
         store.updateReviewedCounts(itemId);
         store.reviewId(itemId, response);
-        store.save();
+        void store.save();
         this.minNextView = this.updateminNextView(this.minNextView, item.nextReview);
     }
 
@@ -151,7 +152,7 @@ export class RNonTrackfiles extends IReviewNote {
     // @logExecutionTime()
     async sync(notes: TFile[], reviewDecks: Decks, easeByPath: NoteEaseList): Promise<void> {
         // const settings = this.data.settings;
-        this.store.data.queues.buildQueue();
+        await this.store.data.queues.buildQueue();
 
         // check trackfile
         await this.store.reLoad();
@@ -181,11 +182,10 @@ export class RNonTrackfiles extends IReviewNote {
     isNew(note: TFile): boolean {
         return this.store.getNoteItem(note.path)?.isNew ?? true;
     }
-    async responseProcess(note: TFile, response: ReviewResponse, ease?: number) {
+    responseProcess(note: TFile, response: ReviewResponse, ease?: number): Promise<TrespResult> {
         const store = this.store;
 
-        // ✅ 使用noteAlgorithm而非SrsAlgorithm.getInstance()
-        const SRPlugin = require("src/main").default;
+        // 閴?娴ｈ法鏁oteAlgorithm閼板矂娼猄rsAlgorithm.getInstance()
         const plugin = SRPlugin.getInstance();
         const algorithm = plugin.noteAlgorithm;
         const option = algorithm.srsOptions()[response];
@@ -203,12 +203,12 @@ export class RNonTrackfiles extends IReviewNote {
             }
         }
         if (item == null) {
-            return {
+            return Promise.resolve({
                 buryList: [] as string[],
                 sNote: {
                     note,
                 },
-            };
+            });
         }
         if (item.isNew && ease != null) {
             // new note
@@ -216,9 +216,9 @@ export class RNonTrackfiles extends IReviewNote {
         }
         const buryList: string[] = [];
         /*
-         * [被注释] 用户不需要此功能。
-         * 该逻辑原意是在复习笔记时埋藏（推迟）其包含的所有卡片。
-         * 由于指纹系统重构，旧属性 cardItems 和 cardTextHash 已不存在。
+         * [鐞氼偅鏁為柌濂?閻劍鍩涙稉宥夋付鐟曚焦顒濋崝鐔诲厴閵?
+         * 鐠囥儵鈧槒绶崢鐔稿壈閺勵垰婀径宥勭瘎缁楁棁顔囬弮璺虹厑閽樺骏绱欓幒銊ㄧ箿閿涘鍙鹃崠鍛儓閻ㄥ嫭澧嶉張澶婂幢閻楀洢鈧?
+         * 閻㈠彉绨幐鍥╂睏缁崵绮洪柌宥嗙€敍灞炬＋鐏炵偞鈧?cardItems 閸?cardTextHash 瀹歌弓绗夌€涙ê婀妴?
          */
         /*
         if (this.settings.burySiblingCardsByNoteReview) {
@@ -233,7 +233,7 @@ export class RNonTrackfiles extends IReviewNote {
 
         IReviewNote.recallReviewResponse(itemId, option);
 
-        return {
+        return Promise.resolve({
             buryList,
             sNote: {
                 note,
@@ -242,6 +242,6 @@ export class RNonTrackfiles extends IReviewNote {
                 interval: item.interval,
                 ease: item.ease,
             },
-        };
+        });
     }
 }

@@ -1,7 +1,7 @@
 import { Modal, App, Platform } from "obsidian";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 import h from "vhtml";
-// 引入 Chart.js 相关组件。Chart.js 是一个非常流行的 JS 图表库。
+// 寮曞叆 Chart.js 鐩稿叧缁勪欢銆侰hart.js 鏄竴涓潪甯告祦琛岀殑 JS 鍥捐〃搴撱€?
 import {
     Chart,
     BarElement,
@@ -28,8 +28,8 @@ import { Stats } from "src/stats";
 import { CardListType } from "src/Deck";
 import { RPITEMTYPE } from "src/dataStore/repetitionItem";
 
-// 注册 Chart.js 组件。
-// Chart.js 采用按需注册机制，以减小体积（Tree Shaking）。
+// 娉ㄥ唽 Chart.js 缁勪欢銆?
+// Chart.js 閲囩敤鎸夐渶娉ㄥ唽鏈哄埗锛屼互鍑忓皬浣撶Н锛圱ree Shaking锛夈€?
 Chart.register(
     BarElement,
     BarController,
@@ -44,10 +44,10 @@ Chart.register(
 );
 
 /**
- * StatsModal 类
+ * StatsModal 绫?
  *
- * 这是一个显示插件统计信息的模态框。
- * 它包含多个图表，如今日复习、预测、间隔分布等。
+ * 杩欐槸涓€涓樉绀烘彃浠剁粺璁′俊鎭殑妯℃€佹銆?
+ * 瀹冨寘鍚涓浘琛紝濡備粖鏃ュ涔犮€侀娴嬨€侀棿闅斿垎甯冪瓑銆?
  */
 export class StatsModal extends Modal {
     private plugin: SRPlugin;
@@ -57,14 +57,14 @@ export class StatsModal extends Modal {
 
         this.plugin = plugin;
 
-        // 设置标题
+        // 璁剧疆鏍囬
         this.titleEl.setText(`${t("STATS_TITLE")} `);
         this.titleEl.addClass("sr-centered");
 
-        // 在标题栏添加两个下拉选择框：
-        // 1. 类型选择（卡片 Flashcards / 笔记 Notes）
-        // 2. 时间范围选择（月 / 季度 / 年 / 全部）
-        // 这里使用了 JSX 语法 (h 函数)
+        // 鍦ㄦ爣棰樻爮娣诲姞涓や釜涓嬫媺閫夋嫨妗嗭細
+        // 1. 绫诲瀷閫夋嫨锛堝崱鐗?Flashcards / 绗旇 Notes锛?
+        // 2. 鏃堕棿鑼冨洿閫夋嫨锛堟湀 / 瀛ｅ害 / 骞?/ 鍏ㄩ儴锛?
+        // 杩欓噷浣跨敤浜?JSX 璇硶 (h 鍑芥暟)
         this.titleEl.innerHTML += (
             <div>
                 <select id="sr-chart-type">
@@ -84,25 +84,24 @@ export class StatsModal extends Modal {
             </div>
         );
 
-        // 设置模态框大小充满了
-        this.modalEl.style.height = "100%";
-        this.modalEl.style.width = "100%";
+        // 璁剧疆妯℃€佹澶у皬鍏呮弧浜?
+        this.modalEl.addClass("syro-stats-modal");
 
         if (Platform.isMobile) {
-            this.contentEl.style.display = "block";
+            this.contentEl.addClass("syro-stats-content-mobile");
         }
     }
 
     /**
-     * 打开时的逻辑
-     * 这里负责创建 Canvas 元素并初始化图表
+     * 鎵撳紑鏃剁殑閫昏緫
+     * 杩欓噷璐熻矗鍒涘缓 Canvas 鍏冪礌骞跺垵濮嬪寲鍥捐〃
      */
     onOpen(): void {
         const { contentEl } = this;
-        contentEl.style.textAlign = "center";
+        contentEl.addClass("syro-stats-content");
 
-        // 创建图表容器 Canvas 元素
-        // 依次是：今日统计、未来预测、间隔分布、Ease分布、卡片类型饼图
+        // 鍒涘缓鍥捐〃瀹瑰櫒 Canvas 鍏冪礌
+        // 渚濇鏄細浠婃棩缁熻銆佹湭鏉ラ娴嬨€侀棿闅斿垎甯冦€丒ase鍒嗗竷銆佸崱鐗囩被鍨嬮ゼ鍥?
         contentEl.innerHTML += (
             <div>
                 <canvas id="todayReviewedChart"></canvas>
@@ -127,12 +126,12 @@ export class StatsModal extends Modal {
             </div>
         );
 
-        // 绑定类型选择下拉框的事件
+        // 缁戝畾绫诲瀷閫夋嫨涓嬫媺妗嗙殑浜嬩欢
         const chartTypeEl = document.getElementById("sr-chart-type") as HTMLSelectElement;
         chartTypeEl.addEventListener("change", () => {
             const chartType = chartTypeEl.value;
-            // 根据选择切换显示 Note 统计还是 Card 统计
-            if (chartType === RPITEMTYPE.NOTE) {
+            // 鏍规嵁閫夋嫨鍒囨崲鏄剧ず Note 缁熻杩樻槸 Card 缁熻
+            if (String(chartType) === String(RPITEMTYPE.NOTE)) {
                 this.createCharts(
                     this.plugin.store.getReviewedCounts(),
                     this.plugin.noteStats,
@@ -149,7 +148,7 @@ export class StatsModal extends Modal {
             }
         });
 
-        // 初始首次渲染
+        // 鍒濆棣栨娓叉煋
         this.createCharts(
             this.plugin.store.getReviewedCardCounts(),
             this.plugin.cardStats,
@@ -163,17 +162,17 @@ export class StatsModal extends Modal {
     }
 
     /**
-     * 核心方法：生成所有图表
+     * 鏍稿績鏂规硶锛氱敓鎴愭墍鏈夊浘琛?
      *
-     * @param rc 复习计数数据 (ReviewedCounts)
-     * @param cardStats 卡片统计数据对象
-     * @param totalCardsCount 总卡片数
+     * @param rc 澶嶄範璁℃暟鏁版嵁 (ReviewedCounts)
+     * @param cardStats 鍗＄墖缁熻鏁版嵁瀵硅薄
+     * @param totalCardsCount 鎬诲崱鐗囨暟
      */
     private createCharts(rc: ReviewedCounts, cardStats: Stats, totalCardsCount: number) {
-        // --- 1. 今日复习情况柱状图 ---
+        // --- 1. 浠婃棩澶嶄範鎯呭喌鏌辩姸鍥?---
         const now = window.moment(Date.now());
         const todayDate: string = now.format("YYYY-MM-DD");
-        // 如果今天还没数据，初始化为空
+        // 濡傛灉浠婂ぉ杩樻病鏁版嵁锛屽垵濮嬪寲涓虹┖
         if (!(todayDate in rc)) {
             rc[todayDate] = { due: 0, new: 0 };
         }
@@ -182,23 +181,23 @@ export class StatsModal extends Modal {
 
         const totalreviewedCount = rdueCnt + rnewCnt;
 
-        // 调用封装好的 createStatsChart 函数绘制
+        // 璋冪敤灏佽濂界殑 createStatsChart 鍑芥暟缁樺埗
         createStatsChart(
-            "bar", // 类型：柱状图
+            "bar", // 绫诲瀷锛氭煴鐘跺浘
             "todayReviewedChart", // Canvas ID
-            t("REVIEWED_TODAY"), // 标题
-            t("REVIEWED_TODAY_DESC"), // 副标题
-            [`${t("NEW_LEARNED")} - ${rnewCnt}`, `${t("DUE_REVIEWED")} - ${rdueCnt}`], // 标签
-            [rnewCnt, rdueCnt], // 数据
-            t("REVIEWED_TODAY_SUMMARY", { totalreviewedCount }), // 摘要文本
-            t("COUNT"), // Y轴标题
-            "", // X轴标题
-            t("NUMBER_OF_CARDS"), // Series 标题
+            t("REVIEWED_TODAY"), // 鏍囬
+            t("REVIEWED_TODAY_DESC"), // 鍓爣棰?
+            [`${t("NEW_LEARNED")} - ${rnewCnt}`, `${t("DUE_REVIEWED")} - ${rdueCnt}`], // 鏍囩
+            [rnewCnt, rdueCnt], // 鏁版嵁
+            t("REVIEWED_TODAY_SUMMARY", { totalreviewedCount }), // 鎽樿鏂囨湰
+            t("COUNT"), // Y杞存爣棰?
+            "", // X杞存爣棰?
+            t("NUMBER_OF_CARDS"), // Series 鏍囬
         );
 
-        // --- 2. 未来复习预测图 (Forecast) ---
+        // --- 2. 鏈潵澶嶄範棰勬祴鍥?(Forecast) ---
         let maxN: number = cardStats.delayedDays.getMaxValue();
-        // 补全前面的空缺日期
+        // 琛ュ叏鍓嶉潰鐨勭┖缂烘棩鏈?
         for (let dueOffset = 0; dueOffset <= maxN; dueOffset++) {
             cardStats.delayedDays.clearCountIfMissing(dueOffset);
         }
@@ -207,10 +206,10 @@ export class StatsModal extends Modal {
         const todayStr = t("TODAY");
         dueDatesFlashcardsCopy[todayStr] = 0;
 
-        // 转换数据格式：相对天数 -> 绝对日期字符串
+        // 杞崲鏁版嵁鏍煎紡锛氱浉瀵瑰ぉ鏁?-> 缁濆鏃ユ湡瀛楃涓?
         for (const [dueOffset, dueCount] of getTypedObjectEntries(cardStats.delayedDays.dict)) {
             if (dueOffset <= 0) {
-                // 过期或今天的
+                // 杩囨湡鎴栦粖澶╃殑
                 dueDatesFlashcardsCopy[todayStr] += dueCount;
             } else {
                 const due = now.clone().add(dueOffset, "days");
@@ -227,15 +226,15 @@ export class StatsModal extends Modal {
             "forecastChart",
             t("FORECAST"),
             t("FORECAST_DESC"),
-            Object.keys(dueDatesFlashcardsCopy), // 日期作为 X 轴
-            Object.values(dueDatesFlashcardsCopy), // 数量作为 Y 轴
+            Object.keys(dueDatesFlashcardsCopy), // 鏃ユ湡浣滀负 X 杞?
+            Object.values(dueDatesFlashcardsCopy), // 鏁伴噺浣滀负 Y 杞?
             t("REVIEWS_PER_DAY", { avg: (scheduledCount / maxN).toFixed(1) }),
             t("SCHEDULED"),
             t("DATE"),
             t("NUMBER_OF_CARDS"),
         );
 
-        // --- 3. 间隔分布图 (Intervals) ---
+        // --- 3. 闂撮殧鍒嗗竷鍥?(Intervals) ---
         maxN = cardStats.intervals.getMaxValue();
         for (let interval = 0; interval <= maxN; interval++) {
             cardStats.intervals.clearCountIfMissing(interval);
@@ -262,9 +261,9 @@ export class StatsModal extends Modal {
             t("NUMBER_OF_CARDS"),
         );
 
-        // --- 4. 难度/Ease 分布图 (Eases) ---
+        // --- 4. 闅惧害/Ease 鍒嗗竷鍥?(Eases) ---
         const eases: number[] = getKeysPreserveType(cardStats.eases.dict);
-        // 填充缺失的 ease 值，保证 X 轴连续
+        // 濉厖缂哄け鐨?ease 鍊硷紝淇濊瘉 X 杞磋繛缁?
         for (let ease = Math.min(...eases); ease <= Math.max(...eases); ease++) {
             cardStats.eases.clearCountIfMissing(ease);
         }
@@ -272,11 +271,12 @@ export class StatsModal extends Modal {
             Math.round(cardStats.eases.getTotalOfValueMultiplyCount() / scheduledCount) || 0;
 
         const esaeStr: string[] = [];
+        const currentAlgorithm = String(this.plugin.data.settings.algorithm);
         getKeysPreserveType(cardStats.eases.dict).forEach((value: number) => {
-            if (this.plugin.data.settings.algorithm === algorithmNames.Fsrs) {
-                esaeStr.push(`${State[value]} `); // FSRS 算法显示状态名
+            if (currentAlgorithm === String(algorithmNames.Fsrs)) {
+                esaeStr.push(`${State[value]} `); // FSRS 绠楁硶鏄剧ず鐘舵€佸悕
             } else {
-                esaeStr.push(`${value} `); // 默认算法显示数字
+                esaeStr.push(`${value} `); // 榛樿绠楁硶鏄剧ず鏁板瓧
             }
         });
 
@@ -293,9 +293,9 @@ export class StatsModal extends Modal {
             t("NUMBER_OF_CARDS"),
         );
 
-        // --- 5. 卡片类型饼图 (Card Types: New/Young/Mature) ---
+        // --- 5. 鍗＄墖绫诲瀷楗煎浘 (Card Types: New/Young/Mature) ---
         createStatsChart(
-            "pie", // 饼图
+            "pie", // 楗煎浘
             "cardTypesChart",
             t("CARD_TYPES"),
             t("CARD_TYPES_DESC"),
@@ -317,30 +317,30 @@ export class StatsModal extends Modal {
 }
 
 /**
- * 封装的图表创建函数
+ * 灏佽鐨勫浘琛ㄥ垱寤哄嚱鏁?
  *
- * 简化 Chart.js 的调用配置，统一风格。
+ * 绠€鍖?Chart.js 鐨勮皟鐢ㄩ厤缃紝缁熶竴椋庢牸銆?
  */
 function createStatsChart(
-    type: keyof ChartTypeRegistry, // 图表类型 ('bar', 'pie' 等)
-    canvasId: string, // 对应的 DOM ID
-    title: string, // 标题
-    subtitle: string, // 副标题
-    labels: string[], // X 轴标签数组
-    data: number[], // Y 轴数据数组
-    summary: string, // 底部摘要文本
+    type: keyof ChartTypeRegistry, // 鍥捐〃绫诲瀷 ('bar', 'pie' 绛?
+    canvasId: string, // 瀵瑰簲鐨?DOM ID
+    title: string, // 鏍囬
+    subtitle: string, // 鍓爣棰?
+    labels: string[], // X 杞存爣绛炬暟缁?
+    data: number[], // Y 杞存暟鎹暟缁?
+    summary: string, // 搴曢儴鎽樿鏂囨湰
     seriesTitle = "",
     xAxisTitle = "",
     yAxisTitle = "",
 ) {
-    // 获取当前主题的文本颜色
+    // 鑾峰彇褰撳墠涓婚鐨勬枃鏈鑹?
     const style = getComputedStyle(document.body);
     const textColor = style.getPropertyValue("--text-normal");
 
     let scales = {},
-        backgroundColor = ["#2196f3"]; // 默认柱子颜色 (蓝色)
+        backgroundColor = ["#2196f3"]; // 榛樿鏌卞瓙棰滆壊 (钃濊壊)
 
-    // 非饼图需要配置坐标轴
+    // 闈為ゼ鍥鹃渶瑕侀厤缃潗鏍囪酱
     if (type !== "pie") {
         scales = {
             x: {
@@ -359,14 +359,14 @@ function createStatsChart(
             },
         };
     } else {
-        // 饼图使用多色
-        backgroundColor = ["#2196f3", "#4caf50", "green"]; // 对应 New, Young, Mature
+        // 楗煎浘浣跨敤澶氳壊
+        backgroundColor = ["#2196f3", "#4caf50", "green"]; // 瀵瑰簲 New, Young, Mature
     }
 
-    // 某些图表（Forecast, Intervals）支持时间筛选（月/季度/年）
+    // 鏌愪簺鍥捐〃锛團orecast, Intervals锛夋敮鎸佹椂闂寸瓫閫夛紙鏈?瀛ｅ害/骞达級
     const shouldFilter = canvasId === "forecastChart" || canvasId === "intervalsChart";
 
-    // 销毁旧图表实例（如果存在），防止重绘时重叠或报错
+    // 閿€姣佹棫鍥捐〃瀹炰緥锛堝鏋滃瓨鍦級锛岄槻姝㈤噸缁樻椂閲嶅彔鎴栨姤閿?
     const statsE1 = document.getElementById(canvasId) as HTMLCanvasElement;
     const existingChart = Chart.getChart(statsE1);
     if (existingChart) {
@@ -374,11 +374,11 @@ function createStatsChart(
         existingChart.destroy();
     }
 
-    // 创建新图表
+    // 鍒涘缓鏂板浘琛?
     const statsChart = new Chart(document.getElementById(canvasId) as HTMLCanvasElement, {
         type,
         data: {
-            // 如果需要过滤，初始只显示前 31 天 (月视图)
+            // 濡傛灉闇€瑕佽繃婊わ紝鍒濆鍙樉绀哄墠 31 澶?(鏈堣鍥?
             labels: shouldFilter ? labels.slice(0, 31) : labels,
             datasets: [
                 {
@@ -409,31 +409,31 @@ function createStatsChart(
                     color: textColor,
                 },
                 legend: {
-                    display: false, // 默认隐藏图例
+                    display: false, // 榛樿闅愯棌鍥句緥
                 },
             },
-            aspectRatio: 2, // 宽高比
+            aspectRatio: 2, // 瀹介珮姣?
         },
     });
 
-    // 为支持过滤的图表绑定 Period Select 变更事件
+    // 涓烘敮鎸佽繃婊ょ殑鍥捐〃缁戝畾 Period Select 鍙樻洿浜嬩欢
     if (shouldFilter) {
         const chartPeriodEl = document.getElementById("sr-chart-period") as HTMLSelectElement;
 
-        // 每次变更选择，调用回调更新图表数据
+        // 姣忔鍙樻洿閫夋嫨锛岃皟鐢ㄥ洖璋冩洿鏂板浘琛ㄦ暟鎹?
         chartPeriodEl.addEventListener("change", () => {
             if (statsChart.canvas != null) {
                 chartPeriodCallBack(chartPeriodEl);
             }
         });
-        // 初始化调用一次
+        // 鍒濆鍖栬皟鐢ㄤ竴娆?
         chartPeriodCallBack(chartPeriodEl);
     }
 
     document.getElementById(`${canvasId}Summary`).innerText = summary;
 
     /**
-     * 内部函数：处理时间范围筛选逻辑
+     * 鍐呴儴鍑芥暟锛氬鐞嗘椂闂磋寖鍥寸瓫閫夐€昏緫
      */
     function chartPeriodCallBack(chartPeriodEl: HTMLSelectElement) {
         let filteredLabels, filteredData;
@@ -452,7 +452,7 @@ function createStatsChart(
             filteredData = data;
         }
 
-        // 更新 Chart.js 数据源并触发更新
+        // 鏇存柊 Chart.js 鏁版嵁婧愬苟瑙﹀彂鏇存柊
         statsChart.data.labels = filteredLabels;
         statsChart.data.datasets[0] = {
             label: seriesTitle,

@@ -12,20 +12,22 @@
     }
 }
 
-.syro-status-bar-hidden {
-    display: none;
+.syro-status-note.is-due {
+    color: var(--syro-note-status-color, var(--text-normal));
+    animation:
+        var(--syro-note-status-animation, none)
+        var(--syro-note-status-period, 2s)
+        infinite
+        ease-in-out;
 }
 
-.syro-status-bar-item[data-syro-due-enabled="true"] .syro-status-note.is-due,
-.syro-status-bar-item[data-syro-due-enabled="true"] .syro-status-card.is-due {
-    color: var(--syro-status-color, var(--text-accent));
-}
-
-.syro-status-bar-item[data-syro-due-enabled="true"][data-syro-status-animation="breathing"]
-    .syro-status-note.is-due,
-.syro-status-bar-item[data-syro-due-enabled="true"][data-syro-status-animation="breathing"]
-    .syro-status-card.is-due {
-    animation: syro-breathe var(--syro-status-period, 2s) infinite ease-in-out;
+.syro-status-card.is-due {
+    color: var(--syro-card-status-color, var(--text-normal));
+    animation:
+        var(--syro-card-status-animation, none)
+        var(--syro-card-status-period, 2s)
+        infinite
+        ease-in-out;
 }
 
 .syro-sb-sep {

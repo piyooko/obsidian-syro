@@ -11,7 +11,7 @@ export function addResponseFloatBarSetting(containerEl: HTMLElement, plugin: SRP
         .addToggle((toggle) => {
             toggle.setValue(plugin.data.settings.reviewResponseFloatBar).onChange((newValue) => {
                 plugin.data.settings.reviewResponseFloatBar = newValue;
-                plugin.savePluginData();
+                void plugin.savePluginData();
             });
         });
 }

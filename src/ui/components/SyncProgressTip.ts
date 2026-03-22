@@ -24,7 +24,7 @@ export class SyncProgressTip {
     }
 
     public show() {
-        this.containerEl.offsetWidth;
+        void this.containerEl.offsetWidth;
         this.containerEl.addClass("is-visible");
     }
 

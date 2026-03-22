@@ -1,0 +1,51 @@
+.syro-priority-value-display {
+    text-align: center;
+    font-size: 1.2em;
+    font-weight: bold;
+    margin-top: 1em;
+    margin-bottom: 1em;
+}
+
+.syro-priority-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 1.5em;
+}
+
+.syro-release-notes-actions {
+    text-align: right;
+}
+
+.syro-tab-view-content {
+    height: 100%;
+    max-height: 100%;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.syro-stats-modal {
+    height: 100%;
+    width: 100%;
+}
+
+.syro-stats-content {
+    text-align: center;
+}
+
+.syro-stats-content-mobile {
+    display: block;
+}
+
+.syro-react-review-app-root {
+    height: 100%;
+    overflow: hidden;
+}
+
+.sr-cloze-math-custom--block {
+    display: block;
+    text-align: center;
+    width: 100%;
+    margin: 1em 0;
+}

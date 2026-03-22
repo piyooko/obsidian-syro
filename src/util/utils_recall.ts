@@ -1,17 +1,17 @@
-/**
- * 这个文件主要是干什么的：
- * [工具层] 业务相关工具函数集合。
- * 包含了一些特定于 Recall/SR 业务逻辑的工具，如 Block ID 生成、Fingerprint (指纹) 计算。
- * 指纹计算逻辑尤为重要，用于识别卡片内容是否发生变化。
+﻿/**
+ * 鏉╂瑤閲滈弬鍥︽娑撴槒顩﹂弰顖氬叡娴犫偓娑斿牏娈戦敍?
+ * [瀹搞儱鍙跨仦淇?娑撴艾濮熼惄绋垮彠瀹搞儱鍙块崙鑺ユ殶闂嗗棗鎮庨妴?
+ * 閸栧懎鎯堟禍鍡曠娴滄稓澹掔€规矮绨?Recall/SR 娑撴艾濮熼柅鏄忕帆閻ㄥ嫬浼愰崗鍑ょ礉婵?Block ID 閻㈢喐鍨氶妴涓梚ngerprint (閹稿洨姹? 鐠侊紕鐣婚妴?
+ * 閹稿洨姹楃拋锛勭暬闁槒绶亸銈勮礋闁插秷顩﹂敍宀€鏁ゆ禍搴ょ槕閸掝偄宕遍悧鍥у敶鐎硅妲搁崥锕€褰傞悽鐔峰綁閸栨牓鈧?
  *
- * 它在项目中属于：工具层 (Utils) / 业务工具 (Business Utils)
+ * 鐎瑰啫婀い鍦窗娑擃厼鐫樻禍搴窗瀹搞儱鍙跨仦?(Utils) / 娑撴艾濮熷銉ュ徔 (Business Utils)
  *
- * 它会用到哪些文件：
+ * 鐎瑰啩绱伴悽銊ュ煂閸濐亙绨洪弬鍥︽閿?
  * 1. src/settings.ts
  * 2. src/util/utils.ts
  *
- * 哪些文件会用到它：
- * 1. src/dataStore/trackedFile.ts (计算指纹)
+ * 閸濐亙绨洪弬鍥︽娴兼氨鏁ら崚鏉跨暊閿?
+ * 1. src/dataStore/trackedFile.ts (鐠侊紕鐣婚幐鍥╂睏)
  * 2. src/stats.ts
  */
 import { Notice, Platform } from "obsidian";
@@ -56,7 +56,7 @@ export class BlockUtils {
         const keys: string[] = [];
         const isCodeBlock = text.startsWith("```") && settings.parseClozesInCodeBlocks;
 
-        const ankiMatches = [...text.matchAll(/\{\{c(\d+)(?:::|锛氾細)(.*?)(?:::|锛氾細)?\}\}/gi)];
+        const ankiMatches = [...text.matchAll(/\{\{c(\d+)(?:::|：：)(.*?)(?:::|：：)?\}\}/gi)];
         if (ankiMatches.length > 0) {
             const seenKeys = new Set<string>();
             const clozes = ankiMatches
@@ -95,39 +95,39 @@ export class BlockUtils {
     }
 
     /**
-     * 获取全文哈希 (保留原有逻辑，作为一种特征)
+     * 閼惧嘲褰囬崗銊︽瀮閸濆牆绗?(娣囨繄鏆€閸樼喐婀侀柅鏄忕帆閿涘奔缍旀稉杞扮缁夊秶澹掑?
      */
     static getTxtHash(cardText: string) {
         const text = cardText.replace(/<!--SR:.+-->/gm, "").trimEnd();
-        return cyrb53(text).substring(0, 8); // 统一长度为8
+        return cyrb53(text).substring(0, 8); // 缂佺喍绔撮梹鍨娑?
     }
 
     /**
-     * 【全能版】获取卡片核心内容指纹 (Fingerprint)
-     * 兼容：Anki 挖空、高亮挖空、粗体挖空、以及普通问答卡
+     * 閵嗘劕鍙忛懗鐣屽閵嗘垼骞忛崣鏍у幢閻楀洦鐗宠箛鍐ㄥ敶鐎硅瀵氱痪?(Fingerprint)
+     * 閸忕厧顔愰敍娆皀ki 閹告牜鈹栭妴渚€鐝禍顔藉缁屾亽鈧胶鐭栨担鎾村缁屾亽鈧椒浜掗崣濠冩珮闁岸妫剁粵鏂垮幢
      */
     static getFingerprint(cardText: string, settings: SRSettings): string {
         const parts = this.getFingerprintParts(cardText, settings);
         if (parts.length === 0) {
-            // 兜底：使用全文哈希
+            // 閸忔粌绨抽敍姘▏閻劌鍙忛弬鍥ф惐鐢?
             const text = cardText.replace(/<!--SR:.+-->/gm, "").trimEnd();
             return cyrb53(text).substring(0, 8);
         }
-        // 用竖线分隔各部分内容，便于后续拆解比对
-        return parts.join("｜"); // 使用全角竖线避免与内容冲突
+        // Join parts with a stable separator so similar fragments do not collapse together.
+        return parts.join("||");
     }
 
     /**
-     * 获取指纹各部分的原始内容数组
-     * 顺序必须与卡片生成顺序严格一致：先 Anki (按ID排序) 后 高亮/粗体 (按位置)
+     * 閼惧嘲褰囬幐鍥╂睏閸氬嫰鍎撮崚鍡欐畱閸樼喎顫愰崘鍛啇閺佹壆绮?
+     * 妞ゅ搫绨箛鍛淬€忔稉搴″幢閻楀洨鏁撻幋鎰般€庢惔蹇庡紬閺嶉棿绔撮懛杈剧窗閸?Anki (閹稿D閹烘帒绨? 閸?妤傛ü瀵?缁ぞ缍?(閹稿缍呯純?
      */
     static getFingerprintParts(cardText: string, settings: SRSettings): string[] {
         const text = cardText.replace(/<!--SR:.+-->/gm, "").trimEnd();
         const fingerprintParts: string[] = [];
         const isCodeBlock = text.startsWith("```") && settings.parseClozesInCodeBlocks;
 
-        // 1. Anki 风格挖空 {{c1::内容}} (支持中文冒号，忽略大小写)
-        // 必须先处理且按 ID 排序
+        // 1. Anki 妞嬪孩鐗搁幐鏍敄 {{c1::閸愬懎顔恾} (閺€顖涘瘮娑擃厽鏋冮崘鎺戝娇閿涘苯鎷烽悾銉ャ亣鐏忓繐鍟?
+        // 韫囧懘銆忛崗鍫濐槱閻炲棔绗栭幐?ID 閹烘帒绨?
         const ankiMatches = [...text.matchAll(/\{\{c(\d+)(?:::|：：)(.*?)(?:::|：：)?\}\}/gi)];
         if (ankiMatches.length > 0) {
             const clozes = ankiMatches.map((m) => {
@@ -145,7 +145,7 @@ export class BlockUtils {
             fingerprintParts.push(...clozes.map((c) => c.content));
         }
 
-        // 2. 高亮/粗体 - 必须后处理，按出现位置
+        // 2. 妤傛ü瀵?缁ぞ缍?- 韫囧懘銆忛崥搴☆槱閻炲棴绱濋幐澶婂毉閻滈缍呯純?
         if (settings.convertHighlightsToClozes) {
             const highlights = [...text.matchAll(/==(.*?)==/g)];
             fingerprintParts.push(...highlights.map((m) => m[1]));
@@ -156,7 +156,7 @@ export class BlockUtils {
             fingerprintParts.push(...bolds.map((m) => m[1]));
         }
 
-        // 3. 问答卡没有挖空部分
+        // 3. 闂傤喚鐡熼崡鈩冪梾閺堝瀵茬粚娲劥閸?
         if (fingerprintParts.length === 0) {
             const sep = settings.singleLineCardSeparator || "::";
             if (text.includes(sep)) {
@@ -168,16 +168,16 @@ export class BlockUtils {
     }
 
     /**
-     * 【itemMap 架构】获取带 key 的指纹 Map
-     * key 格式：Anki cloze 用 "c1", "c2"... 或 "c1_l2" (代码块内同ID按行区分)
-     * 用于 CardInfo.itemMap 的键值对应
+     * 閵嗘亼temMap 閺嬭埖鐎妴鎴ｅ箯閸欐牕鐢?key 閻ㄥ嫭瀵氱痪?Map
+     * key 閺嶇厧绱￠敍娆皀ki cloze 閻?"c1", "c2"... 閹?"c1_l2" (娴狅絿鐖滈崸妤€鍞撮崥瀛朌閹稿顢戦崠鍝勫瀻)
+     * 閻劋绨?CardInfo.itemMap 閻ㄥ嫰鏁崐鐓庮嚠鎼?
      */
     static getFingerprintMap(cardText: string, settings: SRSettings): Record<string, string> {
         const text = cardText.replace(/<!--SR:.+-->/gm, "").trimEnd();
         const result: Record<string, string> = {};
         const isCodeBlock = text.startsWith("```") && settings.parseClozesInCodeBlocks;
 
-        // 1. Anki 风格挖空 {{c1::内容}} - key = "c1", "c2"... 或 "c1_l2"
+        // 1. Anki 妞嬪孩鐗搁幐鏍敄 {{c1::閸愬懎顔恾} - key = "c1", "c2"... 閹?"c1_l2"
         const ankiMatches = [...text.matchAll(/\{\{c(\d+)(?:::|：：)(.*?)(?:::|：：)?\}\}/gi)];
         ankiMatches
             .map((m) => {
@@ -200,7 +200,7 @@ export class BlockUtils {
                 }
             });
 
-        // 2. 高亮 - key = "hl0", "hl1"...
+        // 2. 妤傛ü瀵?- key = "hl0", "hl1"...
         if (settings.convertHighlightsToClozes) {
             const highlights = [...text.matchAll(/==(.*?)==/g)];
             highlights.forEach((m, i) => {
@@ -208,7 +208,7 @@ export class BlockUtils {
             });
         }
 
-        // 3. 粗体 - key = "bd0", "bd1"...
+        // 3. 缁ぞ缍?- key = "bd0", "bd1"...
         if (settings.convertBoldTextToClozes) {
             const bolds = [...text.matchAll(/\*\*(.*?)\*\*/g)];
             bolds.forEach((m, i) => {
@@ -220,10 +220,10 @@ export class BlockUtils {
     }
 
     /**
-     * 【每个挖空独立上下文】获取指纹 Map，同时提取每个挖空位置前后各 250 字符的上下文
-     * 用于 CardInfo.itemContextMap 的置信度比对
+     * 閵嗘劖鐦℃稉顏呭缁岃櫣瀚粩瀣╃瑐娑撳鏋冮妴鎴ｅ箯閸欐牗瀵氱痪?Map閿涘苯鎮撻弮鑸靛絹閸欐牗鐦℃稉顏呭缁岃桨缍呯純顔煎閸氬骸鎮?250 鐎涙顑侀惃鍕瑐娑撳鏋?
+     * 閻劋绨?CardInfo.itemContextMap 閻ㄥ嫮鐤嗘穱鈥冲濮ｆ柨顕?
      *
-     * 返回格式: { key: { content: 挖空内容, context: 前后250字符拼接 } }
+     * 鏉╂柨娲栭弽鐓庣础: { key: { content: 閹告牜鈹栭崘鍛啇, context: 閸撳秴鎮?50鐎涙顑侀幏鍏煎复 } }
      */
     static getFingerprintMapWithContext(
         cardText: string,
@@ -234,11 +234,11 @@ export class BlockUtils {
         const isCodeBlock = text.startsWith("```") && settings.parseClozesInCodeBlocks;
         const CONTEXT_RADIUS = 250;
 
-        // 1. Anki 风格挖空 {{c1::内容}}
+        // 1. Anki 妞嬪孩鐗搁幐鏍敄 {{c1::閸愬懎顔恾}
         const ankiMatches = [...text.matchAll(/\{\{c(\d+)(?:::|：：)(.*?)(?:::|：：)?\}\}/gi)];
         ankiMatches.forEach((m) => {
             const id = m[1];
-            const pos = m.index!;
+            const pos = m.index;
             const lineIndex = text.substring(0, pos).split("\n").length - 1;
             const key = isCodeBlock ? `c${id}_l${lineIndex}` : `c${id}`;
             const before = text.substring(Math.max(0, pos - CONTEXT_RADIUS), pos);
@@ -252,11 +252,11 @@ export class BlockUtils {
             };
         });
 
-        // 2. 高亮 ==内容==
+        // 2. 妤傛ü瀵?==閸愬懎顔?=
         if (settings.convertHighlightsToClozes) {
             const highlights = [...text.matchAll(/==(.*?)==/g)];
             highlights.forEach((m, i) => {
-                const pos = m.index!;
+                const pos = m.index;
                 const before = text.substring(Math.max(0, pos - CONTEXT_RADIUS), pos);
                 const after = text.substring(
                     pos + m[0].length,
@@ -269,11 +269,11 @@ export class BlockUtils {
             });
         }
 
-        // 3. 粗体 **内容**
+        // 3. 缁ぞ缍?**閸愬懎顔?*
         if (settings.convertBoldTextToClozes) {
             const bolds = [...text.matchAll(/\*\*(.*?)\*\*/g)];
             bolds.forEach((m, i) => {
-                const pos = m.index!;
+                const pos = m.index;
                 const before = text.substring(Math.max(0, pos - CONTEXT_RADIUS), pos);
                 const after = text.substring(
                     pos + m[0].length,
@@ -299,17 +299,17 @@ export class MiscUtils {
      * @param obj
      * @param source
      */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    static assignOnly(obj: any, source: any): any {
-        const newObj = Object.assign(obj);
+    static assignOnly<T extends object>(obj: T, source: Partial<T> | null | undefined): T {
+        const newObj = Object.assign({}, obj);
         if (source != undefined) {
             Object.keys(obj).forEach((key) => {
                 if (key in source) {
-                    newObj[key] = source[key];
+                    const typedKey = key as keyof T;
+                    newObj[typedKey] = source[typedKey] as T[keyof T];
                 }
             });
         }
-        return newObj;
+        return newObj as T;
     }
 
     /**
@@ -319,9 +319,8 @@ export class MiscUtils {
      * @param obj
      * @param source
      */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    static assignObjFully(obj: any, source: any): any {
-        const newObj = Object.assign(obj, JSON.parse(JSON.stringify(source)));
+    static assignObjFully<T extends object>(obj: T, source: unknown): T {
+        const newObj = Object.assign(obj, JSON.parse(JSON.stringify(source)) as object);
         return newObj;
     }
 
@@ -343,8 +342,7 @@ export class MiscUtils {
      *
      * @param {any[]} array
      */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    static shuffle(array: any[]) {
+    static shuffle<T>(array: T[]): void {
         for (let i = array.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [array[i], array[j]] = [array[j], array[i]];
@@ -364,6 +362,7 @@ export class MiscUtils {
         try {
             new Notice(message, duration);
         } catch (error) {
+            console.debug(message);
         }
     }
 }
@@ -414,8 +413,7 @@ export const isVersionNewerThanOther = (version: string, otherVersion: string): 
     }
 };
 
-// eslint-disable-next-line @typescript-eslint/ban-types
-export const errorlog = (data: {}) => {
+export const errorlog = (data: object): void => {
     console.error({ plugin: "Spaced-rep-recall:", ...data });
 };
 
@@ -426,19 +424,20 @@ export const debug = (functionname: string, ...data: unknown[]) => {
         data = data.slice(1);
     }
     const msg = { plugin: "SRR", func: functionname, ...data };
+    console.debug("plugin: SRR, func: " + functionname + "\t" + JSON.stringify(data));
     if (Platform.isMobile) {
         MiscUtils.notice(JSON.stringify(msg), duration);
     }
 };
 
 /**
- * target: 当前对象的原型，假设 TestClass 是对象，那么 target 就是 TestClass.prototype
+ * target: 瑜版挸澧犵€电钖勯惃鍕斧閸ㄥ绱濋崑鍥啎 TestClass 閺勵垰顕挒鈽呯礉闁絼绠?target 鐏忚鲸妲?TestClass.prototype
  *
- * propertyKey: 方法的名称
+ * propertyKey: 閺傝纭堕惃鍕倳缁?
  *
- * descriptor: 方法的属性描述符，即 Object.getOwnPropertyDescriptor(TestClass.prototype, propertyKey)
+ * descriptor: 閺傝纭堕惃鍕潣閹勫伎鏉╂壆顑侀敍灞藉祮 Object.getOwnPropertyDescriptor(TestClass.prototype, propertyKey)
  *
- * 链接：https://juejin.cn/post/7059737328394174501
+ * 闁剧偓甯撮敍姝╰tps://juejin.cn/post/7059737328394174501
  * @returns
  */
 export const logExecutionTime = () => {
@@ -449,7 +448,7 @@ export const logExecutionTime = () => {
     ) {
         const originalFunc = propertyDescriptor.value;
 
-        // 修改原有function的定义
+        // 娣囶喗鏁奸崢鐔告箒function閻ㄥ嫬鐣炬稊?
         propertyDescriptor.value = async function (...args: unknown[]) {
             // const startTime = new Date().getTime();
             const startTime = performance.now();

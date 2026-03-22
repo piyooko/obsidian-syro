@@ -793,26 +793,26 @@ test("Test not parsing 'cards' in codeblocks", () => {
 
 describe("Parser debug messages", () => {
     test("Messages disabled", () => {
-        // replace console error log with an empty mock function
-        const logSpy = jest.spyOn(global.console, "log").mockImplementation(() => {});
+        // replace console debug log with an empty mock function
+        const logSpy = jest.spyOn(global.console, "debug").mockImplementation(() => {});
         setDebugParser(false);
 
         parse("", parserOptions);
         expect(logSpy).toHaveBeenCalledTimes(0);
 
-        // restore original console error log
+        // restore original console debug log
         logSpy.mockRestore();
     });
 
     test("Messages enabled", () => {
-        // replace console error log with an empty mock function
-        const logSpy = jest.spyOn(global.console, "log").mockImplementation(() => {});
+        // replace console debug log with an empty mock function
+        const logSpy = jest.spyOn(console, "debug").mockImplementation(() => {});
         setDebugParser(true);
 
         parse("", parserOptions);
         expect(logSpy).toHaveBeenCalled();
 
-        // restore original console error log
+        // restore original console debug log
         logSpy.mockRestore();
     });
 });

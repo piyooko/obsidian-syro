@@ -1,10 +1,10 @@
 /**
- * [旧 UI 层 / 桥接层：Obsidian 原生 API 与 React 的混合地带] [桥接] 将新的 React 设置面板挂载到 Obsidian 设置页。
+ * [闁?UI 閻?/ 婵℃ぜ鍎茬敮瀵镐沪閸岋妇绐桹bsidian 闁告鍠撻弫?API 濞?React 闁汇劌瀚拹鈺呭触閸繃鍕鹃悽顖ｆ碀 [婵℃ぜ鍎茬敮纰?閻忓繐妫欓弻濠囨儍?React 閻犱礁澧介悿鍡涙閵忊剝绶查柟绋垮€藉ù鍥礆?Obsidian 閻犱礁澧介悿鍡樸亜閻愬厜鍋?
  */
 /**
- * 设置面板 (React 版本)
+ * 閻犱礁澧介悿鍡涙閵忊剝绶?(React 闁绘鐗婂﹢?
  *
- * 使用 React 组件替代原有的 Obsidian 设置 API
+ * 濞达綀娉曢弫?React 缂備礁瀚▎銏ゅ即婢剁鏁╅柛妯煎枑濠€渚€鎯?Obsidian 閻犱礁澧介悿?API
  */
 import { App, PluginSettingTab } from "obsidian";
 import React from "react";
@@ -17,12 +17,21 @@ import ConfirmModal from "src/ui/modals/confirm";
 import { UISettingsState } from "src/ui/types/settingsTypes";
 import { applySettingsUpdate } from "./applySettingsUpdate";
 
-// 防抖动函数：确保用户连续输入时不会频繁触发保存操作
+type RedrawableView = {
+    redraw: () => void;
+};
+
+function isRedrawableView(view: unknown): view is RedrawableView {
+    return typeof view === "object" && view !== null && "redraw" in view && typeof view.redraw === "function";
+}
+
+
+// 闂傚啫寮舵慨鍫ュ礉閵娿儱姣愰柡浣稿簻缁辨壆娑甸鑽ょ闁活潿鍔嶉崺娑欐交閻愮數鏁鹃弶鍫熸尭閸欏棝寮張鐢电憹濞村吋宀搁。鍓佹崲娴ｅ彨鏇㈠矗閹存粎绠介悗娑櫳戦幖閿嬫媴?
 
 /**
- * SRSettingTab 类 (设置面板)
+ * SRSettingTab 缂?(閻犱礁澧介悿鍡涙閵忊剝绶?
  *
- * 使用 React 组件渲染现代化设置界面
+ * 濞达綀娉曢弫?React 缂備礁瀚▎銏犮€掗崣澶屽帬闁绘粓顣﹂崬顒勫礌閺嶎剦鍟庣紓鍐惧枤閺咁偊妫?
  */
 export class SRSettingTab extends PluginSettingTab {
     private plugin: SRPlugin;
@@ -34,7 +43,7 @@ export class SRSettingTab extends PluginSettingTab {
     }
 
     /**
-     * 显示设置页内容
+     * 闁哄嫬澧介妵姘辨媼閸撗呮瀭濡炪倝娼ч崬瀵糕偓?
      */
     display(): void {
         const { containerEl } = this;
@@ -42,14 +51,14 @@ export class SRSettingTab extends PluginSettingTab {
         containerEl.empty();
         containerEl.addClass("sr-settings-container");
 
-        // 创建 React 挂载点
+        // 闁告帗绋戠紓?React 闁圭鍊藉ù鍥倷?
         const reactContainer = containerEl.createDiv({ cls: "sr-settings-panel" });
         this.root = createRoot(reactContainer);
 
-        // 获取当前设置并转换为 UI 状态
+        // 闁兼儳鍢茶ぐ鍥亹閹惧啿顤呴悹浣稿⒔閻ゅ棝鐛幆鐗堢ギ闁硅婢€鐠?UI 闁绘鍩栭埀?
         const uiSettings = settingsToUIState(this.plugin.data.settings);
 
-        // 渲染 React 组件
+        // 婵炴挸寮堕悡?React 缂備礁瀚▎?
         this.root.render(
             React.createElement(EmbeddedSettingsPanel, {
                 settings: uiSettings,
@@ -60,30 +69,26 @@ export class SRSettingTab extends PluginSettingTab {
     }
 
     /**
-     * 处理设置变更
+     * 濠㈣泛瀚幃濠勬媼閸撗呮瀭闁告瑦蓱濞?
      */
     private handleSettingsChange(newUISettings: UISettingsState): void {
         const previousSettings = this.plugin.data.settings;
         const mergedSettings = mergeUIStateToSettings(previousSettings, newUISettings);
 
-        // 立即更新运行时设置，保证紧接着的手动同步按新规则生效。
         this.plugin.data.settings = mergedSettings;
         this.plugin.markCardCaptureSettingsChange(previousSettings, mergedSettings);
 
-        // 使用防抖保存
-        applySettingsUpdate(async () => {
-            await this.plugin.savePluginData();
+        applySettingsUpdate(() => {
+            void this.plugin.savePluginData();
 
-            // 实时更新状态栏样式
             this.plugin.updateStatusBarStyles();
             this.plugin.updateStatusBarVisibility();
             this.plugin.updateStatusBar();
 
-            // 实时刷新笔记复习侧边栏
             const leaves = this.app.workspace.getLeavesOfType("react-review-queue-list-view");
             for (const leaf of leaves) {
-                if (leaf.view && typeof (leaf.view as any).redraw === "function") {
-                    (leaf.view as any).redraw();
+                if (isRedrawableView(leaf.view)) {
+                    leaf.view.redraw();
                 }
             }
 
@@ -105,10 +110,10 @@ export class SRSettingTab extends PluginSettingTab {
     }
 
     /**
-     * 隐藏/销毁设置页
+     * 闂傚懏鍔樺Λ?闂佸簱鍋撴慨锝勬祰椤旀洜绱旈鈧妴?
      */
     hide(): void {
-        // 卸载 React 组件
+        // 闁告鐡曞ù?React 缂備礁瀚▎?
         if (this.root) {
             this.root.unmount();
             this.root = null;

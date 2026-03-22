@@ -407,7 +407,7 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                     <button type="button" className="mod-muted" onClick={onClose}>
                         {t("CANCEL")}
                     </button>
-                    <button type="button" className="mod-cta" onClick={handleSave}>
+                    <button type="button" className="mod-cta" onClick={() => void handleSave()}>
                         {t("DECK_OPTIONS_BTN_SAVE")}
                     </button>
                 </div>

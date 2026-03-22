@@ -50,7 +50,7 @@ function findMathBlocks(doc: string): MathBlock[] {
     }
 
     // 行内公式 $...$
-    const inlineRegex = /(?<!\$)\$(?!\$)([^\$\n]+)\$(?!\$)/g;
+    const inlineRegex = /(?<!\$)\$(?!\$)([^$\n]+)\$(?!\$)/g;
     while ((match = inlineRegex.exec(doc)) !== null) {
         const from = match.index;
         const to = match.index + match[0].length;
@@ -75,16 +75,13 @@ function createCustomMathContainer(latex: string, isBlock: boolean): HTMLElement
     const finalLatex = isBlock ? `\\displaystyle ${transformedLatex}` : transformedLatex;
 
     const container = renderMath(finalLatex, false);
-    finishRenderMath();
+    void finishRenderMath();
 
     container.classList.add("sr-cloze-math-custom");
     container.setAttribute("data-sr-cloze", "true");
 
     if (isBlock) {
-        container.style.display = "block";
-        container.style.textAlign = "center";
-        container.style.width = "100%";
-        container.style.margin = "1em 0";
+        container.addClass("sr-cloze-math-custom--block");
     }
 
     return container;
@@ -130,7 +127,7 @@ class LatexClozeDOMPlugin {
         //    Obsidian 用 span.math 包裹 mjx-container
         const mathElements = Array.from(
             this.view.dom.querySelectorAll(".cm-content .math"),
-        ) as HTMLElement[];
+        );
 
         for (const mathSpan of mathElements) {
             // 如果里面的 mjx-container 已经被我们处理过，直接跳过

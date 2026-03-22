@@ -1,19 +1,19 @@
-/**
- * 这个文件主要是干什么的：
- * [算法层] 插件主要/早期的默认调度算法实现。
- * 逻辑类似于 SM-2/Anki，但可能包含了一些插件特定的调整（如 `lapsesIntervalChange` 等参数）。
+﻿/**
+ * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
+ * [绠楁硶灞俔 鎻掍欢涓昏/鏃╂湡鐨勯粯璁よ皟搴︾畻娉曞疄鐜般€?
+ * 閫昏緫绫讳技浜?SM-2/Anki锛屼絾鍙兘鍖呭惈浜嗕竴浜涙彃浠剁壒瀹氱殑璋冩暣锛堝 `lapsesIntervalChange` 绛夊弬鏁帮級銆?
  *
- * 它在项目中属于：算法层 (Algorithms) / 实现 (Implementation)
+ * 瀹冨湪椤圭洰涓睘浜庯細绠楁硶灞?(Algorithms) / 瀹炵幇 (Implementation)
  *
- * 它会用到哪些文件：
+ * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
  * 1. src/algorithms/algorithms.ts
- * 2. src/algorithms/balance/balance.ts (负载均衡)
+ * 2. src/algorithms/balance/balance.ts (璐熻浇鍧囪　)
  *
- * 哪些文件会用到它：
+ * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
  * 1. src/algorithms/algorithms_switch.ts
  */
 /**
- * [算法层：负责计算下一次复习的时间、间隔和难度] [遗留/核心] 插件最早期的默认调度逻辑，可能与 anki.ts 有重叠。
+ * [绠楁硶灞傦細璐熻矗璁＄畻涓嬩竴娆″涔犵殑鏃堕棿銆侀棿闅斿拰闅惧害] [閬楃暀/鏍稿績] 鎻掍欢鏈€鏃╂湡鐨勯粯璁よ皟搴﹂€昏緫锛屽彲鑳戒笌 anki.ts 鏈夐噸鍙犮€?
  */
 import { Notice, Setting } from "obsidian";
 
@@ -118,7 +118,7 @@ export class DefaultAlgorithm extends SrsAlgorithm {
         const due = item.nextReview;
         const now: number = Date.now();
         const delayBeforeReview = due === 0 ? 0 : now - due; //just in case.
-        // console.log("item.data:", item.data);
+        // console.debug("item.data:", item.data);
         // const dueDatesNotesorCards = this.getDueDates(item.itemType);
 
         const intvls: number[] = [];
@@ -142,13 +142,13 @@ export class DefaultAlgorithm extends SrsAlgorithm {
 
     onSelection(item: RepetitionItem, optionStr: string, repeat: boolean): ReviewResult {
         const data = item.data as Sm2Data;
-        // console.log("item.data:", item.data);
+        // console.debug("item.data:", item.data);
 
         const response = Sm2Options.indexOf(optionStr) as ReviewResponse;
 
         let correct = true;
         if (repeat) {
-            if (response < 1) {
+            if (response === ReviewResponse.Reset) {
                 correct = false;
             } else {
                 correct = true;
@@ -170,7 +170,7 @@ export class DefaultAlgorithm extends SrsAlgorithm {
 
         const nextReview = schedObj.interval;
         data.ease = Math.round(schedObj.ease);
-        if (response < 1) {
+        if (response === ReviewResponse.Reset) {
             data.iteration = 1;
             data.lastInterval = nextReview;
             return {
@@ -239,7 +239,7 @@ export class DefaultAlgorithm extends SrsAlgorithm {
             .setDesc(t("BASE_EASE_DESC"))
             .addText((text) =>
                 text.setValue(this.settings.baseEase.toString()).onChange((value) => {
-                    applySettingsUpdate(async () => {
+                    applySettingsUpdate(() => {
                         const numValue: number = Number.parseInt(value);
                         if (!isNaN(numValue)) {
                             if (numValue < 130) {
@@ -260,7 +260,7 @@ export class DefaultAlgorithm extends SrsAlgorithm {
                 button
                     .setIcon("reset")
                     .setTooltip(t("RESET_DEFAULT"))
-                    .onClick(async () => {
+                    .onClick(() => {
                         applySettingsUpdate(() => {
                             this.settings.baseEase = DEFAULTSETTINGS.baseEase;
                             update(this.settings, true);
@@ -276,7 +276,7 @@ export class DefaultAlgorithm extends SrsAlgorithm {
                     .setLimits(1, 99, 1)
                     .setValue(this.settings.lapsesIntervalChange * 100)
                     .setDynamicTooltip()
-                    .onChange(async (value: number) => {
+                    .onChange((value: number) => {
                         this.settings.lapsesIntervalChange = value / 100;
                         update(this.settings);
                     }),
@@ -285,8 +285,8 @@ export class DefaultAlgorithm extends SrsAlgorithm {
                 button
                     .setIcon("reset")
                     .setTooltip(t("RESET_DEFAULT"))
-                    .onClick(async () => {
-                        applySettingsUpdate(async () => {
+                    .onClick(() => {
+                        applySettingsUpdate(() => {
                             this.settings.lapsesIntervalChange =
                                 DEFAULTSETTINGS.lapsesIntervalChange;
                             update(this.settings, true);
@@ -299,7 +299,7 @@ export class DefaultAlgorithm extends SrsAlgorithm {
             .setDesc(t("EASY_BONUS_DESC"))
             .addText((text) =>
                 text.setValue((this.settings.easyBonus * 100).toString()).onChange((value) => {
-                    applySettingsUpdate(async () => {
+                    applySettingsUpdate(() => {
                         const numValue: number = Number.parseInt(value) / 100;
                         if (!isNaN(numValue)) {
                             if (numValue < 1.0) {
@@ -320,8 +320,8 @@ export class DefaultAlgorithm extends SrsAlgorithm {
                 button
                     .setIcon("reset")
                     .setTooltip(t("RESET_DEFAULT"))
-                    .onClick(async () => {
-                        applySettingsUpdate(async () => {
+                    .onClick(() => {
+                        applySettingsUpdate(() => {
                             this.settings.easyBonus = DEFAULTSETTINGS.easyBonus;
                             update(this.settings, true);
                         });
@@ -333,7 +333,7 @@ export class DefaultAlgorithm extends SrsAlgorithm {
             .setDesc(t("MAX_INTERVAL_DESC"))
             .addText((text) =>
                 text.setValue(this.settings.maximumInterval.toString()).onChange((value) => {
-                    applySettingsUpdate(async () => {
+                    applySettingsUpdate(() => {
                         const numValue: number = Number.parseInt(value);
                         if (!isNaN(numValue)) {
                             if (numValue < 1) {
@@ -354,8 +354,8 @@ export class DefaultAlgorithm extends SrsAlgorithm {
                 button
                     .setIcon("reset")
                     .setTooltip(t("RESET_DEFAULT"))
-                    .onClick(async () => {
-                        applySettingsUpdate(async () => {
+                    .onClick(() => {
+                        applySettingsUpdate(() => {
                             this.settings.maximumInterval = DEFAULTSETTINGS.maximumInterval;
                             update(this.settings, true);
                         });
@@ -370,7 +370,7 @@ export class DefaultAlgorithm extends SrsAlgorithm {
                     .setLimits(0, 100, 1)
                     .setValue(this.settings.maxLinkFactor * 100)
                     .setDynamicTooltip()
-                    .onChange(async (value: number) => {
+                    .onChange((value: number) => {
                         this.settings.maxLinkFactor = value / 100;
                         update(this.settings);
                     }),
@@ -379,8 +379,8 @@ export class DefaultAlgorithm extends SrsAlgorithm {
                 button
                     .setIcon("reset")
                     .setTooltip(t("RESET_DEFAULT"))
-                    .onClick(async () => {
-                        applySettingsUpdate(async () => {
+                    .onClick(() => {
+                        applySettingsUpdate(() => {
                             this.settings.maxLinkFactor = DEFAULTSETTINGS.maxLinkFactor;
                             update(this.settings, true);
                         });
@@ -389,3 +389,5 @@ export class DefaultAlgorithm extends SrsAlgorithm {
         return;
     }
 }
+
+

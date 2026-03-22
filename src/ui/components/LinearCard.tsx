@@ -1,20 +1,20 @@
-/** @jsxImportSource react */
+﻿/** @jsxImportSource react */
 /**
- * 线性卡片组件 (LinearCard Component)
+ * 绾挎€у崱鐗囩粍浠?(LinearCard Component)
  *
- * 这个文件是核心 UI 组件，负责渲染类似于 UIsandbox 风格的线性复习卡片界面。
- * 它在项目中属于：界面层 (UI Layer)
+ * 杩欎釜鏂囦欢鏄牳蹇?UI 缁勪欢锛岃礋璐ｆ覆鏌撶被浼间簬 UIsandbox 椋庢牸鐨勭嚎鎬у涔犲崱鐗囩晫闈€?
+ * 瀹冨湪椤圭洰涓睘浜庯細鐣岄潰灞?(UI Layer)
  *
- * 它依赖于：
- * - src/ui/styles/linear-card.css (样式定义)
- * - src/ui/components/CardEditorView (卡片编辑器)
- * - src/ui/components/CardDebugModal (调试模态框)
+ * 瀹冧緷璧栦簬锛?
+ * - src/ui/styles/linear-card.css (鏍峰紡瀹氫箟)
+ * - src/ui/components/CardEditorView (鍗＄墖缂栬緫鍣?
+ * - src/ui/components/CardDebugModal (璋冭瘯妯℃€佹)
  *
- * 它主要实现的功能：
- * - 显示问题和答案（支持 Markdown 和代码块高亮）
- * - 提供评分按钮（重来/较难/记得/简单）
- * - 提供更多选项菜单（撤销/编辑/推迟/删除等）
- * - 响应式设计，适配桌面和移动端
+ * 瀹冧富瑕佸疄鐜扮殑鍔熻兘锛?
+ * - 鏄剧ず闂鍜岀瓟妗堬紙鏀寔 Markdown 鍜屼唬鐮佸潡楂樹寒锛?
+ * - 鎻愪緵璇勫垎鎸夐挳锛堥噸鏉?杈冮毦/璁板緱/绠€鍗曪級
+ * - 鎻愪緵鏇村閫夐」鑿滃崟锛堟挙閿€/缂栬緫/鎺ㄨ繜/鍒犻櫎绛夛級
+ * - 鍝嶅簲寮忚璁★紝閫傞厤妗岄潰鍜岀Щ鍔ㄧ
  */
 import React, { useState, useEffect, useCallback, useRef, Fragment, ReactNode } from "react";
 import type { FC, PropsWithChildren } from "react";
@@ -37,13 +37,14 @@ import {
     Save,
 } from "lucide-react";
 import { CardDebugModal } from "./CardDebugModal";
+import type { CardDebugData } from "./CardDebugModal";
 import { CardEditorView } from "./CardEditorView";
 import type SRPlugin from "src/main";
 import "../styles/linear-card.css";
 import { t } from "src/lang/helpers";
 import { transformLatex } from "../../utils/latexTransformer";
 
-// 卡片状态类型
+// 鍗＄墖鐘舵€佺被鍨?
 export interface CardState {
     front: string;
     back: string;
@@ -70,19 +71,20 @@ interface LinearCardProps {
     renderMarkdown?: (content: string, el: HTMLElement) => Promise<void> | void;
     width?: number;
     height?: number;
-    debugInfo?: any;
+    debugInfo?: CardDebugData | null;
     cardType?: "new" | "learning" | "due";
-    /** 是否为移动端，用于应用全屏样式 */
+    /** 鏄惁涓虹Щ鍔ㄧ锛岀敤浜庡簲鐢ㄥ叏灞忔牱寮?*/
     isMobile?: boolean;
-    /** 原始 Markdown 内容，用于编辑 */
+    /** 鍘熷 Markdown 鍐呭锛岀敤浜庣紪杈?*/
     rawContent?: string;
-    /** 插件实例，用于访问 app.hotkeyManager */
+    /** 鎻掍欢瀹炰緥锛岀敤浜庤闂?app.hotkeyManager */
     plugin?: SRPlugin;
-    /** 内容更新回调 */
+    /** 鍐呭鏇存柊鍥炶皟 */
     onUpdateContent?: (text: string) => void;
 }
 
 type ToastMsg = { icon: ReactNode; text: string; id: number };
+type ResizeDirection = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 
 export const LinearCard: FC<LinearCardProps> = ({
     card,
@@ -110,14 +112,14 @@ export const LinearCard: FC<LinearCardProps> = ({
     plugin,
     onUpdateContent,
 }) => {
-    // 内部状态用于平滑调整大小
+    // 鍐呴儴鐘舵€佺敤浜庡钩婊戣皟鏁村ぇ灏?
     const [size, setSize] = useState({ width, height });
     const wrapperRef = useRef<HTMLDivElement>(null);
     const cardRef = useRef<HTMLDivElement>(null);
     const sizeRef = useRef({ width, height });
     const isResizingRef = useRef(false);
 
-    // 当 props 更新时同步（如果未在拖拽中）
+    // 褰?props 鏇存柊鏃跺悓姝ワ紙濡傛灉鏈湪鎷栨嫿涓級
     useEffect(() => {
         const nextSize = { width, height };
         sizeRef.current = nextSize;
@@ -134,24 +136,27 @@ export const LinearCard: FC<LinearCardProps> = ({
     const [currentType, setCurrentType] = useState<"new" | "learning" | "due">(cardType || "due");
     const [isFlipped, setIsFlipped] = useState(false);
 
-    // 同步 cardType prop 的变化
+    // 鍚屾 cardType prop 鐨勫彉鍖?
     useEffect(() => {
         if (cardType) {
             setCurrentType(cardType);
         }
     }, [cardType]);
 
-    // 编辑状态
+    // 缂栬緫鐘舵€?
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(rawContent);
 
-    // 同步 rawContent prop 变化
+    // 鍚屾 rawContent prop 鍙樺寲
     useEffect(() => {
         setEditText(rawContent);
     }, [rawContent]);
 
-    // Resize Logic (支持鼠标和触摸)
-    const handleResizeStart = (e: any, direction: string) => {
+    // Resize Logic (鏀寔榧犳爣鍜岃Е鎽?
+    const handleResizeStart = (
+        e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>,
+        direction: ResizeDirection,
+    ) => {
         e.preventDefault();
         e.stopPropagation();
 
@@ -169,7 +174,7 @@ export const LinearCard: FC<LinearCardProps> = ({
         const hostPaddingY =
             parseFloat(hostStyles.paddingTop || "0") + parseFloat(hostStyles.paddingBottom || "0");
 
-        // 最大边界约束 (保证卡片不超出页面)
+        // 鏈€澶ц竟鐣岀害鏉?(淇濊瘉鍗＄墖涓嶈秴鍑洪〉闈?
         const maxW = Math.max(400, host.clientWidth - hostPaddingX);
         const maxH = Math.max(300, host.clientHeight - hostPaddingY);
         const minW = 400;
@@ -216,7 +221,7 @@ export const LinearCard: FC<LinearCardProps> = ({
             currentW = Math.max(minW, Math.min(nextWidth, maxW));
             currentH = Math.max(minH, Math.min(nextHeight, maxH));
 
-            // 约束最大值
+            // 绾︽潫鏈€澶у€?
             sizeRef.current = { width: currentW, height: currentH };
             flushSize();
         };
@@ -226,7 +231,7 @@ export const LinearCard: FC<LinearCardProps> = ({
             document.removeEventListener("mouseup", handleEnd);
             document.removeEventListener("touchmove", handleMove);
             document.removeEventListener("touchend", handleEnd);
-            // 保存最终尺寸
+            // 淇濆瓨鏈€缁堝昂瀵?
             isResizingRef.current = false;
             cardRef.current?.classList.remove("sr-is-resizing");
             sizeRef.current = { width: currentW, height: currentH };
@@ -251,7 +256,7 @@ export const LinearCard: FC<LinearCardProps> = ({
         }
     }, [isFlipped]);
 
-    // 重置卡片相关的局部 UI 状态，避免切卡后残留上一张卡的菜单/提示/删除态
+    // 閲嶇疆鍗＄墖鐩稿叧鐨勫眬閮?UI 鐘舵€侊紝閬垮厤鍒囧崱鍚庢畫鐣欎笂涓€寮犲崱鐨勮彍鍗?鎻愮ず/鍒犻櫎鎬?
     useEffect(() => {
         setIsFlipped(false);
         setIsEditing(false);
@@ -274,17 +279,24 @@ export const LinearCard: FC<LinearCardProps> = ({
         }, 2000);
     }, []);
 
-    // 切换编辑模式
+    // 鍒囨崲缂栬緫妯″紡
     const toggleEditMode = useCallback(() => {
+        console.debug("[LinearCard] toggleEditMode called", {
+            isEditing,
+            plugin: !!plugin,
+            rawContent: rawContent?.substring(0, 30),
+        });
+
         if (isEditing) {
-            // 退出编辑模式
+            // 閫€鍑虹紪杈戞ā寮?
             setIsEditing(false);
-            showToast(t("UI_EXIT_EDIT_MODE"), (<Check size={14} />) as any);
+            showToast(t("UI_EXIT_EDIT_MODE"), <Check size={14} />);
         } else {
-            // 进入编辑模式
+            // 杩涘叆缂栬緫妯″紡
+            console.debug("[LinearCard] Entering edit mode, plugin:", plugin);
             setEditText(rawContent);
             setIsEditing(true);
-            setIsFlipped(true); // 确保显示背面
+            setIsFlipped(true); // 纭繚鏄剧ず鑳岄潰
             showToast(t("UI_ENTER_EDIT_MODE"), <Edit3 size={14} />);
         }
     }, [isEditing, rawContent, showToast, plugin]);
@@ -292,12 +304,17 @@ export const LinearCard: FC<LinearCardProps> = ({
     const handleAnswerInternal = useCallback(
         (rating: number) => {
             if (plugin?.data?.settings?.showRuntimeDebugMessages) {
+                console.debug("[SR Debug] handleAnswerInternal called", {
+                    rating,
+                    isDeleted,
+                    hasOnAnswer: !!onAnswer,
+                });
             }
             if (isDeleted) return;
 
-            // 不再进行乐观更新：
-            // Learn 卡片在步骤未完成时计数不变，乐观更新会导致动画先减后恢复
-            // 现在完全由后端状态驱动 UI 变化，确保数字只在真正变化时才触发动画
+            // 涓嶅啀杩涜涔愯鏇存柊锛?
+            // Learn 鍗＄墖鍦ㄦ楠ゆ湭瀹屾垚鏃惰鏁颁笉鍙橈紝涔愯鏇存柊浼氬鑷村姩鐢诲厛鍑忓悗鎭㈠
+            // 鐜板湪瀹屽叏鐢卞悗绔姸鎬侀┍鍔?UI 鍙樺寲锛岀‘淇濇暟瀛楀彧鍦ㄧ湡姝ｅ彉鍖栨椂鎵嶈Е鍙戝姩鐢?
             onAnswer?.(rating);
         },
         [isDeleted, onAnswer, plugin],
@@ -335,10 +352,10 @@ export const LinearCard: FC<LinearCardProps> = ({
         [showToast, onUndo, onOpenNote, onEditCard, onPostpone, onDelete],
     );
 
-    // 键盘快捷键
+    // 閿洏蹇嵎閿?
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            // 编辑模式下不处理复习快捷键（让编辑器自己处理）
+            // 缂栬緫妯″紡涓嬩笉澶勭悊澶嶄範蹇嵎閿紙璁╃紪杈戝櫒鑷繁澶勭悊锛?
             if (isEditing) return;
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)
                 return;
@@ -402,16 +419,16 @@ export const LinearCard: FC<LinearCardProps> = ({
         showMenu,
     ]);
 
-    // 移动端全屏 wrapper 类名
+    // 绉诲姩绔叏灞?wrapper 绫诲悕
     const wrapperClassName = isMobile
         ? "sr-linear-card-wrapper sr-fixed sr-inset-0 sr-z-50 sr-w-full sr-h-full sr-flex sr-items-center sr-justify-center"
         : "sr-linear-card-wrapper";
 
     return (
         <div className={wrapperClassName} ref={wrapperRef}>
-            {/* 移动端背景遮罩 */}
+            {/* 绉诲姩绔儗鏅伄缃?*/}
             {isMobile && <div className="sr-absolute sr-inset-0 sr-bg-black/50" />}
-            {/* Toast 容器 */}
+            {/* Toast 瀹瑰櫒 */}
             <div className="sr-toast-container">
                 <AnimatePresence>
                     {
@@ -423,15 +440,15 @@ export const LinearCard: FC<LinearCardProps> = ({
                                 exit={{ opacity: 0, scale: 0.9 }}
                                 className="sr-toast"
                             >
-                                {toast.icon as any}
+                                {toast.icon}
                                 <span>{toast.text}</span>
                             </motion.div>
-                        )) as any
+                        ))
                     }
                 </AnimatePresence>
             </div>
 
-            {/* 卡片本体 */}
+            {/* 鍗＄墖鏈綋 */}
             <motion.div
                 ref={cardRef}
                 animate={
@@ -459,7 +476,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                 {
                     (
                         <>
-                            {/* Resize Handles (支持鼠标和触摸) */}
+                            {/* Resize Handles (鏀寔榧犳爣鍜岃Е鎽? */}
                             <div
                                 className="sr-resize-handle-n"
                                 onMouseDown={(e) => handleResizeStart(e, "n")}
@@ -501,12 +518,12 @@ export const LinearCard: FC<LinearCardProps> = ({
                                 onTouchStart={(e) => handleResizeStart(e, "sw")}
                             />
 
-                            {/* 顶部高光线 */}
+                            {/* 椤堕儴楂樺厜绾?*/}
                             <div className="sr-card-highlight" />
 
                             {/* Header */}
                             <div className="sr-card-header">
-                                {/* 左侧：返回与面包屑 */}
+                                {/* 宸︿晶锛氳繑鍥炰笌闈㈠寘灞?*/}
                                 <div className="sr-header-left">
                                     {onExit && (
                                         <button
@@ -535,28 +552,22 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                 />
                                             )}
 
-                                            {breadcrumbs.map(
-                                                (crumb, index) =>
-                                                    (
-                                                        <Fragment key={index}>
-                                                            <span className="sr-breadcrumb-item">
-                                                                {crumb}
-                                                            </span>
-                                                            {index < breadcrumbs.length - 1 &&
-                                                                ((
-                                                                    <ChevronRight
-                                                                        size={10}
-                                                                        className="sr-breadcrumb-separator"
-                                                                    />
-                                                                ) as any)}
-                                                        </Fragment>
-                                                    ) as any,
-                                            )}
+                                            {breadcrumbs.map((crumb, index) => (
+                                                <Fragment key={index}>
+                                                    <span className="sr-breadcrumb-item">{crumb}</span>
+                                                    {index < breadcrumbs.length - 1 && (
+                                                        <ChevronRight
+                                                            size={10}
+                                                            className="sr-breadcrumb-separator"
+                                                        />
+                                                    )}
+                                                </Fragment>
+                                            ))}
                                         </div>
                                     )}
                                 </div>
 
-                                {/* 右侧：统计与菜单 */}
+                                {/* 鍙充晶锛氱粺璁′笌鑿滃崟 */}
                                 <div className="sr-header-right">
                                     <div className="sr-stats-panel">
                                         <StatBadge
@@ -605,95 +616,61 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                             transition={{ duration: 0.1 }}
                                                             className="sr-dropdown-menu"
                                                         >
-                                                            {
-                                                                (
-                                                                    <>
-                                                                        <MenuItem
-                                                                            onClick={() =>
-                                                                                handleMenuAction(
-                                                                                    "UNDO",
-                                                                                )
-                                                                            }
-                                                                            icon={
-                                                                                <Undo2 size={14} />
-                                                                            }
-                                                                            label={t("UI_UNDO")}
-                                                                            kbd="Ctrl+Z"
-                                                                        />
-                                                                        <div className="sr-menu-divider" />
-                                                                        <MenuItem
-                                                                            onClick={() =>
-                                                                                handleMenuAction(
-                                                                                    "OPEN",
-                                                                                )
-                                                                            }
-                                                                            icon={
-                                                                                <FileText
-                                                                                    size={14}
-                                                                                />
-                                                                            }
-                                                                            label={t(
-                                                                                "UI_OPEN_LOCATION",
-                                                                            )}
-                                                                            kbd="O"
-                                                                        />
-                                                                        <MenuItem
-                                                                            onClick={() =>
-                                                                                handleMenuAction(
-                                                                                    "INFO",
-                                                                                )
-                                                                            }
-                                                                            icon={
-                                                                                <Info size={14} />
-                                                                            }
-                                                                            label={t(
-                                                                                "UI_CARD_INFO",
-                                                                            )}
-                                                                            kbd="I"
-                                                                        />
-                                                                        <MenuItem
-                                                                            onClick={() =>
-                                                                                handleMenuAction(
-                                                                                    "POSTPONE",
-                                                                                )
-                                                                            }
-                                                                            icon={
-                                                                                <Clock size={14} />
-                                                                            }
-                                                                            label={t(
-                                                                                "UI_POSTPONE_ONE_DAY",
-                                                                            )}
-                                                                            kbd="P"
-                                                                        />
-                                                                        <div className="sr-menu-divider" />
-                                                                        <MenuItem
-                                                                            onClick={() =>
-                                                                                handleMenuAction(
-                                                                                    "DELETE",
-                                                                                )
-                                                                            }
-                                                                            icon={
-                                                                                <Trash2 size={14} />
-                                                                            }
-                                                                            label={t(
-                                                                                "UI_DELETE_CARD",
-                                                                            )}
-                                                                            intent="danger"
-                                                                            kbd="Del"
-                                                                        />
-                                                                    </>
-                                                                ) as any
-                                                            }
+                                                            <>
+                                                                <MenuItem
+                                                                    onClick={() =>
+                                                                        handleMenuAction("UNDO")
+                                                                    }
+                                                                    icon={<Undo2 size={14} />}
+                                                                    label={t("UI_UNDO")}
+                                                                    kbd="Ctrl+Z"
+                                                                />
+                                                                <div className="sr-menu-divider" />
+                                                                <MenuItem
+                                                                    onClick={() =>
+                                                                        handleMenuAction("OPEN")
+                                                                    }
+                                                                    icon={<FileText size={14} />}
+                                                                    label={t("UI_OPEN_LOCATION")}
+                                                                    kbd="O"
+                                                                />
+                                                                <MenuItem
+                                                                    onClick={() =>
+                                                                        handleMenuAction("INFO")
+                                                                    }
+                                                                    icon={<Info size={14} />}
+                                                                    label={t("UI_CARD_INFO")}
+                                                                    kbd="I"
+                                                                />
+                                                                <MenuItem
+                                                                    onClick={() =>
+                                                                        handleMenuAction("POSTPONE")
+                                                                    }
+                                                                    icon={<Clock size={14} />}
+                                                                    label={t("UI_POSTPONE_ONE_DAY")}
+                                                                    kbd="P"
+                                                                />
+                                                                <div className="sr-menu-divider" />
+                                                                <MenuItem
+                                                                    onClick={() =>
+                                                                        handleMenuAction("DELETE")
+                                                                    }
+                                                                    icon={<Trash2 size={14} />}
+                                                                    label={t("UI_DELETE_CARD")}
+                                                                    intent="danger"
+                                                                    kbd="Del"
+                                                                />
+                                                            </>
                                                         </motion.div>
                                                     </>
-                                                )) as any
+                                                ))
                                             }
                                         </AnimatePresence>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* 计时器进度条 */}
+                            {/* 璁℃椂鍣ㄨ繘搴︽潯 */}
                             <div className="sr-timer-bar-container">
                                 <AnimatePresence mode="wait">
                                     {
@@ -707,12 +684,12 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                 }}
                                                 timeExpired={timeExpired}
                                             />
-                                        )) as any
+                                        ))
                                     }
                                 </AnimatePresence>
                             </div>
 
-                            {/* 内容区域 */}
+                            {/* 鍐呭鍖哄煙 */}
                             <div
                                 className={`sr-card-content-area ${isEditing ? "sr-is-editing" : ""}`}
                             >
@@ -769,7 +746,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                 )}
                             </div>
 
-                            {/* Footer - 编辑模式下显示退出按钮 */}
+                            {/* Footer - 缂栬緫妯″紡涓嬫樉绀洪€€鍑烘寜閽?*/}
                             <div className="sr-card-footer">
                                 <AnimatePresence mode="wait" initial={false}>
                                     {
@@ -781,17 +758,13 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                 exit={{ opacity: 0, y: -5 }}
                                                 transition={{ duration: 0.1 }}
                                             >
-                                                {
-                                                    (
-                                                        <button
-                                                            onClick={toggleEditMode}
-                                                            className="sr-show-answer-btn sr-exit-edit-btn"
-                                                        >
-                                                            <Save size={16} /> 完成编辑{" "}
-                                                            <span className="sr-kbd">ESC</span>
-                                                        </button>
-                                                    ) as any
-                                                }
+                                                <button
+                                                    onClick={toggleEditMode}
+                                                    className="sr-show-answer-btn sr-exit-edit-btn"
+                                                >
+                                                    <Save size={16} /> 瀹屾垚缂栬緫{" "}
+                                                    <span className="sr-kbd">ESC</span>
+                                                </button>
                                             </motion.div>
                                         ) : !isFlipped ? (
                                             <motion.div
@@ -801,20 +774,16 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                 exit={{ opacity: 0, y: -5 }}
                                                 transition={{ duration: 0.1 }}
                                             >
-                                                {
-                                                    (
-                                                        <button
-                                                            onClick={() => {
-                                                                setIsFlipped(true);
-                                                                onShowAnswer?.();
-                                                            }}
-                                                            className="sr-show-answer-btn"
-                                                        >
-                                                            <Eye size={16} /> {t("SHOW_ANSWER")}{" "}
-                                                            <span className="sr-kbd">SPACE</span>
-                                                        </button>
-                                                    ) as any
-                                                }
+                                                <button
+                                                    onClick={() => {
+                                                        setIsFlipped(true);
+                                                        onShowAnswer?.();
+                                                    }}
+                                                    className="sr-show-answer-btn"
+                                                >
+                                                    <Eye size={16} /> {t("SHOW_ANSWER")}{" "}
+                                                    <span className="sr-kbd">SPACE</span>
+                                                </button>
                                             </motion.div>
                                         ) : (
                                             <motion.div
@@ -888,15 +857,15 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                                 }
                                                             />
                                                         </>
-                                                    ) as any
+                                                    )
                                                 }
                                             </motion.div>
-                                        )) as any
+                                        ))
                                     }
                                 </AnimatePresence>
                             </div>
                         </>
-                    ) as any
+                    )
                 }
             </motion.div>
 
@@ -913,7 +882,7 @@ export const LinearCard: FC<LinearCardProps> = ({
 };
 
 // ==========================================
-// 辅助组件
+// 杈呭姪缁勪欢
 // ==========================================
 
 const TimerBar = ({
@@ -978,8 +947,8 @@ const MenuItem: React.FC<MenuItemProps> = ({ icon, label, kbd, intent = "neutral
 };
 
 // ==========================================
-// 修改后的 LinearButton - 水平布局，图标在左
-// 严格匹配 UIsandbox 结构
+// 淇敼鍚庣殑 LinearButton - 姘村钩甯冨眬锛屽浘鏍囧湪宸?
+// 涓ユ牸鍖归厤 UIsandbox 缁撴瀯
 // ==========================================
 interface LinearButtonProps {
     icon: React.ReactNode;
@@ -1100,16 +1069,16 @@ const MarkdownDisplay = ({
         const renderAsync = async () => {
             if (!ref.current) return;
 
-            // 检查是否有代码块 cloze 标记
+            // 妫€鏌ユ槸鍚︽湁浠ｇ爜鍧?cloze 鏍囪
             const clozeMatch = content.match(/<!--SR_CODE_CLOZE:(\d+):(\d+)-->/);
             let clozeLine = clozeMatch ? parseInt(clozeMatch[1]) : null;
             let startLine = clozeMatch ? parseInt(clozeMatch[2]) : 1;
 
-            // 移除标记后渲染
+            // 绉婚櫎鏍囪鍚庢覆鏌?
             let cleanContent = content.replace(/<!--SR_CODE_CLOZE:\d+:\d+-->\n?/, "");
             cleanContent = normalizeSrMarkers(cleanContent);
 
-            // 【增强】：如果没有显式标记，但内容包含代码块和占位符，自动检测
+            // 銆愬寮恒€戯細濡傛灉娌℃湁鏄惧紡鏍囪锛屼絾鍐呭鍖呭惈浠ｇ爜鍧楀拰鍗犱綅绗︼紝鑷姩妫€娴?
             const hasCodeBlock = cleanContent.includes("```") || cleanContent.includes("~~~");
             const hasPlaceholder =
                 cleanContent.includes("««SR_CLOZE:") || cleanContent.includes("««SR_");
@@ -1125,25 +1094,25 @@ const MarkdownDisplay = ({
                 startLine = 1;
             }
 
-            // 【LaTeX 填空处理】在渲染前，将数学公式中的 marker 转为 LaTeX \color{} 命令
+            // 銆怢aTeX 濉┖澶勭悊銆戝湪娓叉煋鍓嶏紝灏嗘暟瀛﹀叕寮忎腑鐨?marker 杞负 LaTeX \color{} 鍛戒护
             cleanContent = preprocessMathCloze(cleanContent);
 
             if (renderMarkdown) {
-                // 1. 创建离线缓冲区
+                // 1. 鍒涘缓绂荤嚎缂撳啿鍖?
                 const buffer = document.createElement("div");
 
-                // 2. 异步渲染 Markdown 到缓冲区
+                // 2. 寮傛娓叉煋 Markdown 鍒扮紦鍐插尯
                 await renderMarkdown(cleanContent, buffer);
 
-                // 3. 同步执行所有后处理器
+                // 3. 鍚屾鎵ц鎵€鏈夊悗澶勭悊鍣?
                 postProcessMarkers(buffer);
 
-                // 如果是代码块 cloze，进行额外处理（行号、高亮等）
+                // 濡傛灉鏄唬鐮佸潡 cloze锛岃繘琛岄澶栧鐞嗭紙琛屽彿銆侀珮浜瓑锛?
                 if (clozeLine !== null || (hasCodeBlock && hasPlaceholder)) {
                     postProcessCodeBlock(buffer, clozeLine || 1, startLine);
                 }
 
-                // 4. 原子级内容替换（原子交换，消除中间态闪烁）
+                // 4. 鍘熷瓙绾у唴瀹规浛鎹紙鍘熷瓙浜ゆ崲锛屾秷闄や腑闂存€侀棯鐑侊級
                 if (ref.current) {
                     ref.current.innerHTML = "";
                     while (buffer.firstChild) {
@@ -1157,7 +1126,7 @@ const MarkdownDisplay = ({
             }
         };
 
-        renderAsync();
+        void renderAsync();
     }, [content, renderMarkdown, onRendered]);
 
     return (
@@ -1170,21 +1139,21 @@ const MarkdownDisplay = ({
 };
 
 /**
- * 预处理数学公式中的 cloze HTML 标签
+ * 棰勫鐞嗘暟瀛﹀叕寮忎腑鐨?cloze HTML 鏍囩
  *
- * 问题：question-type.ts 生成的卡片内容中，cloze 使用 HTML <span> 标签标记。
- * MathJax 无法解析 HTML 标签，导致公式渲染出乱码。
+ * 闂锛歲uestion-type.ts 鐢熸垚鐨勫崱鐗囧唴瀹逛腑锛宑loze 浣跨敤 HTML <span> 鏍囩鏍囪銆?
+ * MathJax 鏃犳硶瑙ｆ瀽 HTML 鏍囩锛屽鑷村叕寮忔覆鏌撳嚭涔辩爜銆?
  *
- * 解决：在 renderMarkdown 调用前，扫描所有 $...$ / $$...$$ 公式块，
- * 将其中的 cloze HTML 标签转换为 LaTeX \color{} 命令。
+ * 瑙ｅ喅锛氬湪 renderMarkdown 璋冪敤鍓嶏紝鎵弿鎵€鏈?$...$ / $$...$$ 鍏紡鍧楋紝
+ * 灏嗗叾涓殑 cloze HTML 鏍囩杞崲涓?LaTeX \color{} 鍛戒护銆?
  *
- * 这样 MathJax 收到的是纯 LaTeX 代码，能正确渲染带颜色的填空效果。
- * 复用了 latex-cloze-preprocessor.ts 的渲染思路。
+ * 杩欐牱 MathJax 鏀跺埌鐨勬槸绾?LaTeX 浠ｇ爜锛岃兘姝ｇ‘娓叉煋甯﹂鑹茬殑濉┖鏁堟灉銆?
+ * 澶嶇敤浜?latex-cloze-preprocessor.ts 鐨勬覆鏌撴€濊矾銆?
  */
 function preprocessMathCloze(content: string): string {
     content = normalizeSrMarkers(content);
 
-    // 快速检查：如果不包含数学定界符或 marker 标记，直接返回
+    // 蹇€熸鏌ワ細濡傛灉涓嶅寘鍚暟瀛﹀畾鐣岀鎴?marker 鏍囪锛岀洿鎺ヨ繑鍥?
     const hasMath = content.includes("$");
     const hasMarker = content.includes("««SR_");
     const hasAnkiCloze = content.includes("{{c");
@@ -1192,15 +1161,15 @@ function preprocessMathCloze(content: string): string {
 
     let result = content;
 
-    // 处理块级公式 $$...$$
+    // 澶勭悊鍧楃骇鍏紡 $$...$$
     result = result.replace(/\$\$([\s\S]*?)\$\$/g, (fullMatch, inner) => {
-        // 使用 transformLatex 替代脆弱的正则替换
-        // 在卡片复习场景下，不需要区分 activeId，因为 question-type 已经处理好了
+        // 浣跨敤 transformLatex 鏇夸唬鑴嗗急鐨勬鍒欐浛鎹?
+        // 鍦ㄥ崱鐗囧涔犲満鏅笅锛屼笉闇€瑕佸尯鍒?activeId锛屽洜涓?question-type 宸茬粡澶勭悊濂戒簡
         return `$$${transformLatex(inner, "highlight", null)}$$`;
     });
 
-    // 处理行内公式 $...$（避免匹配 $$）
-    result = result.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)\$(?!\$)/g, (fullMatch, inner) => {
+    // 澶勭悊琛屽唴鍏紡 $...$锛堥伩鍏嶅尮閰?$$锛?
+    result = result.replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g, (fullMatch, inner) => {
         return `$${transformLatex(inner, "highlight", null)}$`;
     });
 
@@ -1213,26 +1182,26 @@ function normalizeSrMarkers(text: string): string {
         .replace(/&raquo;/g, "»")
         .replace(/&#171;/g, "«")
         .replace(/&#187;/g, "»")
-        .replace(/芦芦/g, "««")
-        .replace(/禄禄/g, "»»");
+        .replace(/鑺﹁姦/g, "««")
+        .replace(/绂勭/g, "»»");
 }
 
 /**
- * 将公式中的 cloze HTML span 标签转换为 LaTeX \color{} 命令
+ * 灏嗗叕寮忎腑鐨?cloze HTML span 鏍囩杞崲涓?LaTeX \color{} 鍛戒护
  *
- * 输入：  <span class='sr-cloze-hidden'>[...]</span> + y
- * 输出：  {\color{#3b82f6}[\ldots]} + y
+ * 杈撳叆锛? <span class='sr-cloze-hidden'>[...]</span> + y
+ * 杈撳嚭锛? {\color{#3b82f6}[\ldots]} + y
  *
- * 输入：  <span class='sr-cloze-shown'>x^2</span> + y
- * 输出：  {\color{#60a5fa}x^2} + y
+ * 杈撳叆锛? <span class='sr-cloze-shown'>x^2</span> + y
+ * 杈撳嚭锛? {\color{#60a5fa}x^2} + y
  */
 
 /**
- * 全局后处理器：将所有标记替换为带样式的 HTML
- * 运行在 Markdown 渲染之后，确保标记不会被 Obsidian 转义
+ * 鍏ㄥ眬鍚庡鐞嗗櫒锛氬皢鎵€鏈夋爣璁版浛鎹负甯︽牱寮忕殑 HTML
+ * 杩愯鍦?Markdown 娓叉煋涔嬪悗锛岀‘淇濇爣璁颁笉浼氳 Obsidian 杞箟
  */
 function postProcessMarkers(container: HTMLElement) {
-    // 处理所有文本节点（更安全，不会破坏已有 DOM 结构）
+    // 澶勭悊鎵€鏈夋枃鏈妭鐐癸紙鏇村畨鍏紝涓嶄細鐮村潖宸叉湁 DOM 缁撴瀯锛?
     const walk = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
     let node;
     const nodesToReplace: { node: Text; fragments: (Text | HTMLElement)[] }[] = [];
@@ -1248,7 +1217,7 @@ function postProcessMarkers(container: HTMLElement) {
         let match;
 
         while ((match = regex.exec(text)) !== null) {
-            // 前面的普通文本
+            // 鍓嶉潰鐨勬櫘閫氭枃鏈?
             if (match.index > lastEnd) {
                 fragments.push(document.createTextNode(text.substring(lastEnd, match.index)));
             }
@@ -1281,7 +1250,7 @@ function postProcessMarkers(container: HTMLElement) {
         }
     }
 
-    // 执行替换
+    // 鎵ц鏇挎崲
     nodesToReplace.forEach(({ node, fragments }) => {
         const parent = node.parentNode;
         if (parent) {
@@ -1292,37 +1261,51 @@ function postProcessMarkers(container: HTMLElement) {
 }
 
 /**
- * 后处理代码块：添加行号、高亮所有 cloze 行、替换占位符
+ * 鍚庡鐞嗕唬鐮佸潡锛氭坊鍔犺鍙枫€侀珮浜墍鏈?cloze 琛屻€佹浛鎹㈠崰浣嶇
  *
- * 高亮规则：所有包含 ««SR_CLOZE:...»» 占位符的行都应高亮
- * 滚动规则：第一个高亮行滚动到视口垂直中心
+ * 楂樹寒瑙勫垯锛氭墍鏈夊寘鍚?芦芦SR_CLOZE:...禄禄 鍗犱綅绗︾殑琛岄兘搴旈珮浜?
+ * 婊氬姩瑙勫垯锛氱涓€涓珮浜婊氬姩鍒拌鍙ｅ瀭鐩翠腑蹇?
  */
 function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startLine: number) {
+    console.debug("[SR Debug] postProcessCodeBlock called");
+
     const preElements = container.querySelectorAll("pre");
+    console.debug("[SR Debug] Found pre elements:", preElements.length);
+
     if (preElements.length === 0) {
-        // 如果没有找到 pre 元素，尝试直接处理容器内容
+        // 濡傛灉娌℃湁鎵惧埌 pre 鍏冪礌锛屽皾璇曠洿鎺ュ鐞嗗鍣ㄥ唴瀹?
+        console.debug("[SR Debug] No pre elements, trying to process container directly");
+        console.debug("[SR Debug] Container innerHTML:", container.innerHTML.substring(0, 500));
         return;
     }
 
     preElements.forEach((pre, preIndex) => {
         const codeEl = pre.querySelector("code");
+        console.debug("[SR Debug] Pre", preIndex, "has code element:", !!codeEl);
+
         if (!codeEl) {
-            // 某些情况下可能没有 code 元素，直接使用 pre 的内容
+            // 鏌愪簺鎯呭喌涓嬪彲鑳芥病鏈?code 鍏冪礌锛岀洿鎺ヤ娇鐢?pre 鐨勫唴瀹?
+            console.debug("[SR Debug] No code element, using pre innerHTML");
         }
 
-        // 获取代码内容（优先使用 code 元素，否则使用 pre）
+        // 鑾峰彇浠ｇ爜鍐呭锛堜紭鍏堜娇鐢?code 鍏冪礌锛屽惁鍒欎娇鐢?pre锛?
         let codeContent = codeEl ? codeEl.innerHTML : pre.innerHTML;
-        // 先将 HTML 实体转换回 Unicode 字符（Obsidian 渲染后可能会转义）
+        console.debug("[SR Debug] Original codeContent:", codeContent.substring(0, 200));
+
+        // 鍏堝皢 HTML 瀹炰綋杞崲鍥?Unicode 瀛楃锛圤bsidian 娓叉煋鍚庡彲鑳戒細杞箟锛?
         codeContent = codeContent
             .replace(/&laquo;/g, "«")
             .replace(/&raquo;/g, "»")
             .replace(/&#171;/g, "«")
             .replace(/&#187;/g, "»");
 
-        // 记录包含占位符的行索引（用于多行高亮）
+        console.debug("[SR Debug] After entity decode:", codeContent.substring(0, 200));
+        console.debug("[SR Debug] Contains placeholder marker:", codeContent.includes("««SR_CLOZE:"));
+
+        // 璁板綍鍖呭惈鍗犱綅绗︾殑琛岀储寮曪紙鐢ㄤ簬澶氳楂樹寒锛?
         const clozeLineIndices: Set<number> = new Set();
 
-        // 先找出所有占位符所在的行（容忍内部有任何 HTML 标签碎片）
+        // 鍏堟壘鍑烘墍鏈夊崰浣嶇鎵€鍦ㄧ殑琛岋紙瀹瑰繊鍐呴儴鏈変换浣?HTML 鏍囩纰庣墖锛?
         const rawLines = codeContent.split("\n");
         rawLines.forEach((line, idx) => {
             const cleanLine = line.replace(/<[^>]+>/g, "");
@@ -1345,7 +1328,7 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
             return match;
         });
 
-        // 兼容旧格式
+        // 鍏煎鏃ф牸寮?
         codeContent = codeContent.replace(
             /««SR_CLOZE_FRONT»»/g,
             '<span class="sr-cloze-placeholder">[...]</span>',
@@ -1361,7 +1344,7 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
 
         const lines = codeContent.split("\n");
 
-        // 创建新的容器
+        // 鍒涘缓鏂扮殑瀹瑰櫒
         const wrapper = document.createElement("div");
         wrapper.className = "sr-code-block-card";
 
@@ -1370,12 +1353,12 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
 
         lines.forEach((lineContent, index) => {
             const trimmedLine = lineContent.trim();
-            // 跳过代码块开始和结束标记行
+            // 璺宠繃浠ｇ爜鍧楀紑濮嬪拰缁撴潫鏍囪琛?
             if (trimmedLine.startsWith("```") || trimmedLine.startsWith("~~~")) {
-                return; // 不显示标记行
+                return; // 涓嶆樉绀烘爣璁拌
             }
 
-            // 处理省略号行
+            // 澶勭悊鐪佺暐鍙疯
             if (trimmedLine.startsWith("// ...")) {
                 const lineDiv = document.createElement("div");
                 lineDiv.className = "sr-code-context-line sr-code-ellipsis";
@@ -1390,12 +1373,12 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
             lineDiv.className = isCloze ? "sr-code-cloze-line" : "sr-code-context-line";
             lineDiv.dataset.line = String(currentRealLine);
 
-            // 行号
+            // 琛屽彿
             const lineNumSpan = document.createElement("span");
             lineNumSpan.className = "sr-code-line-number";
             lineNumSpan.textContent = String(currentRealLine);
 
-            // 行内容
+            // 琛屽唴瀹?
             const lineContentSpan = document.createElement("span");
             lineContentSpan.className = "sr-code-line-content";
             lineContentSpan.innerHTML = lineContent || " ";
@@ -1404,21 +1387,21 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
             lineDiv.appendChild(lineContentSpan);
             wrapper.appendChild(lineDiv);
 
-            // 记录第一个高亮行用于滚动
+            // 璁板綍绗竴涓珮浜鐢ㄤ簬婊氬姩
             if (isCloze && !firstClozeDiv) {
                 firstClozeDiv = lineDiv;
             }
 
-            currentRealLine++; // 只有真实代码行才递增
+            currentRealLine++; // 鍙湁鐪熷疄浠ｇ爜琛屾墠閫掑
         });
 
-        // 替换原来的 pre
+        // 鏇挎崲鍘熸潵鐨?pre
         pre.parentNode?.replaceChild(wrapper, pre);
 
-        // 滚动到第一个 cloze 行（居中显示）
+        // 婊氬姩鍒扮涓€涓?cloze 琛岋紙灞呬腑鏄剧ず锛?
         if (firstClozeDiv) {
             setTimeout(() => {
-                (firstClozeDiv as HTMLElement).scrollIntoView({
+                (firstClozeDiv).scrollIntoView({
                     block: "center",
                     behavior: "auto",
                 });
@@ -1476,7 +1459,7 @@ const ClozeContent = ({
 }: {
     isFlipped: boolean;
     card?: CardState;
-    renderMarkdown?: (text: string, el: HTMLElement) => void;
+    renderMarkdown?: (text: string, el: HTMLElement) => Promise<void> | void;
     showOtherAnkiClozeVisual?: boolean;
     showOtherHighlightClozeVisual?: boolean;
     showOtherBoldClozeVisual?: boolean;
@@ -1508,10 +1491,10 @@ const ClozeContent = ({
         });
     }, [centerActiveCloze]);
 
-    // 检测是否为代码块类型的 Cloze（包含特殊占位符）
+    // 妫€娴嬫槸鍚︿负浠ｇ爜鍧楃被鍨嬬殑 Cloze锛堝寘鍚壒娈婂崰浣嶇锛?
     const isCodeBlockCloze = (card?.front || "").includes("««SR_CLOZE:");
 
-    // 翻面时更新容器的 class（仅用于代码块 Cloze）
+    // 缈婚潰鏃舵洿鏂板鍣ㄧ殑 class锛堜粎鐢ㄤ簬浠ｇ爜鍧?Cloze锛?
     useEffect(() => {
         if (containerRef.current) {
             const codeBlockCards = containerRef.current.querySelectorAll(".sr-code-block-card");
@@ -1525,7 +1508,7 @@ const ClozeContent = ({
         }
     }, [isFlipped]);
 
-    // 滚动到第一个填空位置
+    // 婊氬姩鍒扮涓€涓～绌轰綅缃?
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
@@ -1537,9 +1520,9 @@ const ClozeContent = ({
 
         observer.observe(container, { childList: true, subtree: true, characterData: true });
 
-                // 优先查找 cloze 占位符 class
+                // 浼樺厛鏌ユ壘 cloze 鍗犱綅绗?class
 
-                // 兼容旧格式：查找带有蓝色样式的 [...] span
+                // 鍏煎鏃ф牸寮忥細鏌ユ壘甯︽湁钃濊壊鏍峰紡鐨?[...] span
         return () => {
             observer.disconnect();
             if (frameRef.current !== null) {
@@ -1549,12 +1532,14 @@ const ClozeContent = ({
         };
     }, [card, isFlipped, scheduleCenterActiveCloze]);
 
-    // 根据是否为代码块 Cloze 选择渲染策略
-    let contentToRender = isCodeBlockCloze
-        ? (card as any)?.front || ""
+    // 鏍规嵁鏄惁涓轰唬鐮佸潡 Cloze 閫夋嫨娓叉煋绛栫暐
+    const frontContent = card?.front || "";
+    const backContent = card?.back || frontContent;
+    const contentToRender = isCodeBlockCloze
+        ? frontContent
         : isFlipped
-          ? (card as any)?.back || (card as any)?.front || ""
-          : (card as any)?.front || "";
+          ? backContent
+          : frontContent;
 
     // [Mod] Filter out other clozes if setting is disabled.
     // DOM manipulation is used to handle styles added by Obsidian's post-processors.
@@ -1649,7 +1634,7 @@ const BasicContent = ({
 }: {
     isFlipped: boolean;
     card: CardState;
-    renderMarkdown?: (text: string, el: HTMLElement) => void;
+    renderMarkdown?: (text: string, el: HTMLElement) => Promise<void> | void;
 }) => (
     <div className="sr-basic-content">
         <div>
@@ -1662,31 +1647,27 @@ const BasicContent = ({
             </div>
         </div>
         <AnimatePresence>
-            {
-                (isFlipped && (
-                    <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        transition={{ duration: 0.15, ease: "easeOut" }}
-                        className="sr-answer-section"
-                    >
-                        {
-                            (
-                                <>
-                                    <div className="sr-content-divider" />
-                                    <div className="sr-content-label">Answer</div>
-                                    <div className="sr-content-text answer">
-                                        <MarkdownDisplay
-                                            content={card.back || "Answer Content"}
-                                            renderMarkdown={renderMarkdown}
-                                        />
-                                    </div>
-                                </>
-                            ) as any
-                        }
-                    </motion.div>
-                )) as any
-            }
+            {isFlipped && (
+                <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    className="sr-answer-section"
+                >
+                    <>
+                        <div className="sr-content-divider" />
+                        <div className="sr-content-label">Answer</div>
+                        <div className="sr-content-text answer">
+                            <MarkdownDisplay
+                                content={card.back || "Answer Content"}
+                                renderMarkdown={renderMarkdown}
+                            />
+                        </div>
+                    </>
+                </motion.div>
+            )}
         </AnimatePresence>
     </div>
 );
+
+

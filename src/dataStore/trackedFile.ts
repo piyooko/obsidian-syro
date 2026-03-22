@@ -1,36 +1,36 @@
 /**
  * ============================================================================
- * 文件：TrackedFile.ts
+ * 鏂囦欢锛歍rackedFile.ts
  * ============================================================================
  *
- * 【全新架构：以指纹为核心的孔级追踪系统】
+ * 銆愬叏鏂版灦鏋勶細浠ユ寚绾逛负鏍稿績鐨勫瓟绾ц拷韪郴缁熴€?
  *
- * 这个文件是"卡片追踪"的核心，做了两件大事：
- * 1. 管理哪些文件被追踪（TrackedFile），并将文件内容拆解为最细粒度的“孔（TrackedItem）”。
- * 2. 通过"明文指纹匹配 + 局部上下文消歧"的方式，把旧的复习记录和新的孔内容对应起来。
+ * 杩欎釜鏂囦欢鏄?鍗＄墖杩借釜"鐨勬牳蹇冿紝鍋氫簡涓や欢澶т簨锛?
+ * 1. 绠＄悊鍝簺鏂囦欢琚拷韪紙TrackedFile锛夛紝骞跺皢鏂囦欢鍐呭鎷嗚В涓烘渶缁嗙矑搴︾殑鈥滃瓟锛圱rackedItem锛夆€濄€?
+ * 2. 閫氳繃"鏄庢枃鎸囩汗鍖归厤 + 灞€閮ㄤ笂涓嬫枃娑堟"鐨勬柟寮忥紝鎶婃棫鐨勫涔犺褰曞拰鏂扮殑瀛斿唴瀹瑰搴旇捣鏉ャ€?
  *
  * ============================================================================
- * 核心设计理念（与旧版的区别）：
+ * 鏍稿績璁捐鐞嗗康锛堜笌鏃х増鐨勫尯鍒級锛?
  * ============================================================================
  *
- * 1. 【孔级粒度】：
- *    以前一条记录代表“一整行/段落”（包含多个孔），现在一条记录（TrackedItem）只代表“一个孔”或“一个答案”。
- *    如果一段话有3个填空，就会生成3条独立的 TrackedItem。
+ * 1. 銆愬瓟绾х矑搴︺€戯細
+ *    浠ュ墠涓€鏉¤褰曚唬琛ㄢ€滀竴鏁磋/娈佃惤鈥濓紙鍖呭惈澶氫釜瀛旓級锛岀幇鍦ㄤ竴鏉¤褰曪紙TrackedItem锛夊彧浠ｈ〃鈥滀竴涓瓟鈥濇垨鈥滀竴涓瓟妗堚€濄€?
+ *    濡傛灉涓€娈佃瘽鏈?涓～绌猴紝灏变細鐢熸垚3鏉＄嫭绔嬬殑 TrackedItem銆?
  *
- * 2. 【明文指纹，拒绝哈希】：
- *    指纹（fingerprint）不再是压缩后的8位哈希字符，而是孔/答案的**纯明文**。
- *    例如：`卡片信{{c2::息}}` 的指纹就是 `"息"`。
- *    问答卡的指纹就是 `"答案全文"`。
+ * 2. 銆愭槑鏂囨寚绾癸紝鎷掔粷鍝堝笇銆戯細
+ *    鎸囩汗锛坒ingerprint锛変笉鍐嶆槸鍘嬬缉鍚庣殑8浣嶅搱甯屽瓧绗︼紝鑰屾槸瀛?绛旀鐨?*绾槑鏂?*銆?
+ *    渚嬪锛歚鍗＄墖淇{c2::鎭瘆}` 鐨勬寚绾瑰氨鏄?`"鎭?`銆?
+ *    闂瓟鍗＄殑鎸囩汗灏辨槸 `"绛旀鍏ㄦ枃"`銆?
  *
- * 3. 【局部上下文（Context）】：
- *    上下文不再是整个段落的前后，而是**紧贴指纹所在位置**的前50个字符和后50个字符。
- *    这使得同一行里出现两个相同的词（如两个"是"）也能被完美区分。
+ * 3. 銆愬眬閮ㄤ笂涓嬫枃锛圕ontext锛夈€戯細
+ *    涓婁笅鏂囦笉鍐嶆槸鏁翠釜娈佃惤鐨勫墠鍚庯紝鑰屾槸**绱ц创鎸囩汗鎵€鍦ㄤ綅缃?*鐨勫墠50涓瓧绗﹀拰鍚?0涓瓧绗︺€?
+ *    杩欎娇寰楀悓涓€琛岄噷鍑虹幇涓や釜鐩稿悓鐨勮瘝锛堝涓や釜"鏄?锛変篃鑳借瀹岀編鍖哄垎銆?
  *
- * 4. 【精确坐标（Span）与回退机制】：
- *    引入了 span（字符偏移量）记录指纹在文件中的精确位置，方便复习时高亮/遮罩。
- *    如果在复习时发现 span 处的文字变了（用户编辑了文件导致偏移），
- *    系统会利用 RepetitionItem（复习调度数据）中保存的 lastKnown(锚点) 重新打分，
- *    找到它现在的新位置，并自动修复 span。
+ * 4. 銆愮簿纭潗鏍囷紙Span锛変笌鍥為€€鏈哄埗銆戯細
+ *    寮曞叆浜?span锛堝瓧绗﹀亸绉婚噺锛夎褰曟寚绾瑰湪鏂囦欢涓殑绮剧‘浣嶇疆锛屾柟渚垮涔犳椂楂樹寒/閬僵銆?
+ *    濡傛灉鍦ㄥ涔犳椂鍙戠幇 span 澶勭殑鏂囧瓧鍙樹簡锛堢敤鎴风紪杈戜簡鏂囦欢瀵艰嚧鍋忕Щ锛夛紝
+ *    绯荤粺浼氬埄鐢?RepetitionItem锛堝涔犺皟搴︽暟鎹級涓繚瀛樼殑 lastKnown(閿氱偣) 閲嶆柊鎵撳垎锛?
+ *    鎵惧埌瀹冪幇鍦ㄧ殑鏂颁綅缃紝骞惰嚜鍔ㄤ慨澶?span銆?
  *
  * ============================================================================
  */
@@ -43,37 +43,37 @@ import { DEFAULT_DECKNAME } from "src/constants";
 import { Tags } from "src/tags";
 
 // ============================================================================
-// 类型定义区域
+// 绫诲瀷瀹氫箟鍖哄煙
 // ============================================================================
 
 /**
- * TrackedSpan —— 精确的物理坐标
+ * TrackedSpan 鈥斺€?绮剧‘鐨勭墿鐞嗗潗鏍?
  *
- * 用于记录该指纹在 Markdown 文件中的具体字符起止位置。
- * - 为什么要记录 block 的坐标？ 为了复习时能把整句话/整个块取出来展示。
- * - 为什么要记录 start/end Offset？ 为了在整句话里精准地把这个孔挖掉/高亮。
+ * 鐢ㄤ簬璁板綍璇ユ寚绾瑰湪 Markdown 鏂囦欢涓殑鍏蜂綋瀛楃璧锋浣嶇疆銆?
+ * - 涓轰粈涔堣璁板綍 block 鐨勫潗鏍囷紵 涓轰簡澶嶄範鏃惰兘鎶婃暣鍙ヨ瘽/鏁翠釜鍧楀彇鍑烘潵灞曠ず銆?
+ * - 涓轰粈涔堣璁板綍 start/end Offset锛?涓轰簡鍦ㄦ暣鍙ヨ瘽閲岀簿鍑嗗湴鎶婅繖涓瓟鎸栨帀/楂樹寒銆?
  */
 export interface TrackedSpan {
-    startOffset: number; // 指纹(孔)本身的起始字符索引（相对于全文件）
-    endOffset: number; // 指纹(孔)本身的结束字符索引
-    blockStartOffset: number; // 该卡片所在段落/块的起始字符索引
-    blockEndOffset: number; // 该卡片所在段落/块的结束字符索引
+    startOffset: number; // 鎸囩汗(瀛?鏈韩鐨勮捣濮嬪瓧绗︾储寮曪紙鐩稿浜庡叏鏂囦欢锛?
+    endOffset: number; // 鎸囩汗(瀛?鏈韩鐨勭粨鏉熷瓧绗︾储寮?
+    blockStartOffset: number; // 璇ュ崱鐗囨墍鍦ㄦ钀?鍧楃殑璧峰瀛楃绱㈠紩
+    blockEndOffset: number; // 璇ュ崱鐗囨墍鍦ㄦ钀?鍧楃殑缁撴潫瀛楃绱㈠紩
 }
 
 /**
- * TrackedItem —— 最细粒度的追踪单元（孔/答案）
+ * TrackedItem 鈥斺€?鏈€缁嗙矑搴︾殑杩借釜鍗曞厓锛堝瓟/绛旀锛?
  *
- * 彻底取代了旧的 CardInfo。
- * 一条 TrackedItem = 一个独立的复习实体。
+ * 褰诲簳鍙栦唬浜嗘棫鐨?CardInfo銆?
+ * 涓€鏉?TrackedItem = 涓€涓嫭绔嬬殑澶嶄範瀹炰綋銆?
  */
 export class TrackedItem {
-    fingerprint: string; // 核心：明文指纹（如 "习"、"问答卡的答案"）
-    reviewId: number; // 全局复习项 ID（-1 表示新发现的、还没进队列的新卡）
-    lineNo: number; // 所在行号（用于初步打分和定位）
-    context: string; // 局部上下文（紧贴指纹的前50 + 后50字符）
-    cardType: CardType; // 类型：CLOZE 或 QA
-    clozeId: string | null; // 仅用于 CLOZE，如 "c1"、"c2"，显示时使用，不参与匹配
-    span: TrackedSpan; // 精确的物理坐标
+    fingerprint: string; // 鏍稿績锛氭槑鏂囨寚绾癸紙濡?"涔?銆?闂瓟鍗＄殑绛旀"锛?
+    reviewId: number; // 鍏ㄥ眬澶嶄範椤?ID锛?1 琛ㄧず鏂板彂鐜扮殑銆佽繕娌¤繘闃熷垪鐨勬柊鍗★級
+    lineNo: number; // 鎵€鍦ㄨ鍙凤紙鐢ㄤ簬鍒濇鎵撳垎鍜屽畾浣嶏級
+    context: string; // 灞€閮ㄤ笂涓嬫枃锛堢揣璐存寚绾圭殑鍓?0 + 鍚?0瀛楃锛?
+    cardType: CardType; // 绫诲瀷锛欳LOZE 鎴?QA
+    clozeId: string | null; // 浠呯敤浜?CLOZE锛屽 "c1"銆?c2"锛屾樉绀烘椂浣跨敤锛屼笉鍙備笌鍖归厤
+    span: TrackedSpan; // 绮剧‘鐨勭墿鐞嗗潗鏍?
 
     constructor(
         fingerprint: string,
@@ -97,17 +97,17 @@ export class TrackedItem {
 export type CardInfo = TrackedItem;
 
 /**
- * ITrackedFile 接口（用于 JSON 序列化）
+ * ITrackedFile 鎺ュ彛锛堢敤浜?JSON 搴忓垪鍖栵級
  */
 export interface ITrackedFile {
     path: string;
-    items: Record<string, number>; // 笔记级别的复习 ID
-    trackedItems?: TrackedItem[]; // 取代了旧的 cardItems
+    items: Record<string, number>; // 绗旇绾у埆鐨勫涔?ID
+    trackedItems?: TrackedItem[]; // 鍙栦唬浜嗘棫鐨?cardItems
     tags: string[];
 }
 
 // ============================================================================
-// TrackedFile 类 —— 文件追踪的核心类
+// TrackedFile 绫?鈥斺€?鏂囦欢杩借釜鐨勬牳蹇冪被
 // ============================================================================
 
 export class TrackedFile implements ITrackedFile {
@@ -123,7 +123,7 @@ export class TrackedFile implements ITrackedFile {
         tf.setTracked(type, dname);
         tf.items = data.items || { file: -1 };
 
-        // 实例化 TrackedItems
+        // 瀹炰緥鍖?TrackedItems
         if (data.trackedItems) {
             tf.trackedItems = data.trackedItems.map(
                 (item) =>
@@ -157,6 +157,7 @@ export class TrackedFile implements ITrackedFile {
     rename(newPath: string) {
         const old = this.path;
         this.path = newPath;
+        console.debug(`[TrackedFile] Renamed: ${old} -> ${newPath}`);
     }
 
     get hasCards() {
@@ -172,7 +173,7 @@ export class TrackedFile implements ITrackedFile {
     }
 
     get isTrackedNote(): boolean {
-        return this.tags?.[0] === RPITEMTYPE.NOTE;
+        return String(this.tags?.[0]) === String(RPITEMTYPE.NOTE);
     }
 
     get itemIDs(): number[] {
@@ -199,33 +200,33 @@ export class TrackedFile implements ITrackedFile {
     }
 
     /**
-     * 获取指定行号和 holeId 的 TrackedItem（新架构用于映射复习对象的入口）
+     * 鑾峰彇鎸囧畾琛屽彿鍜?holeId 鐨?TrackedItem锛堟柊鏋舵瀯鐢ㄤ簬鏄犲皠澶嶄範瀵硅薄鐨勫叆鍙ｏ級
      */
     getTrackedItem(lineNo: number, clozeId: string): TrackedItem | undefined {
         if (!this.trackedItems) return undefined;
-        // 兼容处理：对于旧数据或没有孔位的问答卡，它的 clozeId 可能是 null 或 undefined。统一看作 "c1"
+        // 鍏煎澶勭悊锛氬浜庢棫鏁版嵁鎴栨病鏈夊瓟浣嶇殑闂瓟鍗★紝瀹冪殑 clozeId 鍙兘鏄?null 鎴?undefined銆傜粺涓€鐪嬩綔 "c1"
         const normCloze = (id: string | null | undefined) =>
             id === null || id === undefined ? "c1" : id;
         const targetCloze = normCloze(clozeId);
 
-        // 先精确匹配：行号 + clozeId
+        // 鍏堢簿纭尮閰嶏細琛屽彿 + clozeId
         let item = this.trackedItems.find(
             (i) => i.lineNo === lineNo && normCloze(i.clozeId) === targetCloze,
         );
 
-        // 如果存在轻微错行，允许一定范围的弹性查找
-        // 关键修复：弹性层查找必须严格匹配 clozeId，否则同一个问答题的多个挖空请求会全挤到同一个 reviewId 上（因为距离相等）
+        // 濡傛灉瀛樺湪杞诲井閿欒锛屽厑璁镐竴瀹氳寖鍥寸殑寮规€ф煡鎵?
+        // 鍏抽敭淇锛氬脊鎬у眰鏌ユ壘蹇呴』涓ユ牸鍖归厤 clozeId锛屽惁鍒欏悓涓€涓棶绛旈鐨勫涓寲绌鸿姹備細鍏ㄦ尋鍒板悓涓€涓?reviewId 涓婏紙鍥犱负璺濈鐩哥瓑锛?
         if (!item) {
             const candidates = this.trackedItems.filter(
                 (i) => normCloze(i.clozeId) === targetCloze,
             );
             if (candidates.length > 0) {
-                // 寻找距离最近的
+                // 瀵绘壘璺濈鏈€杩戠殑
                 item = candidates.reduce((a, b) =>
                     Math.abs(a.lineNo - lineNo) < Math.abs(b.lineNo - lineNo) ? a : b,
                 );
 
-                // 为了防止多重挖空时的恶性合并，如果找到的对象距离目标行太远（如 > 5 行），拒绝吸附
+                // 涓轰簡闃叉澶氶噸鎸栫┖鏃剁殑鎭舵€у悎骞讹紝濡傛灉鎵惧埌鐨勫璞¤窛绂荤洰鏍囪澶繙锛堝 > 5 琛岋級锛屾嫆缁濆惛闄?
                 if (item && Math.abs(item.lineNo - lineNo) > 5) {
                     item = undefined;
                 }
@@ -235,20 +236,20 @@ export class TrackedFile implements ITrackedFile {
     }
 
     /**
-     * 【核心入口】同步文件中的所有孔级记录
+     * 銆愭牳蹇冨叆鍙ｃ€戝悓姝ユ枃浠朵腑鐨勬墍鏈夊瓟绾ц褰?
      *
-     * 1. 解析文件获取新数据 -> expandToCandidates 将段落拆分成一个个的孔
-     * 2. 旧记录 vs 新候选人 -> matchItems 执行 指纹匹配+打分消歧
-     * 3. 计算删除了哪些复习记录
+     * 1. 瑙ｆ瀽鏂囦欢鑾峰彇鏂版暟鎹?-> expandToCandidates 灏嗘钀芥媶鍒嗘垚涓€涓釜鐨勫瓟
+     * 2. 鏃ц褰?vs 鏂板€欓€変汉 -> matchItems 鎵ц 鎸囩汗鍖归厤+鎵撳垎娑堟
+     * 3. 璁＄畻鍒犻櫎浜嗗摢浜涘涔犺褰?
      *
      * @returns { hasChange, removedIds }
      */
     syncNoteCardsIndex(
         fileText: string,
         settings: SRSettings,
-        callback?: (cardText: string, cardInfo: any) => void,
+        callback?: (cardText: string, cardInfo: unknown) => void,
     ): { hasChange: boolean; removedIds: number[] } {
-        // 1. 记录同步前的有效复习 ID
+        // 1. 璁板綍鍚屾鍓嶇殑鏈夋晥澶嶄範 ID
         const oldIdSet = new Set<number>();
         if (this.trackedItems) {
             this.trackedItems.forEach((item) => {
@@ -256,23 +257,23 @@ export class TrackedFile implements ITrackedFile {
             });
         }
 
-        // 2. 调用 parser.ts 解析（获取段落级的卡片结构）
-        // 这里沿用旧逻辑，屏蔽了 HTML 调度注释
+        // 2. 璋冪敤 parser.ts 瑙ｆ瀽锛堣幏鍙栨钀界骇鐨勫崱鐗囩粨鏋勶級
+        // 杩欓噷娌跨敤鏃ч€昏緫锛屽睆钄戒簡 HTML 璋冨害娉ㄩ噴
         const parsedQuestions: ParsedQuestionInfo[] = parse(fileText, settings);
 
-        // 3. 将“段落级”结果，展开为“孔级”的候选者 (Candidate Items)
+        // 3. 灏嗏€滄钀界骇鈥濈粨鏋滐紝灞曞紑涓衡€滃瓟绾р€濈殑鍊欓€夎€?(Candidate Items)
         const candidates = expandToCandidates(parsedQuestions, fileText, settings);
 
         if (!this.trackedItems) this.trackedItems = [];
         const oldCardCount = this.trackedItems.length;
 
-        // 4. 执行核心匹配算法：旧记录 与 新候选 进行匹配
+        // 4. 鎵ц鏍稿績鍖归厤绠楁硶锛氭棫璁板綍 涓?鏂板€欓€?杩涜鍖归厤
         this.trackedItems = matchItems(this.trackedItems, candidates);
 
-        // 按行号排序，保持物理顺序
+        // 鎸夎鍙锋帓搴忥紝淇濇寔鐗╃悊椤哄簭
         this.trackedItems.sort((a, b) => a.lineNo - b.lineNo);
 
-        // 5. 计算被删除的 ID（以前有，现在匹配不上了 = 幽灵卡/已被删）
+        // 5. 璁＄畻琚垹闄ょ殑 ID锛堜互鍓嶆湁锛岀幇鍦ㄥ尮閰嶄笉涓婁簡 = 骞界伒鍗?宸茶鍒狅級
         const newIdSet = new Set<number>();
         this.trackedItems.forEach((item) => {
             if (item.reviewId >= 0) newIdSet.add(item.reviewId);
@@ -297,7 +298,7 @@ export class TrackedFile implements ITrackedFile {
             });
         }
 
-        // 发现新卡（reviewId == -1）或数量变化或有删除，都算有变化
+        // 鍙戠幇鏂板崱锛坮eviewId == -1锛夋垨鏁伴噺鍙樺寲鎴栨湁鍒犻櫎锛岄兘绠楁湁鍙樺寲
         const hasNewCards = this.trackedItems.some((i) => i.reviewId === -1);
         const hasChange =
             oldCardCount !== this.trackedItems.length || hasNewCards || removedIds.length > 0;
@@ -307,11 +308,11 @@ export class TrackedFile implements ITrackedFile {
 }
 
 // ============================================================================
-// 第一阶段：将解析结果展开为孔级（Candidate）
+// 绗竴闃舵锛氬皢瑙ｆ瀽缁撴灉灞曞紑涓哄瓟绾э紙Candidate锛?
 // ============================================================================
 
 /**
- * 将解析出的段落级 Question 展开为一个个独立的“孔候选者”
+ * 灏嗚В鏋愬嚭鐨勬钀界骇 Question 灞曞紑涓轰竴涓釜鐙珛鐨勨€滃瓟鍊欓€夎€呪€?
  */
 function expandToCandidates(
     parsedQuestions: ParsedQuestionInfo[],
@@ -320,14 +321,14 @@ function expandToCandidates(
 ): TrackedItem[] {
     const candidates: TrackedItem[] = [];
 
-    // 检测换行符长度以精确计算偏移
+    // 妫€娴嬫崲琛岀闀垮害浠ョ簿纭绠楀亸绉?
     const lineBreakLen = fileText.includes("\r\n") ? 2 : 1;
     const lines = fileText.split(/\r?\n/);
 
     for (const question of parsedQuestions) {
         if (question.text.includes(settings.editLaterTag)) continue;
 
-        // 计算这个块（段落）的精确起始和结束偏移量
+        // 璁＄畻杩欎釜鍧楋紙娈佃惤锛夌殑绮剧‘璧峰鍜岀粨鏉熷亸绉婚噺
         let blockStartOffset = 0;
         for (let i = 0; i < question.firstLineNum && i < lines.length; i++) {
             blockStartOffset += lines[i].length + lineBreakLen;
@@ -338,36 +339,36 @@ function expandToCandidates(
         }
         if (blockEndOffset > blockStartOffset) blockEndOffset -= lineBreakLen;
 
-        const cleanText = QuestionText.splitText(question.text, settings)[1]; // 剥离调度信息
+        const cleanText = QuestionText.splitText(question.text, settings)[1]; // 鍓ョ璋冨害淇℃伅
 
         if (question.cardType === CardType.Cloze || question.cardType === CardType.AnkiCloze) {
-            // 提取所有填空孔。假设内部辅助函数能提取出孔的内容和局部偏移
+            // 鎻愬彇鎵€鏈夊～绌哄瓟銆傚亣璁惧唴閮ㄨ緟鍔╁嚱鏁拌兘鎻愬彇鍑哄瓟鐨勫唴瀹瑰拰灞€閮ㄥ亸绉?
             const holes = extractHolesWithOffsets(cleanText, settings);
 
             for (const hole of holes) {
-                // 计算该孔在全文中的绝对偏移
+                // 璁＄畻璇ュ瓟鍦ㄥ叏鏂囦腑鐨勭粷瀵瑰亸绉?
                 const startOffset = blockStartOffset + hole.localStart;
                 const endOffset = blockStartOffset + hole.localEnd;
 
                 candidates.push(
                     new TrackedItem(
-                        hole.answerText, // 指纹：孔的明文内容
+                        hole.answerText, // 鎸囩汗锛氬瓟鐨勬槑鏂囧唴瀹?
                         question.firstLineNum,
-                        extractContext(fileText, startOffset, endOffset), // 紧贴孔的前后 50 字符
+                        extractContext(fileText, startOffset, endOffset), // 绱ц创瀛旂殑鍓嶅悗 50 瀛楃
                         CardType.Cloze,
                         { startOffset, endOffset, blockStartOffset, blockEndOffset },
                         hole.clozeId,
-                        -1, // 新候选者尚未分配 reviewId
+                        -1, // 鏂板€欓€夎€呭皻鏈垎閰?reviewId
                     ),
                 );
             }
         } else {
-            // 问答卡 (QA / Reversed QA)
-            // 指纹直接使用“答案全文”
+            // 闂瓟鍗?(QA / Reversed QA)
+            // 鎸囩汗鐩存帴浣跨敤鈥滅瓟妗堝叏鏂団€?
             const answerText = extractQAAnswer(cleanText, settings, question.cardType);
 
-            // 为了简化，问答卡的孔坐标就设为整个块的后半部分或整体
-            // (如果需要高亮整个答案，可以在这里做精准查找答案所在的 localOffset)
+            // 涓轰簡绠€鍖栵紝闂瓟鍗＄殑瀛斿潗鏍囧氨璁句负鏁翠釜鍧楃殑鍚庡崐閮ㄥ垎鎴栨暣浣?
+            // (濡傛灉闇€瑕侀珮浜暣涓瓟妗堬紝鍙互鍦ㄨ繖閲屽仛绮惧噯鏌ユ壘绛旀鎵€鍦ㄧ殑 localOffset)
             const answerIndex = cleanText.indexOf(answerText);
             const startOffset =
                 answerIndex !== -1 ? blockStartOffset + answerIndex : blockStartOffset;
@@ -391,58 +392,58 @@ function expandToCandidates(
 }
 
 // ============================================================================
-// 第二阶段：核心匹配打分算法（matchItems）
+// 绗簩闃舵锛氭牳蹇冨尮閰嶆墦鍒嗙畻娉曪紙matchItems锛?
 // ============================================================================
 
 /**
- * 将现有的旧记录与新解析的候选记录进行匹配，继承复习进度（reviewId）
+ * 灏嗙幇鏈夌殑鏃ц褰曚笌鏂拌В鏋愮殑鍊欓€夎褰曡繘琛屽尮閰嶏紝缁ф壙澶嶄範杩涘害锛坮eviewId锛?
  */
 function matchItems(oldItems: TrackedItem[], candidates: TrackedItem[]): TrackedItem[] {
-    // 1. 分别按 fingerprint 进行分组
+    // 1. 鍒嗗埆鎸?fingerprint 杩涜鍒嗙粍
     const oldByFp = new Map<string, TrackedItem[]>();
     for (const old of oldItems) {
         if (!oldByFp.has(old.fingerprint)) oldByFp.set(old.fingerprint, []);
-        oldByFp.get(old.fingerprint)!.push(old);
+        oldByFp.get(old.fingerprint).push(old);
     }
 
     const newByFp = new Map<string, TrackedItem[]>();
     for (const cand of candidates) {
         if (!newByFp.has(cand.fingerprint)) newByFp.set(cand.fingerprint, []);
-        newByFp.get(cand.fingerprint)!.push(cand);
+        newByFp.get(cand.fingerprint).push(cand);
     }
 
     const result: TrackedItem[] = [];
     const usedNew = new Set<TrackedItem>();
 
-    // 2. 在同指纹组内进行匹配
+    // 2. 鍦ㄥ悓鎸囩汗缁勫唴杩涜鍖归厤
     for (const [fp, oldGroup] of oldByFp.entries()) {
         const newGroup = (newByFp.get(fp) || []).filter((c) => !usedNew.has(c));
 
-        if (newGroup.length === 0) continue; // 旧的这个指纹没了 -> 幽灵卡丢弃
+        if (newGroup.length === 0) continue; // 鏃х殑杩欎釜鎸囩汗娌′簡 -> 骞界伒鍗′涪寮?
 
-        // 快速匹配：1对1
+        // 蹇€熷尮閰嶏細1瀵?
         if (oldGroup.length === 1 && newGroup.length === 1) {
             const oldC = oldGroup[0];
             const newC = newGroup[0];
             usedNew.add(newC);
-            newC.reviewId = oldC.reviewId; // 继承复习进度
+            newC.reviewId = oldC.reviewId; // 缁ф壙澶嶄範杩涘害
             result.push(newC);
             continue;
         }
 
-        // 打分匹配：多对多 或 1对多
+        // 鎵撳垎鍖归厤锛氬瀵瑰 鎴?1瀵瑰
         type Pair = { old: TrackedItem; cand: TrackedItem; score: number };
         const allPairs: Pair[] = [];
 
         for (const oldC of oldGroup) {
             const lineScores = calculateLineScores(oldC.lineNo, newGroup);
             for (const newC of newGroup) {
-                // 上下文相似度占 50 分
+                // 涓婁笅鏂囩浉浼煎害鍗?50 鍒?
                 const ctxScore = stringSimilarity(oldC.context, newC.context) * 50;
-                // 行号接近度占 50 分
+                // 琛屽彿鎺ヨ繎搴﹀崰 50 鍒?
                 const lineScore = lineScores.get(newC) || 0;
 
-                // 平分判据：如果 clozeId 也一样，给微小加分打破平衡 (处理同一行有完全一样内容的两个孔)
+                // 骞冲垎鍒ゆ嵁锛氬鏋?clozeId 涔熶竴鏍凤紝缁欏井灏忓姞鍒嗘墦鐮村钩琛?(澶勭悊鍚屼竴琛屾湁瀹屽叏涓€鏍峰唴瀹圭殑涓や釜瀛?
                 const tieBreaker = oldC.clozeId === newC.clozeId ? 1 : 0;
 
                 allPairs.push({ old: oldC, cand: newC, score: ctxScore + lineScore + tieBreaker });
@@ -457,15 +458,15 @@ function matchItems(oldItems: TrackedItem[], candidates: TrackedItem[]): Tracked
 
             matchedOld.add(pair.old);
             usedNew.add(pair.cand);
-            pair.cand.reviewId = pair.old.reviewId; // 继承
+            pair.cand.reviewId = pair.old.reviewId; // 缁ф壙
             result.push(pair.cand);
         }
     }
 
-    // 3. 所有未被匹配的新候选，都是全新的卡片
+    // 3. 鎵€鏈夋湭琚尮閰嶇殑鏂板€欓€夛紝閮芥槸鍏ㄦ柊鐨勫崱鐗?
     for (const cand of candidates) {
         if (!usedNew.has(cand)) {
-            // cand.reviewId 目前是 -1，保持原样加入
+            // cand.reviewId 鐩墠鏄?-1锛屼繚鎸佸師鏍峰姞鍏?
             result.push(cand);
         }
     }
@@ -474,35 +475,35 @@ function matchItems(oldItems: TrackedItem[], candidates: TrackedItem[]): Tracked
 }
 
 // ============================================================================
-// 第三阶段：复习期间的 Span 校验与回退重定位 (基于锚点)
+// 绗笁闃舵锛氬涔犳湡闂寸殑 Span 鏍￠獙涓庡洖閫€閲嶅畾浣?(鍩轰簬閿氱偣)
 // ============================================================================
 
 /**
- * 接口：用于复习队列传入的“历史锚点”，也就是你说过的 lastKnown.context / lineNo
+ * 鎺ュ彛锛氱敤浜庡涔犻槦鍒椾紶鍏ョ殑鈥滃巻鍙查敋鐐光€濓紝涔熷氨鏄綘璇磋繃鐨?lastKnown.context / lineNo
  */
 /**
- * 在复习时，判断当前的 Span 是否已经失效（比如原文被修改、偏移越界、或者 span 处的文本跟指纹对不上）
+ * 鍦ㄥ涔犳椂锛屽垽鏂綋鍓嶇殑 Span 鏄惁宸茬粡澶辨晥锛堟瘮濡傚師鏂囪淇敼銆佸亸绉昏秺鐣屻€佹垨鑰?span 澶勭殑鏂囨湰璺熸寚绾瑰涓嶄笂锛?
  */
 function isSpanValid(fileText: string, item: TrackedItem): boolean {
     const { startOffset, endOffset } = item.span;
     if (startOffset < 0 || endOffset > fileText.length) return false;
 
-    // 判断该位置的文本，是否仍然等于指纹
+    // 鍒ゆ柇璇ヤ綅缃殑鏂囨湰锛屾槸鍚︿粛鐒剁瓑浜庢寚绾?
     const spanText = fileText.substring(startOffset, endOffset);
     return spanText === item.fingerprint;
 }
 
 /**
- * 【重定位兜底方案】
- * 当复习某个 dueItem 时，发现其 span 失效。
- * 这个函数会重新解析文件，并在同指纹候选中，利用该 dueItem 记录的历史锚点（IAnchor）打分消歧，
- * 找出它现在的新位置。
+ * 銆愰噸瀹氫綅鍏滃簳鏂规銆?
+ * 褰撳涔犳煇涓?dueItem 鏃讹紝鍙戠幇鍏?span 澶辨晥銆?
+ * 杩欎釜鍑芥暟浼氶噸鏂拌В鏋愭枃浠讹紝骞跺湪鍚屾寚绾瑰€欓€変腑锛屽埄鐢ㄨ dueItem 璁板綍鐨勫巻鍙查敋鐐癸紙IAnchor锛夋墦鍒嗘秷姝э紝
+ * 鎵惧嚭瀹冪幇鍦ㄧ殑鏂颁綅缃€?
  *
- * @param dueItemAnchor 复习调度记录中保存的历史锚点 (context + lineNo)
- * @param fingerprint   正在找的复习内容（"习"）
- * @param fileText      文件最新文本
- * @param settings      设置
- * @returns 找回的新候选孔 TrackedItem (包含最新的 span/context/lineNo)
+ * @param dueItemAnchor 澶嶄範璋冨害璁板綍涓繚瀛樼殑鍘嗗彶閿氱偣 (context + lineNo)
+ * @param fingerprint   姝ｅ湪鎵剧殑澶嶄範鍐呭锛?涔?锛?
+ * @param fileText      鏂囦欢鏈€鏂版枃鏈?
+ * @param settings      璁剧疆
+ * @returns 鎵惧洖鐨勬柊鍊欓€夊瓟 TrackedItem (鍖呭惈鏈€鏂扮殑 span/context/lineNo)
  */
 function relocateItemByAnchor(
     dueItemAnchor: { lineNo: number; context: string },
@@ -510,18 +511,18 @@ function relocateItemByAnchor(
     fileText: string,
     settings: SRSettings,
 ): TrackedItem | null {
-    // 重新把最新文件解析拆分成孔
+    // 閲嶆柊鎶婃渶鏂版枃浠惰В鏋愭媶鍒嗘垚瀛?
     const questions = parse(fileText, settings);
     const allCandidates = expandToCandidates(questions, fileText, settings);
 
-    // 过滤出所有指纹一致的候选位置
+    // 杩囨护鍑烘墍鏈夋寚绾逛竴鑷寸殑鍊欓€変綅缃?
     const fpCandidates = allCandidates.filter((c) => c.fingerprint === fingerprint);
-    if (fpCandidates.length === 0) return null; // 该指纹彻底被从文件里删除了
+    if (fpCandidates.length === 0) return null; // 璇ユ寚绾瑰交搴曡浠庢枃浠堕噷鍒犻櫎浜?
 
-    // 如果只有一个位置，直接返回（虽然它跟 anchor 可能有位移，但它是唯一的存活者）
+    // 濡傛灉鍙湁涓€涓綅缃紝鐩存帴杩斿洖锛堣櫧鐒跺畠璺?anchor 鍙兘鏈変綅绉伙紝浣嗗畠鏄敮涓€鐨勫瓨娲昏€咃級
     if (fpCandidates.length === 1) return fpCandidates[0];
 
-    // 如果有多个位置，利用 dueItem 的历史锚点进行打分
+    // 濡傛灉鏈夊涓綅缃紝鍒╃敤 dueItem 鐨勫巻鍙查敋鐐硅繘琛屾墦鍒?
     let bestMatch: TrackedItem | null = null;
     let bestScore = -Infinity;
 
@@ -542,11 +543,11 @@ function relocateItemByAnchor(
 }
 
 // ============================================================================
-// 工具函数：提取相关
+// 宸ュ叿鍑芥暟锛氭彁鍙栫浉鍏?
 // ============================================================================
 
 /**
- * 提取局部上下文：紧贴指纹位置的前 50 和 后 50
+ * 鎻愬彇灞€閮ㄤ笂涓嬫枃锛氱揣璐存寚绾逛綅缃殑鍓?50 鍜?鍚?50
  */
 function extractContext(fileText: string, startOffset: number, endOffset: number): string {
     const preContext = fileText.substring(Math.max(0, startOffset - 50), startOffset);
@@ -555,8 +556,8 @@ function extractContext(fileText: string, startOffset: number, endOffset: number
 }
 
 /**
- * 占位模拟提取填空孔的位置（实际需要根据 settings.clozePatterns 运行正则）
- * 返回格式：{ answerText: "习", localStart: 10, localEnd: 11, clozeId: "c1" }
+ * 鍗犱綅妯℃嫙鎻愬彇濉┖瀛旂殑浣嶇疆锛堝疄闄呴渶瑕佹牴鎹?settings.clozePatterns 杩愯姝ｅ垯锛?
+ * 杩斿洖鏍煎紡锛歿 answerText: "涔?, localStart: 10, localEnd: 11, clozeId: "c1" }
  */
 function extractHolesWithOffsets(
     cleanText: string,
@@ -569,15 +570,15 @@ function extractHolesWithOffsets(
         clozeId: string;
     }> = [];
 
-    const ankiMatches = [...cleanText.matchAll(/\{\{c(\d+)(?:::|：：)(.*?)(?:::|：：)?\}\}/gi)];
+    const ankiMatches = [...cleanText.matchAll(/\{\{c(\d+)(?:::|锛氾細)(.*?)(?:::|锛氾細)?\}\}/gi)];
     ankiMatches.forEach((match) => {
         const raw = match[0];
         const answerText = match[2];
         const answerOffset = raw.indexOf(answerText);
         holes.push({
             answerText,
-            localStart: match.index! + answerOffset,
-            localEnd: match.index! + answerOffset + answerText.length,
+            localStart: match.index + answerOffset,
+            localEnd: match.index + answerOffset + answerText.length,
             clozeId: `c${match[1]}`,
         });
     });
@@ -588,8 +589,8 @@ function extractHolesWithOffsets(
             const answerText = match[1];
             holes.push({
                 answerText,
-                localStart: match.index! + 2,
-                localEnd: match.index! + 2 + answerText.length,
+                localStart: match.index + 2,
+                localEnd: match.index + 2 + answerText.length,
                 clozeId: `hl${index}`,
             });
         });
@@ -601,22 +602,22 @@ function extractHolesWithOffsets(
             const answerText = match[1];
             holes.push({
                 answerText,
-                localStart: match.index! + 2,
-                localEnd: match.index! + 2 + answerText.length,
+                localStart: match.index + 2,
+                localEnd: match.index + 2 + answerText.length,
                 clozeId: `bd${index}`,
             });
         });
     }
 
     return holes;
-    // 示例正则表达式，匹配 {{c1::答案}}
+    // 绀轰緥姝ｅ垯琛ㄨ揪寮忥紝鍖归厤 {{c1::绛旀}}
     const clozeRegex = /{{(c\d+)::([^}]+)}}/g;
     let match;
     while ((match = clozeRegex.exec(cleanText)) !== null) {
-        // match[1] = "c1", match[2] = "答案"
+        // match[1] = "c1", match[2] = "绛旀"
         holes.push({
             answerText: match[2],
-            localStart: match.index + match[0].indexOf(match[2]), // 粗略计算答案本体在 block 中的位置
+            localStart: match.index + match[0].indexOf(match[2]), // 绮楃暐璁＄畻绛旀鏈綋鍦?block 涓殑浣嶇疆
             localEnd: match.index + match[0].indexOf(match[2]) + match[2].length,
             clozeId: match[1],
         });
@@ -625,18 +626,18 @@ function extractHolesWithOffsets(
 }
 
 /**
- * 占位模拟提取问答卡的答案内容
+ * 鍗犱綅妯℃嫙鎻愬彇闂瓟鍗＄殑绛旀鍐呭
  */
 function extractQAAnswer(cleanText: string, settings: SRSettings, type: CardType): string {
-    // 问答卡被对应的分隔符分成前后两部分。假设 parser.ts 的逻辑，我们可以简化为：
-    // 如果是 QA，答案在分隔符后面。这部分需依赖具体分隔符实现，这里做伪代码演示：
+    // 闂瓟鍗¤瀵瑰簲鐨勫垎闅旂鍒嗘垚鍓嶅悗涓ら儴鍒嗐€傚亣璁?parser.ts 鐨勯€昏緫锛屾垜浠彲浠ョ畝鍖栦负锛?
+    // 濡傛灉鏄?QA锛岀瓟妗堝湪鍒嗛殧绗﹀悗闈€傝繖閮ㄥ垎闇€渚濊禆鍏蜂綋鍒嗛殧绗﹀疄鐜帮紝杩欓噷鍋氫吉浠ｇ爜婕旂ず锛?
     const parts = cleanText.split(settings.singleLineCardSeparator);
     if (parts.length > 1) return parts[1].trim();
-    return cleanText; // 兜底
+    return cleanText; // 鍏滃簳
 }
 
 // ============================================================================
-// 工具函数：相似度打分计算
+// 宸ュ叿鍑芥暟锛氱浉浼煎害鎵撳垎璁＄畻
 // ============================================================================
 
 function stringSimilarity(str1: string, str2: string): number {
@@ -654,7 +655,7 @@ function stringSimilarity(str1: string, str2: string): number {
         b2 = getBigrams(str2);
     let intersection = 0;
     for (const [bg, count] of b1) {
-        if (b2.has(bg)) intersection += Math.min(count, b2.get(bg)!);
+        if (b2.has(bg)) intersection += Math.min(count, b2.get(bg));
     }
     return (2 * intersection) / (str1.length - 1 + (str2.length - 1));
 }
@@ -683,3 +684,4 @@ function calculateLineScores(
     }
     return scores;
 }
+

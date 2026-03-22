@@ -29,7 +29,6 @@ export type StatusBarAnimationStyle = "None" | "Breathing";
 export type ClozeContextMode = "single" | "double-break" | "expanded" | "full";
 export type ClozeContextPerformanceMode = "off" | "safe-trim";
 export type SyncProgressDisplayMode = "always" | "full-only" | "never";
-
 // ============ Deck Option Presets ===========
 // Per-preset configuration.
 export interface DeckOptionsPreset {
@@ -138,9 +137,7 @@ export interface SRSettings {
     // React UI Specific
     reactFlashcardWidth: number;
     reactFlashcardHeight: number;
-    sidebarTimelineHeight: number;
-    clozePopoverWidth: number;
-    clozePopoverHeight: number;
+    reactDeckTreeWidth?: number;
     flashcardEasyText: string;
     flashcardGoodText: string;
     flashcardHardText: string;
@@ -178,8 +175,7 @@ export interface SRSettings {
     repeatItems: boolean;
     trackedNoteToDecks: boolean;
     untrackWithReviewTag: boolean;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    algorithmSettings: any;
+    algorithmSettings: Record<string, unknown>;
 
     // Deck option presets
     deckOptionsPresets: DeckOptionsPreset[]; // All presets, where index 0 is the default preset
@@ -295,9 +291,7 @@ export const DEFAULT_SETTINGS: SRSettings = {
     flashcardWidthPercentage: Platform.isMobile ? 100 : 40,
     reactFlashcardWidth: 720,
     reactFlashcardHeight: 600,
-    sidebarTimelineHeight: 300,
-    clozePopoverWidth: 680,
-    clozePopoverHeight: 420,
+    reactDeckTreeWidth: 860,
     flashcardEasyText: t("EASY"),
     flashcardGoodText: t("GOOD"),
     flashcardHardText: t("HARD"),
@@ -416,6 +410,7 @@ export function upgradeSettings(settings: SRSettings) {
         settings.flashcardCardOrder == null &&
         settings.flashcardDeckOrder == null
     ) {
+        console.debug(`loadPluginData: Upgrading settings: ${String(settings.randomizeCardOrder)}`);
         settings.flashcardCardOrder = settings.randomizeCardOrder
             ? "DueFirstRandom"
             : "DueFirstSequential";
@@ -462,19 +457,6 @@ export function upgradeSettings(settings: SRSettings) {
     if (settings.clozeContextSoftLimitLines === undefined) {
         settings.clozeContextSoftLimitLines = 15;
     }
-
-    if (settings.sidebarTimelineHeight === undefined) {
-        settings.sidebarTimelineHeight = 300;
-    }
-
-    if (settings.clozePopoverWidth === undefined) {
-        settings.clozePopoverWidth = 680;
-    }
-
-    if (settings.clozePopoverHeight === undefined) {
-        settings.clozePopoverHeight = 420;
-    }
-
     if (settings.showOtherAnkiClozeVisual === undefined) {
         settings.showOtherAnkiClozeVisual = settings.showOtherClozesVisual ?? false;
     }
@@ -502,9 +484,11 @@ export function upgradeSettings(settings: SRSettings) {
     // Upgrade legacy single-algorithm settings to separate card and note algorithms.
     if (!settings.cardAlgorithm) {
         settings.cardAlgorithm = settings.algorithm || "Fsrs";
+        console.debug("Upgrading to dual algorithm: cards=" + settings.cardAlgorithm);
     }
     if (!settings.noteAlgorithm) {
         settings.noteAlgorithm = "WeightedMultiplier";
+        console.debug("Upgrading to dual algorithm: notes=" + settings.noteAlgorithm);
     }
 
     // Create algorithm settings storage when upgrading old settings.
@@ -528,10 +512,12 @@ export function upgradeSettings(settings: SRSettings) {
 
     // Keep data in the plugin folder; the old track-file mode is no longer supported.
     if (settings.dataLocation !== DataLocation.PluginFolder) {
+        console.debug(`Upgrading dataLocation from ${settings.dataLocation} to PluginFolder`);
         settings.dataLocation = DataLocation.PluginFolder;
     }
 
     if (settings.cardBlockID) {
+        console.debug("Disabling legacy cardBlockID setting");
         settings.cardBlockID = false;
     }
 
@@ -590,3 +576,4 @@ export class SettingsUtil {
         return false;
     }
 }
+

@@ -1,20 +1,20 @@
 /**
- * 这个文件主要是干什么的：
- * 负责把不同类型的卡片（比如单行卡、多行卡、完形填空卡）的原始文本内容，
- * 拆分成“正面”和“背面”两部分，方便复习时显示。
- * 简单来说，就是卡片内容的“切割器”和“格式化器”。
+ * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
+ * 璐熻矗鎶婁笉鍚岀被鍨嬬殑鍗＄墖锛堟瘮濡傚崟琛屽崱銆佸琛屽崱銆佸畬褰㈠～绌哄崱锛夌殑鍘熷鏂囨湰鍐呭锛?
+ * 鎷嗗垎鎴愨€滄闈⑩€濆拰鈥滆儗闈⑩€濅袱閮ㄥ垎锛屾柟渚垮涔犳椂鏄剧ず銆?
+ * 绠€鍗曟潵璇达紝灏辨槸鍗＄墖鍐呭鐨勨€滃垏鍓插櫒鈥濆拰鈥滄牸寮忓寲鍣ㄢ€濄€?
  *
- * 它在项目中属于：逻辑层 (Logic Layer)
+ * 瀹冨湪椤圭洰涓睘浜庯細閫昏緫灞?(Logic Layer)
  *
- * 它会用到哪些文件：
- * 1. src/Question.ts (定义了卡片类型 CardType)
- * 2. src/settings.ts (获取用户的设置，比如分隔符)
- * 3. src/util/utils.ts (一些通用的工具函数)
- * 4. clozecraft (外部库，专门处理完形填空)
+ * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
+ * 1. src/Question.ts (瀹氫箟浜嗗崱鐗囩被鍨?CardType)
+ * 2. src/settings.ts (鑾峰彇鐢ㄦ埛鐨勮缃紝姣斿鍒嗛殧绗?
+ * 3. src/util/utils.ts (涓€浜涢€氱敤鐨勫伐鍏峰嚱鏁?
+ * 4. clozecraft (澶栭儴搴擄紝涓撻棬澶勭悊瀹屽舰濉┖)
  *
- * 哪些文件会用到它：
- * 1. src/NoteQuestionParser.ts (解析笔记时，用它来生成卡片内容)
- * 2. src/FlashcardReviewSequencer.ts (虽然不直接引用，但通过 Question 和 Card 间接使用其生成的结构)
+ * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
+ * 1. src/NoteQuestionParser.ts (瑙ｆ瀽绗旇鏃讹紝鐢ㄥ畠鏉ョ敓鎴愬崱鐗囧唴瀹?
+ * 2. src/FlashcardReviewSequencer.ts (铏界劧涓嶇洿鎺ュ紩鐢紝浣嗛€氳繃 Question 鍜?Card 闂存帴浣跨敤鍏剁敓鎴愮殑缁撴瀯)
  */
 import { ClozeCrafter, IClozeFormatter } from "clozecraft";
 
@@ -262,16 +262,16 @@ export class QuestionTypeClozeFormatter implements IClozeFormatter {
 }
 
 /**
- * Anki 风格挖空解析器
- * 支持 {{c1::content}} 语法，同 ID 在同一张卡片上同时挖空
+ * Anki 椋庢牸鎸栫┖瑙ｆ瀽鍣?
+ * 鏀寔 {{c1::content}} 璇硶锛屽悓 ID 鍦ㄥ悓涓€寮犲崱鐗囦笂鍚屾椂鎸栫┖
  *
- * 两种内容类型的特殊处理：
- * 1. 代码块（```...```）：使用特殊占位符 ««SR_CLOZE:encoded»»
- * 2. 普通文本（包含 LaTeX）：使用 HTML <span> 标签，卡片渲染侧会后处理 LaTeX 公式
+ * 涓ょ鍐呭绫诲瀷鐨勭壒娈婂鐞嗭細
+ * 1. 浠ｇ爜鍧楋紙```...```锛夛細浣跨敤鐗规畩鍗犱綅绗?芦芦SR_CLOZE:encoded禄禄
+ * 2. 鏅€氭枃鏈紙鍖呭惈 LaTeX锛夛細浣跨敤 HTML <span> 鏍囩锛屽崱鐗囨覆鏌撲晶浼氬悗澶勭悊 LaTeX 鍏紡
  *
- * 渲染规则：
- * - 正面：当前 cN 显示 [...] (蓝色)，其他 cM 显示为纯文本（无格式）
- * - 背面：当前 cN 高亮显示答案 (蓝色)，其他 cM 显示为纯文本（无格式）
+ * 娓叉煋瑙勫垯锛?
+ * - 姝ｉ潰锛氬綋鍓?cN 鏄剧ず [...] (钃濊壊)锛屽叾浠?cM 鏄剧ず涓虹函鏂囨湰锛堟棤鏍煎紡锛?
+ * - 鑳岄潰锛氬綋鍓?cN 楂樹寒鏄剧ず绛旀 (钃濊壊)锛屽叾浠?cM 鏄剧ず涓虹函鏂囨湰锛堟棤鏍煎紡锛?
  */
 class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
     private shouldKeepOtherAnkiClozeVisual(settings: SRSettings): boolean {
@@ -295,41 +295,41 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         const result: CardFrontBack[] = [];
         const isCodeBlock = this.isCodeBlockQuestion(questionText);
 
-        // 1. 提取所有挖空信息
+        // 1. 鎻愬彇鎵€鏈夋寲绌轰俊鎭?
         const clozeInfos = this.extractClozeInfos(questionText);
 
         if (isCodeBlock) {
-            // === 核心逻辑变更：按 (ID + 行号) 分组 ===
-            // 只要行号不同，哪怕 ID 相同，也是不同的卡片
+            // === 鏍稿績閫昏緫鍙樻洿锛氭寜 (ID + 琛屽彿) 鍒嗙粍 ===
+            // 鍙琛屽彿涓嶅悓锛屽摢鎬?ID 鐩稿悓锛屼篃鏄笉鍚岀殑鍗＄墖
 
-            // 数据结构：Map<ID, Map<LineIndex, ClozeInfo[]>>
+            // 鏁版嵁缁撴瀯锛歁ap<ID, Map<LineIndex, ClozeInfo[]>>
             const groups = new Map<number, Map<number, typeof clozeInfos>>();
 
             clozeInfos.forEach((info) => {
                 if (!groups.has(info.id)) {
                     groups.set(info.id, new Map());
                 }
-                const lineGroup = groups.get(info.id)!;
-                // info.lineNum 是相对代码块的行号(从1开始)
+                const lineGroup = groups.get(info.id);
+                // info.lineNum 鏄浉瀵逛唬鐮佸潡鐨勮鍙?浠?寮€濮?
                 if (!lineGroup.has(info.lineNum)) {
                     lineGroup.set(info.lineNum, []);
                 }
-                lineGroup.get(info.lineNum)!.push(info);
+                lineGroup.get(info.lineNum).push(info);
             });
 
-            // 遍历所有分组生成卡片
-            // 排序：先按 ID 排序，再按行号排序
+            // 閬嶅巻鎵€鏈夊垎缁勭敓鎴愬崱鐗?
+            // 鎺掑簭锛氬厛鎸?ID 鎺掑簭锛屽啀鎸夎鍙锋帓搴?
             const sortedIds = Array.from(groups.keys()).sort((a, b) => a - b);
 
             sortedIds.forEach((activeId) => {
-                const lineMap = groups.get(activeId)!;
+                const lineMap = groups.get(activeId);
                 const sortedLines = Array.from(lineMap.keys()).sort((a, b) => a - b);
 
                 sortedLines.forEach((activeLine) => {
-                    // 当前卡片只关注：特定的 ID + 特定的行
-                    const activeClozes = lineMap.get(activeLine)!;
+                    // 褰撳墠鍗＄墖鍙叧娉細鐗瑰畾鐨?ID + 鐗瑰畾鐨勮
+                    const activeClozes = lineMap.get(activeLine);
 
-                    // 1. 提前处理替换，严格隔离出当前行的 active 挖空，其他同 ID 的作为文本显示
+                    // 1. 鎻愬墠澶勭悊鏇挎崲锛屼弗鏍奸殧绂诲嚭褰撳墠琛岀殑 active 鎸栫┖锛屽叾浠栧悓 ID 鐨勪綔涓烘枃鏈樉绀?
                     let processedFullText = "";
                     let lastEnd = 0;
 
@@ -340,7 +340,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
 
                         if (isActive) {
                             const encoded = encodeURIComponent(info.content);
-                            // 补偿被 encodeURIComponent 吞没的换行符，保证 lineNum 绝对稳定不出偏差
+                            // 琛ュ伩琚?encodeURIComponent 鍚炴病鐨勬崲琛岀锛屼繚璇?lineNum 缁濆绋冲畾涓嶅嚭鍋忓樊
                             const newlineCount = (info.content.match(/\n/g) || []).length;
                             processedFullText +=
                                 `««SR_CLOZE:${encoded}»»` + "\n".repeat(newlineCount);
@@ -351,15 +351,15 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                     });
                     processedFullText += questionText.substring(lastEnd);
 
-                    // 2. 获取上下文窗口 (基于已经完成了独立占位符替换的安全全量代码)
+                    // 2. 鑾峰彇涓婁笅鏂囩獥鍙?(鍩轰簬宸茬粡瀹屾垚浜嗙嫭绔嬪崰浣嶇鏇挎崲鐨勫畨鍏ㄥ叏閲忎唬鐮?
                     const contextSize = settings.codeContextLines || 15;
                     const { windowedText, startSliceIndex, activeLineRelative } =
                         this.getWindowedCode(processedFullText, activeClozes, contextSize);
 
-                    // 3. 计算绝对真实行号 (用于 UI 显示)
+                    // 3. 璁＄畻缁濆鐪熷疄琛屽彿 (鐢ㄤ簬 UI 鏄剧ず)
                     const realStartLine = lineOffset + 1 + startSliceIndex + 1;
 
-                    // 4. 生成卡片内容
+                    // 4. 鐢熸垚鍗＄墖鍐呭
                     const meta = `<!--SR_CODE_CLOZE:${activeLineRelative}:${realStartLine}-->\n`;
 
                     const finalContent = meta + windowedText;
@@ -368,7 +368,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                 });
             });
         } else {
-            // 普通文本逻辑：根据设置解析不同范围的上下文
+            // 鏅€氭枃鏈€昏緫锛氭牴鎹缃В鏋愪笉鍚岃寖鍥寸殑涓婁笅鏂?
             const uniqueIds = [...new Set(clozeInfos.map((info) => info.id))].sort((a, b) => a - b);
             uniqueIds.forEach((activeId) => {
                 const activeInfos = clozeInfos.filter((info) => info.id === activeId);
@@ -385,7 +385,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
             });
         }
 
-        // 2. 同时提取普通高亮/粗体
+        // 2. 鍚屾椂鎻愬彇鏅€氶珮浜?绮椾綋
         const standardClozeMatches: {
             text: string;
             fullMatch: string;
@@ -416,7 +416,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
             );
         }
 
-        // 为每个普通挖空生成卡片
+        // 涓烘瘡涓櫘閫氭寲绌虹敓鎴愬崱鐗?
         standardClozeMatches.forEach((match) => {
             const contextText = this.resolveTextContext(
                 questionText,
@@ -454,7 +454,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
     }
 
     /**
-     * 检测问题是否为代码块
+     * 妫€娴嬮棶棰樻槸鍚︿负浠ｇ爜鍧?
      */
     private isCodeBlockQuestion(text: string): boolean {
         const trimmed = text.trim();
@@ -465,11 +465,11 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
     }
 
     /**
-     * 获取裁剪后的代码块上下文
+     * 鑾峰彇瑁佸壀鍚庣殑浠ｇ爜鍧椾笂涓嬫枃
      */
     private getWindowedCode(
         fullText: string,
-        targetClozes: any[], // 仅包含当前卡片关注的挖空
+        targetClozes: Array<{ lineNum: number }>, // 浠呭寘鍚綋鍓嶅崱鐗囧叧娉ㄧ殑鎸栫┖
         contextSize: number,
     ): { windowedText: string; startSliceIndex: number; activeLineRelative: number } {
         const lines = fullText.split("\n");
@@ -477,38 +477,38 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         const footer = lines[lines.length - 1];
         const codeLines = lines.slice(1, -1);
 
-        // 目标行号 (0-based relative to code block body)
-        // targetClozes[0].lineNum 是 header+body 的 1-based 索引
-        // 所以: lineNum - 1 (header) - 1 (to 0-based) = lineNum - 2
+        // 鐩爣琛屽彿 (0-based relative to code block body)
+        // targetClozes[0].lineNum 鏄?header+body 鐨?1-based 绱㈠紩
+        // 鎵€浠? lineNum - 1 (header) - 1 (to 0-based) = lineNum - 2
         const targetLineIndex = targetClozes[0].lineNum - 2;
 
-        // 计算裁剪窗口
+        // 璁＄畻瑁佸壀绐楀彛
         const startSlice = Math.max(0, targetLineIndex - contextSize);
         const endSlice = Math.min(codeLines.length, targetLineIndex + contextSize + 1);
 
         const windowedBody = codeLines.slice(startSlice, endSlice);
 
-        // 可选：添加省略号标记
-        if (startSlice > 0) windowedBody.unshift("// ... (上文省略)");
-        if (endSlice < codeLines.length) windowedBody.push("// ... (下文省略)");
+        // 鍙€夛細娣诲姞鐪佺暐鍙锋爣璁?
+        if (startSlice > 0) windowedBody.unshift("// ... (涓婃枃鐪佺暐)");
+        if (endSlice < codeLines.length) windowedBody.push("// ... (涓嬫枃鐪佺暐)");
 
         const windowedText = header + "\n" + windowedBody.join("\n") + "\n" + footer;
 
-        // 计算高亮行在 *新窗口* 中的位置
-        // 如果加了省略号，需要 +1
+        // 璁＄畻楂樹寒琛屽湪 *鏂扮獥鍙? 涓殑浣嶇疆
+        // 濡傛灉鍔犱簡鐪佺暐鍙凤紝闇€瑕?+1
         const offsetDueToEllipsis = startSlice > 0 ? 1 : 0;
 
-        // Header占1行 + 省略号占n行 + 相对偏移 + 1(转1-based)
+        // Header鍗?琛?+ 鐪佺暐鍙峰崰n琛?+ 鐩稿鍋忕Щ + 1(杞?-based)
         const activeLineRelative = 1 + offsetDueToEllipsis + (targetLineIndex - startSlice) + 1;
 
-        // 真实代码行的偏移量 (用于行号计算)
-        // 省略号行不应计入真实行号，所以这里只返回代码切片的偏移
+        // 鐪熷疄浠ｇ爜琛岀殑鍋忕Щ閲?(鐢ㄤ簬琛屽彿璁＄畻)
+        // 鐪佺暐鍙疯涓嶅簲璁″叆鐪熷疄琛屽彿锛屾墍浠ヨ繖閲屽彧杩斿洖浠ｇ爜鍒囩墖鐨勫亸绉?
         return { windowedText, startSliceIndex: startSlice, activeLineRelative };
     }
 
     /**
-     * 使用括号计数算法提取 Cloze 信息
-     * 优化：支持中文冒号，忽略大小写，提高解析稳定性
+     * 浣跨敤鎷彿璁℃暟绠楁硶鎻愬彇 Cloze 淇℃伅
+     * 浼樺寲锛氭敮鎸佷腑鏂囧啋鍙凤紝蹇界暐澶у皬鍐欙紝鎻愰珮瑙ｆ瀽绋冲畾鎬?
      */
     private extractClozeInfos(
         text: string,
@@ -521,8 +521,8 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
             lineNum: number;
         }[] = [];
 
-        // 支持中文冒号，忽略大小写
-        const regex = /\{\{c(\d+)(?:::|：：)/gi;
+        // 鏀寔涓枃鍐掑彿锛屽拷鐣ュぇ灏忓啓
+        const regex = /\{\{c(\d+)(?:::|锛氾細)/gi;
 
         let match;
         while ((match = regex.exec(text)) !== null) {
@@ -533,7 +533,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
             let braceDepth = 0;
             let endPos = -1;
 
-            // 寻找闭合的 }}
+            // 瀵绘壘闂悎鐨?}}
             for (let j = contentStart; j < text.length; j++) {
                 if (braceDepth === 0 && text.startsWith("}}", j)) {
                     endPos = j;
@@ -546,7 +546,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
             }
 
             if (endPos !== -1) {
-                // 计算行号
+                // 璁＄畻琛屽彿
                 let lineNum = 1;
                 for (let k = 0; k < startPos; k++) {
                     if (text[k] === "\n") lineNum++;
@@ -561,7 +561,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                     lineNum,
                 });
 
-                // 跳过当前挖空，避免正则索引错误
+                // 璺宠繃褰撳墠鎸栫┖锛岄伩鍏嶆鍒欑储寮曢敊璇?
                 regex.lastIndex = endPos + 2;
             }
         }
@@ -620,9 +620,9 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
     }
 
     /**
-     * 生成卡片正面：
-     * - activeId 挖空显示 [...] (蓝色，与普通 Cloze 一致)
-     * - 其他 cN 去掉格式，只显示纯文本内容
+     * 鐢熸垚鍗＄墖姝ｉ潰锛?
+     * - activeId 鎸栫┖鏄剧ず [...] (钃濊壊锛屼笌鏅€?Cloze 涓€鑷?
+     * - 鍏朵粬 cN 鍘绘帀鏍煎紡锛屽彧鏄剧ず绾枃鏈唴瀹?
      */
     private generateFront(
         text: string,
@@ -636,10 +636,10 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         for (const info of infos) {
             result += text.substring(lastEnd, info.start);
             if (info.id === activeId) {
-                // 当前 ID：使用标记
+                // 褰撳墠 ID锛氫娇鐢ㄦ爣璁?
                 result += `««SR_H:${encodeURIComponent("[...]")}»»`;
             } else {
-                // 其他 ID：去掉 {{cN::...}} 格式，只显示纯文本内容
+                // 鍏朵粬 ID锛氬幓鎺?{{cN::...}} 鏍煎紡锛屽彧鏄剧ず绾枃鏈唴瀹?
                 result += this.shouldKeepOtherAnkiClozeVisual(settings)
                     ? text.substring(info.start, info.end)
                     : info.content;
@@ -652,9 +652,9 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
     }
 
     /**
-     * 生成卡片背面：
-     * - activeId 高亮显示答案 (蓝色，与普通 Cloze 一致)
-     * - 其他 cN 去掉格式，只显示纯文本内容
+     * 鐢熸垚鍗＄墖鑳岄潰锛?
+     * - activeId 楂樹寒鏄剧ず绛旀 (钃濊壊锛屼笌鏅€?Cloze 涓€鑷?
+     * - 鍏朵粬 cN 鍘绘帀鏍煎紡锛屽彧鏄剧ず绾枃鏈唴瀹?
      */
     private generateBack(
         text: string,
@@ -668,10 +668,10 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         for (const info of infos) {
             result += text.substring(lastEnd, info.start);
             if (info.id === activeId) {
-                // 当前 ID：使用标记
+                // 褰撳墠 ID锛氫娇鐢ㄦ爣璁?
                 result += `««SR_S:${encodeURIComponent(info.content)}»»`;
             } else {
-                // 其他 ID：去掉格式，只显示纯文本内容
+                // 鍏朵粬 ID锛氬幓鎺夋牸寮忥紝鍙樉绀虹函鏂囨湰鍐呭
                 result += this.shouldKeepOtherAnkiClozeVisual(settings)
                     ? text.substring(info.start, info.end)
                     : info.content;
@@ -687,7 +687,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         let result = text;
 
         if (!this.shouldKeepOtherAnkiClozeVisual(settings)) {
-            result = result.replace(/\{\{c(\d+)(?:::|：：)(.*?)(?:::|：：)?\}\}/gi, "$2");
+            result = result.replace(/\{\{c(\d+)(?:::|锛氾細)(.*?)(?:::|锛氾細)?\}\}/gi, "$2");
         }
 
         if (!this.shouldKeepOtherHighlightClozeVisual(settings)) {

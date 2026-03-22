@@ -33,6 +33,18 @@ import {
     normalizeTimelineInlineLines,
 } from "src/ui/timeline/timelineMessage";
 
+type DocumentWithViewTransition = Document & {
+    startViewTransition?: (callback: () => void) => void;
+};
+
+function getNotePathFromElement(element: Element | null): string | null {
+    if (!(element instanceof HTMLElement)) {
+        return null;
+    }
+
+    return element.dataset.notePath ?? null;
+}
+
 // ==========================================
 // 类型定义
 // ==========================================
@@ -318,8 +330,9 @@ const FilterBar: React.FC<FilterBarProps> = ({
                     newOrder.splice(toIndex, 0, currentDraggedTag);
 
                     // Use View Transitions API for smooth animation if available
-                    if ((document as any).startViewTransition) {
-                        (document as any).startViewTransition(() => {
+                    const transitionDocument = document as DocumentWithViewTransition;
+                    if (transitionDocument.startViewTransition) {
+                        transitionDocument.startViewTransition(() => {
                             flushSync(() => {
                                 setLocalCustomOrder(newOrder);
                             });
@@ -429,8 +442,9 @@ const FilterBar: React.FC<FilterBarProps> = ({
                         newOrder.splice(toIndex, 0, currentDraggedTag);
 
                         // Use View Transitions API for smooth animation (same as PC)
-                        if ((document as any).startViewTransition) {
-                            (document as any).startViewTransition(() => {
+                        const transitionDocument = document as DocumentWithViewTransition;
+                        if (transitionDocument.startViewTransition) {
+                            transitionDocument.startViewTransition(() => {
                                 flushSync(() => {
                                     setLocalCustomOrder(newOrder);
                                 });
@@ -468,9 +482,9 @@ const FilterBar: React.FC<FilterBarProps> = ({
                 // 检测是否放在笔记上（添加标签）
                 const elementUnderTouch = document.elementFromPoint(touch.clientX, touch.clientY);
                 if (elementUnderTouch) {
-                    const noteItem = elementUnderTouch.closest(".sr-new-item") as HTMLElement;
-                    if (noteItem && noteItem.dataset.notePath && onMobileTagDrop) {
-                        onMobileTagDrop(noteItem.dataset.notePath, draggedTagRef.current);
+                    const notePath = getNotePathFromElement(elementUnderTouch.closest(".sr-new-item"));
+                    if (notePath && onMobileTagDrop) {
+                        onMobileTagDrop(notePath, draggedTagRef.current);
                     }
                 }
 
@@ -1380,10 +1394,10 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     // 动态检测状态栏高度并设置 CSS 变量
     useEffect(() => {
         const updateStatusBarOffset = () => {
-            const statusBar = document.querySelector(".status-bar") as HTMLElement;
+            const statusBar = document.querySelector(".status-bar");
             const sidebar = sidebarRef.current;
             if (!statusBar || !sidebar) {
-                sidebar?.style.setProperty("--sr-statusbar-offset", "0px");
+                sidebar?.setCssProps({ "--sr-statusbar-offset": "0px" });
                 return;
             }
             const sidebarRect = sidebar.getBoundingClientRect();
@@ -1394,9 +1408,9 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                 sidebarRect.right > statusBarRect.left &&
                 sidebarRect.left < statusBarRect.right;
             if (isOverlapping) {
-                sidebar.style.setProperty("--sr-statusbar-offset", `${statusBarRect.height}px`);
+                sidebar.setCssProps({ "--sr-statusbar-offset": `${statusBarRect.height}px` });
             } else {
-                sidebar.style.setProperty("--sr-statusbar-offset", "0px");
+                sidebar.setCssProps({ "--sr-statusbar-offset": "0px" });
             }
         };
         // 初始检测 + 窗口变化时重新检测
@@ -1505,7 +1519,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
             isDraggingTimelineRef.current = true;
             startYTimelineRef.current = e.clientY;
             startHeightTimelineRef.current = localTimelineHeight;
-            document.body.style.cursor = "row-resize";
+            document.body.setCssProps({ cursor: "row-resize" });
 
             const handleMouseMove = (moveEvent: MouseEvent) => {
                 if (!isDraggingTimelineRef.current) return;
@@ -1517,7 +1531,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
 
             const handleMouseUp = () => {
                 isDraggingTimelineRef.current = false;
-                document.body.style.cursor = "";
+                document.body.setCssProps({ cursor: "" });
                 document.removeEventListener("mousemove", handleMouseMove);
                 document.removeEventListener("mouseup", handleMouseUp);
                 if (onTimelineHeightChange) {

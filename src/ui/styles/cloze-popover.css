@@ -9,12 +9,6 @@
    Popover 容器 (桌面端)
    ========================================== */
 .sr-cloze-popover {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: var(--sr-cloze-popover-width, 680px);
-    height: var(--sr-cloze-popover-height, 420px);
-    z-index: 1000;
     background: var(--background-primary);
     border: 1px solid var(--background-modifier-border);
     border-radius: 12px;

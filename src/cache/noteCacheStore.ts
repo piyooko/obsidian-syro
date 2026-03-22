@@ -7,7 +7,27 @@ import { ISRFile } from "src/SRFile";
 import { TopicPath, TopicPathList, TopicPathWithWs } from "src/TopicPath";
 import { TextDirection } from "src/util/TextDirection";
 
-export const NOTE_CACHE_VERSION = 2;
+export const NOTE_CACHE_VERSION = 3;
+
+export interface CachedNoteBindingStore {
+    getItembyID(id: number): { fileID?: string | null } | null;
+    getFileByID(fileID: string): { path?: string | null } | null;
+    getTrackedFile(path: string): { trackedItems?: Array<{ reviewId: number }> | null } | null;
+}
+
+export interface CachedNoteBindingMismatch {
+    reason:
+        | "missing-card-id"
+        | "missing-item"
+        | "missing-file-id"
+        | "missing-file"
+        | "file-mismatch"
+        | "missing-tracked-file"
+        | "missing-tracked-item";
+    cardId: number | null;
+    notePath: string;
+    actualFilePath: string | null;
+}
 
 interface SerializedTopicPathList {
     lineNum: number | null;
@@ -74,6 +94,91 @@ export interface PersistedNoteCacheFile {
     version: number;
     signature: string;
     items: PersistedNoteCacheItem[];
+}
+
+export function validateCachedNoteBindings(
+    note: Note,
+    store: CachedNoteBindingStore,
+): CachedNoteBindingMismatch | null {
+    const notePath = note.filePath;
+    const trackedFile = store.getTrackedFile(notePath);
+    if (!trackedFile) {
+        return {
+            reason: "missing-tracked-file",
+            cardId: null,
+            notePath,
+            actualFilePath: null,
+        };
+    }
+
+    const trackedReviewIds = new Set(
+        (trackedFile.trackedItems ?? [])
+            .map((item) => item?.reviewId)
+            .filter((reviewId): reviewId is number => typeof reviewId === "number" && reviewId >= 0),
+    );
+
+    for (const question of note.questionList) {
+        for (const card of question.cards) {
+            if (typeof card.Id !== "number" || card.Id < 0) {
+                return {
+                    reason: "missing-card-id",
+                    cardId: null,
+                    notePath,
+                    actualFilePath: null,
+                };
+            }
+
+            const item = store.getItembyID(card.Id);
+            if (!item) {
+                return {
+                    reason: "missing-item",
+                    cardId: card.Id,
+                    notePath,
+                    actualFilePath: null,
+                };
+            }
+
+            if (!item.fileID) {
+                return {
+                    reason: "missing-file-id",
+                    cardId: card.Id,
+                    notePath,
+                    actualFilePath: null,
+                };
+            }
+
+            const ownerFile = store.getFileByID(item.fileID);
+            const actualFilePath = ownerFile?.path ?? null;
+            if (!actualFilePath) {
+                return {
+                    reason: "missing-file",
+                    cardId: card.Id,
+                    notePath,
+                    actualFilePath: null,
+                };
+            }
+
+            if (actualFilePath !== notePath) {
+                return {
+                    reason: "file-mismatch",
+                    cardId: card.Id,
+                    notePath,
+                    actualFilePath,
+                };
+            }
+
+            if (!trackedReviewIds.has(card.Id)) {
+                return {
+                    reason: "missing-tracked-item",
+                    cardId: card.Id,
+                    notePath,
+                    actualFilePath,
+                };
+            }
+        }
+    }
+
+    return null;
 }
 
 function serializeCardSchedule(
@@ -165,7 +270,7 @@ export function serializeNote(note: Note): SerializedNote {
 export function deserializeNote(data: SerializedNote, file: ISRFile): Note {
     const questions = (data.questions ?? []).map((questionData): Question => {
         const parsedQuestionInfo = new ParsedQuestionInfo(
-            questionData.parsedQuestionInfo.cardType as any,
+            questionData.parsedQuestionInfo.cardType as ConstructorParameters<typeof ParsedQuestionInfo>[0],
             questionData.parsedQuestionInfo.text,
             questionData.parsedQuestionInfo.firstLineNum,
             questionData.parsedQuestionInfo.lastLineNum,

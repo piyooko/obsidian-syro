@@ -7,6 +7,7 @@ import { Tags } from "src/tags";
 export function registerTrackFileEvents(plugin: SRPlugin) {
     const logRuntimeDebug = (...args: unknown[]) => {
         if (plugin.data.settings.showRuntimeDebugMessages) {
+            console.debug(...args);
         }
     };
 
@@ -15,9 +16,7 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
             logRuntimeDebug("[SR-DynSync] debounced flashcard sync triggered.");
             await plugin.requestSync({ trigger: "file-event" });
             await plugin.store.save();
-            if (plugin.reviewQueueView && plugin.reviewQueueView.redraw) {
-                plugin.reviewQueueView.redraw();
-            }
+            plugin.redrawReviewQueueView();
         },
         2000,
         true,
@@ -188,13 +187,15 @@ export function addFileMenuEvt(plugin: SRPlugin, menu: Menu, fileish: TAbstractF
         menu.addItem((item) => {
             item.setIcon("SpacedRepIcon");
             item.setTitle(t("MENU_UNTRACK_NOTE"));
-            item.onClick(async () => {
-                plugin.noteReviewStore.remove(fileish.path);
-                await plugin.noteReviewStore.save();
-                if (plugin.reviewFloatBar.isDisplay() && plugin.data.settings.autoNextNote) {
-                    plugin.reviewNextNote(plugin.lastSelectedReviewDeck);
-                }
-                await plugin.refreshNoteReview({ trigger: "manual" });
+            item.onClick(() => {
+                void (async () => {
+                    plugin.noteReviewStore.remove(fileish.path);
+                    await plugin.noteReviewStore.save();
+                    if (plugin.reviewFloatBar.isDisplay() && plugin.data.settings.autoNextNote) {
+                        await plugin.reviewNextNote(plugin.lastSelectedReviewDeck);
+                    }
+                    await plugin.refreshNoteReview({ trigger: "manual" });
+                })();
             });
         });
         return;
@@ -216,3 +217,4 @@ export function addFileMenuEvt(plugin: SRPlugin, menu: Menu, fileish: TAbstractF
         });
     });
 }
+

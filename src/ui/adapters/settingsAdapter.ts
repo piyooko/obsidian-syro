@@ -11,10 +11,26 @@ import { SRSettings, DEFAULT_PROGRESS_BAR_STYLE, syncDefaultClozePatterns } from
 import { DataLocation } from "../../dataStore/dataLocation";
 import { UISettingsState } from "../types/settingsTypes";
 
+type WeightedMultiplierUiSettings = {
+    impMin?: number;
+    impMax?: number;
+    againInterval?: number;
+    hardFactor?: number;
+    goodFactor?: number;
+    easyFactor?: number;
+    baseEase?: number;
+};
+
+function getWeightedMultiplierSettings(settings: SRSettings): WeightedMultiplierUiSettings {
+    return (settings.algorithmSettings?.WeightedMultiplier as WeightedMultiplierUiSettings | undefined) ?? {};
+}
+
 /**
  * Extract the subset of settings needed by the UI.
  */
 export function settingsToUIState(settings: SRSettings): UISettingsState {
+    const weightedMultiplierSettings = getWeightedMultiplierSettings(settings);
+
     return {
         // Flashcards
         flashcardTags: settings.flashcardTags || [],
@@ -60,12 +76,12 @@ export function settingsToUIState(settings: SRSettings): UISettingsState {
         easyBonus: settings.easyBonus ?? 1.3,
 
         // Weighted Multiplier Algorithm defaults (convert number to string for UI)
-        wmsImpMin: (settings.algorithmSettings?.WeightedMultiplier?.impMin ?? 1.0).toString(),
-        wmsImpMax: (settings.algorithmSettings?.WeightedMultiplier?.impMax ?? 2.5).toString(),
-        wmsAgainInterval: settings.algorithmSettings?.WeightedMultiplier?.againInterval ?? 1.0,
-        wmsHardFactor: settings.algorithmSettings?.WeightedMultiplier?.hardFactor ?? 0.7,
-        wmsGoodFactor: settings.algorithmSettings?.WeightedMultiplier?.goodFactor ?? 1.3,
-        wmsEasyFactor: settings.algorithmSettings?.WeightedMultiplier?.easyFactor ?? 2.0,
+        wmsImpMin: (weightedMultiplierSettings.impMin ?? 1.0).toString(),
+        wmsImpMax: (weightedMultiplierSettings.impMax ?? 2.5).toString(),
+        wmsAgainInterval: weightedMultiplierSettings.againInterval ?? 1.0,
+        wmsHardFactor: weightedMultiplierSettings.hardFactor ?? 0.7,
+        wmsGoodFactor: weightedMultiplierSettings.goodFactor ?? 1.3,
+        wmsEasyFactor: weightedMultiplierSettings.easyFactor ?? 2.0,
 
         // UI
         showStatusBar: settings.showStatusBar ?? true,
@@ -110,6 +126,8 @@ export function mergeUIStateToSettings(
     uiChanges: Partial<UISettingsState>,
 ): SRSettings {
     const merged = { ...originalSettings };
+    const weightedMultiplierSettings =
+        (merged.algorithmSettings?.WeightedMultiplier as WeightedMultiplierUiSettings | undefined) ?? {};
 
     // Flashcards
     if (uiChanges.flashcardTags !== undefined) merged.flashcardTags = uiChanges.flashcardTags;
@@ -142,9 +160,9 @@ export function mergeUIStateToSettings(
     if (uiChanges.codeContextLines !== undefined)
         merged.codeContextLines = uiChanges.codeContextLines;
     if (uiChanges.clozeContextMode !== undefined)
-        merged.clozeContextMode = uiChanges.clozeContextMode as any;
+        merged.clozeContextMode = uiChanges.clozeContextMode as SRSettings["clozeContextMode"];
     if (uiChanges.clozeContextPerformanceMode !== undefined)
-        merged.clozeContextPerformanceMode = uiChanges.clozeContextPerformanceMode as any;
+        merged.clozeContextPerformanceMode = uiChanges.clozeContextPerformanceMode as SRSettings["clozeContextPerformanceMode"];
     if (uiChanges.clozeContextSoftLimitLines !== undefined)
         merged.clozeContextSoftLimitLines = uiChanges.clozeContextSoftLimitLines;
     if (uiChanges.showOtherAnkiClozeVisual !== undefined)
@@ -188,31 +206,30 @@ export function mergeUIStateToSettings(
         uiChanges.wmsEasyFactor !== undefined
     ) {
         if (!merged.algorithmSettings) merged.algorithmSettings = {};
-        if (!merged.algorithmSettings.WeightedMultiplier)
-            merged.algorithmSettings.WeightedMultiplier = {};
+        merged.algorithmSettings.WeightedMultiplier = weightedMultiplierSettings;
 
         if (uiChanges.wmsImpMin !== undefined) {
             const val = parseFloat(uiChanges.wmsImpMin);
-            if (!isNaN(val)) merged.algorithmSettings.WeightedMultiplier.impMin = val;
+            if (!isNaN(val)) weightedMultiplierSettings.impMin = val;
         }
         if (uiChanges.wmsImpMax !== undefined) {
             const val = parseFloat(uiChanges.wmsImpMax);
-            if (!isNaN(val)) merged.algorithmSettings.WeightedMultiplier.impMax = val;
+            if (!isNaN(val)) weightedMultiplierSettings.impMax = val;
         }
 
         if (uiChanges.wmsAgainInterval !== undefined)
-            merged.algorithmSettings.WeightedMultiplier.againInterval = uiChanges.wmsAgainInterval;
+            weightedMultiplierSettings.againInterval = uiChanges.wmsAgainInterval;
         if (uiChanges.wmsHardFactor !== undefined)
-            merged.algorithmSettings.WeightedMultiplier.hardFactor = uiChanges.wmsHardFactor;
+            weightedMultiplierSettings.hardFactor = uiChanges.wmsHardFactor;
         if (uiChanges.wmsGoodFactor !== undefined)
-            merged.algorithmSettings.WeightedMultiplier.goodFactor = uiChanges.wmsGoodFactor;
+            weightedMultiplierSettings.goodFactor = uiChanges.wmsGoodFactor;
         if (uiChanges.wmsEasyFactor !== undefined)
-            merged.algorithmSettings.WeightedMultiplier.easyFactor = uiChanges.wmsEasyFactor;
+            weightedMultiplierSettings.easyFactor = uiChanges.wmsEasyFactor;
 
         // Ensure baseEase is preserved or copied if needed, though wmsBaseEase wasn't added yet
         // If the implementation requires baseEase in WMS settings, ensure it exists
-        if (merged.algorithmSettings.WeightedMultiplier.baseEase === undefined) {
-            merged.algorithmSettings.WeightedMultiplier.baseEase = merged.baseEase ?? 250;
+        if (weightedMultiplierSettings.baseEase === undefined) {
+            weightedMultiplierSettings.baseEase = merged.baseEase ?? 250;
         }
     }
 
@@ -235,13 +252,13 @@ export function mergeUIStateToSettings(
     if (uiChanges.noteStatusBarColor !== undefined)
         merged.noteStatusBarColor = uiChanges.noteStatusBarColor;
     if (uiChanges.noteStatusBarAnimation !== undefined)
-        merged.noteStatusBarAnimation = uiChanges.noteStatusBarAnimation as any;
+        merged.noteStatusBarAnimation = uiChanges.noteStatusBarAnimation as SRSettings["noteStatusBarAnimation"];
     if (uiChanges.noteStatusBarPeriod !== undefined)
         merged.noteStatusBarPeriod = uiChanges.noteStatusBarPeriod;
     if (uiChanges.flashcardStatusBarColor !== undefined)
         merged.flashcardStatusBarColor = uiChanges.flashcardStatusBarColor;
     if (uiChanges.flashcardStatusBarAnimation !== undefined)
-        merged.flashcardStatusBarAnimation = uiChanges.flashcardStatusBarAnimation as any;
+        merged.flashcardStatusBarAnimation = uiChanges.flashcardStatusBarAnimation;
     if (uiChanges.flashcardStatusBarPeriod !== undefined)
         merged.flashcardStatusBarPeriod = uiChanges.flashcardStatusBarPeriod;
 

@@ -15,12 +15,22 @@
  * 2. src/ui/components/EmbeddedSettingsPanel.tsx（设置界面的激活操作）
  */
 
-import { Notice, Plugin, requestUrl } from "obsidian";
+import { Notice, Platform, Plugin, requestUrl } from "obsidian";
 import type { SRSettings } from "src/settings";
-import { getPlatformFingerprint } from "src/util/platform";
 
-interface AdapterWithBasePath {
-    basePath?: string;
+type FileSystemAdapterLike = {
+    basePath: string;
+};
+
+type LicenseSettingsLike = Pick<SRSettings, "licenseKey" | "isPro"> &
+    Partial<Pick<SRSettings, "vaultId" | "licenseToken" | "lastVerification">>;
+
+function getVaultPlatform(): string {
+    if (Platform.isWin) return "windows";
+    if (Platform.isMacOS) return "macos";
+    if (Platform.isLinux) return "linux";
+    if (Platform.isMobile) return "mobile";
+    return "unknown";
 }
 
 /**
@@ -64,7 +74,7 @@ export class LicenseManager {
      * 基于笔记库路径 + 平台信息的 SHA-256 哈希
      * 首次生成后保存到 settings，后续直接读取
      */
-    async generateVaultId(settings: SRSettings): Promise<string> {
+    async generateVaultId(settings: Pick<LicenseSettingsLike, "vaultId">): Promise<string> {
         // 如果之前已经生成过，直接返回
         if (settings.vaultId) {
             return settings.vaultId;
@@ -72,13 +82,12 @@ export class LicenseManager {
 
         try {
             // 获取笔记库路径信息
-            const adapter = this.plugin.app.vault.adapter as typeof this.plugin.app.vault.adapter &
-                AdapterWithBasePath;
+            const adapter = this.plugin.app.vault.adapter;
             let vaultPath = this.plugin.app.vault.getName();
-            if (adapter.basePath) {
-                vaultPath = adapter.basePath + "/" + vaultPath;
+            if (adapter && "basePath" in adapter) {
+                vaultPath = (adapter as FileSystemAdapterLike).basePath + "/" + vaultPath;
             }
-            const platform = getPlatformFingerprint();
+            const platform = getVaultPlatform();
 
             // 组合因素并做 SHA-256 哈希
             const vaultInfo = [vaultPath, platform].join("|");
@@ -110,7 +119,7 @@ export class LicenseManager {
      * 将用户输入的 Key 和设备指纹发给服务器验证
      * @returns 是否激活成功
      */
-    async activateLicense(key: string, settings: SRSettings): Promise<boolean> {
+    async activateLicense(key: string, settings: LicenseSettingsLike): Promise<boolean> {
         try {
             const vaultId = await this.generateVaultId(settings);
 
@@ -150,7 +159,7 @@ export class LicenseManager {
      * 解绑 License
      * 清除本地所有激活凭证，恢复为免费版
      */
-    deactivateLicense(settings: SRSettings): void {
+    deactivateLicense(settings: LicenseSettingsLike): void {
         settings.licenseKey = "";
         settings.isPro = false;
         settings.licenseToken = "";
@@ -166,7 +175,7 @@ export class LicenseManager {
      * 联网验证当前 License 是否仍然有效
      * @returns 是否有效
      */
-    private async verifyWithServer(settings: SRSettings): Promise<boolean> {
+    private async verifyWithServer(settings: LicenseSettingsLike): Promise<boolean> {
         try {
             const vaultId = await this.generateVaultId(settings);
 
@@ -205,7 +214,7 @@ export class LicenseManager {
     /**
      * 判断是否需要重新联网验证
      */
-    private shouldVerify(settings: SRSettings): boolean {
+    private shouldVerify(settings: Pick<LicenseSettingsLike, "lastVerification">): boolean {
         if (!settings.lastVerification) return true;
         const daysSince = (Date.now() - settings.lastVerification) / (1000 * 60 * 60 * 24);
         return daysSince >= this.VERIFICATION_INTERVAL_DAYS;
@@ -216,7 +225,7 @@ export class LicenseManager {
      * 用于插件启动时偷偷验一下，失效就悄悄降级，不弹窗打扰用户
      * @returns 是否仍然有效
      */
-    async backgroundCheck(settings: SRSettings): Promise<boolean> {
+    async backgroundCheck(settings: LicenseSettingsLike): Promise<boolean> {
         // 没有 token 就不需要检测
         if (!settings.licenseToken) {
             return false;
@@ -241,18 +250,17 @@ export class LicenseManager {
      * 用于防止用户复制别人的 data.json 来破解
      * 如果不匹配，强制降级
      */
-    async verifyVaultId(settings: SRSettings): Promise<void> {
+    async verifyVaultId(settings: LicenseSettingsLike): Promise<void> {
         if (!settings.isPro || !settings.vaultId) return;
 
         try {
             // 重新生成当前机器的指纹
-            const adapter = this.plugin.app.vault.adapter as typeof this.plugin.app.vault.adapter &
-                AdapterWithBasePath;
+            const adapter = this.plugin.app.vault.adapter;
             let vaultPath = this.plugin.app.vault.getName();
-            if (adapter.basePath) {
-                vaultPath = adapter.basePath + "/" + vaultPath;
+            if (adapter && "basePath" in adapter) {
+                vaultPath = (adapter as FileSystemAdapterLike).basePath + "/" + vaultPath;
             }
-            const platform = getPlatformFingerprint();
+            const platform = getVaultPlatform();
             const vaultInfo = [vaultPath, platform].join("|");
 
             const encoder = new TextEncoder();

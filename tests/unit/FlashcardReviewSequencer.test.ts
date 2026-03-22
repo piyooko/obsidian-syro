@@ -17,7 +17,6 @@ import { CardListType, Deck, DeckTreeFilter } from "src/Deck";
 import { DEFAULT_SETTINGS, SRSettings } from "src/settings";
 import { SampleItemDecks } from "./SampleItems";
 import { ReviewResponse } from "src/scheduling";
-import moment from "moment";
 import { INoteEaseList, NoteEaseList } from "src/NoteEaseList";
 import { QuestionPostponementList, IQuestionPostponementList } from "src/QuestionPostponementList";
 import { UnitTestSRFile } from "./helpers/UnitTestSRFile";
@@ -275,7 +274,7 @@ async function checkReviewResponse_ReviewMode(
 #flashcards Q2::A2 <!--SR:!2023-09-02,4,270-->
 #flashcards Q3::A3`;
 
-    const fakeFilePath: string = moment().millisecond().toString();
+    const fakeFilePath: string = window.moment().millisecond().toString();
     const c: TestContext = TestContext.Create(
         order_DueFirst_Sequential,
         FlashcardReviewMode.Review,
@@ -300,7 +299,7 @@ async function checkReviewResponse_ReviewMode(
     // Schedule for the reviewed card has been updated
     expect(card.scheduleInfo.ease).toEqual(info.cardQ2_PostReviewEase);
     expect(card.scheduleInfo.interval).toEqual(info.cardQ2_PostReviewInterval);
-    expect(card.scheduleInfo.dueDate.unix).toEqual(moment(info.cardQ2_PostReviewDueDate).unix);
+    expect(card.scheduleInfo.dueDate.unix).toEqual(window.moment(info.cardQ2_PostReviewDueDate).unix);
 
     // Review metadata is kept in runtime/store state; the note text remains unchanged.
     expect(await c.file.read()).toEqual(c.originalText);
@@ -313,7 +312,7 @@ async function checkReviewResponse_CramMode(reviewResponse: ReviewResponse): Pro
 #flashcards Q3::A3 <!--SR:!2023-09-02,5,270-->
 #flashcards Q4::A4 <!--SR:!2023-09-02,5,270-->`;
 
-    const str: string = moment().millisecond().toString();
+    const str: string = window.moment().millisecond().toString();
     const c: TestContext = TestContext.Create(
         order_DueFirst_Sequential,
         FlashcardReviewMode.Cram,
@@ -338,7 +337,7 @@ async function checkReviewResponse_CramMode(reviewResponse: ReviewResponse): Pro
 
     // No change to schedule for reviewed card in cram mode
     expect(card.scheduleInfo).toMatchObject(expectInfo);
-    expect(card.scheduleInfo.dueDate.unix).toEqual(moment("2023-09-02").unix);
+    expect(card.scheduleInfo.dueDate.unix).toEqual(window.moment("2023-09-02").unix);
 
     // Note text remains the same
     const expectedText: string = c.originalText;
@@ -424,7 +423,6 @@ function skipThenCheckCardFront(sequencer: IFlashcardReviewSequencer, expectedFr
 // Do this before each test, as some tests change the "current" date
 beforeEach(() => {
     setupStaticDateProvider_20230906();
-    (window as any).moment = moment;
 });
 
 describe("setDeckTree", () => {

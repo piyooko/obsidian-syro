@@ -1,29 +1,31 @@
-/**
- * 这个文件主要是干什么的：
- * 它是整个插件的“大管家”和第一入口。
- * 当插件被打开时，它是最先开始工作的，负责把其他所有的功能模块（比如保存数据、算法、显示各个界面、提供快捷指令）全部组装起来并让它们开始上班。
- * 每天关掉插件时，它也负责让大家统一下班休息。
- * 它还偷偷加了个功能：随时核对当前用户的身份，如果是免费用户用到高级快捷键（比如特殊的填空题制作键），它就会拦下来不让用。
+﻿/**
+ * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
+ * 瀹冩槸鏁翠釜鎻掍欢鐨勨€滃ぇ绠″鈥濆拰绗竴鍏ュ彛銆?
+ * 褰撴彃浠惰鎵撳紑鏃讹紝瀹冩槸鏈€鍏堝紑濮嬪伐浣滅殑锛岃礋璐ｆ妸鍏朵粬鎵€鏈夌殑鍔熻兘妯″潡锛堟瘮濡備繚瀛樻暟鎹€佺畻娉曘€佹樉绀哄悇涓晫闈€佹彁渚涘揩鎹锋寚浠わ級鍏ㄩ儴缁勮璧锋潵骞惰瀹冧滑寮€濮嬩笂鐝€?
+ * 姣忓ぉ鍏虫帀鎻掍欢鏃讹紝瀹冧篃璐熻矗璁╁ぇ瀹剁粺涓€涓嬬彮浼戞伅銆?
+ * 瀹冭繕鍋峰伔鍔犱簡涓姛鑳斤細闅忔椂鏍稿褰撳墠鐢ㄦ埛鐨勮韩浠斤紝濡傛灉鏄厤璐圭敤鎴风敤鍒伴珮绾у揩鎹烽敭锛堟瘮濡傜壒娈婄殑濉┖棰樺埗浣滈敭锛夛紝瀹冨氨浼氭嫤涓嬫潵涓嶈鐢ㄣ€?
  *
- * 它在项目中属于：逻辑层
+ * 瀹冨湪椤圭洰涓睘浜庯細閫昏緫灞?
  *
- * 它会用到哪些文件：
- * 这个大管家几乎会用到项目里的所有核心文件，比如：
- * 1. src/settings.ts — 获取用户的偏好设置
- * 2. src/dataStore/data.ts — 获取保存的复习数据
- * 3. src/ui/views/* — 负责调出各种显示界面
- * 4. src/services/LicenseManager.ts — 用来验证用户的激活码对不对，是不是高级会员
+ * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
+ * 杩欎釜澶х瀹跺嚑涔庝細鐢ㄥ埌椤圭洰閲岀殑鎵€鏈夋牳蹇冩枃浠讹紝姣斿锛?
+ * 1. src/settings.ts 鈥?鑾峰彇鐢ㄦ埛鐨勫亸濂借缃?
+ * 2. src/dataStore/data.ts 鈥?鑾峰彇淇濆瓨鐨勫涔犳暟鎹?
+ * 3. src/ui/views/* 鈥?璐熻矗璋冨嚭鍚勭鏄剧ず鐣岄潰
+ * 4. src/services/LicenseManager.ts 鈥?鐢ㄦ潵楠岃瘉鐢ㄦ埛鐨勬縺娲荤爜瀵逛笉瀵癸紝鏄笉鏄珮绾т細鍛?
  *
- * 哪些文件会用到它：
- * 主要由笔记软件本身来呼叫它。
- * 同时，其他很多需要跟大管家要信息的地方也会找它。
+ * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
+ * 涓昏鐢辩瑪璁拌蒋浠舵湰韬潵鍛煎彨瀹冦€?
+ * 鍚屾椂锛屽叾浠栧緢澶氶渶瑕佽窡澶х瀹惰淇℃伅鐨勫湴鏂逛篃浼氭壘瀹冦€?
  */
 import {
+    App,
     getAllTags,
     Notice,
     Plugin,
     TAbstractFile,
     TFile,
+    Vault,
     setTooltip,
     WorkspaceLeaf,
 } from "obsidian";
@@ -115,6 +117,7 @@ import {
     PersistedNoteCacheItem,
     serializeNote,
     SerializedNote,
+    validateCachedNoteBindings,
 } from "src/cache/noteCacheStore";
 import { ReviewCommitStore } from "src/dataStore/reviewCommitStore";
 import { autoCommitReviewResponseToTimeline } from "src/ui/timeline/reviewResponseTimeline";
@@ -123,15 +126,15 @@ import {
     FIRST_RUN_TUTORIAL_NOTE_PATH,
 } from "src/firstRunTutorial";
 
-// 每日牌组统计数据结构（持久化存储）
-// 每日牌组统计数据结构（持久化存储）
+// 姣忔棩鐗岀粍缁熻鏁版嵁缁撴瀯锛堟寔涔呭寲瀛樺偍锛?
+// 姣忔棩鐗岀粍缁熻鏁版嵁缁撴瀯锛堟寔涔呭寲瀛樺偍锛?
 interface DailyDeckStats {
-    date: string; // 记录日期，例如 "2023-12-01"
-    // 牌组名 -> 计数
+    date: string; // 璁板綍鏃ユ湡锛屼緥濡?"2023-12-01"
+    // 鐗岀粍鍚?-> 璁℃暟
     counts: Record<string, { new: number; review: number }>;
 }
 
-// 运行时学习队列项（不再需要持久化到 plugin.data，状态存在 RepetitionItem.learningStep）
+// 杩愯鏃跺涔犻槦鍒楅」锛堜笉鍐嶉渶瑕佹寔涔呭寲鍒?plugin.data锛岀姸鎬佸瓨鍦?RepetitionItem.learningStep锛?
 export interface LearningQueueItem {
     card: Card;
     dueTime: number;
@@ -146,9 +149,9 @@ interface PluginData {
     // which covers most of the cases
     buryList: string[];
     historyDeck: string | null;
-    // 持久化存储每日统计
+    // 鎸佷箙鍖栧瓨鍌ㄦ瘡鏃ョ粺璁?
     dailyDeckStats: DailyDeckStats;
-    // 注意：learningQueue 不再存储在这里，状态已移至 RepetitionItem.learningStep
+    // 娉ㄦ剰锛歭earningQueue 涓嶅啀瀛樺偍鍦ㄨ繖閲岋紝鐘舵€佸凡绉昏嚦 RepetitionItem.learningStep
 }
 
 type SyncMode = "incremental" | "full";
@@ -188,20 +191,19 @@ export default class SRPlugin extends Plugin {
     private isSRInFocus: boolean = false;
     private statusBarNote: HTMLElement;
     private statusBarFlashcard: HTMLElement;
-    public reviewQueueView: ReactNoteReviewView;
     public data: PluginData;
-    // 双算法架构
-    cardAlgorithm: SrsAlgorithm; // 卡片复习算法
-    noteAlgorithm: SrsAlgorithm; // 笔记复习算法
+    // 鍙岀畻娉曟灦鏋?
+    cardAlgorithm: SrsAlgorithm; // 鍗＄墖澶嶄範绠楁硶
+    noteAlgorithm: SrsAlgorithm; // 绗旇澶嶄範绠楁硶
 
     /**
-     * 根据项目类型获取对应的算法实例
+     * 鏍规嵁椤圭洰绫诲瀷鑾峰彇瀵瑰簲鐨勭畻娉曞疄渚?
      */
     getAlgorithmForItem(itemType: RPITEMTYPE): SrsAlgorithm {
         return itemType === RPITEMTYPE.CARD ? this.cardAlgorithm : this.noteAlgorithm;
     }
 
-    // eTextScheduleStore: TextScheduleStore;  // 已经在下面的代码中定义
+    // eTextScheduleStore: TextScheduleStore;  // 宸茬粡鍦ㄤ笅闈㈢殑浠ｇ爜涓畾涔?
     public tabViewManager: TabViewManager;
     public syncLock = false;
 
@@ -240,13 +242,13 @@ export default class SRPlugin extends Plugin {
     public settingTab: SRSettingTab;
     public reviewCommitStore: ReviewCommitStore;
 
-    /** 事件总线：同步完成后广播消息，通知已打开的 UI 组件局部刷新数字 */
+    /** 浜嬩欢鎬荤嚎锛氬悓姝ュ畬鎴愬悗骞挎挱娑堟伅锛岄€氱煡宸叉墦寮€鐨?UI 缁勪欢灞€閮ㄥ埛鏂版暟瀛?*/
     public syncEvents: SyncEvents = new SyncEvents();
 
     public clock_start: number;
 
-    // 学习队列：存储在插件级别，关闭复习界面后仍然保留
-    // 格式: { card: Card, dueTime: number, deckName: string }[]
+    // 瀛︿範闃熷垪锛氬瓨鍌ㄥ湪鎻掍欢绾у埆锛屽叧闂涔犵晫闈㈠悗浠嶇劧淇濈暀
+    // 鏍煎紡: { card: Card, dueTime: number, deckName: string }[]
     public learningQueue: Array<{ card: Card; dueTime: number; deckName: string }> = [];
 
     private hasPerformedInitialGC = false;
@@ -256,10 +258,33 @@ export default class SRPlugin extends Plugin {
         return SRPlugin._instance;
     }
 
-    async onload(): Promise<void> {
+    private runAsync(task: Promise<unknown>, label: string): void {
+        void task.catch((error: unknown) => {
+            console.error(`[SR] ${label} failed`, error);
+        });
+    }
+
+    private getReviewQueueView(): ReactNoteReviewView | null {
+        const leaf = this.getActiveLeaf(REVIEW_QUEUE_VIEW_TYPE);
+        if (leaf == null) {
+            return null;
+        }
+
+        return leaf.view instanceof ReactNoteReviewView ? leaf.view : null;
+    }
+
+    redrawReviewQueueView(): void {
+        this.getReviewQueueView()?.redraw();
+    }
+
+    onload(): void {
+        this.runAsync(this.performOnload(), "plugin load");
+    }
+
+    private async performOnload(): Promise<void> {
         // Closes all still open tab views when the plugin is loaded, because it causes bugs / empty windows otherwise
         this.tabViewManager = new TabViewManager(this);
-        this.app.workspace.onLayoutReady(async () => {
+        this.app.workspace.onLayoutReady(() => {
             this.tabViewManager.closeAllTabViews();
         });
 
@@ -276,20 +301,20 @@ export default class SRPlugin extends Plugin {
 
         appIcon();
 
-        // 注册 Anki Cloze 编辑器装饰扩展（Linear 风格预览）
+        // 娉ㄥ唽 Anki Cloze 缂栬緫鍣ㄨ楗版墿灞曪紙Linear 椋庢牸棰勮锛?
         initializeClozeDecoration(this.app);
         this.registerEditorExtension(clozeDecorationPlugin);
 
-        // 注册 LaTeX Cloze 编辑器扩展
+        // 娉ㄥ唽 LaTeX Cloze 缂栬緫鍣ㄦ墿灞?
         initializeLatexPopover(this.app, {
             isEnabled: () => this.data.settings.enableLatexPopover === true,
         });
         this.registerEditorExtension(latexPopoverExtension);
 
-        // 注册 LaTeX Cloze 预处理器 (使用 atomic ranges)
+        // 娉ㄥ唽 LaTeX Cloze 棰勫鐞嗗櫒 (浣跨敤 atomic ranges)
         this.registerEditorExtension(latexClozePreprocessorPlugin);
 
-        // 注册标准 Cloze Markdown 后处理器 (阅读模式)
+        // 娉ㄥ唽鏍囧噯 Cloze Markdown 鍚庡鐞嗗櫒 (闃呰妯″紡)
         this.registerMarkdownPostProcessor(clozePostProcessor);
 
         const PLUGIN_VERSION = this.manifest.version;
@@ -300,7 +325,7 @@ export default class SRPlugin extends Plugin {
 
         upgradeSettings(this.data.settings);
 
-        // 确保algorithmSettings中有对应算法的配置
+        // 纭繚algorithmSettings涓湁瀵瑰簲绠楁硶鐨勯厤缃?
         if (!this.data.settings.algorithmSettings[this.data.settings.cardAlgorithm]) {
             this.data.settings.algorithmSettings[this.data.settings.cardAlgorithm] =
                 algorithms[this.data.settings.cardAlgorithm]?.defaultSettings() || {};
@@ -310,7 +335,7 @@ export default class SRPlugin extends Plugin {
                 algorithms[this.data.settings.noteAlgorithm]?.defaultSettings() || {};
         }
 
-        // 初始化卡片复习算法
+        // 鍒濆鍖栧崱鐗囧涔犵畻娉?
         this.cardAlgorithm = algorithms[this.data.settings.cardAlgorithm];
         if (this.cardAlgorithm) {
             this.cardAlgorithm.updateSettings(
@@ -318,7 +343,7 @@ export default class SRPlugin extends Plugin {
             );
         }
 
-        // 初始化笔记复习算法
+        // 鍒濆鍖栫瑪璁板涔犵畻娉?
         this.noteAlgorithm = algorithms[this.data.settings.noteAlgorithm];
         if (this.noteAlgorithm) {
             this.noteAlgorithm.updateSettings(
@@ -326,7 +351,7 @@ export default class SRPlugin extends Plugin {
             );
         }
 
-        // 保留algorithm字段用于兼容性（指向noteAlgorithm）
+        // 淇濈暀algorithm瀛楁鐢ㄤ簬鍏煎鎬э紙鎸囧悜noteAlgorithm锛?
         this.algorithm = this.noteAlgorithm;
 
         // Update settings for both algorithms in the plugin data
@@ -342,7 +367,7 @@ export default class SRPlugin extends Plugin {
             await this.initializeFirstRunTutorialNote();
         }
 
-        this.savePluginData();
+        this.runAsync(this.savePluginData(), "save plugin data");
 
         IReviewNote.create(settings);
         ReviewView.create(this, this.data.settings);
@@ -357,7 +382,7 @@ export default class SRPlugin extends Plugin {
         this.reviewFloatBar.submitCallback = (resp) => {
             const openFile: TFile | null = this.app.workspace.getActiveFile();
             if (openFile && openFile.extension === "md") {
-                this.saveReviewResponse(openFile, resp);
+                this.runAsync(this.saveReviewResponse(openFile, resp), "save review response");
             }
         };
         this.reviewFloatBar.openNextNoteCB = () => {
@@ -375,16 +400,15 @@ export default class SRPlugin extends Plugin {
                     return;
                 }
             }
-            this.reviewNextNote(this.lastSelectedReviewDeck);
+            this.runAsync(this.reviewNextNote(this.lastSelectedReviewDeck), "review next note");
         };
 
         registerTrackFileEvents(this);
 
         this.registerInterval(
             window.setInterval(
-                async () => {
-                    await this.requestSync({ trigger: "background" });
-                    // this.store.save();
+                () => {
+                    this.runAsync(this.requestSync({ trigger: "background" }), "background sync");
                 },
                 30 * 60 * 1000,
             ),
@@ -392,39 +416,50 @@ export default class SRPlugin extends Plugin {
 
         // Initialize Note Status Bar Item
         this.statusBarNote = this.addStatusBarItem();
-        this.statusBarNote.classList.add("syro-status-bar-item", "syro-status-bar-note-item");
         this.statusBarNote.classList.add("mod-clickable");
         setTooltip(this.statusBarNote, t("OPEN_NOTE_FOR_REVIEW"), { placement: "top" });
-        this.statusBarNote.addEventListener("click", async () => {
-            await this.refreshNoteReview({ trigger: "review-entry" });
-            this.reviewNextNoteModal();
+        this.statusBarNote.addEventListener("click", () => {
+            this.runAsync(
+                this.refreshNoteReview({ trigger: "review-entry" }).then(() => {
+                    this.reviewNextNoteModal();
+                }),
+                "open note review",
+            );
         });
 
         // Initialize Flashcard Status Bar Item
         this.statusBarFlashcard = this.addStatusBarItem();
-        this.statusBarFlashcard.classList.add(
-            "syro-status-bar-item",
-            "syro-status-bar-flashcard-item",
-        );
         this.statusBarFlashcard.classList.add("mod-clickable");
         setTooltip(this.statusBarFlashcard, t("REVIEW_CARDS"), { placement: "top" });
-        this.statusBarFlashcard.addEventListener("click", async () => {
-            if (!this.syncLock) {
-                await this.requestSync({ trigger: "review-entry" });
-                this.tabViewManager.openSRTabView(FlashcardReviewMode.Review);
+        this.statusBarFlashcard.addEventListener("click", () => {
+            if (this.syncLock) {
+                return;
             }
+
+            this.runAsync(
+                this.requestSync({ trigger: "review-entry" }).then(() => {
+                    return this.tabViewManager.openSRTabView(FlashcardReviewMode.Review);
+                }),
+                "open flashcard review",
+            );
         });
 
-        // 初始化状态栏呼吸灯动态样式
+        // 鍒濆鍖栫姸鎬佹爮鍛煎惛鐏姩鎬佹牱寮?
         this.updateStatusBarVisibility();
         this.updateStatusBarStyles();
         this.updateStatusBar();
 
-        this.addRibbonIcon("SpacedRepIcon", t("REVIEW_CARDS"), async () => {
-            if (!this.syncLock) {
-                await this.requestSync({ trigger: "review-entry" });
-                this.tabViewManager.openSRTabView(FlashcardReviewMode.Review);
+        this.addRibbonIcon("SpacedRepIcon", t("REVIEW_CARDS"), () => {
+            if (this.syncLock) {
+                return;
             }
+
+            this.runAsync(
+                this.requestSync({ trigger: "review-entry" }).then(() => {
+                    return this.tabViewManager.openSRTabView(FlashcardReviewMode.Review);
+                }),
+                "open ribbon flashcard review",
+            );
         });
 
         if (!this.data.settings.disableFileMenuReviewOptions) {
@@ -439,7 +474,7 @@ export default class SRPlugin extends Plugin {
                         const algo = this.data.settings.noteAlgorithm;
                         const showtext = this.data.settings.responseOptionBtnsText;
 
-                        // 获取笔记的 RepetitionItem 以计算各选项的复习间隔天数
+                        // 鑾峰彇绗旇鐨?RepetitionItem 浠ヨ绠楀悇閫夐」鐨勫涔犻棿闅斿ぉ鏁?
                         let intervals: number[] | null = null;
                         try {
                             const noteItem = this.noteReviewStore.getItem(fileish.path);
@@ -447,15 +482,15 @@ export default class SRPlugin extends Plugin {
                                 intervals = this.noteAlgorithm.calcAllOptsIntervals(noteItem);
                             }
                         } catch (e) {
-                            // 如果获取失败（例如笔记未被追踪），则不显示间隔
+                            // 濡傛灉鑾峰彇澶辫触锛堜緥濡傜瑪璁版湭琚拷韪級锛屽垯涓嶆樉绀洪棿闅?
                         }
 
-                        // === 修改：从 i=0 开始，以包含"重来"选项 ===
+                        // === 淇敼锛氫粠 i=0 寮€濮嬶紝浠ュ寘鍚?閲嶆潵"閫夐」 ===
                         for (let i = 0; i < options.length; i++) {
                             menu.addItem((item) => {
-                                // 生成带间隔的标题：难度: X天后
+                                // 鐢熸垚甯﹂棿闅旂殑鏍囬锛氶毦搴? X澶╁悗
                                 let title: string;
-                                // 获取标准化的选项名称（英文）以便映射到翻译 Key
+                                // 鑾峰彇鏍囧噯鍖栫殑閫夐」鍚嶇О锛堣嫳鏂囷級浠ヤ究鏄犲皠鍒扮炕璇?Key
                                 const optionName = options[i];
                                 let localizedOption: string;
 
@@ -473,23 +508,26 @@ export default class SRPlugin extends Plugin {
                                         interval: intervalText,
                                     });
                                 } else {
-                                    // 没有间隔信息时（如未追踪的笔记），只显示难度名称
+                                    // 娌℃湁闂撮殧淇℃伅鏃讹紙濡傛湭杩借釜鐨勭瑪璁帮級锛屽彧鏄剧ず闅惧害鍚嶇О
                                     title = localizedOption;
                                 }
                                 item.setTitle(title)
-                                    .setIcon("SpacedRepIcon")
-                                    .onClick(() => {
-                                        this.saveReviewResponse(fileish, i);
+                                .setIcon("SpacedRepIcon")
+                                .onClick(() => {
+                                        this.runAsync(
+                                            this.saveReviewResponse(fileish, i),
+                                            "save file menu review response",
+                                        );
                                     });
                             });
                         }
 
-                        // 添加分隔符
+                        // 娣诲姞鍒嗛殧绗?
                         menu.addSeparator();
 
-                        // 添加"设置重要性"菜单项
+                        // 娣诲姞"璁剧疆閲嶈鎬?鑿滃崟椤?
                         menu.addItem((item) => {
-                            // 获取当前笔记的 RepetitionItem
+                            // 鑾峰彇褰撳墠绗旇鐨?RepetitionItem
                             const noteItem = this.noteReviewStore.getItem(fileish.path);
                             const currentPriority = noteItem?.priority ?? 5;
 
@@ -501,16 +539,23 @@ export default class SRPlugin extends Plugin {
                                     const modal = new PriorityInputModal(
                                         this.app,
                                         currentPriority,
-                                        async (newPriority: number) => {
-                                            if (noteItem) {
-                                                // 更新重要性
-                                                noteItem.priority = newPriority;
-                                                await this.noteReviewStore.save();
-                                                // 刷新侧边栏
-                                                this.updateAndSortDueNotes();
-                                                this.syncEvents.emit("note-review-updated");
-                                                new Notice(`${t("PRIORITY")}: ${newPriority}`);
+                                        (newPriority: number) => {
+                                            if (!noteItem) {
+                                                return;
                                             }
+
+                                            this.runAsync(
+                                                (async () => {
+                                                    // 鏇存柊閲嶈鎬?
+                                                    noteItem.priority = newPriority;
+                                                    await this.noteReviewStore.save();
+                                                    // 鍒锋柊渚ц竟鏍?
+                                                    this.updateAndSortDueNotes();
+                                                    this.syncEvents.emit("note-review-updated");
+                                                    new Notice(`${t("PRIORITY")}: ${newPriority}`);
+                                                })(),
+                                                "save note priority",
+                                            );
                                         },
                                     );
                                     modal.open();
@@ -526,9 +571,13 @@ export default class SRPlugin extends Plugin {
         this.addCommand({
             id: "srs-note-review-open-note",
             name: t("OPEN_NOTE_FOR_REVIEW"),
-            callback: async () => {
-                await this.refreshNoteReview({ trigger: "review-entry" });
-                this.reviewNextNoteModal();
+            callback: () => {
+                this.runAsync(
+                    this.refreshNoteReview({ trigger: "review-entry" }).then(() => {
+                        this.reviewNextNoteModal();
+                    }),
+                    "open note review command",
+                );
             },
         });
 
@@ -544,7 +593,10 @@ export default class SRPlugin extends Plugin {
                 callback: () => {
                     const openFile: TFile | null = this.app.workspace.getActiveFile();
                     if (openFile && openFile.extension === "md") {
-                        this.saveReviewResponse(openFile, i);
+                        this.runAsync(
+                            this.saveReviewResponse(openFile, i),
+                            "save note review response",
+                        );
                     }
                 },
             });
@@ -553,86 +605,100 @@ export default class SRPlugin extends Plugin {
         this.addCommand({
             id: "srs-review-flashcards",
             name: t("REVIEW_ALL_CARDS"),
-            callback: async () => {
+            callback: () => {
                 if (this.syncLock) {
                     return;
                 }
 
-                await this.requestSync({ trigger: "review-entry" });
-                this.tabViewManager.openSRTabView(FlashcardReviewMode.Review);
+                this.runAsync(
+                    this.requestSync({ trigger: "review-entry" }).then(() => {
+                        return this.tabViewManager.openSRTabView(FlashcardReviewMode.Review);
+                    }),
+                    "review all flashcards",
+                );
             },
         });
 
         this.addCommand({
             id: "srs-cram-flashcards",
             name: t("CRAM_ALL_CARDS"),
-            callback: async () => {
-                await this.requestSync({
-                    reviewMode: FlashcardReviewMode.Cram,
-                    trigger: "review-entry",
-                });
-                this.tabViewManager.openSRTabView(FlashcardReviewMode.Cram);
+            callback: () => {
+                this.runAsync(
+                    this.requestSync({
+                        reviewMode: FlashcardReviewMode.Cram,
+                        trigger: "review-entry",
+                    }).then(() => {
+                        return this.tabViewManager.openSRTabView(FlashcardReviewMode.Cram);
+                    }),
+                    "cram all flashcards",
+                );
             },
         });
 
         this.addCommand({
             id: "srs-review-flashcards-in-note",
             name: t("REVIEW_CARDS_IN_NOTE"),
-            callback: async () => {
+            callback: () => {
                 const openFile: TFile | null = this.app.workspace.getActiveFile();
                 if (!openFile || openFile.extension !== "md") {
                     return;
                 }
 
-                this.tabViewManager.openSRTabView(FlashcardReviewMode.Review, openFile);
+                this.runAsync(
+                    this.tabViewManager.openSRTabView(FlashcardReviewMode.Review, openFile),
+                    "review flashcards in note",
+                );
             },
         });
 
         this.addCommand({
             id: "srs-cram-flashcards-in-note",
             name: t("CRAM_CARDS_IN_NOTE"),
-            callback: async () => {
+            callback: () => {
                 const openFile: TFile | null = this.app.workspace.getActiveFile();
                 if (!openFile || openFile.extension !== "md") {
                     return;
                 }
 
-                this.tabViewManager.openSRTabView(FlashcardReviewMode.Cram, openFile);
+                this.runAsync(
+                    this.tabViewManager.openSRTabView(FlashcardReviewMode.Cram, openFile),
+                    "cram flashcards in note",
+                );
             },
         });
 
         this.addCommand({
             id: "srs-open-review-queue-view",
             name: t("OPEN_REVIEW_QUEUE_VIEW"),
-            callback: async () => {
-                await this.openReviewQueueView();
+            callback: () => {
+                this.runAsync(this.openReviewQueueView(), "open review queue view");
             },
         });
 
-        // ============ Anki 风格挖空快捷键命令 ============
+        // ============ Anki 椋庢牸鎸栫┖蹇嵎閿懡浠?============
 
-        // 同级挖空 (Ctrl+Alt+Shift+C) - 使用当前行最大 ID
+        // 鍚岀骇鎸栫┖ (Ctrl+Alt+Shift+C) - 浣跨敤褰撳墠琛屾渶澶?ID
         this.addCommand({
             id: "srs-cloze-same-level",
             name: t("CMD_CREATE_CLOZE_SAME_LEVEL"),
             icon: "flashcards",
             editorCallback: async (editor) => {
-                // 【付费功能限制】
+                // 銆愪粯璐瑰姛鑳介檺鍒躲€?
                 const licMgr = LicenseManager.getInstance(this);
-                if (!(await licMgr.checkFeatureAccess("Anki 挖空"))) return;
+                if (!(await licMgr.checkFeatureAccess("Anki 鎸栫┖"))) return;
                 this.insertAnkiCloze(editor, "same");
             },
         });
 
-        // 新级挖空 (Alt+Shift+C) - 使用 maxId + 1
+        // 鏂扮骇鎸栫┖ (Alt+Shift+C) - 浣跨敤 maxId + 1
         this.addCommand({
             id: "srs-cloze-new-level",
             name: t("CMD_CREATE_CLOZE_NEW_LEVEL"),
             icon: "flashcards",
             editorCallback: async (editor) => {
-                // 【付费功能限制】
+                // 銆愪粯璐瑰姛鑳介檺鍒躲€?
                 const licMgr = LicenseManager.getInstance(this);
-                if (!(await licMgr.checkFeatureAccess("Anki 挖空"))) return;
+                if (!(await licMgr.checkFeatureAccess("Anki 鎸栫┖"))) return;
                 this.insertAnkiCloze(editor, "new");
             },
         });
@@ -641,31 +707,36 @@ export default class SRPlugin extends Plugin {
         this.addSettingTab(this.settingTab);
         this.app.workspace.trigger("parse-style-settings");
 
-        this.app.workspace.onLayoutReady(async () => {
-            await this.initReviewQueueView();
+        this.app.workspace.onLayoutReady(() => {
+            this.runAsync(this.initReviewQueueView(), "init review queue view");
             void this.refreshNoteReview({ trigger: "startup" });
-            setTimeout(async () => {
-                if (!this.syncLock) {
-                    await this.requestSync({ trigger: "startup" });
+            setTimeout(() => {
+                if (this.syncLock) {
+                    return;
                 }
+
+                this.runAsync(this.requestSync({ trigger: "startup" }), "startup sync");
             }, 2000);
-            // ====== License 防破解检测点 A：启动时静默验证 ======
+            // ====== License 闃茬牬瑙ｆ娴嬬偣 A锛氬惎鍔ㄦ椂闈欓粯楠岃瘉 ======
             try {
                 const licMgr = LicenseManager.getInstance(this);
                 if (this.data.settings.licenseToken) {
-                    licMgr.backgroundCheck(this.data.settings).then((isValid) => {
-                        if (!isValid && this.data.settings.isPro) {
-                            // 服务器明确拒绝，悄悄降级，不弹窗
-                            this.data.settings.isPro = false;
-                            this.savePluginData();
-                        }
-                    });
+                    this.runAsync(
+                        licMgr.backgroundCheck(this.data.settings).then((isValid) => {
+                            if (!isValid && this.data.settings.isPro) {
+                                // 鏈嶅姟鍣ㄦ槑纭嫆缁濓紝鎮勬倓闄嶇骇锛屼笉寮圭獥
+                                this.data.settings.isPro = false;
+                                this.runAsync(this.savePluginData(), "save license downgrade");
+                            }
+                        }),
+                        "license background check",
+                    );
                 } else {
-                    // 没有 token 也要初始化单例，确保后续能用
+                    // 娌℃湁 token 涔熻鍒濆鍖栧崟渚嬶紝纭繚鍚庣画鑳界敤
                     LicenseManager.getInstance(this);
                 }
             } catch (e) {
-                // License 检测不应影响插件正常启动
+                // License 妫€娴嬩笉搴斿奖鍝嶆彃浠舵甯稿惎鍔?
                 console.warn("[SR] License backgroundCheck error:", e);
             }
         });
@@ -680,9 +751,9 @@ export default class SRPlugin extends Plugin {
     }
 
     /**
-     * 插入 Anki 风格挖空
-     * @param editor 编辑器实例
-     * @param type "same" - 同级挖空(使用当前最大ID), "new" - 新级挖空(maxId+1)
+     * 鎻掑叆 Anki 椋庢牸鎸栫┖
+     * @param editor 缂栬緫鍣ㄥ疄渚?
+     * @param type "same" - 鍚岀骇鎸栫┖(浣跨敤褰撳墠鏈€澶D), "new" - 鏂扮骇鎸栫┖(maxId+1)
      */
     insertAnkiCloze(editor: import("obsidian").Editor, type: "same" | "new"): void {
         const selection = editor.getSelection();
@@ -691,19 +762,19 @@ export default class SRPlugin extends Plugin {
             return;
         }
 
-        // 获取当前行/段落的文本来判断上下文 ID
+        // 鑾峰彇褰撳墠琛?娈佃惤鐨勬枃鏈潵鍒ゆ柇涓婁笅鏂?ID
         const cursor = editor.getCursor();
         const lineText = editor.getLine(cursor.line);
 
         const currentMax = this.getMaxClozeIdFromText(lineText);
 
-        // 计算要使用的 ID
+        // 璁＄畻瑕佷娇鐢ㄧ殑 ID
         let nextId: number;
         if (type === "same") {
-            // 同级：使用当前最大 ID，如果没有则为 1
+            // 鍚岀骇锛氫娇鐢ㄥ綋鍓嶆渶澶?ID锛屽鏋滄病鏈夊垯涓?1
             nextId = currentMax === 0 ? 1 : currentMax;
         } else {
-            // 新级：使用 maxId + 1
+            // 鏂扮骇锛氫娇鐢?maxId + 1
             nextId = currentMax + 1;
         }
 
@@ -714,7 +785,7 @@ export default class SRPlugin extends Plugin {
     }
 
     /**
-     * 从文本中提取最大的 Cloze ID
+     * 浠庢枃鏈腑鎻愬彇鏈€澶х殑 Cloze ID
      */
     private getMaxClozeIdFromText(text: string): number {
         const matches = text.matchAll(/\{\{c(\d+)::/g);
@@ -726,11 +797,11 @@ export default class SRPlugin extends Plugin {
         return max;
     }
 
-    // ========== 每日统计辅助方法 ==========
+    // ========== 姣忔棩缁熻杈呭姪鏂规硶 ==========
 
     /**
-     * 获取当前的"逻辑日期"
-     * 如果设置了凌晨 4 点刷新，那么凌晨 3 点仍然属于"昨天"
+     * 鑾峰彇褰撳墠鐨?閫昏緫鏃ユ湡"
+     * 濡傛灉璁剧疆浜嗗噷鏅?4 鐐瑰埛鏂帮紝閭ｄ箞鍑屾櫒 3 鐐逛粛鐒跺睘浜?鏄ㄥぉ"
      */
     public getRolloverDate(): string {
         return window
@@ -740,13 +811,13 @@ export default class SRPlugin extends Plugin {
     }
 
     /**
-     * 加载/重置每日统计
-     * 如果存储的日期不是今天，说明跨天了，重置数据
+     * 鍔犺浇/閲嶇疆姣忔棩缁熻
+     * 濡傛灉瀛樺偍鐨勬棩鏈熶笉鏄粖澶╋紝璇存槑璺ㄥぉ浜嗭紝閲嶇疆鏁版嵁
      */
     public loadDailyDeckStats(): void {
         const today = this.getRolloverDate();
 
-        // 初始化 dailyDeckStats 如果不存在
+        // 鍒濆鍖?dailyDeckStats 濡傛灉涓嶅瓨鍦?
         if (!this.data.dailyDeckStats) {
             this.data.dailyDeckStats = { date: "", counts: {} };
         }
@@ -756,14 +827,15 @@ export default class SRPlugin extends Plugin {
                 date: today,
                 counts: {},
             };
-            this.savePluginData();
+            this.runAsync(this.savePluginData(), "save daily deck stats");
             if (this.data.settings.showSchedulingDebugMessages) {
+                console.debug(`[SR] New day detected (${today}). Daily limits reset.`);
             }
         }
     }
 
     /**
-     * 获取指定牌组的今日计数
+     * 鑾峰彇鎸囧畾鐗岀粍鐨勪粖鏃ヨ鏁?
      */
     public getDailyCounts(deckName: string): { new: number; review: number } {
         this.loadDailyDeckStats();
@@ -772,12 +844,12 @@ export default class SRPlugin extends Plugin {
     }
 
     /**
-     * 增加计数（支持层级，沿路径向上更新所有祖先牌组）
+     * 澧炲姞璁℃暟锛堟敮鎸佸眰绾э紝娌胯矾寰勫悜涓婃洿鏂版墍鏈夌鍏堢墝缁勶級
      */
     public async incrementDailyCounts(deckName: string, isNew: boolean): Promise<void> {
         this.loadDailyDeckStats();
 
-        // 获取牌组路径 lineage (例如 A/B -> [A, A/B])
+        // 鑾峰彇鐗岀粍璺緞 lineage (渚嬪 A/B -> [A, A/B])
         const parts = deckName.split("/");
         let currentPath = "";
         const lineage: string[] = [];
@@ -786,7 +858,7 @@ export default class SRPlugin extends Plugin {
             lineage.push(currentPath);
         }
 
-        // 更新整条路径上的计数
+        // 鏇存柊鏁存潯璺緞涓婄殑璁℃暟
         for (const path of lineage) {
             if (!this.data.dailyDeckStats.counts[path]) {
                 this.data.dailyDeckStats.counts[path] = { new: 0, review: 0 };
@@ -803,13 +875,13 @@ export default class SRPlugin extends Plugin {
     }
 
     /**
-     * 减少计数（用于撤销操作）
-     * 支持层级，沿路径向上更新所有祖先牌组
+     * 鍑忓皯璁℃暟锛堢敤浜庢挙閿€鎿嶄綔锛?
+     * 鏀寔灞傜骇锛屾部璺緞鍚戜笂鏇存柊鎵€鏈夌鍏堢墝缁?
      */
     public async decrementDailyCounts(deckName: string, isNew: boolean): Promise<void> {
         this.loadDailyDeckStats();
 
-        // 获取牌组路径 lineage (例如 A/B -> [A, A/B])
+        // 鑾峰彇鐗岀粍璺緞 lineage (渚嬪 A/B -> [A, A/B])
         const parts = deckName.split("/");
         let currentPath = "";
         const lineage: string[] = [];
@@ -818,7 +890,7 @@ export default class SRPlugin extends Plugin {
             lineage.push(currentPath);
         }
 
-        // 更新整条路径上的计数
+        // 鏇存柊鏁存潯璺緞涓婄殑璁℃暟
         for (const path of lineage) {
             if (this.data.dailyDeckStats.counts[path]) {
                 if (isNew) {
@@ -999,20 +1071,29 @@ export default class SRPlugin extends Plugin {
     }
 
     private async hydrateCachedNoteRuntime(note: Note): Promise<boolean> {
+        const mismatch = validateCachedNoteBindings(note, this.store);
+        if (mismatch) {
+            this.logRuntimeDebug(
+                `[SR-Cache] Rejecting cached note: path=${mismatch.notePath} reason=${mismatch.reason} cardId=${
+                    mismatch.cardId ?? "n/a"
+                } actualFilePath=${mismatch.actualFilePath ?? "n/a"}`,
+            );
+            return false;
+        }
+
         for (const question of note.questionList) {
             for (const card of question.cards) {
-                if (typeof card.Id === "number" && card.Id >= 0) {
-                    const item = this.store.getItembyID(card.Id);
-                    if (!item) {
-                        return false;
-                    }
-                    card.repetitionItem = item;
-                    card.scheduleInfo = NoteCardScheduleParser.createInfo_algo(item.getSched());
-                } else {
-                    // Cached notes without valid card IDs cannot participate in deck stats.
-                    // Force a fresh parse so ItemTrans can rebind cards to tracked items.
+                if (typeof card.Id !== "number" || card.Id < 0) {
                     return false;
                 }
+
+                const item = this.store.getItembyID(card.Id);
+                if (!item) {
+                    return false;
+                }
+
+                card.repetitionItem = item;
+                card.scheduleInfo = NoteCardScheduleParser.createInfo_algo(item.getSched());
             }
         }
         await note.clearTransientFileText(this.data.settings);
@@ -1037,6 +1118,7 @@ export default class SRPlugin extends Plugin {
 
     private logRuntimeDebug(...args: unknown[]): void {
         if (this.data.settings.showRuntimeDebugMessages) {
+            console.debug(...args);
         }
     }
 
@@ -1252,12 +1334,16 @@ export default class SRPlugin extends Plugin {
     }: SyncRequestOptions = {}): Promise<boolean> {
         if (!force && this.shouldSkipDisabledAutomaticIncrementalSync(mode, trigger)) {
             if (this.data.settings.showSchedulingDebugMessages) {
+                console.debug(`[SR-SyncGate] Skipping ${trigger} incremental sync by setting.`);
             }
             return false;
         }
 
         if (!force && this.shouldSkipAutomaticSync(reviewMode, mode, trigger)) {
             if (this.data.settings.showSchedulingDebugMessages) {
+                console.debug(
+                    `[SR-SyncGate] Skipping ${trigger} sync within ${AUTO_SYNC_COOLDOWN_MS}ms cooldown.`,
+                );
             }
             return false;
         }
@@ -1320,14 +1406,14 @@ export default class SRPlugin extends Plugin {
         this.syncLock = true;
         this.syncEvents.emit("sync-start");
 
-        // --- 显示同步进度提示 ---
+        // --- 鏄剧ず鍚屾杩涘害鎻愮ず ---
         const progressTip = this.shouldShowSyncProgressTip(syncMode)
-            ? new SyncProgressTip("正在同步...")
+            ? new SyncProgressTip("姝ｅ湪鍚屾...")
             : null;
         progressTip?.show();
         let releaseSaveSuppression: (() => void) | null = null;
         try {
-            // --- 清洗脏数据 ---
+            // --- 娓呮礂鑴忔暟鎹?---
             if (this.store) {
                 this.store.cleanDirtyNewItems();
             }
@@ -1367,7 +1453,7 @@ export default class SRPlugin extends Plugin {
             const nextCache = new Map<string, { mtime: number; note: Note }>();
             this.noteCache = nextCache;
             const BATCH_SIZE = 50;
-            progressTip?.update(0, totalNotes, `正在解析笔记 (0/${totalNotes})...`);
+            progressTip?.update(0, totalNotes, `姝ｅ湪瑙ｆ瀽绗旇 (0/${totalNotes})...`);
             for (let i = 0; i < notes.length; i += BATCH_SIZE) {
                 const batch = notes.slice(i, i + BATCH_SIZE);
                 await Promise.all(
@@ -1396,14 +1482,18 @@ export default class SRPlugin extends Plugin {
                         progressTip?.update(
                             syncedCount,
                             totalNotes,
-                            `正在解析笔记 (${syncedCount}/${totalNotes})...`,
+                            `姝ｅ湪瑙ｆ瀽绗旇 (${syncedCount}/${totalNotes})...`,
                         );
                     }),
                 );
             }
             if (settings.showSchedulingDebugMessages) {
+                console.debug(
+                    "[SR-Debug] sync鉃?: fullDeckTree 鎵€鏈夊崱鐗囨暟:",
+                    fullDeckTree.getCardCount(CardListType.All, true),
+                );
             }
-            progressTip?.update(totalNotes, totalNotes, "正在构建牌组树...");
+            progressTip?.update(totalNotes, totalNotes, "姝ｅ湪鏋勫缓鐗岀粍鏍?..");
             if (releaseSaveSuppression) {
                 releaseSaveSuppression();
                 releaseSaveSuppression = null;
@@ -1419,14 +1509,18 @@ export default class SRPlugin extends Plugin {
             // Reviewable cards are all except those with the "edit later" tag
             this.deckTree = DeckTreeFilter.filterForReviewableCards(fullDeckTree);
             if (settings.showSchedulingDebugMessages) {
+                console.debug(
+                    "[SR-Debug] sync鉃?: deckTree (杩囨护 EditLater 鍚?:",
+                    this.deckTree.getCardCount(CardListType.All, true),
+                );
             }
 
             // sort the deck names
             this.deckTree.sortSubdecksList();
 
-            // 从 RepetitionItem.learningStep 收集学习中的卡片（新方案：单一数据源）
-            // 必须在 filterForRemainingCards 之前运行，以确保处于学习状态但错位在 new/due 列表的卡片
-            // 能被移动到 learningFlashcards 物理列表中，从而受 copyWithCardFilter 的保护不被过滤掉。
+            // 浠?RepetitionItem.learningStep 鏀堕泦瀛︿範涓殑鍗＄墖锛堟柊鏂规锛氬崟涓€鏁版嵁婧愶級
+            // 蹇呴』鍦?filterForRemainingCards 涔嬪墠杩愯锛屼互纭繚澶勪簬瀛︿範鐘舵€佷絾閿欎綅鍦?new/due 鍒楄〃鐨勫崱鐗?
+            // 鑳借绉诲姩鍒?learningFlashcards 鐗╃悊鍒楄〃涓紝浠庤€屽彈 copyWithCardFilter 鐨勪繚鎶や笉琚繃婊ゆ帀銆?
             this.collectLearningCardsFromStore(this.deckTree);
 
             this.remainingDeckTree = DeckTreeFilter.filterForRemainingCards(
@@ -1435,10 +1529,18 @@ export default class SRPlugin extends Plugin {
                 reviewMode,
             );
             if (settings.showSchedulingDebugMessages) {
+                console.debug(
+                    "[SR-Debug] sync鉃?: remainingDeckTree (杩囨护鏈埌鏈熷悗):",
+                    this.remainingDeckTree.getCardCount(CardListType.All, true),
+                    "New:",
+                    this.remainingDeckTree.getCardCount(CardListType.NewCard, true),
+                    "Due:",
+                    this.remainingDeckTree.getCardCount(CardListType.DueCard, true),
+                );
             }
 
-            // [V3 调度器] 不再在 sync 全局阶段应用每日上限。
-            // remainingDeckTree 保持满血，每日限额将在用户点击牌组时动态隔离应用。
+            // [V3 璋冨害鍣╙ 涓嶅啀鍦?sync 鍏ㄥ眬闃舵搴旂敤姣忔棩涓婇檺銆?
+            // remainingDeckTree 淇濇寔婊¤锛屾瘡鏃ラ檺棰濆皢鍦ㄧ敤鎴风偣鍑荤墝缁勬椂鍔ㄦ€侀殧绂诲簲鐢ㄣ€?
             // if (reviewMode !== FlashcardReviewMode.Cram) {
             //     this.remainingDeckTree = DeckTreeFilter.filterByDailyLimits(
             //         this.remainingDeckTree,
@@ -1446,27 +1548,27 @@ export default class SRPlugin extends Plugin {
             //     );
             // }
 
-            // 如果需要，可以在这里再次微调或排序，但此时 learningQueue 已经由之前对 deckTree 的调用填充
+            // 濡傛灉闇€瑕侊紝鍙互鍦ㄨ繖閲屽啀娆″井璋冩垨鎺掑簭锛屼絾姝ゆ椂 learningQueue 宸茬粡鐢变箣鍓嶅 deckTree 鐨勮皟鐢ㄥ～鍏?
             // this.collectLearningCardsFromStore(this.remainingDeckTree);
             const calc: DeckTreeStatsCalculator = new DeckTreeStatsCalculator();
             this.cardStats = calc.calculate(this.deckTree);
             setDueDates(this.cardStats.delayedDays.dict, this.cardStats.delayedDays.dict);
 
-            // --- 填充全局统计缓存 ---
+            // --- 濉厖鍏ㄥ眬缁熻缂撳瓨 ---
             const statsService = DeckStatsService.getInstance();
             statsService.setSyncEvents(this.syncEvents);
             statsService.clearCache();
 
-            // 遍历所有卡片，按层级收集 items 以供统计缓存使用
+            // 閬嶅巻鎵€鏈夊崱鐗囷紝鎸夊眰绾ф敹闆?items 浠ヤ緵缁熻缂撳瓨浣跨敤
             const deckItemsMap = new Map<string, RepetitionItem[]>();
 
-            // 我们遍历整个 fullDeckTree 来收集所有的 items
+            // 鎴戜滑閬嶅巻鏁翠釜 fullDeckTree 鏉ユ敹闆嗘墍鏈夌殑 items
             const addItemsToMap = (deck: Deck) => {
                 const deckPathName =
                     deck.deckName === "root" ? "root" : deck.getTopicPath().path.join("/");
 
                 const itemsInDeck: RepetitionItem[] = [];
-                // 收集所有卡片的 item 实例
+                // 鏀堕泦鎵€鏈夊崱鐗囩殑 item 瀹炰緥
                 const allDeckCards = [
                     ...deck.newFlashcards,
                     ...deck.dueFlashcards,
@@ -1489,14 +1591,25 @@ export default class SRPlugin extends Plugin {
             };
             addItemsToMap(this.deckTree);
 
+            const learnAheadMillis = Math.max(0, this.data.settings.learnAheadMinutes) * 60 * 1000;
             for (const [dName, dItems] of deckItemsMap.entries()) {
-                statsService.calculateDeckStats(dName, dItems);
+                statsService.calculateDeckStats(dName, dItems, learnAheadMillis);
             }
             if (this.data.settings.showSchedulingDebugMessages) {
+                console.debug(
+                    "[SR-Debug] 鍏ㄥ眬 DeckStatsService Cache 濉厖瀹屾垚锛屽叡璁＄墝缁勬暟: ",
+                    deckItemsMap.size,
+                );
                 this.showSyncInfo();
             }
 
             if (this.data.settings.showSchedulingDebugMessages) {
+                console.debug(
+                    "SR: " +
+                        t("SYNC_TIME_TAKEN", {
+                            t: Date.now() - now.valueOf(),
+                        }),
+                );
             }
 
             const fbar = this.reviewFloatBar;
@@ -1507,11 +1620,11 @@ export default class SRPlugin extends Plugin {
                 return this.noteStats.getTotalCount();
             };
 
-            // 隐藏同步进度提示
+            // 闅愯棌鍚屾杩涘害鎻愮ず
 
-            // 广播同步完成事件，通知已打开的 UI 组件局部刷新数字
+            // 骞挎挱鍚屾瀹屾垚浜嬩欢锛岄€氱煡宸叉墦寮€鐨?UI 缁勪欢灞€閮ㄥ埛鏂版暟瀛?
             this.logRuntimeDebug(
-                "[SR-DynSync] plugin.sync() 完成，准备 emit sync-complete, remainingDeckTree subdecks:",
+                "[SR-DynSync] plugin.sync() 瀹屾垚锛屽噯澶?emit sync-complete, remainingDeckTree subdecks:",
                 this.remainingDeckTree?.subdecks?.length,
             );
             this.lastSuccessfulSyncStartedAt = syncStartedAt;
@@ -1563,9 +1676,7 @@ export default class SRPlugin extends Plugin {
 
         this.updateStatusBar();
 
-        if (this.getActiveLeaf(REVIEW_QUEUE_VIEW_TYPE) && this.reviewQueueView?.redraw) {
-            this.reviewQueueView.redraw();
-        }
+        this.getReviewQueueView()?.redraw();
     }
 
     async loadNote(noteFile: TFile): Promise<Note> {
@@ -1584,18 +1695,20 @@ export default class SRPlugin extends Plugin {
         await ItemTrans.updateCardsSchedbyItems(note, folderTopicPath);
         note.createMultiCloze(this.data.settings);
         if (note.hasChanged) {
-            note.writeNoteFile(this.data.settings);
+            await note.writeNoteFile(this.data.settings);
         }
         // Full sync suppresses per-note saves; outside sync this persists per-note changes.
-        await this.store.save(); // 核心：同步完笔记及其卡片 ID 后即刻落盘
+        await this.store.save(); // 鏍稿績锛氬悓姝ュ畬绗旇鍙婂叾鍗＄墖 ID 鍚庡嵆鍒昏惤鐩?
         await note.clearTransientFileText(this.data.settings);
         return note;
     }
 
     private getObsidianRtlSetting(): TextDirection {
         // Get the direction with Obsidian's own setting
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const v: any = (this.app.vault as any).getConfig("rightToLeft");
+        const vaultWithConfig = this.app.vault as Vault & {
+            getConfig?: (key: string) => unknown;
+        };
+        const v = vaultWithConfig.getConfig?.("rightToLeft");
         return convertToStringOrEmpty(v) == "true" ? TextDirection.Rtl : TextDirection.Ltr;
     }
 
@@ -1603,6 +1716,10 @@ export default class SRPlugin extends Plugin {
         const settings = this.data.settings;
         const debugScheduling = settings.showSchedulingDebugMessages;
         if (debugScheduling) {
+            console.debug("[SR Debug] ===== saveReviewResponse called =====");
+            console.debug("[SR Debug] note.path:", note.path);
+            console.debug("[SR Debug] response:", response);
+            console.debug("[SR Debug] noteAlgorithm:", settings.noteAlgorithm);
         }
 
         if (isIgnoredPath(settings.noteFoldersToIgnore, note.path)) {
@@ -1611,8 +1728,9 @@ export default class SRPlugin extends Plugin {
         }
         const tracking = this.resolveNoteReviewTracking(note);
         if (!tracking) {
-            // tagCheck已经显示Notice，这里不需要额外提示
+            // tagCheck宸茬粡鏄剧ずNotice锛岃繖閲屼笉闇€瑕侀澶栨彁绀?
             if (debugScheduling) {
+                console.debug("[SR Debug] tagCheck failed");
             }
             new Notice(t("PLEASE_TAG_NOTE"));
             return;
@@ -1626,12 +1744,14 @@ export default class SRPlugin extends Plugin {
         );
 
         let ease: number;
-        if (item.isNew && settings.noteAlgorithm !== algorithmNames.Fsrs) {
+        if (item.isNew && String(settings.noteAlgorithm) !== "Fsrs") {
             if (debugScheduling) {
+                console.debug("[SR Debug] Calculating ease for new note (non-FSRS)");
             }
             try {
                 ease = this.linkRank.getContribution(note, this.easeByPath).ease;
                 if (debugScheduling) {
+                    console.debug("[SR Debug] Calculated ease:", ease);
                 }
             } catch (error) {
                 console.error("[SR Debug] Error calculating ease:", error);
@@ -1640,6 +1760,7 @@ export default class SRPlugin extends Plugin {
         }
 
         if (debugScheduling) {
+            console.debug("[SR Debug] Applying note review response...");
         }
 
         if (item.isNew && ease != null) {
@@ -1687,9 +1808,10 @@ export default class SRPlugin extends Plugin {
         this.syncEvents.emit("note-review-updated");
 
         if (debugScheduling) {
+            console.debug("[SR Debug] saveReviewResponse completed successfully");
         }
 
-        // ✅ 刷新UI
+        // 鉁?鍒锋柊UI
     }
 
     // return false if is ignored
@@ -1770,11 +1892,11 @@ export default class SRPlugin extends Plugin {
                     return;
                 }
             }
-            this.reviewNextNote(this.lastSelectedReviewDeck);
+            this.runAsync(this.reviewNextNote(this.lastSelectedReviewDeck), "open next review note");
         }
     }
 
-    async reviewNextNoteModal(): Promise<void> {
+    reviewNextNoteModal(): void {
         const reviewDeckNames: string[] = Object.keys(this.reviewDecks);
         if (reviewDeckNames.length === 0) {
             this.reviewFloatBar.close();
@@ -1782,16 +1904,18 @@ export default class SRPlugin extends Plugin {
             return;
         }
         if (reviewDeckNames.length === 1) {
-            this.reviewNextNote(reviewDeckNames[0]);
+            this.runAsync(this.reviewNextNote(reviewDeckNames[0]), "review single note deck");
         } else if (this.data.settings.reviewingNoteDirectly) {
             const rdname =
                 this.lastSelectedReviewDeck ??
                 IReviewNote.getDeckNameForReviewDirectly(this.reviewDecks) ??
                 reviewDeckNames[0];
-            this.reviewNextNote(rdname);
+            this.runAsync(this.reviewNextNote(rdname), "review direct note deck");
         } else {
             const deckSelectionModal = new ReviewDeckSelectionModal(this.app, reviewDeckNames);
-            deckSelectionModal.submitCallback = (deckKey: string) => this.reviewNextNote(deckKey);
+            deckSelectionModal.submitCallback = (deckKey: string) => {
+                this.runAsync(this.reviewNextNote(deckKey), "review selected note deck");
+            };
             deckSelectionModal.open();
         }
     }
@@ -1804,9 +1928,11 @@ export default class SRPlugin extends Plugin {
         for (const deckKey in this.reviewDecks) {
             const reviewDeck = this.reviewDecks[deckKey];
             if (this.data.settings.showSchedulingDebugMessages) {
+                console.debug("[SR Debug] Calling sortNotes for deck:", deckKey);
             }
             reviewDeck.sortNotes(this.linkRank.pageranks);
             if (this.data.settings.showSchedulingDebugMessages) {
+                console.debug("[SR Debug] sortNotes completed for deck:", deckKey);
             }
         }
         this.lastSelectedReviewDeck = deckKey;
@@ -1834,12 +1960,16 @@ export default class SRPlugin extends Plugin {
                             `${deck.deckName} due cnt error: calc ${calcDueCnt}, dnc: ${deck.dueNotesCount}`,
                         );
                         if (this.data.settings.showSchedulingDebugMessages) {
+                            console.debug("schedNotes:", deck.scheduledNotes);
                         }
                     }
                     const id = `${this.manifest.id}:view-item-info`;
-                    // eslint-disable-next-line
-                    // @ts-ignore
-                    this.app.commands.executeCommandById(id);
+                    const appWithCommands = this.app as App & {
+                        commands?: {
+                            executeCommandById: (commandId: string) => void;
+                        };
+                    };
+                    appWithCommands.commands?.executeCommandById(id);
                 }
             }
         };
@@ -1877,7 +2007,7 @@ export default class SRPlugin extends Plugin {
         ) {
             const rdname: string = IReviewNote.getDeckNameForReviewDirectly(this.reviewDecks);
             if (rdname != undefined) {
-                this.reviewNextNote(rdname);
+                this.runAsync(this.reviewNextNote(rdname), "review direct note");
                 return;
             }
         }
@@ -1891,7 +2021,7 @@ export default class SRPlugin extends Plugin {
         ReviewView.nextReviewNotice(IReviewNote.minNextView, laterSize);
 
         this.reviewFloatBar.close();
-        this.reviewQueueView.redraw();
+        this.getReviewQueueView()?.redraw();
         new Notice(t("ALL_CAUGHT_UP"));
     }
 
@@ -1919,22 +2049,22 @@ export default class SRPlugin extends Plugin {
     }
 
     async savePluginData(): Promise<void> {
-        // 注意：learningQueue 不再需要在这里序列化
-        // 学习状态已经存储在 RepetitionItem.learningStep 中，由 store.save() 管理
+        // 娉ㄦ剰锛歭earningQueue 涓嶅啀闇€瑕佸湪杩欓噷搴忓垪鍖?
+        // 瀛︿範鐘舵€佸凡缁忓瓨鍌ㄥ湪 RepetitionItem.learningStep 涓紝鐢?store.save() 绠＄悊
         await this.saveData(this.data);
 
-        // ====== License 防破解检测点 B：保存时随机校验 vaultId ======
-        // 10% 的概率检查一下设备指纹是否匹配，防止用户复制别人的 data.json
+        // ====== License 闃茬牬瑙ｆ娴嬬偣 B锛氫繚瀛樻椂闅忔満鏍￠獙 vaultId ======
+        // 10% 鐨勬鐜囨鏌ヤ竴涓嬭澶囨寚绾规槸鍚﹀尮閰嶏紝闃叉鐢ㄦ埛澶嶅埗鍒汉鐨?data.json
         if (Math.random() < 0.1 && this.data.settings.isPro && this.data.settings.vaultId) {
             try {
                 const licMgr = LicenseManager.getInstance();
                 await licMgr.verifyVaultId(this.data.settings);
-                // 如果 verifyVaultId 发现不匹配，它会直接代写 settings。再保存一次。
+                // 濡傛灉 verifyVaultId 鍙戠幇涓嶅尮閰嶏紝瀹冧細鐩存帴浠ｅ啓 settings銆傚啀淇濆瓨涓€娆°€?
                 if (!this.data.settings.isPro) {
                     await this.saveData(this.data);
                 }
             } catch {
-                // 校验失败不影响正常保存
+                // 鏍￠獙澶辫触涓嶅奖鍝嶆甯镐繚瀛?
             }
         }
     }
@@ -1952,10 +2082,7 @@ export default class SRPlugin extends Plugin {
         // Unregister existing view first to prevent duplicates
         this.app.workspace.detachLeavesOfType(REVIEW_QUEUE_VIEW_TYPE);
 
-        this.registerView(
-            REVIEW_QUEUE_VIEW_TYPE,
-            (leaf) => (this.reviewQueueView = new ReactNoteReviewView(leaf, this)),
-        );
+        this.registerView(REVIEW_QUEUE_VIEW_TYPE, (leaf) => new ReactNoteReviewView(leaf, this));
 
         if (
             this.data.settings.enableNoteReviewPaneOnStartup &&
@@ -1971,18 +2098,21 @@ export default class SRPlugin extends Plugin {
             active: true,
         });
 
-        // --- 核心修改：首次打开侧边栏时触发 GC ---
+        // --- 鏍稿績淇敼锛氶娆℃墦寮€渚ц竟鏍忔椂瑙﹀彂 GC ---
         if (!this.hasPerformedInitialGC) {
-            // 使用 setTimeout 避免阻塞界面渲染，给界面一点初始化时间
-            setTimeout(async () => {
+            // 浣跨敤 setTimeout 閬垮厤闃诲鐣岄潰娓叉煋锛岀粰鐣岄潰涓€鐐瑰垵濮嬪寲鏃堕棿
+            setTimeout(() => {
                 if (this.data.settings.showSchedulingDebugMessages) {
+                    console.debug("[SR-Init] 棣栨婵€娲诲涔犺鍥撅紝瑙﹀彂鍚庡彴鍏ㄥ眬鍨冨溇鍥炴敹 (GC)...");
                 }
-                await this.store.performGlobalGarbageCollection();
-                this.hasPerformedInitialGC = true;
-                // GC 后可能 ID 映射变了，刷新一下视图
-                if (this.reviewQueueView && this.reviewQueueView.redraw) {
-                    this.reviewQueueView.redraw();
-                }
+                this.runAsync(
+                    this.store.performGlobalGarbageCollection().then(() => {
+                        this.hasPerformedInitialGC = true;
+                        // GC 鍚庡彲鑳?ID 鏄犲皠鍙樹簡锛屽埛鏂颁竴涓嬭鍥?
+                        this.getReviewQueueView()?.redraw();
+                    }),
+                    "review queue garbage collection",
+                );
             }, 1000);
         }
     }
@@ -2004,16 +2134,19 @@ export default class SRPlugin extends Plugin {
         if (!this.data.settings.showSchedulingDebugMessages) {
             return;
         }
+        console.debug(`SR: ${t("EASES")}`, this.easeByPath);
+        console.debug(`SR: ${t("DECKS")}`, this.deckTree);
+        console.debug(`SR: NOTE ${t("DECKS")}`, this.reviewDecks);
+        console.debug("SR: cardStats ", this.cardStats);
+        console.debug("SR: noteStats ", this.noteStats);
+        console.debug("SR: this.dueDatesNotes", this.dueDatesNotes);
     }
 
     public updateStatusBarVisibility() {
         const visible = this.data.settings.showStatusBar !== false;
-        if (this.statusBarNote) {
-            this.statusBarNote.classList.toggle("syro-status-bar-hidden", !visible);
-        }
-        if (this.statusBarFlashcard) {
-            this.statusBarFlashcard.classList.toggle("syro-status-bar-hidden", !visible);
-        }
+        const display = visible ? "" : "none";
+        if (this.statusBarNote) this.statusBarNote.setCssProps({ display });
+        if (this.statusBarFlashcard) this.statusBarFlashcard.setCssProps({ display });
     }
 
     updateStatusBar() {
@@ -2021,13 +2154,13 @@ export default class SRPlugin extends Plugin {
         if (this.data.settings.showStatusBar === false) return;
         if (!this.statusBarNote || !this.statusBarFlashcard) return;
         if (!this.noteStats) return;
-        // 获取到期数值
+        // 鑾峰彇鍒版湡鏁板€?
         const dueNotesCount = this.noteStats.onDueCount;
         const dueFlashcardsCount = this.remainingDeckTree
             ? this.remainingDeckTree.getDistinctCardCount(CardListType.All, true)
             : 0;
 
-        // --- 更新笔记状态栏 ---
+        // --- 鏇存柊绗旇鐘舵€佹爮 ---
         this.statusBarNote.empty();
         const noteSpan = this.statusBarNote.createSpan({
             cls: "syro-status-note",
@@ -2038,7 +2171,7 @@ export default class SRPlugin extends Plugin {
                       })
                     : t("STATUS_BAR_NOTE_DUE", { dueNotesCount: dueNotesCount.toString() }),
         });
-        if (dueNotesCount > 0 && this.data.settings.showStatusBarDueNotification) {
+        if (dueNotesCount > 0) {
             noteSpan.classList.add("is-due");
         }
         setTooltip(
@@ -2049,7 +2182,7 @@ export default class SRPlugin extends Plugin {
             { placement: "top" },
         );
 
-        // --- 更新卡片状态栏 ---
+        // --- 鏇存柊鍗＄墖鐘舵€佹爮 ---
         this.statusBarFlashcard.empty();
         const cardSpan = this.statusBarFlashcard.createSpan({
             cls: "syro-status-card",
@@ -2062,7 +2195,7 @@ export default class SRPlugin extends Plugin {
                           dueFlashcardsCount: dueFlashcardsCount.toString(),
                       }),
         });
-        if (dueFlashcardsCount > 0 && this.data.settings.showStatusBarDueNotification) {
+        if (dueFlashcardsCount > 0) {
             cardSpan.classList.add("is-due");
         }
         setTooltip(
@@ -2079,48 +2212,25 @@ export default class SRPlugin extends Plugin {
     }
 
     /**
-     * 根据设置更新状态栏的动态 CSS 样式（呼吸灯 / 闪烁）
-     * 每次设置变更时调用，实时生效无需重启
+     * 鏍规嵁璁剧疆鏇存柊鐘舵€佹爮鐨勫姩鎬?CSS 鏍峰紡锛堝懠鍚哥伅 / 闂儊锛?
+     * 姣忔璁剧疆鍙樻洿鏃惰皟鐢紝瀹炴椂鐢熸晥鏃犻渶閲嶅惎
      */
     updateStatusBarStyles() {
         const s = this.data.settings;
-
-        // --- 若关闭总开关，或者没有任何动画设置，则清空样式并退出 ---
-
-        // Keyframes definition - Removed glow/text-shadow
-
-        // Map animation names based on settings
-        // ============ 状态栏呼吸灯动画类型 ============
-
-        if (this.statusBarNote) {
-            this.statusBarNote.setAttribute(
-                "data-syro-status-animation",
-                s.noteStatusBarAnimation === "Breathing" ? "breathing" : "none",
-            );
-            this.statusBarNote.setAttribute(
-                "data-syro-due-enabled",
-                s.showStatusBarDueNotification ? "true" : "false",
-            );
-            this.statusBarNote.setAttribute(
-                "style",
-                `--syro-status-color: ${s.noteStatusBarColor}; --syro-status-period: ${s.noteStatusBarPeriod}s;`,
-            );
-        }
-
-        if (this.statusBarFlashcard) {
-            this.statusBarFlashcard.setAttribute(
-                "data-syro-status-animation",
-                s.flashcardStatusBarAnimation === "Breathing" ? "breathing" : "none",
-            );
-            this.statusBarFlashcard.setAttribute(
-                "data-syro-due-enabled",
-                s.showStatusBarDueNotification ? "true" : "false",
-            );
-            this.statusBarFlashcard.setAttribute(
-                "style",
-                `--syro-status-color: ${s.flashcardStatusBarColor}; --syro-status-period: ${s.flashcardStatusBarPeriod}s;`,
-            );
-        }
+        document.body.setCssProps({
+            "--syro-note-status-color": s.noteStatusBarColor,
+            "--syro-card-status-color": s.flashcardStatusBarColor,
+            "--syro-note-status-animation":
+                s.showStatusBarDueNotification && s.noteStatusBarAnimation === "Breathing"
+                    ? "syro-breathe"
+                    : "none",
+            "--syro-card-status-animation":
+                s.showStatusBarDueNotification && s.flashcardStatusBarAnimation === "Breathing"
+                    ? "syro-breathe"
+                    : "none",
+            "--syro-note-status-period": `${s.noteStatusBarPeriod}s`,
+            "--syro-card-status-period": `${s.flashcardStatusBarPeriod}s`,
+        });
     }
 
     public registerSRFocusListener() {
@@ -2190,8 +2300,8 @@ export default class SRPlugin extends Plugin {
     }
 
     /**
-     * 将运行时学习队列同步到 Deck 树的 learningFlashcards 中
-     * 用于在 DeckUI.show() 时确保学习计数正确显示
+     * 灏嗚繍琛屾椂瀛︿範闃熷垪鍚屾鍒?Deck 鏍戠殑 learningFlashcards 涓?
+     * 鐢ㄤ簬鍦?DeckUI.show() 鏃剁‘淇濆涔犺鏁版纭樉绀?
      */
     public syncLearningQueueToDecks(): void {
         if (!this.learningQueue || this.learningQueue.length === 0) return;
@@ -2201,14 +2311,14 @@ export default class SRPlugin extends Plugin {
             const card = item.card;
             if (!card) continue;
 
-            // 找到卡片所属的 deck
+            // 鎵惧埌鍗＄墖鎵€灞炵殑 deck
             const topicPath = card.question?.topicPathList?.list[0];
             if (!topicPath) continue;
 
             const deck = this.remainingDeckTree.getDeck(topicPath);
             if (!deck) continue;
 
-            // 确保卡片在 learningFlashcards 中
+            // 纭繚鍗＄墖鍦?learningFlashcards 涓?
             if (!deck.learningFlashcards.includes(card)) {
                 deck.learningFlashcards.push(card);
             }
@@ -2216,11 +2326,11 @@ export default class SRPlugin extends Plugin {
     }
 
     /**
-     * 从 DataStore 的 RepetitionItem 收集学习中的卡片
-     * 遍历一次 Deck 树，检查每张卡片的 isInLearningPhase
-     * 如果是学习中且到期，将卡片移动到 learningFlashcards 并加入全局队列
+     * 浠?DataStore 鐨?RepetitionItem 鏀堕泦瀛︿範涓殑鍗＄墖
+     * 閬嶅巻涓€娆?Deck 鏍戯紝妫€鏌ユ瘡寮犲崱鐗囩殑 isInLearningPhase
+     * 濡傛灉鏄涔犱腑涓斿埌鏈燂紝灏嗗崱鐗囩Щ鍔ㄥ埌 learningFlashcards 骞跺姞鍏ュ叏灞€闃熷垪
      *
-     * 复杂度：O(N)，N 为总卡片数
+     * 澶嶆潅搴︼細O(N)锛孨 涓烘€诲崱鐗囨暟
      */
     private collectLearningCardsFromStore(deckTree: Deck): void {
         this.learningQueue = [];
@@ -2229,7 +2339,7 @@ export default class SRPlugin extends Plugin {
         const traverse = (deck: Deck) => {
             const deckPath = deck.getTopicPath()?.path?.join("/") || deck.deckName;
 
-            // 1. 处理新卡列表中的错位卡片
+            // 1. 澶勭悊鏂板崱鍒楄〃涓殑閿欎綅鍗＄墖
             for (let i = deck.newFlashcards.length - 1; i >= 0; i--) {
                 const card = deck.newFlashcards[i];
                 if (card.repetitionItem?.isInLearningPhase) {
@@ -2237,11 +2347,14 @@ export default class SRPlugin extends Plugin {
                     deck.learningFlashcards.push(card);
                     movedCount++;
                     if (this.data.settings.showSchedulingDebugMessages) {
+                        console.debug(
+                            `[SR-Debug] 绾犳瀛︿範鍗＄墖鐗╃悊浣嶇疆: ID=${card.Id} 浠?New 绉昏嚦 Learning (鐗岀粍: ${deckPath})`,
+                        );
                     }
                 }
             }
 
-            // 2. 处理到期卡列表中的错位卡片
+            // 2. 澶勭悊鍒版湡鍗″垪琛ㄤ腑鐨勯敊浣嶅崱鐗?
             for (let i = deck.dueFlashcards.length - 1; i >= 0; i--) {
                 const card = deck.dueFlashcards[i];
                 if (card.repetitionItem?.isInLearningPhase) {
@@ -2249,11 +2362,14 @@ export default class SRPlugin extends Plugin {
                     deck.learningFlashcards.push(card);
                     movedCount++;
                     if (this.data.settings.showSchedulingDebugMessages) {
+                        console.debug(
+                            `[SR-Debug] 绾犳瀛︿範鍗＄墖鐗╃悊浣嶇疆: ID=${card.Id} 浠?Due 绉昏嚦 Learning (鐗岀粍: ${deckPath})`,
+                        );
                     }
                 }
             }
 
-            // 3. 将当前牌组中所有的学习卡加入全局学习队列
+            // 3. 灏嗗綋鍓嶇墝缁勪腑鎵€鏈夌殑瀛︿範鍗″姞鍏ュ叏灞€瀛︿範闃熷垪
             for (const card of deck.learningFlashcards) {
                 this.learningQueue.push({
                     card,
@@ -2262,7 +2378,7 @@ export default class SRPlugin extends Plugin {
                 });
             }
 
-            // 递归处理子牌组
+            // 閫掑綊澶勭悊瀛愮墝缁?
             for (const subdeck of deck.subdecks) {
                 traverse(subdeck);
             }
@@ -2272,10 +2388,16 @@ export default class SRPlugin extends Plugin {
 
         if (this.data.settings.showSchedulingDebugMessages) {
             if (movedCount > 0) {
+                console.debug(
+                    `[SR-Debug] collectLearningCardsFromStore: moved ${movedCount} misplaced learning cards.`,
+                );
             }
+            console.debug(`[SR-Debug] 褰撳墠鍏ㄥ眬瀛︿範闃熷垪闀垮害: ${this.learningQueue.length}`);
         }
 
-        // 按 dueTime 排序学习队列
+        // 鎸?dueTime 鎺掑簭瀛︿範闃熷垪
         this.learningQueue.sort((a, b) => a.dueTime - b.dueTime);
     }
 }
+
+

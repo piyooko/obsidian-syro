@@ -1,16 +1,8 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { App, MarkdownRenderer, Modal, Notice, moment, request } from "obsidian";
+import { App, Component, MarkdownRenderer, Modal, Notice, moment, request } from "obsidian";
 import { errorlog, isVersionNewerThanOther } from "src/util/utils_recall";
 import SRPlugin from "src/main";
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
 import README from "README.md";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
 import README_ZH from "docs/README_ZH.md";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
 import RELEASE_CHANGELOG from "docs/docs/changelog.md";
 
 const local = moment.locale();
@@ -18,6 +10,12 @@ const README_LOC = local === "zh-cn" || local === "zh-tw" ? README_ZH : README;
 const CHANGELOG_SECTIONS = RELEASE_CHANGELOG.match(/## \[(?:.|\r?\n)*?(?=\r?\n## \[|$)/gm) ?? [];
 
 let PLUGIN_VERSION: string;
+
+interface GitHubRelease {
+    tag_name: string;
+    published_at: string;
+    body: string;
+}
 
 function extractBeforeHeading(source: string, heading: string): string {
     const idx = source.indexOf(heading);
@@ -33,6 +31,7 @@ export class ReleaseNotes extends Modal {
     private plugin: SRPlugin;
     private version: string;
     private name: string;
+    private readonly markdownOwner: Component;
 
     constructor(app: App, plugin: SRPlugin, version: string) {
         super(app);
@@ -40,6 +39,8 @@ export class ReleaseNotes extends Modal {
         this.version = version;
         PLUGIN_VERSION = plugin.manifest.version;
         this.name = "Syro";
+        this.markdownOwner = new Component();
+        this.markdownOwner.load();
     }
 
     onOpen(): void {
@@ -48,10 +49,11 @@ export class ReleaseNotes extends Modal {
         this.createForm();
     }
 
-    async onClose() {
+    onClose(): void {
         this.contentEl.empty();
+        this.markdownOwner.unload();
         this.plugin.data.settings.previousRelease = PLUGIN_VERSION;
-        await this.plugin.savePluginData();
+        void this.plugin.savePluginData();
     }
 
     createForm() {
@@ -75,42 +77,41 @@ export class ReleaseNotes extends Modal {
         intro = this.version ? intro : firstRun;
         message = this.version && message ? `## What's New:\n---\n${message}` : message;
 
-        MarkdownRenderer.render(this.plugin.app, intro, this.contentEl, "", this.plugin);
+        void MarkdownRenderer.render(this.plugin.app, intro, this.contentEl, "", this.markdownOwner);
         if (message) {
-            MarkdownRenderer.render(this.plugin.app, message, this.contentEl, "", this.plugin);
+            void MarkdownRenderer.render(this.plugin.app, message, this.contentEl, "", this.markdownOwner);
         }
 
         this.contentEl.createEl("p", { text: "" }, (el) => {
-            el.style.textAlign = "right";
+            el.addClass("syro-release-notes-actions");
             const bOk = el.createEl("button", { text: "Close" });
             bOk.onclick = () => this.close();
         });
     }
 
-    async getReleaseNote(): Promise<any[]> {
-        const releaseUrl =
-            "https://api.github.com/repos/piyooko/obsidian-syro/releases?per_page=5&page=1";
+    async getReleaseNote(): Promise<Array<{ version: string; published: Date; note: string }>> {
+        const releaseUrl = "https://api.github.com/repos/baddoor/Syro/releases?per_page=5&page=1";
 
-        let latestVersionInfo = null;
+        let latestVersionInfo: Array<{ version: string; published: Date; note: string }> = [];
         try {
-            const gitAPIrequest = async (url: string) => {
+            const gitAPIrequest = async (url: string): Promise<GitHubRelease[]> => {
                 return JSON.parse(
                     await request({
                         url,
                     }),
-                );
+                ) as GitHubRelease[];
             };
 
             latestVersionInfo = (await gitAPIrequest(releaseUrl))
-                .map((el: any) => {
+                .map((release: GitHubRelease) => {
                     return {
-                        version: el.tag_name,
-                        published: new Date(el.published_at),
-                        note: el.body,
+                        version: release.tag_name,
+                        published: new Date(release.published_at),
+                        note: release.body,
                     };
                 })
-                .filter((el: any) => el.version.match(/^[\d.]+$/))
-                .sort((el1: any, el2: any) => el2.published - el1.published);
+                .filter((release) => release.version.match(/^[\d.]+$/))
+                .sort((left, right) => right.published.getTime() - left.published.getTime());
 
             const latestVersion = latestVersionInfo[0]?.version;
 

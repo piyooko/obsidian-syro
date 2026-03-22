@@ -1,20 +1,20 @@
 /**
- * 这个文件主要是干什么的：
- * 封装了牌组的路径逻辑 (例如 `#flashcards/science/physics`)。
- * 负责解析 Tag 字符串，处理层级关系，以及格式化输出。
+ * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
+ * 灏佽浜嗙墝缁勭殑璺緞閫昏緫 (渚嬪 `#flashcards/science/physics`)銆?
+ * 璐熻矗瑙ｆ瀽 Tag 瀛楃涓诧紝澶勭悊灞傜骇鍏崇郴锛屼互鍙婃牸寮忓寲杈撳嚭銆?
  *
- * 它在项目中属于：工具/模型层 (Utility/Model Layer)
+ * 瀹冨湪椤圭洰涓睘浜庯細宸ュ叿/妯″瀷灞?(Utility/Model Layer)
  *
- * 它会用到哪些文件：
- * 1. src/settings.ts (获取 Tag 设置)
+ * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
+ * 1. src/settings.ts (鑾峰彇 Tag 璁剧疆)
  *
- * 哪些文件会用到它：
- * 1. src/Deck.ts (牌组的层级标识)
- * 2. src/Question.ts (问题所属的 Tag)
- * 3. src/NoteQuestionParser.ts (解析笔记中的 Tag)
+ * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
+ * 1. src/Deck.ts (鐗岀粍鐨勫眰绾ф爣璇?
+ * 2. src/Question.ts (闂鎵€灞炵殑 Tag)
+ * 3. src/NoteQuestionParser.ts (瑙ｆ瀽绗旇涓殑 Tag)
  */
 /**
- * [模型] 处理牌组路径（如 #tag/subtag）。
+ * [妯″瀷] 澶勭悊鐗岀粍璺緞锛堝 #tag/subtag锛夈€?
  */
 import { SRSettings } from "src/settings";
 import { DEFAULT_DECKNAME, OBSIDIAN_TAG_AT_STARTOFLINE_REGEX } from "./constants";
@@ -25,8 +25,8 @@ export class TopicPath {
     path: string[];
 
     constructor(path: string[]) {
-        if (path == null) throw "null path";
-        if (path.some((str) => str.includes("/"))) throw "path entries must not contain '/'";
+        if (path == null) throw new Error("null path");
+        if (path.some((str) => str.includes("/"))) throw new Error("path entries must not contain '/'");
         this.path = path;
     }
 
@@ -43,7 +43,7 @@ export class TopicPath {
     }
 
     shift(): string {
-        if (this.isEmptyPath) throw "can't shift an empty path";
+        if (this.isEmptyPath) throw new Error("can't shift an empty path");
         return this.path.shift();
     }
 
@@ -52,7 +52,7 @@ export class TopicPath {
     }
 
     formatAsTag(): string {
-        if (this.isEmptyPath) throw "Empty path";
+        if (this.isEmptyPath) throw new Error("Empty path");
         const result = "#" + this.path.join("/");
         return result;
     }
@@ -80,9 +80,9 @@ export class TopicPath {
     }
 
     static getTopicPathFromTag(tag: string): TopicPath {
-        if (tag == null || tag.length == 0) throw "Null/empty tag";
-        if (tag[0] != "#") throw "Tag must start with #";
-        if (tag.length == 1) throw "Invalid tag";
+        if (tag == null || tag.length == 0) throw new Error("Null/empty tag");
+        if (tag[0] != "#") throw new Error("Tag must start with #");
+        if (tag.length == 1) throw new Error("Invalid tag");
 
         const path: string[] = tag
             .replace("#", "")
@@ -97,10 +97,10 @@ export class TopicPath {
         if (settings.convertFoldersToDecks) {
             const deckPath: string[] = noteFile.path.split("/");
 
-            // 取出文件名，去掉后缀，作为牌组的最后一层
+            // 鍙栧嚭鏂囦欢鍚嶏紝鍘绘帀鍚庣紑锛屼綔涓虹墝缁勭殑鏈€鍚庝竴灞?
             const filename = deckPath.pop();
             if (filename) {
-                // 去除 .md 后缀 (或者其他扩展名)
+                // 鍘婚櫎 .md 鍚庣紑 (鎴栬€呭叾浠栨墿灞曞悕)
                 const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
                 deckPath.push(nameWithoutExt);
             }
@@ -154,7 +154,7 @@ export class TopicPathList {
     lineNum: number;
 
     constructor(list: TopicPath[], lineNum: number = null) {
-        if (list == null) throw "TopicPathList null";
+        if (list == null) throw new Error("TopicPathList null");
         this.list = list;
         this.lineNum = lineNum;
     }
@@ -230,7 +230,7 @@ export class TopicPathWithWs {
     postWhitespace: string;
 
     constructor(topicPath: TopicPath, preWhitespace: string, postWhitespace: string) {
-        if (!topicPath || topicPath.isEmptyPath) throw "topicPath null";
+        if (!topicPath || topicPath.isEmptyPath) throw new Error("topicPath null");
 
         this.topicPath = topicPath;
         this.preWhitespace = preWhitespace;

@@ -327,10 +327,10 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
                     label={
                         (
                             <LabelWithSupporter
-                                label={t("SETTINGS_ANKI_CLOZE") as string}
+                                label={t("SETTINGS_ANKI_CLOZE")}
                                 isLocked={isFree}
                             />
-                        ) as any
+                        )
                     }
                     desc={t("SETTINGS_ANKI_CLOZE_DESC")}
                     value={settings.convertAnkiClozesToClozes}
@@ -342,10 +342,10 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
                     label={
                         (
                             <LabelWithSupporter
-                                label={t("SETTINGS_CODE_CLOZE") as string}
+                                label={t("SETTINGS_CODE_CLOZE")}
                                 isLocked={isFree}
                             />
-                        ) as any
+                        )
                     }
                     desc={t("SETTINGS_CODE_CLOZE_DESC")}
                     value={settings.parseClozesInCodeBlocks}
@@ -460,8 +460,8 @@ const AlgoTab: React.FC<TabProps> = ({ settings, onChange }) => {
     // 1. 计算重要性因子 F_imp
     // 公式: min + (priority - 1) * (max - min) / 9
     // 注意: 这里要确保数值类型正确
-    const wmsImpMin = parseFloat(settings.wmsImpMin as any) || 1.0;
-    const wmsImpMax = parseFloat(settings.wmsImpMax as any) || 2.5;
+    const wmsImpMin = parseFloat(String(settings.wmsImpMin)) || 1.0;
+    const wmsImpMax = parseFloat(String(settings.wmsImpMax)) || 2.5;
     const fImp = wmsImpMin + ((simPriority - 1) * (wmsImpMax - wmsImpMin)) / 9;
 
     // 2. 计算各个按钮的结果
@@ -1152,7 +1152,7 @@ const SyncTab: React.FC<TabProps> = ({ settings, onChange }) => (
                     },
                     { label: t("SETTINGS_SYNC_PROGRESS_DISPLAY_NEVER"), value: "never" },
                 ]}
-                onChange={(v) => onChange("syncProgressDisplayMode", v as any)}
+                onChange={(v) => onChange("syncProgressDisplayMode", v as UISettingsState["syncProgressDisplayMode"])}
             />
         </Section>
     </div>
@@ -1193,7 +1193,7 @@ const UITab: React.FC<TabProps> = ({ settings, onChange }) => (
                     { label: t("SETTINGS_OPT_NO_ANIM"), value: "None" },
                     { label: t("SETTINGS_OPT_BREATHING"), value: "Breathing" },
                 ]}
-                onChange={(v) => onChange("noteStatusBarAnimation", v as any)}
+                onChange={(v) => onChange("noteStatusBarAnimation", v)}
             />
             <SliderRow
                 label={t("SETTINGS_NOTE_PERIOD")}
@@ -1218,7 +1218,7 @@ const UITab: React.FC<TabProps> = ({ settings, onChange }) => (
                     { label: t("SETTINGS_OPT_NO_ANIM"), value: "None" },
                     { label: t("SETTINGS_OPT_BREATHING"), value: "Breathing" },
                 ]}
-                onChange={(v) => onChange("flashcardStatusBarAnimation", v as any)}
+                onChange={(v) => onChange("flashcardStatusBarAnimation", v as UISettingsState["flashcardStatusBarAnimation"])}
             />
             <SliderRow
                 label={t("SETTINGS_CARD_PERIOD")}
@@ -1308,7 +1308,7 @@ const LicenseTab: React.FC<LicenseTabProps> = ({ settings, onChange }) => {
             // 动态导入 LicenseManager，避免循环依赖
             const { LicenseManager } = await import("src/services/LicenseManager");
             const mgr = LicenseManager.getInstance();
-            const success = await mgr.activateLicense(inputKey.trim(), settings as any);
+            const success = await mgr.activateLicense(inputKey.trim(), settings);
             if (success) {
                 onChange("isPro", true);
                 onChange("licenseKey", inputKey.trim());
@@ -1326,7 +1326,7 @@ const LicenseTab: React.FC<LicenseTabProps> = ({ settings, onChange }) => {
         try {
             const { LicenseManager } = await import("src/services/LicenseManager");
             const mgr = LicenseManager.getInstance();
-            mgr.deactivateLicense(settings as any);
+            mgr.deactivateLicense(settings);
             onChange("isPro", false);
             onChange("licenseKey", "");
             setInputKey("");
@@ -1377,7 +1377,9 @@ const LicenseTab: React.FC<LicenseTabProps> = ({ settings, onChange }) => {
                             </div>
                             <div className="setting-item-control">
                                 <button
-                                    onClick={handleActivate}
+                                    onClick={() => {
+                                        void handleActivate();
+                                    }}
                                     disabled={loading || !inputKey.trim()}
                                 >
                                     {loading
@@ -1398,7 +1400,11 @@ const LicenseTab: React.FC<LicenseTabProps> = ({ settings, onChange }) => {
                             </div>
                         </div>
                         <div className="setting-item-control">
-                            <button onClick={handleDeactivate}>
+                            <button
+                                onClick={() => {
+                                    void handleDeactivate();
+                                }}
+                            >
                                 {t("SETTINGS_BTN_DEACTIVATE")}
                             </button>
                         </div>

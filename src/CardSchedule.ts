@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Scheduling model and helpers for flashcards.
  * This file parses `<!--SR:...-->` comments and computes updated schedule values.
  */
@@ -10,7 +10,7 @@
 
 
 
-import type { Moment } from "moment";
+import { moment } from "obsidian";
 import {
     LEGACY_SCHEDULING_EXTRACTOR,
     MULTI_SCHEDULING_EXTRACTOR,
@@ -20,10 +20,12 @@ import { INoteEaseList } from "./NoteEaseList";
 import { ReviewResponse, schedule } from "./scheduling";
 import { SRSettings } from "./settings";
 import { formatDate_YYYY_MM_DD } from "./util/utils";
-import { DateUtil, globalDateProvider } from "./util/DateProvider";
+import { DateUtil, globalDateProvider, type MomentValue } from "./util/DateProvider";
+
+const momentFactory = moment as unknown as (...args: unknown[]) => MomentValue;
 
 export class CardScheduleInfo {
-    dueDate: Moment;
+    dueDate: MomentValue;
     interval: number;
     ease: number;
     delayBeforeReviewTicks: number;
@@ -37,7 +39,7 @@ export class CardScheduleInfo {
     // This is done by using this magic value for the date
     private static dummyDueDateForNewCard: string = "2000-01-01";
 
-    constructor(dueDate: Moment, interval: number, ease: number, delayBeforeReviewTicks: number) {
+    constructor(dueDate: MomentValue, interval: number, ease: number, delayBeforeReviewTicks: number) {
         this.dueDate = dueDate;
         this.interval = interval;
         this.ease = ease;
@@ -57,8 +59,8 @@ export class CardScheduleInfo {
     }
 
     isDummyScheduleForNewCard(): boolean {
-        // 1. 原始判断：魔法日期 2000-01-01
-        // 注意：dueDate 也可能是数字时间戳 (number)
+        // 1. 鍘熷鍒ゆ柇锛氶瓟娉曟棩鏈?2000-01-01
+        // 娉ㄦ剰锛歞ueDate 涔熷彲鑳芥槸鏁板瓧鏃堕棿鎴?(number)
         const dueDateVal = this.dueDate.valueOf();
         const dummyDateVal = DateUtil.dateStrToMoment(
             CardScheduleInfo.dummyDueDateForNewCard,
@@ -67,7 +69,7 @@ export class CardScheduleInfo {
         if (dueDateVal === dummyDateVal) {
             return true;
         }
-        // 2. interval 或 ease 为 NaN → 调度数据损坏，视为新卡
+        // 2. interval 鎴?ease 涓?NaN 鈫?璋冨害鏁版嵁鎹熷潖锛岃涓烘柊鍗?
         if (isNaN(this.interval) || isNaN(this.ease)) {
             return true;
         }
@@ -89,12 +91,12 @@ export class CardScheduleInfo {
         ease: number,
         delayBeforeReviewTicks: number,
     ) {
-        const dueDateTicks: Moment = DateUtil.dateStrToMoment(dueDateStr);
+        const dueDateTicks: MomentValue = DateUtil.dateStrToMoment(dueDateStr);
         return new CardScheduleInfo(dueDateTicks, interval, ease, delayBeforeReviewTicks);
     }
 
     static fromDueDateMoment(
-        dueDateTicks: Moment,
+        dueDateTicks: MomentValue,
         interval: number,
         ease: number,
         delayBeforeReviewTicks: number,
@@ -182,10 +184,10 @@ export class CardScheduleCalculator {
                 intervalMinutes = learningStepsMinutes[learningStepsMinutes.length - 1];
             }
 
-            // 转换为天数（interval 字段以天为单位）
+            // 杞崲涓哄ぉ鏁帮紙interval 瀛楁浠ュぉ涓哄崟浣嶏級
             const intervalDays = intervalMinutes / 1440;
             // Keep minute-level precision for short learning steps.
-            const dueDate = window.moment().add(intervalMinutes, "minutes");
+            const dueDate = momentFactory().add(intervalMinutes, "minutes");
             return CardScheduleInfo.fromDueDateMoment(
                 dueDate,
                 intervalDays,
@@ -229,12 +231,12 @@ export class CardScheduleCalculator {
         ) {
             const intervalMinutes = lapseStepsMinutes[0];
             const intervalDays = intervalMinutes / 1440;
-            const ease = Math.max(130, cardSchedule.ease - 20); // 降低 ease
-            const dueDate = window.moment().add(intervalMinutes, "minutes");
+            const ease = Math.max(130, cardSchedule.ease - 20); // 闄嶄綆 ease
+            const dueDate = momentFactory().add(intervalMinutes, "minutes");
             return CardScheduleInfo.fromDueDateMoment(dueDate, intervalDays, ease, 0);
         }
 
-        // 原有调度逻辑
+        // 鍘熸湁璋冨害閫昏緫
         const schedObj: Record<string, number> = schedule(
             response,
             cardSchedule.interval,
@@ -274,7 +276,7 @@ export class NoteCardScheduleParser {
             const dueDateStr = match[1];
             const interval = parseInt(match[2]);
             const ease = parseInt(match[3]);
-            const dueDate: Moment = DateUtil.dateStrToMoment(dueDateStr);
+            const dueDate: MomentValue = DateUtil.dateStrToMoment(dueDateStr);
             const delayBeforeReviewTicks: number =
                 dueDate.valueOf() - globalDateProvider.today.valueOf();
 
@@ -299,11 +301,11 @@ export class NoteCardScheduleParser {
                 const dueDateNum = Number(match[1]);
                 const interval = Number(match[2]);
                 const ease = Number(match[3]);
-                const dueDate: Moment = window.moment(dueDateNum);
+                const dueDate: MomentValue = momentFactory(dueDateNum);
                 const delayBeforeReviewTicks: number =
                     dueDateNum - globalDateProvider.today.valueOf();
 
-                // console.log(`[SR-Debug] createInfoList_algo: duoNum=${dueDateNum}, today=${globalDateProvider.today.valueOf()}, delay=${delayBeforeReviewTicks}`);
+                // console.debug(`[SR-Debug] createInfoList_algo: duoNum=${dueDateNum}, today=${globalDateProvider.today.valueOf()}, delay=${delayBeforeReviewTicks}`);
 
                 const info: CardScheduleInfo = new CardScheduleInfo(
                     dueDate,
@@ -321,3 +323,6 @@ export class NoteCardScheduleParser {
         return questionText.replace(/<!--SR:.+-->/gm, "");
     }
 }
+
+
+

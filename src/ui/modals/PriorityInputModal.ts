@@ -51,11 +51,7 @@ export class PriorityInputModal extends Modal {
             text: `${t("PRIORITY")}: ${this.priority}`,
             cls: "priority-value-display",
         });
-        valueDisplay.style.textAlign = "center";
-        valueDisplay.style.fontSize = "1.2em";
-        valueDisplay.style.fontWeight = "bold";
-        valueDisplay.style.marginTop = "1em";
-        valueDisplay.style.marginBottom = "1em";
+        valueDisplay.addClass("syro-priority-value-display");
 
         // 更新显示值的函数
         const updateDisplay = () => {
@@ -63,7 +59,7 @@ export class PriorityInputModal extends Modal {
         };
 
         // 监听slider变化
-        const slider = contentEl.querySelector('input[type="range"]') as HTMLInputElement;
+        const slider = contentEl.querySelector<HTMLInputElement>('input[type="range"]');
         if (slider) {
             slider.addEventListener("input", () => {
                 this.priority = parseInt(slider.value);
@@ -73,10 +69,7 @@ export class PriorityInputModal extends Modal {
 
         // 按钮容器
         const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
-        buttonContainer.style.display = "flex";
-        buttonContainer.style.justifyContent = "flex-end";
-        buttonContainer.style.gap = "10px";
-        buttonContainer.style.marginTop = "1.5em";
+        buttonContainer.addClass("syro-priority-modal-actions");
 
         // 取消按钮
         const cancelButton = buttonContainer.createEl("button", { text: t("CANCEL") });

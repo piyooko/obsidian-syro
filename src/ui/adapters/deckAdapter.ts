@@ -11,7 +11,6 @@
 import { Deck, CardListType, DeckTreeFilter } from "src/Deck";
 import { DeckState } from "../types/deckTypes";
 import type SRPlugin from "src/main";
-import { DEFAULT_DECK_OPTIONS_PRESET } from "src/settings";
 
 /**
  * 将 Deck 对象递归转换为 DeckState
@@ -31,15 +30,16 @@ export function deckToUIState(deck: Deck, plugin?: SRPlugin, depth: number = 0):
     if (plugin) {
         // [核心] 将自己当做起点，模拟生成一次学习队列，拿到的卡片数就是 UI 应展示的数字
         const simulatedDeck = DeckTreeFilter.filterByDailyLimits(deck, plugin);
+        const learnAheadMillis = Math.max(0, plugin.data.settings.learnAheadMinutes) * 60 * 1000;
 
         displayNew = simulatedDeck.getCardCount(CardListType.NewCard, true);
         displayDue = simulatedDeck.getCardCount(CardListType.DueCard, true);
-        displayLearning = simulatedDeck.getCardCount(CardListType.LearningCard, true);
+        displayLearning = simulatedDeck.getAvailableLearningCardCount(true, learnAheadMillis);
     } else {
         // fallback
         displayNew = deck.getCardCount(CardListType.NewCard, true);
         displayDue = deck.getCardCount(CardListType.DueCard, true);
-        displayLearning = deck.getCardCount(CardListType.LearningCard, true);
+        displayLearning = deck.getAvailableLearningCardCount(true, 0);
     }
 
     // 递归转换子牌组。

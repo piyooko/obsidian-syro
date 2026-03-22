@@ -57,7 +57,7 @@ export const LatexPopover: React.FC<LatexPopoverProps> = ({
     useEffect(() => {
         if (renderRef.current) {
             renderRef.current.innerHTML = "";
-            MarkdownRenderer.render(app, `$$${previewLatex}$$`, renderRef.current, "", component);
+            void MarkdownRenderer.render(app, `$$${previewLatex}$$`, renderRef.current, "", component);
         }
     }, [previewLatex, app, component]);
 

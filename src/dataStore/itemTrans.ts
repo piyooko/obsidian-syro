@@ -57,11 +57,11 @@ export class ItemTrans {
         reviewDecks: { [deckKey: string]: ReviewDeck },
         notes: TFile[],
         easeByPath: INoteEaseList,
-    ) {
+    ): void {
         const store = DataStore.getInstance();
         const settings = this.settings;
         // store.data.queues.buildQueue();
-        notes.forEach(async (note) => {
+        for (const note of notes) {
             let deckname = Tags.getNoteDeckName(note, this.settings);
             if (deckname == null) {
                 const tkfile = store.getTrackedFile(note.path);
@@ -84,16 +84,17 @@ export class ItemTrans {
                 // update single note deck data, only tagged reviewnote
                 let noteItem = store.getNoteItem(note.path);
                 if (
-                    store.getTrackedFile(note.path)?.tags?.[0] !== RPITEMTYPE.NOTE ||
+                    String(store.getTrackedFile(note.path)?.tags?.[0]) !== String(RPITEMTYPE.NOTE) ||
                     noteItem == null
                 ) {
                     store.trackFile(note.path, deckname, false);
                     noteItem = store.getNoteItem(note.path);
                 }
+                const algorithm = String(settings.algorithm);
                 if (
-                    settings.algorithm === algorithmNames.Anki ||
-                    settings.algorithm === algorithmNames.Default ||
-                    settings.algorithm === algorithmNames.SM2
+                    algorithm === String(algorithmNames.Anki) ||
+                    algorithm === String(algorithmNames.Default) ||
+                    algorithm === String(algorithmNames.SM2)
                 ) {
                     const sched = noteItem?.getSched() ?? null;
                     if (sched != null) {
@@ -105,7 +106,7 @@ export class ItemTrans {
                 }
                 ItemTrans._toRevDeck(reviewDecks[deckname], note);
             }
-        });
+        }
         return;
     }
 
@@ -125,6 +126,7 @@ export class ItemTrans {
         if (item == null) {
             // store._updateItem(fileid, ind, RPITEMTYPE.NOTE, rdeck.deckName);
             // item = store.getItembyID(fileid);
+            console.debug("syncRCDataToSRrevDeck update null item:", item, trackedFile);
             return;
         }
         if (!trackedFile.isDefault && !item.isTracked) {

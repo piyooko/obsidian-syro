@@ -1,23 +1,23 @@
-/**
- * 算法设置逻辑
- * 属于：逻辑层 / 界面层
+﻿/**
+ * 绠楁硶璁剧疆閫昏緫
+ * 灞炰簬锛氶€昏緫灞?/ 鐣岄潰灞?
  *
- * 这个文件负责构建设置面板中与“复习算法”相关的设置项。
- * 它包含：
- * 1. `addCardAlgorithmSetting`: 下拉框选择卡片复习算法（如 Default, FSRS, Anki 等）。
- * 2. `addNoteAlgorithmSetting`: 下拉框选择笔记复习算法。
- * 3. 算法切换时的确认对话框（ConfirmModal），处理数据兼容性警告。
- * 4. `addCardResponseButtonTextSetting` / `addNoteResponseButtonTextSetting`: 配置评分按钮（Reset, Hard, Good, Easy）的文本。
+ * 杩欎釜鏂囦欢璐熻矗鏋勫缓璁剧疆闈㈡澘涓笌鈥滃涔犵畻娉曗€濈浉鍏崇殑璁剧疆椤广€?
+ * 瀹冨寘鍚細
+ * 1. `addCardAlgorithmSetting`: 涓嬫媺妗嗛€夋嫨鍗＄墖澶嶄範绠楁硶锛堝 Default, FSRS, Anki 绛夛級銆?
+ * 2. `addNoteAlgorithmSetting`: 涓嬫媺妗嗛€夋嫨绗旇澶嶄範绠楁硶銆?
+ * 3. 绠楁硶鍒囨崲鏃剁殑纭瀵硅瘽妗嗭紙ConfirmModal锛夛紝澶勭悊鏁版嵁鍏煎鎬ц鍛娿€?
+ * 4. `addCardResponseButtonTextSetting` / `addNoteResponseButtonTextSetting`: 閰嶇疆璇勫垎鎸夐挳锛圧eset, Hard, Good, Easy锛夌殑鏂囨湰銆?
  *
- * 当用户切换算法时，它会触发插件重载或数据迁移逻辑。
+ * 褰撶敤鎴峰垏鎹㈢畻娉曟椂锛屽畠浼氳Е鍙戞彃浠堕噸杞芥垨鏁版嵁杩佺Щ閫昏緫銆?
  *
- * 用到：
- * - src/algorithms/algorithms_switch (算法切换逻辑)
- * - src/ui/modals/confirm (确认框)
+ * 鐢ㄥ埌锛?
+ * - src/algorithms/algorithms_switch (绠楁硶鍒囨崲閫昏緫)
+ * - src/ui/modals/confirm (纭妗?
  *
- * 被用到：
- * - src/ui/settings/SRSettingTab.ts (构建设置页)
- * - src/ui/components/EmbeddedSettingsPanel.tsx (可能间接引用，或作为独立设置部分)
+ * 琚敤鍒帮細
+ * - src/ui/settings/SRSettingTab.ts (鏋勫缓璁剧疆椤?
+ * - src/ui/components/EmbeddedSettingsPanel.tsx (鍙兘闂存帴寮曠敤锛屾垨浣滀负鐙珛璁剧疆閮ㄥ垎)
  */
 import { Setting } from "obsidian";
 import { algorithmNames } from "src/algorithms/algorithms";
@@ -26,6 +26,13 @@ import ConfirmModal from "src/ui/modals/confirm";
 import { t } from "src/lang/helpers";
 import SRPlugin from "src/main";
 import { applySettingsUpdate } from "src/ui/settings/applySettingsUpdate";
+
+type PluginController = {
+    disablePlugin(id: string): Promise<void>;
+    enablePlugin(id: string): Promise<void>;
+};
+
+type TranslationKey = Parameters<typeof t>[0];
 
 // Legacy migration note retained from the pre-Syro codebase.
 
@@ -37,13 +44,37 @@ export const DEFAULT_responseOptionBtnsText: Record<string, string[]> = {
     WeightedMultiplier: [t("RESET"), t("HARD"), t("GOOD"), t("EASY")],
 };
 
+function runAsync(task: Promise<void>, label: string): void {
+    void task.catch((error: unknown) => {
+        console.error(`[algorithmSetting] ${label}`, error);
+    });
+}
+
+function getPluginController(plugin: SRPlugin): PluginController {
+    return (plugin.app as unknown as { plugins: PluginController }).plugins;
+}
+
+async function reloadPlugin(plugin: SRPlugin): Promise<void> {
+    const pluginController = getPluginController(plugin);
+    await pluginController.disablePlugin(plugin.manifest.id);
+    await pluginController.enablePlugin(plugin.manifest.id);
+}
+
+function getResponseLabelKey(opt: string): TranslationKey {
+    return `FLASHCARD_${opt.toUpperCase()}_LABEL` as TranslationKey;
+}
+
+function getResponseDescKey(opt: string): TranslationKey {
+    return `FLASHCARD_${opt.toUpperCase()}_DESC` as TranslationKey;
+}
+
 /**
- * 卡片算法设置
+ * 鍗＄墖绠楁硶璁剧疆
  */
 export function addCardAlgorithmSetting(containerEl: HTMLElement, plugin: SRPlugin) {
     const settings = plugin.data.settings;
     const desc = createFragment((frag) => {
-        frag.createDiv().innerHTML = t("ALGO_CARD_SELECT_DESC");
+        frag.createDiv({ text: t("ALGO_CARD_SELECT_DESC") });
     });
 
     new Setting(containerEl)
@@ -55,34 +86,32 @@ export function addCardAlgorithmSetting(containerEl: HTMLElement, plugin: SRPlug
             });
             dropdown.setValue(plugin.data.settings.cardAlgorithm);
             dropdown.onChange((newValue) => {
-                new ConfirmModal(plugin, t("ALGO_SWITCH_CONFIRM"), async (confirmed) => {
-                    if (confirmed) {
-                        // 直接更新设置，不进行数据迁移（卡片保留原算法数据）
-                        settings.cardAlgorithm = newValue;
-                        await plugin.savePluginData();
-
-                        // 重新加载插件
-                        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                        // @ts-ignore
-                        await plugin.app.plugins.disablePlugin(plugin.manifest.id);
-                        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                        // @ts-ignore
-                        await plugin.app.plugins.enablePlugin(plugin.manifest.id);
-                    } else {
+                new ConfirmModal(plugin, t("ALGO_SWITCH_CONFIRM"), (confirmed) => {
+                    if (!confirmed) {
                         dropdown.setValue(settings.cardAlgorithm);
+                        return;
                     }
+
+                    runAsync(
+                        (async () => {
+                            settings.cardAlgorithm = newValue;
+                            await plugin.savePluginData();
+                            await reloadPlugin(plugin);
+                        })(),
+                        "Failed to switch card algorithm.",
+                    );
                 }).open();
             });
         });
 }
 
 /**
- * 笔记算法设置
+ * 绗旇绠楁硶璁剧疆
  */
 export function addNoteAlgorithmSetting(containerEl: HTMLElement, plugin: SRPlugin) {
     const settings = plugin.data.settings;
     const desc = createFragment((frag) => {
-        frag.createDiv().innerHTML = t("ALGO_NOTE_SELECT_DESC");
+        frag.createDiv({ text: t("ALGO_NOTE_SELECT_DESC") });
     });
 
     new Setting(containerEl)
@@ -94,66 +123,77 @@ export function addNoteAlgorithmSetting(containerEl: HTMLElement, plugin: SRPlug
             });
             dropdown.setValue(plugin.data.settings.noteAlgorithm);
             dropdown.onChange((newValue) => {
-                new ConfirmModal(plugin, t("ALGO_NOTE_SWITCH_CONFIRM"), async (confirmed) => {
-                    if (confirmed) {
-                        const oldAlgo = settings.noteAlgorithm as algorithmNames;
-
-                        // 对笔记进行数据迁移
-                        const result = await algorithmSwitchData(
-                            plugin,
-                            oldAlgo,
-                            newValue as algorithmNames,
-                        );
-
-                        if (!result) {
-                            dropdown.setValue(settings.noteAlgorithm);
-                            return;
-                        }
-
-                        settings.noteAlgorithm = newValue;
-                        await plugin.savePluginData();
-
-                        // 重新加载插件
-                        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                        // @ts-ignore
-                        await plugin.app.plugins.disablePlugin(plugin.manifest.id);
-                        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                        // @ts-ignore
-                        await plugin.app.plugins.enablePlugin(plugin.manifest.id);
-                    } else {
+                new ConfirmModal(plugin, t("ALGO_NOTE_SWITCH_CONFIRM"), (confirmed) => {
+                    if (!confirmed) {
                         dropdown.setValue(settings.noteAlgorithm);
+                        return;
                     }
+
+                    runAsync(
+                        (async () => {
+                            const oldAlgo = settings.noteAlgorithm as algorithmNames;
+                            const result = await algorithmSwitchData(
+                                plugin,
+                                oldAlgo,
+                                newValue as algorithmNames,
+                            );
+
+                            if (!result) {
+                                dropdown.setValue(settings.noteAlgorithm);
+                                return;
+                            }
+
+                            settings.noteAlgorithm = newValue;
+                            await plugin.savePluginData();
+                            await reloadPlugin(plugin);
+                        })(),
+                        "Failed to switch note algorithm.",
+                    );
                 }).open();
             });
         });
 }
 
 /**
- * 显示卡片算法的特定设置
+ * 鏄剧ず鍗＄墖绠楁硶鐨勭壒瀹氳缃?
  */
 export function addCardAlgorithmSpecificDisplaySetting(containerEl: HTMLElement, plugin: SRPlugin) {
-    const update = async (settings: unknown, refresh: boolean) => {
-        plugin.data.settings.algorithmSettings[plugin.data.settings.cardAlgorithm] = settings;
-        await plugin.savePluginData();
-        if (refresh) plugin.cardAlgorithm.displaySettings(containerEl, update);
+    const update = (settings: unknown, refresh?: boolean): void => {
+        runAsync(
+            (async () => {
+                plugin.data.settings.algorithmSettings[plugin.data.settings.cardAlgorithm] = settings;
+                await plugin.savePluginData();
+                if (refresh) {
+                    plugin.cardAlgorithm.displaySettings(containerEl, update);
+                }
+            })(),
+            "Failed to update card algorithm settings.",
+        );
     };
     plugin.cardAlgorithm.displaySettings(containerEl.createDiv(), update);
 }
 
 /**
- * 显示笔记算法的特定设置
+ * 鏄剧ず绗旇绠楁硶鐨勭壒瀹氳缃?
  */
 export function addNoteAlgorithmSpecificDisplaySetting(containerEl: HTMLElement, plugin: SRPlugin) {
-    const update = async (settings: unknown, refresh: boolean) => {
-        plugin.data.settings.algorithmSettings[plugin.data.settings.noteAlgorithm] = settings;
-        await plugin.savePluginData();
-        if (refresh) plugin.noteAlgorithm.displaySettings(containerEl, update);
+    const update = (settings: unknown, refresh?: boolean): void => {
+        runAsync(
+            (async () => {
+                plugin.data.settings.algorithmSettings[plugin.data.settings.noteAlgorithm] = settings;
+                await plugin.savePluginData();
+                if (refresh) {
+                    plugin.noteAlgorithm.displaySettings(containerEl, update);
+                }
+            })(),
+            "Failed to update note algorithm settings.",
+        );
     };
     plugin.noteAlgorithm.displaySettings(containerEl.createDiv(), update);
 }
 
 /**
- * 卡片响应按钮文本设置
+ * 鍗＄墖鍝嶅簲鎸夐挳鏂囨湰璁剧疆
  */
 export function addCardResponseButtonTextSetting(containerEl: HTMLElement, plugin: SRPlugin) {
     containerEl.empty();
@@ -164,24 +204,18 @@ export function addCardResponseButtonTextSetting(containerEl: HTMLElement, plugi
 
     if (btnText[algo] == null) {
         btnText[algo] = [];
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        options.forEach((opt, ind) => (btnText[algo][ind] = t(opt.toUpperCase())));
+        options.forEach((opt, ind) => (btnText[algo][ind] = t(opt.toUpperCase() as TranslationKey)));
     }
 
     options.forEach((opt, ind) => {
         const btnTextEl = new Setting(containerEl)
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore
-            .setName(t("FLASHCARD_" + opt.toUpperCase() + "_LABEL"))
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore
-            .setDesc(t("FLASHCARD_" + opt.toUpperCase() + "_DESC"));
+            .setName(t(getResponseLabelKey(opt)))
+            .setDesc(t(getResponseDescKey(opt)));
         btnTextEl.addText((text) =>
             text.setValue(btnText[algo][ind]).onChange((value) => {
                 applySettingsUpdate(() => {
                     btnText[algo][ind] = value;
-                    plugin.savePluginData();
+                    void plugin.savePluginData();
                 });
             }),
         );
@@ -192,7 +226,7 @@ export function addCardResponseButtonTextSetting(containerEl: HTMLElement, plugi
                 .onClick(() => {
                     settings.responseOptionBtnsText[algo][ind] =
                         DEFAULT_responseOptionBtnsText[algo][ind];
-                    plugin.savePluginData();
+                    void plugin.savePluginData();
                     addCardResponseButtonTextSetting(containerEl, plugin);
                 });
         });
@@ -200,7 +234,7 @@ export function addCardResponseButtonTextSetting(containerEl: HTMLElement, plugi
 }
 
 /**
- * 笔记响应按钮文本设置
+ * 绗旇鍝嶅簲鎸夐挳鏂囨湰璁剧疆
  */
 export function addNoteResponseButtonTextSetting(containerEl: HTMLElement, plugin: SRPlugin) {
     containerEl.empty();
@@ -211,24 +245,18 @@ export function addNoteResponseButtonTextSetting(containerEl: HTMLElement, plugi
 
     if (btnText[algo] == null) {
         btnText[algo] = [];
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        options.forEach((opt, ind) => (btnText[algo][ind] = t(opt.toUpperCase())));
+        options.forEach((opt, ind) => (btnText[algo][ind] = t(opt.toUpperCase() as TranslationKey)));
     }
 
     options.forEach((opt, ind) => {
         const btnTextEl = new Setting(containerEl)
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore
-            .setName(t("FLASHCARD_" + opt.toUpperCase() + "_LABEL"))
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore
-            .setDesc(t("FLASHCARD_" + opt.toUpperCase() + "_DESC"));
+            .setName(t(getResponseLabelKey(opt)))
+            .setDesc(t(getResponseDescKey(opt)));
         btnTextEl.addText((text) =>
             text.setValue(btnText[algo][ind]).onChange((value) => {
                 applySettingsUpdate(() => {
                     btnText[algo][ind] = value;
-                    plugin.savePluginData();
+                    void plugin.savePluginData();
                 });
             }),
         );
@@ -239,25 +267,25 @@ export function addNoteResponseButtonTextSetting(containerEl: HTMLElement, plugi
                 .onClick(() => {
                     settings.responseOptionBtnsText[algo][ind] =
                         DEFAULT_responseOptionBtnsText[algo][ind];
-                    plugin.savePluginData();
+                    void plugin.savePluginData();
                     addNoteResponseButtonTextSetting(containerEl, plugin);
                 });
         });
     });
 }
 
-// ===== 保留旧函数用于兼容性 =====
+// ===== 淇濈暀鏃у嚱鏁扮敤浜庡吋瀹规€?=====
 export function addAlgorithmSetting(containerEl: HTMLElement, plugin: SRPlugin) {
-    // 默认调用笔记算法设置（向后兼容）
+    // 榛樿璋冪敤绗旇绠楁硶璁剧疆锛堝悜鍚庡吋瀹癸級
     addNoteAlgorithmSetting(containerEl, plugin);
 }
 
 export function addAlgorithmSpecificDisplaySetting(containerEl: HTMLElement, plugin: SRPlugin) {
-    // 默认调用笔记算法设置显示（向后兼容）
+    // 榛樿璋冪敤绗旇绠楁硶璁剧疆鏄剧ず锛堝悜鍚庡吋瀹癸級
     addNoteAlgorithmSpecificDisplaySetting(containerEl, plugin);
 }
 
 export function addResponseButtonTextSetting(containerEl: HTMLElement, plugin: SRPlugin) {
-    // 默认调用笔记算法按钮文本设置（向后兼容）
+    // 榛樿璋冪敤绗旇绠楁硶鎸夐挳鏂囨湰璁剧疆锛堝悜鍚庡吋瀹癸級
     addNoteResponseButtonTextSetting(containerEl, plugin);
 }

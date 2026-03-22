@@ -1,9 +1,9 @@
 /** @jsxImportSource react */
 /**
- * ReactReviewApp - 统一的 React 复习应用入口
+ * ReactReviewApp - 缁熶竴鐨?React 澶嶄範搴旂敤鍏ュ彛
  *
- * 替代原有的 ReactDeckUI 和 ReactCardUI
- * 只负责挂载/卸载 React Root
+ * 鏇夸唬鍘熸湁鐨?ReactDeckUI 鍜?ReactCardUI
+ * 鍙礋璐ｆ寕杞?鍗歌浇 React Root
  */
 
 import { createRoot, Root } from "react-dom/client";
@@ -35,19 +35,18 @@ export class ReactReviewApp {
     }
 
     /**
-     * 挂载 React 应用
+     * 鎸傝浇 React 搴旂敤
      */
     mount(): void {
-        // 清空并准备容器
+        // 娓呯┖骞跺噯澶囧鍣?
         this.containerEl.empty();
         this.containerEl.addClass("sr-react-app-root");
-        this.containerEl.style.height = "100%";
-        this.containerEl.style.overflow = "hidden";
+        this.containerEl.addClass("syro-react-review-app-root");
 
-        // 创建 React Root
+        // 鍒涘缓 React Root
         this.root = createRoot(this.containerEl);
 
-        // 渲染主组件
+        // 娓叉煋涓荤粍浠?
         this.root.render(
             <ReviewSession
                 plugin={this.plugin}
@@ -58,7 +57,7 @@ export class ReactReviewApp {
     }
 
     /**
-     * 卸载 React 应用
+     * 鍗歌浇 React 搴旂敤
      */
     unmount(): void {
         if (this.root) {
@@ -69,7 +68,7 @@ export class ReactReviewApp {
     }
 
     /**
-     * 刷新渲染 (如果需要响应外部数据变化)
+     * 鍒锋柊娓叉煋 (濡傛灉闇€瑕佸搷搴斿閮ㄦ暟鎹彉鍖?
      */
     refresh(): void {
         if (this.root) {

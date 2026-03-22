@@ -6,8 +6,8 @@
 
 
 import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { MarkdownRenderer, Notice } from "obsidian";
+import { motion, AnimatePresence, type Variants } from "framer-motion";
+import { Component, MarkdownRenderer, Notice, Platform, TFile, type Editor } from "obsidian";
 import { t } from "src/lang/helpers";
 import { ReviewContext } from "../context/ReviewContext";
 import { DeckOptionsPanel } from "../components/DeckOptionsPanel";
@@ -40,7 +40,7 @@ interface ReviewSessionProps {
 // Motion variants
 // ==========================================
 
-const slideVariants: any = {
+const slideVariants: Variants = {
     // Start hidden and let the active pane fade in.
     enter: () => ({
         x: 0,
@@ -67,8 +67,7 @@ const slideVariants: any = {
 };
 
 // Mobile uses a simpler fade because directional motion feels noisy on small screens.
-// TODO: Fix Framer motion typescript types - casting as any for now to bypass strict checks
-const mobileSlideVariants: any = {
+const mobileSlideVariants: Variants = {
     enter: () => ({
         opacity: 0,
         zIndex: 1,
@@ -113,6 +112,23 @@ function wrapDeckWithRoot(fullPath: string, isolatedDeck: Deck): Deck {
     return root;
 }
 
+function resolveNoteFile(noteFile: unknown): TFile | null {
+    if (noteFile instanceof TFile) {
+        return noteFile;
+    }
+
+    if (typeof noteFile === "object" && noteFile !== null && "file" in noteFile) {
+        const nestedFile = Reflect.get(noteFile, "file");
+        return nestedFile instanceof TFile ? nestedFile : null;
+    }
+
+    return null;
+}
+
+function hasEditor(view: unknown): view is { editor: Editor } {
+    return typeof view === "object" && view !== null && "editor" in view;
+}
+
 // ==========================================
 // Review session
 // ==========================================
@@ -133,6 +149,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     const logRuntimeDebug = useCallback(
         (...args: unknown[]) => {
             if (plugin.data.settings.showRuntimeDebugMessages) {
+                console.debug(...args);
             }
         },
         [plugin],
@@ -222,7 +239,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         plugin.setSRViewInFocus(false);
         setDirection(-1);
         setView("deck-list");
-        plugin.savePluginData();
+        void plugin.savePluginData();
         forceUpdate(); // Refresh deck counts after leaving review.
     }, [plugin, forceUpdate]);
 
@@ -278,14 +295,13 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
 
     // Persist tree collapse changes.
     const handleCollapseChange = useCallback(
-        async (fullPath: string, isCollapsed: boolean) => {
-            await saveCollapseState(plugin, fullPath, isCollapsed);
+        (fullPath: string, isCollapsed: boolean) => {
+            void saveCollapseState(plugin, fullPath, isCollapsed);
         },
         [plugin],
     );
 
-    // Obsidian exposes isMobile at runtime, but the type is not declared.
-    const isMobile = (plugin.app as any).isMobile === true;
+    const isMobile = Platform.isMobile;
 
     // Use the simpler mobile animation set on phones and tablets.
     const activeVariants = isMobile ? mobileSlideVariants : slideVariants;
@@ -323,7 +339,9 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                                 sequencer={sequencer}
                                 plugin={plugin}
                                 onDeckClick={handleDeckClick}
-                                onCollapseChange={handleCollapseChange}
+                                onCollapseChange={(fullPath, isCollapsed) => {
+                                    handleCollapseChange(fullPath, isCollapsed);
+                                }}
                                 tick={tick}
                                 recentDeckPath={recentDeckPath}
                                 initialScrollTop={deckListScrollTopRef.current}
@@ -351,9 +369,15 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                             <CardReviewView
                                 sequencer={sequencer}
                                 plugin={plugin}
-                                onAnswer={handleAnswer}
-                                onUndo={handleUndo}
-                                onDelete={handleDelete}
+                                onAnswer={(rating) => {
+                                    void handleAnswer(rating);
+                                }}
+                                onUndo={() => {
+                                    void handleUndo();
+                                }}
+                                onDelete={() => {
+                                    void handleDelete();
+                                }}
                                 onExit={handleExitReview}
                                 tick={tick}
                             />
@@ -401,7 +425,7 @@ const DeckListView: React.FC<DeckListViewProps> = ({
     const treeShellRef = useRef<HTMLDivElement>(null);
     const [openDeckOptions, setOpenDeckOptions] = useState<OpenDeckOptionsState | null>(null);
     const [isSyncing, setIsSyncing] = useState(plugin.syncLock);
-    const initialTreeWidth = Number((plugin.data.settings as any).reactDeckTreeWidth ?? 860);
+    const initialTreeWidth = Number(plugin.data.settings.reactDeckTreeWidth ?? 860);
     const [treeWidth, setTreeWidth] = useState(initialTreeWidth);
 
     useLayoutEffect(() => {
@@ -422,6 +446,7 @@ const DeckListView: React.FC<DeckListViewProps> = ({
 
         const result = remainingDeckTree.subdecks.map((deck: Deck) => deckToUIState(deck, plugin));
         if (plugin.data.settings.showRuntimeDebugMessages) {
+            console.debug(`[V3-Scheduler] DeckListView render: tick=${tick}, decks=${result.length}`);
         }
         return result;
     }, [plugin.remainingDeckTree, plugin, tick]);
@@ -501,8 +526,8 @@ const DeckListView: React.FC<DeckListViewProps> = ({
                 document.removeEventListener("touchend", handleEnd);
                 shell.classList.remove("sr-deck-tree-shell--resizing");
                 setTreeWidth(currentWidth);
-                (plugin.data.settings as any).reactDeckTreeWidth = currentWidth;
-                plugin.savePluginData();
+                plugin.data.settings.reactDeckTreeWidth = currentWidth;
+                void plugin.savePluginData();
             };
 
             document.addEventListener("mousemove", handleMove);
@@ -561,6 +586,7 @@ const DeckListView: React.FC<DeckListViewProps> = ({
                     onClose={() => setOpenDeckOptions(null)}
                     onSaved={() => {
                         if (plugin.data.settings.showRuntimeDebugMessages) {
+                            console.debug("[ReviewSession] DeckOptions saved");
                         }
                     }}
                 />
@@ -592,9 +618,21 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     onExit,
     tick,
 }) => {
+    const markdownOwnerRef = useRef<Component | null>(null);
     const card = sequencer.currentCard;
     const question = sequencer.currentQuestion;
     const deck = sequencer.currentDeck;
+
+    useEffect(() => {
+        const owner = new Component();
+        owner.load();
+        markdownOwnerRef.current = owner;
+
+        return () => {
+            markdownOwnerRef.current = null;
+            owner.unload();
+        };
+    }, []);
 
     // Guard against transient empty state while the sequencer updates.
     if (!card || !question || !deck) {
@@ -642,6 +680,9 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     const topicPath = deck.getTopicPath();
     const stats = sequencer.getDeckStats(topicPath);
     if (settings.showRuntimeDebugMessages) {
+        console.debug(
+            `[DEBUG_REVIEW_UI] Card Review UI counters for deck '${deck.deckName}' -> New: ${stats.newCount}, Learning: ${stats.learningCount}, Due: ${stats.dueCount}`,
+        );
     }
     let cardType: "new" | "learning" | "due" = "due";
     if (sequencer.isCurrentCardFromLearningQueue) {
@@ -687,17 +728,17 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
 
     // Open the source note and focus the reviewed line in the editor.
     const handleOpenNote = async () => {
-        const noteFile = question.note?.file;
+        const noteFile = resolveNoteFile(question.note?.file);
         if (!noteFile) return;
 
         const activeLeaf = plugin.app.workspace.getLeaf("tab");
-        await activeLeaf.openFile((noteFile as any).file || noteFile);
+        await activeLeaf.openFile(noteFile);
 
         // Give Obsidian time to finish opening the file before touching the editor.
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        if ((activeLeaf.view as any)?.editor) {
-            const editor = (activeLeaf.view as any).editor;
+        if (hasEditor(activeLeaf.view)) {
+            const editor = activeLeaf.view.editor;
             const lineNo = question.lineNo;
 
             // Highlight the reviewed line.
@@ -708,17 +749,8 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
             // Move the cursor first so the editor focuses the reviewed line.
             editor.setCursor(from);
 
-            // Use a proportional margin when CodeMirror 6 exposes scrollDOM.
-            const cm = editor.cm;
-            if (cm && cm.scrollDOM) {
-                // Keep the target line slightly above center so surrounding context stays visible.
-                const viewHeight = cm.scrollDOM.clientHeight;
-                const margin = Math.floor(viewHeight * 0.4);
-                editor.scrollIntoView({ from, to }, margin);
-            } else {
-                // Fall back to the legacy boolean overload when margin-based scrolling is unavailable.
-                editor.scrollIntoView({ from, to }, true);
-            }
+            // Center the reviewed line with the typed Obsidian editor API.
+            editor.scrollIntoView({ from, to }, true);
 
             // Highlight the line after scrolling to it.
             editor.setSelection(from, to);
@@ -740,7 +772,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     const handleResize = (width: number, height: number) => {
         settings.reactFlashcardWidth = width;
         settings.reactFlashcardHeight = height;
-        plugin.savePluginData();
+        void plugin.savePluginData();
     };
 
     return (
@@ -774,7 +806,9 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
                 onAnswer={onAnswer}
                 onShowAnswer={() => {}}
                 onUndo={onUndo}
-                onOpenNote={handleOpenNote}
+                onOpenNote={() => {
+                    void handleOpenNote();
+                }}
                 onEditCard={() => {}}
                 onPostpone={handlePostpone}
                 onDelete={onDelete}
@@ -782,18 +816,24 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
                 onResize={handleResize}
                 renderMarkdown={(text, el) => {
                     const sourcePath = question.note?.file?.path || "";
-                    return MarkdownRenderer.render(plugin.app, text, el, sourcePath, plugin);
+                    const owner = markdownOwnerRef.current;
+                    if (!owner) {
+                        return Promise.resolve();
+                    }
+
+                    return MarkdownRenderer.render(plugin.app, text, el, sourcePath, owner);
                 }}
                 width={settings.reactFlashcardWidth}
                 height={settings.reactFlashcardHeight}
                 debugInfo={getDebugInfo()}
-                isMobile={(plugin.app as any).isMobile === true}
+                isMobile={Platform.isMobile}
                 plugin={plugin}
                 rawContent={question.questionText?.actualQuestion || ""}
-                onUpdateContent={async (text) => {
-                    await sequencer.updateCurrentQuestionText(text);
+                onUpdateContent={(text) => {
+                    void sequencer.updateCurrentQuestionText(text);
                 }}
             />
         </div>
     );
 };
+

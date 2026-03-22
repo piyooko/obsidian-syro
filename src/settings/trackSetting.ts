@@ -11,7 +11,7 @@ export function addTrackedNoteToDecksSetting(containerEl: HTMLElement, plugin: S
         .addToggle((toggle) => {
             toggle.setValue(plugin.data.settings.trackedNoteToDecks).onChange((newValue) => {
                 plugin.data.settings.trackedNoteToDecks = newValue;
-                plugin.savePluginData();
+                void plugin.savePluginData();
             });
         });
 }
@@ -26,9 +26,9 @@ export function addUntrackSetting(containerEl: HTMLElement, plugin: SRPlugin) {
         .setName(t("UNTRACK_WITH_REVIEWTAG"))
         .setDesc(desc)
         .addToggle((toggle) =>
-            toggle.setValue(settings.untrackWithReviewTag).onChange(async (value) => {
+            toggle.setValue(settings.untrackWithReviewTag).onChange((value) => {
                 settings.untrackWithReviewTag = value;
-                await plugin.savePluginData();
+                void plugin.savePluginData();
             }),
         );
 }

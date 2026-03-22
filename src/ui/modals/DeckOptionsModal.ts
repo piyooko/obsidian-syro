@@ -251,12 +251,14 @@ export class DeckOptionsModal extends Modal {
             cls: "mod-cta",
             text: t("DECK_OPTIONS_BTN_SAVE"),
         });
-        saveBtn.addEventListener("click", async () => {
-            await this.saveSettings();
-            await this.plugin.sync();
-            this.onSaveCallback?.();
-            new Notice(`${t("DECK_OPTIONS_TITLE")} ${t("DECK_OPTIONS_BTN_SAVE")}`);
-            this.close();
+        saveBtn.addEventListener("click", () => {
+            void (async () => {
+                await this.saveSettings();
+                await this.plugin.sync();
+                this.onSaveCallback?.();
+                new Notice(`${t("DECK_OPTIONS_TITLE")} ${t("DECK_OPTIONS_BTN_SAVE")}`);
+                this.close();
+            })();
         });
     }
 

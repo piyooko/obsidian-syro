@@ -89,6 +89,7 @@ export class Note {
                 q.questionText.original
             }\r\n`;
         }
+        console.debug(str);
     }
 
     async writeNoteFile(settings: SRSettings): Promise<void> {

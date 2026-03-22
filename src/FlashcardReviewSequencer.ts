@@ -1,25 +1,25 @@
 /**
- * 这个文件主要是干什么的：
- * [核心] 复习流程的总导演 (Sequencer)。
- * 它连接了 UI、数据存储算法和调度逻辑。负责处理用户对卡片的评分（Easy/Good/Hard），执行撤销操作，管理学习队列 (Learning Queue)，并更新卡片数据。
+ * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
+ * [鏍稿績] 澶嶄範娴佺▼鐨勬€诲婕?(Sequencer)銆?
+ * 瀹冭繛鎺ヤ簡 UI銆佹暟鎹瓨鍌ㄧ畻娉曞拰璋冨害閫昏緫銆傝礋璐ｅ鐞嗙敤鎴峰鍗＄墖鐨勮瘎鍒嗭紙Easy/Good/Hard锛夛紝鎵ц鎾ら攢鎿嶄綔锛岀鐞嗗涔犻槦鍒?(Learning Queue)锛屽苟鏇存柊鍗＄墖鏁版嵁銆?
  *
- * 它在项目中属于：控制器/核心逻辑 (Controller/Core Logic)
+ * 瀹冨湪椤圭洰涓睘浜庯細鎺у埗鍣?鏍稿績閫昏緫 (Controller/Core Logic)
  *
- * 它会用到哪些文件：
- * 1. src/DeckTreeIterator.ts (获取下一张卡)
- * 2. src/CardSchedule.ts (计算调度)
- * 3. src/dataStore/data.ts (持久化复习结果)
- * 4. src/algorithms/*.ts (FSRS/Anki 算法)
+ * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
+ * 1. src/DeckTreeIterator.ts (鑾峰彇涓嬩竴寮犲崱)
+ * 2. src/CardSchedule.ts (璁＄畻璋冨害)
+ * 3. src/dataStore/data.ts (鎸佷箙鍖栧涔犵粨鏋?
+ * 4. src/algorithms/*.ts (FSRS/Anki 绠楁硶)
  *
- * 哪些文件会用到它：
- * 1. src/main.ts (插件主入口，初始化和管理复习)
- * 2. src/ui/views/FlashcardModal.tsx (复习弹窗)
- * 3. src/ui/views/reviewView.ts (旧版复习视图)
- * 4. src/ui/ReactReviewApp.tsx (React 复习应用入口)
- * 5. src/ui/containers/ReviewSession.tsx (复习会话容器)
+ * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
+ * 1. src/main.ts (鎻掍欢涓诲叆鍙ｏ紝鍒濆鍖栧拰绠＄悊澶嶄範)
+ * 2. src/ui/views/FlashcardModal.tsx (澶嶄範寮圭獥)
+ * 3. src/ui/views/reviewView.ts (鏃х増澶嶄範瑙嗗浘)
+ * 4. src/ui/ReactReviewApp.tsx (React 澶嶄範搴旂敤鍏ュ彛)
+ * 5. src/ui/containers/ReviewSession.tsx (澶嶄範浼氳瘽瀹瑰櫒)
  */
 /**
- * [控制器/核心] 复习流程的总导演。连接 UI、算法和数据，处理用户评分、撤销、跳过等操作。
+ * [鎺у埗鍣?鏍稿績] 澶嶄範娴佺▼鐨勬€诲婕斻€傝繛鎺?UI銆佺畻娉曞拰鏁版嵁锛屽鐞嗙敤鎴疯瘎鍒嗐€佹挙閿€銆佽烦杩囩瓑鎿嶄綔銆?
  */
 import { Card } from "./Card";
 import { CardListType, Deck } from "./Deck";
@@ -33,19 +33,30 @@ import { IDeckTreeIterator } from "./DeckTreeIterator";
 import { IQuestionPostponementList } from "./QuestionPostponementList";
 import { DataStore } from "./dataStore/data";
 import { DataLocation } from "./dataStore/dataLocation";
-import { RPITEMTYPE, CardQueue } from "./dataStore/repetitionItem";
+import { RPITEMTYPE, CardQueue, RepetitionItem, ReviewResult } from "./dataStore/repetitionItem";
 import { Notice } from "obsidian";
 import SRPlugin, { LearningQueueItem } from "./main";
 import { FsrsData } from "./algorithms/fsrs";
 import { DeckStatsService } from "./dataStore/deckStatsService";
+
+interface CardScheduleSnapshot {
+    dueDate: number | null;
+    interval: number;
+    ease: number;
+    delayBeforeReviewTicks: number;
+}
+
 interface ReviewHistoryItem {
     card: Card;
-    initialSchedule: CardScheduleInfo | null;
+    initialSchedule: CardScheduleSnapshot | null;
     originalDeck: Deck;
     wasNew: boolean;
     previousListType: CardListType;
     fromLearningQueue: boolean;
-    itemSnapshot?: any;
+    itemSnapshot?: Pick<
+        RepetitionItem,
+        "timesReviewed" | "timesCorrect" | "errorStreak" | "nextReview" | "queue" | "data"
+    >;
     learningStepSnapshot?: number;
 }
 
@@ -68,7 +79,7 @@ export { FlashcardReviewMode };
 export interface IFlashcardReviewSequencer {
     get hasCurrentCard(): boolean;
     get isCurrentCardFromLearningQueue(): boolean;
-    get isLearning(): boolean; // 别名，用于UI判断当前卡片是否来自学习队列
+    get isLearning(): boolean; // 鍒悕锛岀敤浜嶶I鍒ゆ柇褰撳墠鍗＄墖鏄惁鏉ヨ嚜瀛︿範闃熷垪
     get currentCard(): Card;
     get currentQuestion(): Question;
     get currentNote(): Note;
@@ -112,9 +123,14 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
     private logRuntimeDebug(...args: unknown[]): void {
         if (this.shouldLogRuntimeDebug()) {
+            console.debug(...args);
         }
     }
-    private _selectedTopicPath: TopicPath = TopicPath.emptyPath; // 保存用户选择的卡组路径
+    private _selectedTopicPath: TopicPath = TopicPath.emptyPath; // 淇濆瓨鐢ㄦ埛閫夋嫨鐨勫崱缁勮矾寰?
+
+    private getLearnAheadMillis(): number {
+        return Math.max(0, this.settings.learnAheadMinutes) * 60 * 1000;
+    }
 
     constructor(
         reviewMode: FlashcardReviewMode,
@@ -141,7 +157,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
     }
     get isLearning(): boolean {
         return this._isLearning;
-    } // UI 使用
+    } // UI 浣跨敤
     get currentCard(): Card {
         return this._currentCard;
     }
@@ -166,9 +182,9 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
                 return this.remainingDeckTree.getDeck(path) || this._originalDeckTree.getDeck(path);
         }
 
-        // [修复] 如果迭代器和当前卡片都无法提供牌组上下文，
-        // 则必须回退到用户选定的卡组路径，而不是直接回退到根节点。
-        // 这确保护了学习队列在 advanceToNextCard 时只扫描当前选定的卡组。
+        // [淇] 濡傛灉杩唬鍣ㄥ拰褰撳墠鍗＄墖閮芥棤娉曟彁渚涚墝缁勪笂涓嬫枃锛?
+        // 鍒欏繀椤诲洖閫€鍒扮敤鎴烽€夊畾鐨勫崱缁勮矾寰勶紝鑰屼笉鏄洿鎺ュ洖閫€鍒版牴鑺傜偣銆?
+        // 杩欑‘淇濇姢浜嗗涔犻槦鍒楀湪 advanceToNextCard 鏃跺彧鎵弿褰撳墠閫夊畾鐨勫崱缁勩€?
         if (this._selectedTopicPath && !this._selectedTopicPath.isEmptyPath) {
             return this.remainingDeckTree.getDeck(this._selectedTopicPath);
         }
@@ -189,18 +205,18 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
     }
 
     setCurrentDeck(topicPath: TopicPath): void {
-        this._selectedTopicPath = topicPath; // 保存用户选择的卡组路径
+        this._selectedTopicPath = topicPath; // 淇濆瓨鐢ㄦ埛閫夋嫨鐨勫崱缁勮矾寰?
         this.cardSequencer.setIteratorTopicPath(topicPath);
         this.advanceToNextCard();
     }
 
     /**
-     * 获取牌组统计（使用 DeckStatsService 事件驱动模式）
+     * 鑾峰彇鐗岀粍缁熻锛堜娇鐢?DeckStatsService 浜嬩欢椹卞姩妯″紡锛?
      *
-     * 通过 DeckStatsService 读取统计数据。每次复习后 processReview_ReviewMode 会调用
-     * DeckStatsService.recalculateDeck()，后者会触发 "deck-stats-updated" 事件，
-     * 从而驱动 ReviewSession 的 forceUpdate() → tick++ → UI 重渲染。
-     * 这条事件链是复习界面计数器动态更新的唯一通路，不能绕过。
+     * 閫氳繃 DeckStatsService 璇诲彇缁熻鏁版嵁銆傛瘡娆″涔犲悗 processReview_ReviewMode 浼氳皟鐢?
+     * DeckStatsService.recalculateDeck()锛屽悗鑰呬細瑙﹀彂 "deck-stats-updated" 浜嬩欢锛?
+     * 浠庤€岄┍鍔?ReviewSession 鐨?forceUpdate() 鈫?tick++ 鈫?UI 閲嶆覆鏌撱€?
+     * 杩欐潯浜嬩欢閾炬槸澶嶄範鐣岄潰璁℃暟鍣ㄥ姩鎬佹洿鏂扮殑鍞竴閫氳矾锛屼笉鑳界粫杩囥€?
      */
     getDeckStats(topicPath: TopicPath): DeckStats {
         const deck = topicPath.isEmptyPath
@@ -213,7 +229,10 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
         const newCount = deck.getDistinctCardCount(CardListType.NewCard, true);
         const dueCount = deck.getDistinctCardCount(CardListType.DueCard, true);
-        const learningCount = deck.getDistinctCardCount(CardListType.LearningCard, true);
+        const learningCount = deck.getAvailableLearningCardCount(
+            true,
+            this.getLearnAheadMillis(),
+        );
 
         return new DeckStats(
             dueCount,
@@ -231,7 +250,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
     }
 
     // ============================================================
-    // 核心逻辑：获取下一张卡片 (增加卡组过滤)
+    // 鏍稿績閫昏緫锛氳幏鍙栦笅涓€寮犲崱鐗?(澧炲姞鍗＄粍杩囨护)
     // ============================================================
     private advanceToNextCard(): void {
         this._currentCard = null;
@@ -239,15 +258,15 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         this._nextWaitTime = null;
 
         const now = Date.now();
-        const learnAheadTime = this.settings.learnAheadMinutes * 60 * 1000;
+        const learnAheadTime = this.getLearnAheadMillis();
 
-        // 1. 获取当前牌组及其所有子牌组中的学习中卡片
+        // 1. 鑾峰彇褰撳墠鐗岀粍鍙婂叾鎵€鏈夊瓙鐗岀粍涓殑瀛︿範涓崱鐗?
         const validLearningCards = this.currentDeck.getFlattenedCardArray(
             CardListType.LearningCard,
             true,
         );
 
-        // 2. 将它们格式化为带有 dueTime 的对象以便排序
+        // 2. 灏嗗畠浠牸寮忓寲涓哄甫鏈?dueTime 鐨勫璞′互渚挎帓搴?
         const validLearningItems = validLearningCards.map((card) => {
             return {
                 card: card,
@@ -257,7 +276,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
         validLearningItems.sort((a, b) => a.dueTime - b.dueTime);
 
-        // 3. 检查 Strictly Due (到期时间 <= Now)
+        // 3. 妫€鏌?Strictly Due (鍒版湡鏃堕棿 <= Now)
         if (validLearningItems.length > 0 && validLearningItems[0].dueTime <= now) {
             this.logRuntimeDebug(
                 `[SR-Debug] advanceToNextCard: Next is Leanring Card (Strictly due), ID=${validLearningItems[0].card.Id}, dueTime=${new Date(validLearningItems[0].dueTime).toISOString()}`,
@@ -266,7 +285,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             return;
         }
 
-        // 4. 检查 Main Queue
+        // 4. 妫€鏌?Main Queue
         if (this.cardSequencer.hasCurrentCard) {
             this._currentCard = this.cardSequencer.currentCard;
             return;
@@ -275,13 +294,13 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         const nextResult = this.cardSequencer.nextCard();
         if (nextResult) {
             this.logRuntimeDebug(
-                `[SR-Debug] advanceToNextCard: Next is Main Queue Card, ID=${this.cardSequencer.currentCard.Id}, isDue=${this.cardSequencer.currentCard.isDue}, isNew=${this.cardSequencer.currentCard.isNew}`,
+                `[SR-Debug] advanceToNextCard: Next is Main Queue Card, ID=${this.cardSequencer.currentCard.Id}, isDue=${String(this.cardSequencer.currentCard.isDue)}, isNew=${String(this.cardSequencer.currentCard.isNew)}`,
             );
             this._currentCard = this.cardSequencer.currentCard;
             return;
         }
 
-        // 5. 检查 Learn Ahead
+        // 5. 妫€鏌?Learn Ahead
         if (validLearningItems.length > 0) {
             const firstItem = validLearningItems[0];
             const timeLeft = firstItem.dueTime - now;
@@ -302,10 +321,10 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
     }
 
     // ============================================================
-    // 核心逻辑：处理复习
+    // 鏍稿績閫昏緫锛氬鐞嗗涔?
     // ============================================================
     async processReview(response: ReviewResponse): Promise<void> {
-        this.logRuntimeDebug(`[SR-DynSync] sequencer.processReview: 响应=${ReviewResponse[response]}`);
+        this.logRuntimeDebug(`[SR-DynSync] sequencer.processReview: 鍝嶅簲=${ReviewResponse[response]}`);
         const card = this.currentCard;
         if (!card) {
             console.error("[SR] processReview called but currentCard is null");
@@ -315,7 +334,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         const item = store.getItembyID(card.Id);
 
         if (this.settings.enableCardLevelTrace) {
-            card.addDebugLog("Scheduler", "收到评级响应", {
+            card.addDebugLog("Scheduler", "鏀跺埌璇勭骇鍝嶅簲", {
                 response: ReviewResponse[response],
                 wasNew: card.isNew,
                 isLearning: this._isLearning,
@@ -324,20 +343,20 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             });
         }
         this.logRuntimeDebug(
-            `[SR-Debug] processReview: ID=${card.Id}, isLearning=${this._isLearning}, response=${ReviewResponse[response]}, currentStep=${item?.learningStep}`,
+            `[SR-Debug] processReview: ID=${card.Id}, isLearning=${String(this._isLearning)}, response=${ReviewResponse[response]}, currentStep=${item?.learningStep}`,
         );
 
-        // 记录历史
+        // 璁板綍鍘嗗彶
         const historyItem: ReviewHistoryItem = {
             card: card,
             initialSchedule:
                 card.hasSchedule && card.scheduleInfo
-                    ? ({
-                          dueDate: card.scheduleInfo.dueDate?.valueOf(),
+                      ? ({
+                          dueDate: card.scheduleInfo.dueDate?.valueOf() ?? null,
                           interval: card.scheduleInfo.interval,
                           ease: card.scheduleInfo.ease,
                           delayBeforeReviewTicks: card.scheduleInfo.delayBeforeReviewTicks,
-                      } as any)
+                      })
                     : null,
             originalDeck: this.currentDeck,
             wasNew: card.isNew,
@@ -357,7 +376,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         }
         this.history.push(historyItem);
 
-        // 计数
+        // 璁℃暟
         if (this.reviewMode === FlashcardReviewMode.Review && !this._isLearning) {
             const plugin = SRPlugin.getInstance();
             const deckName = card.question.topicPathList?.list[0]?.path.join("/") || "default";
@@ -367,12 +386,15 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         if (this.reviewMode === FlashcardReviewMode.Review) {
             await this.processReview_ReviewMode(response, item);
         } else {
-            await this.processReview_CramMode(response);
+            this.processReview_CramMode(response);
         }
-        this.logRuntimeDebug(`[SR-DynSync] sequencer.processReview: 处理完成`);
+        this.logRuntimeDebug(`[SR-DynSync] sequencer.processReview: 澶勭悊瀹屾垚`);
     }
 
-    async processReview_ReviewMode(response: ReviewResponse, item: any): Promise<void> {
+    async processReview_ReviewMode(
+        response: ReviewResponse,
+        item: RepetitionItem | null,
+    ): Promise<void> {
         const card = this.currentCard;
         const store = DataStore.getInstance();
         const currentStep = item?.learningStep ?? 0;
@@ -397,8 +419,8 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             steps = learningSteps;
         }
 
-        // FSRS 更新状态
-        this._processReviewbyAlgo(response);
+        // FSRS 鏇存柊鐘舵€?
+        const reviewResult = this._processReviewbyAlgo(response);
 
         let nextStep: number | null = currentStep;
         let nextIntervalMinutes: number = 0;
@@ -439,7 +461,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             if (item?.isFsrs) (item.data as FsrsData).scheduled_days = nextIntervalMinutes / 1440;
 
             if (nextIntervalMinutes < 1440) {
-                // < 1天，Intraday
+                // < 1澶╋紝Intraday
                 const dueTime = Date.now() + nextIntervalMinutes * 60 * 1000;
                 const cardDeckName =
                     card.question?.topicPathList?.list[0]?.formatAsTag() ||
@@ -457,8 +479,8 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
                     console.warn("[SR] item is null, skipping cardAlgorithm.onSelection");
                 }
 
-                // [修复] 无论之前是否已经是学习中，都要强制检查并加入 Deck 的 learningFlashcards 列表
-                // 这解决了 UI 计数器可能与实际状态（全局队列）不同步的问题
+                // [淇] 鏃犺涔嬪墠鏄惁宸茬粡鏄涔犱腑锛岄兘瑕佸己鍒舵鏌ュ苟鍔犲叆 Deck 鐨?learningFlashcards 鍒楄〃
+                // 杩欒В鍐充簡 UI 璁℃暟鍣ㄥ彲鑳戒笌瀹為檯鐘舵€侊紙鍏ㄥ眬闃熷垪锛変笉鍚屾鐨勯棶棰?
                 const deck = this.findDeckForCard(card);
 
                 if (!this._isLearning) {
@@ -470,8 +492,8 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
                     if (newIdx !== -1) {
                         deck.newFlashcards.splice(newIdx, 1);
                     }
-                    // 核心修复点：即使 _isLearning 为 true，如果它不在列表里（比如因为之前的数据不一致），也要加进去
-                    // 如果还在学习阶段，重新放入 learningFlashcards 列表
+                    // 鏍稿績淇鐐癸細鍗充娇 _isLearning 涓?true锛屽鏋滃畠涓嶅湪鍒楄〃閲岋紙姣斿鍥犱负涔嬪墠鐨勬暟鎹笉涓€鑷达級锛屼篃瑕佸姞杩涘幓
+                    // 濡傛灉杩樺湪瀛︿範闃舵锛岄噸鏂版斁鍏?learningFlashcards 鍒楄〃
                     if (nextStep !== null) {
                         this.logRuntimeDebug(
                             `[SR-Debug] processReview: Card ID=${card.Id} remains in learning phase (Step ${nextStep}), nextReview=${new Date(item.nextReview).toISOString()}`,
@@ -531,12 +553,15 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
         if (this._isLearning) this._currentCard = null;
 
-        // [核心修复] 必须重新计算该卡片真正所属的牌组的统计
+        // [鏍稿績淇] 蹇呴』閲嶆柊璁＄畻璇ュ崱鐗囩湡姝ｆ墍灞炵殑鐗岀粍鐨勭粺璁?
         const deckToRecalc = this.findDeckForCard(card) || this.currentDeck;
         this.logRuntimeDebug(
-            `[SR-DynSync] processReview_ReviewMode: 准备为牌组 [${deckToRecalc?.deckName}] 重新计算统计`,
+            `[SR-DynSync] processReview_ReviewMode: 鍑嗗涓虹墝缁?[${deckToRecalc?.deckName}] 閲嶆柊璁＄畻缁熻`,
         );
-        DeckStatsService.getInstance().recalculateDeck(deckToRecalc);
+        DeckStatsService.getInstance().recalculateDeck(
+            deckToRecalc,
+            this.getLearnAheadMillis(),
+        );
 
         this.advanceToNextCard();
     }
@@ -588,40 +613,43 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         }
     }
 
-    private _processReviewbyAlgo(response: ReviewResponse) {
+    private _processReviewbyAlgo(response: ReviewResponse): ReviewResult | null {
         const store = DataStore.getInstance();
         const item = store.getItembyID(this.currentCard.Id);
 
-        // 防御：如果 DataStore 中找不到该卡片的 item，跳过计数更新
-        // （避免 updateReviewedCounts 中 item.isDue 空指针崩溃）
+        // 闃插尽锛氬鏋?DataStore 涓壘涓嶅埌璇ュ崱鐗囩殑 item锛岃烦杩囪鏁版洿鏂?
+        // 锛堥伩鍏?updateReviewedCounts 涓?item.isDue 绌烘寚閽堝穿婧冿級
         if (!item) {
             console.warn(
                 "[SR] _processReviewbyAlgo: item not found for card Id =",
                 this.currentCard.Id,
             );
-            return;
+            return null;
         }
 
-        // 只在首次复习（非学习阶段）时更新计数
-        // 学习中的卡片不应该重复计入 new/due 计数
+        // 鍙湪棣栨澶嶄範锛堥潪瀛︿範闃舵锛夋椂鏇存柊璁℃暟
+        // 瀛︿範涓殑鍗＄墖涓嶅簲璇ラ噸澶嶈鍏?new/due 璁℃暟
         if (!this._isLearning) {
             store.updateReviewedCounts(this.currentCard.Id, RPITEMTYPE.CARD);
         }
-        store.reviewId(this.currentCard.Id, response);
+        return store.reviewId(this.currentCard.Id, response);
     }
 
-    async processReview_CramMode(response: ReviewResponse): Promise<void> {
+    processReview_CramMode(response: ReviewResponse): void {
         if (response == ReviewResponse.Easy) this.cardSequencer.deleteCurrentCardFromAllDecks();
         else {
             this.cardSequencer.moveCurrentCardToEndOfList();
             this.cardSequencer.nextCard();
         }
-        this.logRuntimeDebug(`[SR-DynSync] processReview_CramMode: 准备重新计算统计`);
-        DeckStatsService.getInstance().recalculateDeck(this.currentDeck);
+        this.logRuntimeDebug(`[SR-DynSync] processReview_CramMode: 鍑嗗閲嶆柊璁＄畻缁熻`);
+        DeckStatsService.getInstance().recalculateDeck(
+            this.currentDeck,
+            this.getLearnAheadMillis(),
+        );
         this.advanceToNextCard();
     }
 
-    // 修复：按钮时间显示应该与实际逻辑一致
+    // 淇锛氭寜閽椂闂存樉绀哄簲璇ヤ笌瀹為檯閫昏緫涓€鑷?
     determineCardSchedule(response: ReviewResponse, card: Card): CardScheduleInfo {
         const store = DataStore.getInstance();
         const item = store.getItembyID(card.Id);
@@ -640,22 +668,22 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         let interval = 0;
         const plugin = SRPlugin.getInstance();
 
-        // 判断是否是已学习过的复习卡（Due Card，非学习中）
+        // 鍒ゆ柇鏄惁鏄凡瀛︿範杩囩殑澶嶄範鍗★紙Due Card锛岄潪瀛︿範涓級
         const isReviewCard = card.cardListType === CardListType.DueCard && !this._isLearning;
 
-        // 判断卡片是否正在学习阶段
+        // 鍒ゆ柇鍗＄墖鏄惁姝ｅ湪瀛︿範闃舵
         const isInLearningPhase = item?.learningStep !== undefined && item?.learningStep !== null;
 
-        // 选择使用的步骤
+        // 閫夋嫨浣跨敤鐨勬楠?
         let steps = learningSteps;
         if (isReviewCard && response === ReviewResponse.Reset) {
             steps = lapseSteps;
         }
 
-        // 关键修复：Due 卡片（非学习中）点击 Good/Easy 应直接毕业
-        // 但必须确保 item 存在才能调用 FSRS
+        // 鍏抽敭淇锛欴ue 鍗＄墖锛堥潪瀛︿範涓級鐐瑰嚮 Good/Easy 搴旂洿鎺ユ瘯涓?
+        // 浣嗗繀椤荤‘淇?item 瀛樺湪鎵嶈兘璋冪敤 FSRS
         if (isReviewCard && !isInLearningPhase && item) {
-            // 复习卡直接使用 FSRS
+            // 澶嶄範鍗＄洿鎺ヤ娇鐢?FSRS
             const algoIntervals = plugin.cardAlgorithm.calcAllOptsIntervals(item);
             const calculatedInterval = algoIntervals[response] || 1;
             return CardScheduleInfo.fromDueDateMoment(
@@ -666,7 +694,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             );
         }
 
-        // 新卡片或正在学习中的卡片：使用学习步骤逻辑
+        // 鏂板崱鐗囨垨姝ｅ湪瀛︿範涓殑鍗＄墖锛氫娇鐢ㄥ涔犳楠ら€昏緫
         if (response === ReviewResponse.Reset) {
             interval = steps[0] || 1;
         } else if (response === ReviewResponse.Hard) {
@@ -674,8 +702,8 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         } else if (response === ReviewResponse.Good) {
             const nextStep = currentStep + 1;
             if (nextStep >= steps.length) {
-                // 毕业：使用 cardAlgorithm (FSRS)
-                // 安全检查：如果 item 不存在，使用默认间隔
+                // 姣曚笟锛氫娇鐢?cardAlgorithm (FSRS)
+                // 瀹夊叏妫€鏌ワ細濡傛灉 item 涓嶅瓨鍦紝浣跨敤榛樿闂撮殧
                 if (!item) {
                     return CardScheduleInfo.fromDueDateMoment(window.moment().add(1, "d"), 1, 0, 0);
                 }
@@ -689,8 +717,8 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             }
             interval = steps[nextStep];
         } else if (response === ReviewResponse.Easy) {
-            // Easy: 直接毕业
-            // 安全检查：如果 item 不存在，使用默认间隔
+            // Easy: 鐩存帴姣曚笟
+            // 瀹夊叏妫€鏌ワ細濡傛灉 item 涓嶅瓨鍦紝浣跨敤榛樿闂撮殧
             if (!item) {
                 return CardScheduleInfo.fromDueDateMoment(window.moment().add(4, "d"), 4, 0, 0);
             }
@@ -703,7 +731,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             );
         }
 
-        // 学习阶段分钟级调度
+        // 瀛︿範闃舵鍒嗛挓绾ц皟搴?
         const due = Date.now() + interval * 60 * 1000;
         return CardScheduleInfo.fromDueDateMoment(window.moment(due), interval / 1440, 0, 0);
     }
@@ -716,18 +744,18 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
     async undoReview(): Promise<void> {
         if (this.history.length === 0) {
-            new Notice("没有可撤销的操作");
+            new Notice("No review action to undo.");
             return;
         }
 
         const lastAction = this.history.pop();
         const card = lastAction.card;
 
-        // 重建 CardScheduleInfo 实例，防止方法丢失
+        // 閲嶅缓 CardScheduleInfo 瀹炰緥锛岄槻姝㈡柟娉曚涪澶?
         if (lastAction.initialSchedule) {
             const saved = lastAction.initialSchedule;
-            // 检查 dueDate 是否有效
-            const dueMoment = saved.dueDate ? window.moment(saved.dueDate) : window.moment();
+            // 妫€鏌?dueDate 鏄惁鏈夋晥
+            const dueMoment = saved.dueDate ? window.moment(new Date(saved.dueDate)) : window.moment();
             card.scheduleInfo = new CardScheduleInfo(
                 dueMoment,
                 saved.interval,
@@ -753,7 +781,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         // 2. Revert Daily Counts
         if (this.reviewMode === FlashcardReviewMode.Review && !lastAction.fromLearningQueue) {
             const plugin = SRPlugin.getInstance();
-            // 必须使用与 incrementDailyCounts 相同的格式 (无 # 路径)
+            // 蹇呴』浣跨敤涓?incrementDailyCounts 鐩稿悓鐨勬牸寮?(鏃?# 璺緞)
             const deckName =
                 card.question.topicPathList?.list[0]?.path.join("/") ||
                 deck.getTopicPath().path.join("/") ||
@@ -802,9 +830,12 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         const deckToRecalc = deck || lastAction.originalDeck || this.currentDeck;
         if (deckToRecalc) {
             this.logRuntimeDebug(
-                `[SR-DynSync] undoReview: 准备为牌组 [${deckToRecalc.deckName}] 重新计算统计`,
+                `[SR-DynSync] undoReview: 鍑嗗涓虹墝缁?[${deckToRecalc.deckName}] 閲嶆柊璁＄畻缁熻`,
             );
-            DeckStatsService.getInstance().recalculateDeck(deckToRecalc);
+            DeckStatsService.getInstance().recalculateDeck(
+                deckToRecalc,
+                this.getLearnAheadMillis(),
+            );
         }
     }
 
@@ -829,7 +860,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
         const store = DataStore.getInstance();
         store.unTrackItem(this.currentCard.Id);
-        store.save();
+        await store.save();
 
         if (this._isLearning) {
             const deck = this.findDeckForCard(card);
@@ -850,7 +881,11 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         }
 
         const deckToRecalculate = this.findDeckForCard(card) || this.currentDeck;
-        DeckStatsService.getInstance().recalculateDeck(deckToRecalculate);
+        DeckStatsService.getInstance().recalculateDeck(
+            deckToRecalculate,
+            this.getLearnAheadMillis(),
+        );
         this.advanceToNextCard();
     }
 }
+

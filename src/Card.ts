@@ -1,25 +1,25 @@
 /**
- * 这个文件主要是干什么的：
- * 这是插件中最核心的“卡片”模型。所有的记忆卡片在程序里都会变成这样一个对象。
- * 它记录了一张卡片的正面内容、背面内容、它属于哪条笔记（问题）、以及它现在应该什么时候复习（调度信息）。
- * 这个文件就像是卡片的身份证，存放了卡片的一切身份信息。
- * 另外，它现在也负责记录卡片从被发现到被复习的“一生”（生命周期调试记录），这在我们想要排查某张卡片的数据流经了哪些步骤时非常有用。
+ * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
+ * 杩欐槸鎻掍欢涓渶鏍稿績鐨勨€滃崱鐗団€濇ā鍨嬨€傛墍鏈夌殑璁板繂鍗＄墖鍦ㄧ▼搴忛噷閮戒細鍙樻垚杩欐牱涓€涓璞°€?
+ * 瀹冭褰曚簡涓€寮犲崱鐗囩殑姝ｉ潰鍐呭銆佽儗闈㈠唴瀹广€佸畠灞炰簬鍝潯绗旇锛堥棶棰橈級銆佷互鍙婂畠鐜板湪搴旇浠€涔堟椂鍊欏涔狅紙璋冨害淇℃伅锛夈€?
+ * 杩欎釜鏂囦欢灏卞儚鏄崱鐗囩殑韬唤璇侊紝瀛樻斁浜嗗崱鐗囩殑涓€鍒囪韩浠戒俊鎭€?
+ * 鍙﹀锛屽畠鐜板湪涔熻礋璐ｈ褰曞崱鐗囦粠琚彂鐜板埌琚涔犵殑鈥滀竴鐢熲€濓紙鐢熷懡鍛ㄦ湡璋冭瘯璁板綍锛夛紝杩欏湪鎴戜滑鎯宠鎺掓煡鏌愬紶鍗＄墖鐨勬暟鎹祦缁忎簡鍝簺姝ラ鏃堕潪甯告湁鐢ㄣ€?
  *
- * 它在项目中属于：数据层 / 模型层
+ * 瀹冨湪椤圭洰涓睘浜庯細鏁版嵁灞?/ 妯″瀷灞?
  *
- * 它会用到哪些文件：
- * 1. src/Question.ts (卡片必须归属于某一个具体的笔记问题)
- * 2. src/CardSchedule.ts (卡片需要知道自己的复习计划，比如下次复习时间)
- * 3. src/Deck.ts (卡片需要知道自己属于哪个“新卡”或“待复习”的队列)
- * 4. src/dataStore/queue.ts (它需要知道自己在不在稍后复习的队列中)
+ * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
+ * 1. src/Question.ts (鍗＄墖蹇呴』褰掑睘浜庢煇涓€涓叿浣撶殑绗旇闂)
+ * 2. src/CardSchedule.ts (鍗＄墖闇€瑕佺煡閬撹嚜宸辩殑澶嶄範璁″垝锛屾瘮濡備笅娆″涔犳椂闂?
+ * 3. src/Deck.ts (鍗＄墖闇€瑕佺煡閬撹嚜宸卞睘浜庡摢涓€滄柊鍗♀€濇垨鈥滃緟澶嶄範鈥濈殑闃熷垪)
+ * 4. src/dataStore/queue.ts (瀹冮渶瑕佺煡閬撹嚜宸卞湪涓嶅湪绋嶅悗澶嶄範鐨勯槦鍒椾腑)
  *
- * 哪些文件会用到它：
- * 1. src/Deck.ts (牌组就是把很多这种卡片组合在一起)
- * 2. src/FlashcardReviewSequencer.ts (复习流程控制中心，它整天都在调度操作这些卡片)
- * 3. src/NoteQuestionParser.ts (在解析提取笔记的时候，会把匹配到的文字生成这样的卡片对象)
+ * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
+ * 1. src/Deck.ts (鐗岀粍灏辨槸鎶婂緢澶氳繖绉嶅崱鐗囩粍鍚堝湪涓€璧?
+ * 2. src/FlashcardReviewSequencer.ts (澶嶄範娴佺▼鎺у埗涓績锛屽畠鏁村ぉ閮藉湪璋冨害鎿嶄綔杩欎簺鍗＄墖)
+ * 3. src/NoteQuestionParser.ts (鍦ㄨВ鏋愭彁鍙栫瑪璁扮殑鏃跺€欙紝浼氭妸鍖归厤鍒扮殑鏂囧瓧鐢熸垚杩欐牱鐨勫崱鐗囧璞?
  */
 /**
- * [模型] 代表一张具体的卡片（Front/Back/Schedule）。
+ * [妯″瀷] 浠ｈ〃涓€寮犲叿浣撶殑鍗＄墖锛團ront/Back/Schedule锛夈€?
  */
 import { Question } from "./Question";
 import { CardScheduleInfo } from "./CardSchedule";
@@ -29,12 +29,12 @@ import { globalDateProvider } from "./util/DateProvider";
 import { RepetitionItem, CardQueue } from "./dataStore/repetitionItem";
 import { Queue } from "./dataStore/queue";
 
-// 卡片生命周期的调试日志记录项
+// 鍗＄墖鐢熷懡鍛ㄦ湡鐨勮皟璇曟棩蹇楄褰曢」
 export interface DebugLogEntry {
     timestamp: number;
     phase: "Parser" | "Generator" | "Scheduler" | "Render" | "Database";
     action: string;
-    details?: any;
+    details?: unknown;
 }
 
 export class Card {
@@ -119,12 +119,12 @@ export class Card {
     }
 
     getFirstClozeCard(): Card | undefined {
-        return this.isMultiCloze ? this.question.cards[this.multiCloze![0]] : undefined;
+        return this.isMultiCloze ? this.question.cards[this.multiCloze[0]] : undefined;
     }
 
     getNextClozeCard(): Card | undefined {
         return this.hasNextMultiCloze
-            ? this.question.cards[this.multiCloze![this.multiClozeIndex! + 1]]
+            ? this.question.cards[this.multiCloze[this.multiClozeIndex + 1]]
             : undefined;
     }
 
@@ -135,7 +135,7 @@ export class Card {
         return result;
     }
 
-    addDebugLog(phase: DebugLogEntry["phase"], action: string, details?: any): void {
+    addDebugLog(phase: DebugLogEntry["phase"], action: string, details?: unknown): void {
         if (!this.debugTrace) {
             this.debugTrace = [];
         }

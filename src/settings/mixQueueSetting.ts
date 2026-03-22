@@ -15,11 +15,11 @@ export function addmixQueueSetting(containerEl: HTMLElement, plugin: SRPlugin) {
                 .setLimits(1, 7, 1)
                 .setValue(settings.mixDue + settings.mixNew)
                 .setDynamicTooltip()
-                .onChange(async (value) => {
-                    applySettingsUpdate(async () => {
+                .onChange((value) => {
+                    applySettingsUpdate(() => {
                         settings.mixDue = Math.min(value, settings.mixDue);
                         settings.mixNew = value - settings.mixDue;
-                        await update();
+                        void update();
                     });
                 }),
         )
@@ -29,9 +29,9 @@ export function addmixQueueSetting(containerEl: HTMLElement, plugin: SRPlugin) {
                 .setValue(settings.mixDue)
                 .setDynamicTooltip()
                 .onChange((value) => {
-                    applySettingsUpdate(async () => {
+                    applySettingsUpdate(() => {
                         settings.mixDue = value;
-                        await update();
+                        void update();
                     });
                 }),
         )
@@ -39,11 +39,11 @@ export function addmixQueueSetting(containerEl: HTMLElement, plugin: SRPlugin) {
             button
                 .setIcon("reset")
                 .setTooltip(t("RESET_DEFAULT"))
-                .onClick(async () => {
-                    applySettingsUpdate(async () => {
+                .onClick(() => {
+                    applySettingsUpdate(() => {
                         settings.mixDue = DEFAULT_SETTINGS.mixDue;
                         settings.mixNew = DEFAULT_SETTINGS.mixNew;
-                        await update();
+                        void update();
                     });
                 });
         });

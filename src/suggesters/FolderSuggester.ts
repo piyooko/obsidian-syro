@@ -1,14 +1,10 @@
-import { AbstractInputSuggest, TAbstractFile, TFolder } from "obsidian";
+// Credits go to Liam's Periodic Notes Plugin: https://github.com/liamcain/obsidian-periodic-notes
+
+import { TAbstractFile, TFolder } from "obsidian";
+import { TextInputSuggest } from "./suggest";
 import { Iadapter } from "src/dataStore/adapter";
 
-export class FolderSuggest extends AbstractInputSuggest<TFolder> {
-    private readonly inputEl: HTMLInputElement;
-
-    constructor(inputEl: HTMLInputElement) {
-        super(Iadapter.instance.app, inputEl);
-        this.inputEl = inputEl;
-    }
-
+export class FolderSuggest extends TextInputSuggest<TFolder> {
     getSuggestions(inputStr: string): TFolder[] {
         const abstractFiles = Iadapter.instance.vault.getAllLoadedFiles();
         const folders: TFolder[] = [];
@@ -31,7 +27,6 @@ export class FolderSuggest extends AbstractInputSuggest<TFolder> {
     }
 
     selectSuggestion(file: TFolder): void {
-        this.setValue(file.path);
         this.inputEl.value = file.path;
         this.inputEl.trigger("input");
         this.close();

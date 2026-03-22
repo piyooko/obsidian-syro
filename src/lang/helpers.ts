@@ -87,14 +87,9 @@ const locale = localeMap[moment.locale()];
 
 // https://stackoverflow.com/a/41015840/
 function interpolate(str: string, params: Record<string, unknown>): string {
-    return str.replace(/\$\{([A-Za-z0-9_]+)\}/g, (match, key: string) => {
-        if (!Object.prototype.hasOwnProperty.call(params, key)) {
-            return match;
-        }
-
-        const value = params[key];
-        return value == null ? "" : String(value);
-    });
+    const names: string[] = Object.keys(params);
+    const vals: unknown[] = Object.values(params);
+    return new Function(...names, `return \`${str}\`;`)(...vals);
 }
 
 export function t(str: keyof typeof en, params?: Record<string, unknown>): string {
