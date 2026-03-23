@@ -4,6 +4,8 @@
 
 > **Seamlessly integrate the scientific principles of Spaced Repetition and Incremental Reading into your plain-text knowledge base.**
 
+<img width="2538" height="1031" alt="image" src="https://github.com/user-attachments/assets/998acf8a-587c-49b3-b79a-eed4bbd28d6b" />
+
 ## When Your Knowledge Vault Becomes a Collection Graveyard
 
 Many of us face a common dilemma: we meticulously collect a vast library of web pages, articles, and notes in Obsidian, only for these valuable resources to sink into oblivion after being saved. Traditional note-taking methods like passive re-reading and highlighting are often ineffective for long-term retention, trapping our knowledge bases in a "write-and-forget" cycle.
