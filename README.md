@@ -4,7 +4,7 @@
 
 > **Seamlessly integrate the scientific principles of Spaced Repetition and Incremental Reading into your plain-text knowledge base.**
 
-<img width="2538" height="1031" alt="image" src="https://github.com/user-attachments/assets/998acf8a-587c-49b3-b79a-eed4bbd28d6b" />
+<img width="2490" height="975" alt="image" src="https://github.com/user-attachments/assets/9cd1e9f0-bb66-4a20-ad23-e29a66430cce" />
 
 ## When Your Knowledge Vault Becomes a Collection Graveyard
 
