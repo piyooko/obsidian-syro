@@ -107,7 +107,7 @@ Syro's development is deeply indebted to the open-source community and inspired 
 -   **[Obsidian](https://obsidian.md/)**: For creating this free, open, and privacy-focused plain-text ecosystem that makes everything possible.
 -   **[Anki](https://apps.ankiweb.net/)**: A titan in the field of spaced repetition. We salute its role in popularizing active recall worldwide.
 -   **[FSRS](https://github.com/open-spaced-repetition/fsrs4anki)**: For its outstanding open-source algorithm, which has significantly advanced the science of review scheduling.
--   A special acknowledgement goes to **[Jarrett Ye (L-M-Sherlock)](https://github.com/L-M-Sherlock)**. Thank you, not only as a core contributor to the FSRS algorithm, but also as a passionate evangelist for the popularization of spaced repetition and advanced educational concepts.
+-   **[Jarrett Ye (L-M-Sherlock)](https://github.com/L-M-Sherlock)**. For your pivotal role in developing the FSRS algorithm, and your tireless dedication to popularizing spaced repetition and advanced educational practices.
 -   **[Obsidian Spaced Repetitions](https://github.com/st3v3nmw/obsidian-spaced-repetition)**: The original source of inspiration for this plugin. Thank you for bringing the spark of spaced repetition to the Obsidian community.
 -   **[Obsidian Smart Connections](https://github.com/brianpetro/obsidian-smart-connections)**: Its excellent engineering architecture and innovative ideas provided invaluable inspiration when exploring the integration of AI with local knowledge bases.
 
