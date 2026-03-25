@@ -22,6 +22,7 @@ import { t } from "src/lang/helpers";
 import { algorithms } from "./algorithms/algorithms_switch";
 import { DataLocation } from "./dataStore/dataLocation";
 import { DEFAULT_responseOptionBtnsText } from "./settings/algorithmSetting";
+import { getArrayProp, getNumberProp, getStringProp, isRecord } from "./util/typeGuards";
 import { pathMatchesPattern } from "src/utils/fs";
 
 // ============ Status Bar Animation ===========
@@ -29,6 +30,7 @@ export type StatusBarAnimationStyle = "None" | "Breathing";
 export type ClozeContextMode = "single" | "double-break" | "expanded" | "full";
 export type ClozeContextPerformanceMode = "off" | "safe-trim";
 export type SyncProgressDisplayMode = "always" | "full-only" | "never";
+export const DEFAULT_SYNC_PROGRESS_DISPLAY_MODE: SyncProgressDisplayMode = "full-only";
 // ============ Deck Option Presets ===========
 // Per-preset configuration.
 export interface DeckOptionsPreset {
@@ -48,6 +50,18 @@ export interface ProgressBarStyle {
     warningColor: string; // Color used near completion
     height: number; // Bar height in px
     rightToLeft: boolean; // Animation direction
+}
+
+export type LicensePlan = "supporter";
+
+export interface LicenseState {
+    licenseKey: string;
+    deviceId: string;
+    token: string;
+    plan: LicensePlan;
+    features: string[];
+    lastVerifiedAt: number;
+    activatedAt: number;
 }
 
 export const DEFAULT_DECK_OPTIONS_PRESET: DeckOptionsPreset = {
@@ -212,10 +226,9 @@ export interface SRSettings {
 
     // License state
     licenseKey: string; // User-entered license key
-    isPro: boolean; // Cached Pro membership state
-    vaultId: string; // Per-vault device identifier
-    licenseToken: string; // Server-issued verification token
-    lastVerification: number; // Timestamp of the last online verification
+    isPro: boolean; // Derived Supporter membership state
+    licenseInstallationId: string; // Stable installation UUID for this plugin install
+    licenseState: LicenseState | null; // Persisted license cache
 
     previousRelease: string;
 
@@ -234,7 +247,7 @@ export const DEFAULT_SETTINGS: SRSettings = {
     multiClozeCard: false,
     enableNoteCachePersistence: true,
     autoIncrementalSync: true,
-    syncProgressDisplayMode: "always",
+    syncProgressDisplayMode: DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
     cardBlockID: false,
     randomizeCardOrder: null,
     flashcardCardOrder: "DueFirstRandom",
@@ -367,9 +380,8 @@ export const DEFAULT_SETTINGS: SRSettings = {
     // License defaults
     licenseKey: "",
     isPro: false,
-    vaultId: "",
-    licenseToken: "",
-    lastVerification: 0,
+    licenseInstallationId: "",
+    licenseState: null,
 
     previousRelease: "0.0.0",
 
@@ -379,6 +391,64 @@ export const DEFAULT_SETTINGS: SRSettings = {
 const DEFAULT_HIGHLIGHT_CLOZE_PATTERN = "==[123;;]answer[;;hint]==";
 const DEFAULT_BOLD_CLOZE_PATTERN = "**[123;;]answer[;;hint]**";
 const DEFAULT_CURLY_CLOZE_PATTERN = "{{[123;;]answer[;;hint]}}";
+
+function normalizeLicenseFeatures(input: unknown): string[] {
+    if (!Array.isArray(input)) {
+        return [];
+    }
+
+    return Array.from(
+        new Set(
+            input
+                .filter((entry): entry is string => typeof entry === "string")
+                .map((entry) => entry.trim())
+                .filter((entry) => entry.length > 0),
+        ),
+    );
+}
+
+export function normalizeLicenseState(value: unknown): LicenseState | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+
+    const licenseKey = getStringProp(value, "licenseKey")?.trim().toUpperCase();
+    const deviceId = getStringProp(value, "deviceId")?.trim();
+    const token = getStringProp(value, "token")?.trim();
+    const plan = getStringProp(value, "plan");
+    const features = normalizeLicenseFeatures(getArrayProp(value, "features"));
+    const lastVerifiedAt = getNumberProp(value, "lastVerifiedAt");
+    const activatedAt = getNumberProp(value, "activatedAt");
+
+    if (
+        !licenseKey ||
+        !deviceId ||
+        !token ||
+        plan !== "supporter" ||
+        lastVerifiedAt === undefined ||
+        activatedAt === undefined
+    ) {
+        return null;
+    }
+
+    return {
+        licenseKey,
+        deviceId,
+        token,
+        plan,
+        features,
+        lastVerifiedAt,
+        activatedAt,
+    };
+}
+
+export function hasSupporterLicenseState(state: LicenseState | null | undefined): boolean {
+    if (!state || !state.token) {
+        return false;
+    }
+
+    return state.plan === "supporter" || state.features.includes("supporter");
+}
 
 export function syncDefaultClozePatterns(settings: SRSettings) {
     const existingPatterns = settings.clozePatterns ?? [];
@@ -405,6 +475,12 @@ export function syncDefaultClozePatterns(settings: SRSettings) {
 }
 
 export function upgradeSettings(settings: SRSettings) {
+    const legacySettings = settings as SRSettings & {
+        vaultId?: string;
+        licenseToken?: string;
+        lastVerification?: number;
+    };
+
     if (
         settings.randomizeCardOrder != null &&
         settings.flashcardCardOrder == null &&
@@ -438,7 +514,7 @@ export function upgradeSettings(settings: SRSettings) {
     }
 
     if (settings.syncProgressDisplayMode === undefined) {
-        settings.syncProgressDisplayMode = "always";
+        settings.syncProgressDisplayMode = DEFAULT_SYNC_PROGRESS_DISPLAY_MODE;
     }
 
     if (settings.showRuntimeDebugMessages === undefined) {
@@ -532,6 +608,25 @@ export function upgradeSettings(settings: SRSettings) {
             settings.deckCollapseState[path] = true;
         }
     }
+
+    const normalizedLicenseState = normalizeLicenseState(settings.licenseState);
+    const hasLegacyLicenseArtifacts =
+        !!legacySettings.vaultId ||
+        !!legacySettings.licenseToken ||
+        typeof legacySettings.lastVerification === "number" ||
+        legacySettings.isPro === true;
+
+    settings.licenseInstallationId =
+        typeof settings.licenseInstallationId === "string" ? settings.licenseInstallationId : "";
+    settings.licenseState = normalizedLicenseState;
+
+    if (normalizedLicenseState) {
+        settings.licenseKey = normalizedLicenseState.licenseKey;
+    } else if (hasLegacyLicenseArtifacts) {
+        settings.licenseKey = "";
+    }
+
+    settings.isPro = hasSupporterLicenseState(settings.licenseState);
 }
 
 export class SettingsUtil {

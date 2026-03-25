@@ -33,6 +33,7 @@ import graph from "pagerank.js";
 
 import {
     DEFAULT_SETTINGS,
+    DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
     SettingsUtil,
     SRSettings,
     SyncProgressDisplayMode,
@@ -119,7 +120,17 @@ import {
     validateCachedNoteBindings,
 } from "src/cache/noteCacheStore";
 import { ReviewCommitStore } from "src/dataStore/reviewCommitStore";
+import { ReviewPersistenceCoordinator } from "src/services/reviewPersistenceCoordinator";
 import { autoCommitReviewResponseToTimeline } from "src/ui/timeline/reviewResponseTimeline";
+import {
+    mergeQueuedSyncRequest,
+    normalizeSyncRequest,
+    type NormalizedSyncRequest,
+    type SyncMode,
+    type SyncRequestOptions,
+    type SyncRequestResult,
+    type SyncTrigger,
+} from "src/syncRequest";
 import {
     FIRST_RUN_TUTORIAL_NOTE_CONTENT,
     FIRST_RUN_TUTORIAL_NOTE_PATH,
@@ -151,16 +162,6 @@ interface PluginData {
     // 鎸佷箙鍖栧瓨鍌ㄦ瘡鏃ョ粺璁?
     dailyDeckStats: DailyDeckStats;
     // 娉ㄦ剰锛歭earningQueue 涓嶅啀瀛樺偍鍦ㄨ繖閲岋紝鐘舵€佸凡绉昏嚦 RepetitionItem.learningStep
-}
-
-type SyncMode = "incremental" | "full";
-type SyncTrigger = "manual" | "startup" | "review-entry" | "background" | "file-event";
-
-interface SyncRequestOptions {
-    reviewMode?: FlashcardReviewMode;
-    mode?: SyncMode;
-    trigger?: SyncTrigger;
-    force?: boolean;
 }
 
 const AUTO_SYNC_COOLDOWN_MS = 15_000;
@@ -232,6 +233,7 @@ export default class SRPlugin extends Plugin {
     private lastSyncReviewMode: FlashcardReviewMode | null = null;
     private lastSuccessfulCardCaptureSignature = "";
     private pendingCardCapturePromptSignature = "";
+    private pendingSyncRequest: NormalizedSyncRequest | null = null;
     private lastSemanticChangeAt = 0;
     private noteReviewRefreshLock = false;
     private noteReviewRefreshPending = false;
@@ -243,6 +245,7 @@ export default class SRPlugin extends Plugin {
     public reviewFloatBar: reviewResponseModal;
     public settingTab: SRSettingTab;
     public reviewCommitStore: ReviewCommitStore;
+    public reviewPersistenceCoordinator: ReviewPersistenceCoordinator;
 
     /** 浜嬩欢鎬荤嚎锛氬悓姝ュ畬鎴愬悗骞挎挱娑堟伅锛岄€氱煡宸叉墦寮€鐨?UI 缁勪欢灞€閮ㄥ埛鏂版暟瀛?*/
     public syncEvents: SyncEvents = new SyncEvents();
@@ -254,6 +257,10 @@ export default class SRPlugin extends Plugin {
     public learningQueue: Array<{ card: Card; dueTime: number; deckName: string }> = [];
 
     private hasPerformedInitialGC = false;
+    private pendingPluginDataSaveTimer: ReturnType<typeof setTimeout> | null = null;
+    private pendingPluginDataSaveRequested = false;
+    private pendingPluginDataSavePromise: Promise<boolean> | null = null;
+    private pluginDataSaveFailureNotified = false;
 
     private static _instance: SRPlugin;
     static getInstance() {
@@ -264,6 +271,85 @@ export default class SRPlugin extends Plugin {
         void task.catch((error: unknown) => {
             console.error(`[SR] ${label} failed`, error);
         });
+    }
+
+    private clearPendingPluginDataSaveTimer(): void {
+        if (this.pendingPluginDataSaveTimer !== null) {
+            clearTimeout(this.pendingPluginDataSaveTimer);
+            this.pendingPluginDataSaveTimer = null;
+        }
+    }
+
+    public requestPluginDataSave(delayMs = 350): void {
+        this.pendingPluginDataSaveRequested = true;
+        this.clearPendingPluginDataSaveTimer();
+        this.pendingPluginDataSaveTimer = setTimeout(() => {
+            this.pendingPluginDataSaveTimer = null;
+            this.runAsync(this.flushPendingPluginDataSave(), "flush queued plugin data");
+        }, delayMs);
+    }
+
+    public async flushPendingPluginDataSave(timeoutMs = 1500): Promise<boolean> {
+        this.clearPendingPluginDataSaveTimer();
+        if (!this.pendingPluginDataSaveRequested && this.pendingPluginDataSavePromise === null) {
+            return true;
+        }
+
+        if (this.pendingPluginDataSavePromise === null) {
+            this.pendingPluginDataSavePromise = (async () => {
+                this.pendingPluginDataSaveRequested = false;
+                try {
+                    await this.savePluginData();
+                    this.pluginDataSaveFailureNotified = false;
+                    return true;
+                } catch (error) {
+                    console.error("[SR] flush queued plugin data failed", error);
+                    this.pendingPluginDataSaveRequested = true;
+                    if (!this.pluginDataSaveFailureNotified) {
+                        this.pluginDataSaveFailureNotified = true;
+                        new Notice(t("DATA_UNABLE_TO_SAVE"));
+                    }
+                    this.requestPluginDataSave(1000);
+                    return false;
+                } finally {
+                    this.pendingPluginDataSavePromise = null;
+                    if (
+                        this.pendingPluginDataSaveRequested &&
+                        this.pendingPluginDataSaveTimer === null
+                    ) {
+                        this.requestPluginDataSave(0);
+                    }
+                }
+            })();
+        }
+
+        const result = await Promise.race([
+            this.pendingPluginDataSavePromise,
+            new Promise<boolean>((resolve) => {
+                setTimeout(() => resolve(false), timeoutMs);
+            }),
+        ]);
+
+        return result && !this.pendingPluginDataSaveRequested;
+    }
+
+    public async flushReviewPersistence(timeoutMs = 1500): Promise<boolean> {
+        const results = await Promise.race([
+            Promise.all([
+                this.store?.drainReviewOverlayFlush(timeoutMs) ?? Promise.resolve(true),
+                this.flushPendingPluginDataSave(timeoutMs),
+                this.reviewPersistenceCoordinator?.drain(timeoutMs) ?? Promise.resolve(true),
+            ]).then((values) => values.every(Boolean)),
+            new Promise<boolean>((resolve) => {
+                setTimeout(() => resolve(false), timeoutMs);
+            }),
+        ]);
+
+        if (!results) {
+            new Notice("Syro: review changes are still pending save and will keep retrying.");
+        }
+
+        return results;
     }
 
     private getReviewQueueView(): ReactNoteReviewView | null {
@@ -722,7 +808,7 @@ export default class SRPlugin extends Plugin {
             // ====== License 闃茬牬瑙ｆ娴嬬偣 A锛氬惎鍔ㄦ椂闈欓粯楠岃瘉 ======
             try {
                 const licMgr = LicenseManager.getInstance(this);
-                if (this.data.settings.licenseToken) {
+                if (this.data.settings.licenseState?.token) {
                     this.runAsync(
                         licMgr.backgroundCheck(this.data.settings).then((isValid) => {
                             if (!isValid && this.data.settings.isPro) {
@@ -747,6 +833,7 @@ export default class SRPlugin extends Plugin {
     }
 
     onunload(): void {
+        this.runAsync(this.flushReviewPersistence(1000), "flush review persistence on unload");
         this.app.workspace.getLeavesOfType(REVIEW_QUEUE_VIEW_TYPE).forEach((leaf) => leaf.detach());
         this.tabViewManager.closeAllTabViews();
         this.reviewFloatBar.close();
@@ -829,7 +916,7 @@ export default class SRPlugin extends Plugin {
                 date: today,
                 counts: {},
             };
-            this.runAsync(this.savePluginData(), "save daily deck stats");
+            this.requestPluginDataSave(0);
             if (this.data.settings.showSchedulingDebugMessages) {
                 console.debug(`[SR] New day detected (${today}). Daily limits reset.`);
             }
@@ -848,7 +935,7 @@ export default class SRPlugin extends Plugin {
     /**
      * 澧炲姞璁℃暟锛堟敮鎸佸眰绾э紝娌胯矾寰勫悜涓婃洿鏂版墍鏈夌鍏堢墝缁勶級
      */
-    public async incrementDailyCounts(deckName: string, isNew: boolean): Promise<void> {
+    public incrementDailyCounts(deckName: string, isNew: boolean): void {
         this.loadDailyDeckStats();
 
         // 鑾峰彇鐗岀粍璺緞 lineage (渚嬪 A/B -> [A, A/B])
@@ -873,14 +960,14 @@ export default class SRPlugin extends Plugin {
             }
         }
 
-        await this.savePluginData();
+        this.requestPluginDataSave();
     }
 
     /**
      * 鍑忓皯璁℃暟锛堢敤浜庢挙閿€鎿嶄綔锛?
      * 鏀寔灞傜骇锛屾部璺緞鍚戜笂鏇存柊鎵€鏈夌鍏堢墝缁?
      */
-    public async decrementDailyCounts(deckName: string, isNew: boolean): Promise<void> {
+    public decrementDailyCounts(deckName: string, isNew: boolean): void {
         this.loadDailyDeckStats();
 
         // 鑾峰彇鐗岀粍璺緞 lineage (渚嬪 A/B -> [A, A/B])
@@ -907,7 +994,7 @@ export default class SRPlugin extends Plugin {
             }
         }
 
-        await this.savePluginData();
+        this.requestPluginDataSave();
     }
 
     private static createDeckTreeIterator(settings: SRSettings, baseDeck: Deck): IDeckTreeIterator {
@@ -999,6 +1086,40 @@ export default class SRPlugin extends Plugin {
 
         this.pendingCardCapturePromptSignature = "";
         return true;
+    }
+
+    private queueSyncRequest(request: NormalizedSyncRequest): NormalizedSyncRequest {
+        const previousRequest = this.pendingSyncRequest;
+        const nextRequest = mergeQueuedSyncRequest(previousRequest, request);
+        this.pendingSyncRequest = nextRequest;
+
+        this.logRuntimeDebug(
+            "[SR-SyncQueue] queued sync request",
+            previousRequest,
+            "=>",
+            nextRequest,
+        );
+
+        return nextRequest;
+    }
+
+    private takePendingSyncRequest(): NormalizedSyncRequest | null {
+        const request = this.pendingSyncRequest;
+        this.pendingSyncRequest = null;
+        return request;
+    }
+
+    private replayQueuedSyncRequest(): void {
+        const request = this.takePendingSyncRequest();
+        if (!request) {
+            return;
+        }
+
+        this.logRuntimeDebug("[SR-SyncQueue] replaying queued sync request", request);
+        this.runAsync(
+            this.requestSync({ ...request, force: true }),
+            `replay queued ${request.mode} sync`,
+        );
     }
 
     private getNoteCacheStorePath(): string {
@@ -1112,7 +1233,7 @@ export default class SRPlugin extends Plugin {
     // @logExecutionTime()
     public shouldShowSyncProgressTip(syncMode: SyncMode): boolean {
         const displayMode: SyncProgressDisplayMode =
-            this.data.settings.syncProgressDisplayMode ?? "always";
+            this.data.settings.syncProgressDisplayMode ?? DEFAULT_SYNC_PROGRESS_DISPLAY_MODE;
 
         if (displayMode === "never") {
             return false;
@@ -1340,32 +1461,65 @@ export default class SRPlugin extends Plugin {
         mode = "incremental",
         trigger = "manual",
         force = false,
-    }: SyncRequestOptions = {}): Promise<boolean> {
-        if (!force && this.shouldSkipDisabledAutomaticIncrementalSync(mode, trigger)) {
-            if (this.data.settings.showSchedulingDebugMessages) {
-                console.debug(`[SR-SyncGate] Skipping ${trigger} incremental sync by setting.`);
-            }
-            return false;
-        }
+    }: SyncRequestOptions = {}): Promise<SyncRequestResult> {
+        const request = normalizeSyncRequest({ reviewMode, mode, trigger, force });
 
-        if (!force && this.shouldSkipAutomaticSync(reviewMode, mode, trigger)) {
+        if (
+            !request.force &&
+            this.shouldSkipDisabledAutomaticIncrementalSync(request.mode, request.trigger)
+        ) {
             if (this.data.settings.showSchedulingDebugMessages) {
                 console.debug(
-                    `[SR-SyncGate] Skipping ${trigger} sync within ${AUTO_SYNC_COOLDOWN_MS}ms cooldown.`,
+                    `[SR-SyncGate] Skipping ${request.trigger} incremental sync by setting.`,
                 );
             }
-            return false;
+            return { ...request, status: "skipped", reason: "auto-sync-disabled" };
         }
 
-        await this.sync(reviewMode, mode);
-        return true;
+        if (
+            !request.force &&
+            this.shouldSkipAutomaticSync(request.reviewMode, request.mode, request.trigger)
+        ) {
+            if (this.data.settings.showSchedulingDebugMessages) {
+                console.debug(
+                    `[SR-SyncGate] Skipping ${request.trigger} sync within ${AUTO_SYNC_COOLDOWN_MS}ms cooldown.`,
+                );
+            }
+            return { ...request, status: "skipped", reason: "cooldown" };
+        }
+
+        if (this.syncLock) {
+            const queuedRequest = this.queueSyncRequest(request);
+            return { ...queuedRequest, status: "queued", reason: "busy" };
+        }
+
+        await this.sync(request.reviewMode, request.mode, {
+            trigger: request.trigger,
+            force: request.force,
+        });
+        return { ...request, status: "executed" };
     }
 
     // @logExecutionTime()
     async sync(
         reviewMode = FlashcardReviewMode.Review,
         mode: SyncMode = "incremental",
+        requestOptions: Omit<SyncRequestOptions, "reviewMode" | "mode"> = {},
     ): Promise<void> {
+        const request = normalizeSyncRequest({
+            reviewMode,
+            mode,
+            trigger: requestOptions.trigger,
+            force: requestOptions.force,
+        });
+        if (this.syncLock) {
+            this.queueSyncRequest(request);
+            return;
+        }
+
+        this.syncLock = true;
+        this.syncEvents.emit("sync-start");
+
         const syncStartedAt = Date.now();
         // this.clock_start = Date.now();
         const settings = this.data.settings;
@@ -1408,12 +1562,6 @@ export default class SRPlugin extends Plugin {
             this.noteCache.clear();
             persistedCacheByPath.clear();
         }
-
-        if (this.syncLock) {
-            return;
-        }
-        this.syncLock = true;
-        this.syncEvents.emit("sync-start");
 
         // Show the sync progress tip while the cache is being rebuilt.
         const progressTip = this.shouldShowSyncProgressTip(syncMode)
@@ -1660,6 +1808,7 @@ export default class SRPlugin extends Plugin {
             this.syncLock = false;
             this.syncEvents.emit("sync-finished");
             progressTip?.hide(800);
+            this.replayQueuedSyncRequest();
         }
     }
 
@@ -2055,6 +2204,10 @@ export default class SRPlugin extends Plugin {
         await this.noteReviewStore.migrateFromLegacyStore(this.store);
         this.reviewCommitStore = new ReviewCommitStore(this.data.settings, this.manifest.dir);
         await this.reviewCommitStore.load();
+        this.reviewPersistenceCoordinator = new ReviewPersistenceCoordinator({
+            shouldLogDebug: () => this.data.settings.showRuntimeDebugMessages,
+            logDebug: (...args: unknown[]) => console.debug(...args),
+        });
         this.easeByPath = new NoteEaseList(this.data.settings);
         this.linkRank = new LinkRank(this.data.settings, this.app.metadataCache);
         this.reviewDecks = this.noteReviewStore.buildReviewDecks(this.app.vault);
@@ -2066,21 +2219,6 @@ export default class SRPlugin extends Plugin {
         // 娉ㄦ剰锛歭earningQueue 涓嶅啀闇€瑕佸湪杩欓噷搴忓垪鍖?
         // 瀛︿範鐘舵€佸凡缁忓瓨鍌ㄥ湪 RepetitionItem.learningStep 涓紝鐢?store.save() 绠＄悊
         await this.saveData(this.data);
-
-        // ====== License 闃茬牬瑙ｆ娴嬬偣 B锛氫繚瀛樻椂闅忔満鏍￠獙 vaultId ======
-        // 10% 鐨勬鐜囨鏌ヤ竴涓嬭澶囨寚绾规槸鍚﹀尮閰嶏紝闃叉鐢ㄦ埛澶嶅埗鍒汉鐨?data.json
-        if (Math.random() < 0.1 && this.data.settings.isPro && this.data.settings.vaultId) {
-            try {
-                const licMgr = LicenseManager.getInstance();
-                await licMgr.verifyVaultId(this.data.settings);
-                // 濡傛灉 verifyVaultId 鍙戠幇涓嶅尮閰嶏紝瀹冧細鐩存帴浠ｅ啓 settings銆傚啀淇濆瓨涓€娆°€?
-                if (!this.data.settings.isPro) {
-                    await this.saveData(this.data);
-                }
-            } catch {
-                // 鏍￠獙澶辫触涓嶅奖鍝嶆甯镐繚瀛?
-            }
-        }
     }
 
     private getActiveLeaf(type: string): WorkspaceLeaf | null {

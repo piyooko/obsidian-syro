@@ -661,6 +661,9 @@ test("Test parsing cards with codeblocks", () => {
     expect(parseT("this has some ==`inline`== code", parserOptions)).toEqual([
         [CardType.Cloze, "this has some ==`inline`== code", 0, 0],
     ]);
+    expect(parseT("this has some `==inline==` code", parserOptions)).toEqual([]);
+    expect(parseT("this has some `**inline**` code", parserOptions)).toEqual([]);
+    expect(parseT("``Inlineq::InlineA``", parserOptions)).toEqual([]);
 
     // ```block```, no blank lines
     expect(
@@ -726,6 +729,31 @@ test("Test parsing cards with codeblocks", () => {
                 "````",
             0,
             12,
+        ],
+    ]);
+
+    expect(
+        parseT(
+            "```js\nif (from && typeof from === \"object\" || typeof from === \"function\") {\n  return value ** 2;\n}\n```",
+            parserOptions,
+        ),
+    ).toEqual([]);
+
+    expect(
+        parseT(
+            "```js\nif (from && typeof from === \"object\" || typeof from === \"function\") {\n  return {{c1::value}} ** 2;\n}\n```",
+            {
+                ...parserOptions,
+                convertAnkiClozesToClozes: true,
+                parseClozesInCodeBlocks: true,
+            },
+        ),
+    ).toEqual([
+        [
+            CardType.AnkiCloze,
+            "```js\nif (from && typeof from === \"object\" || typeof from === \"function\") {\n  return {{c1::value}} ** 2;\n}\n```",
+            0,
+            4,
         ],
     ]);
 });

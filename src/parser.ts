@@ -10,9 +10,13 @@
  * 被用到：
  * - 负责提取卡片的核心模�?
  */
-import { ClozeCrafter } from "clozecraft";
-
 import { CardType } from "src/Question";
+import {
+    findCodeContextSegments,
+    hasNonStandardClozeOutsideCode,
+    hasStandardClozeOutsideCode,
+    isIndexInsideCodeContext,
+} from "src/util/codeAwareCloze";
 
 export let debugParser = false;
 
@@ -51,33 +55,13 @@ export class ParsedQuestionInfo {
     }
 }
 
-function markerInsideCodeBlock(text: string, marker: string, markerIndex: number): boolean {
-    let goingBack = markerIndex - 1,
-        goingForward = markerIndex + marker.length;
-    let backTicksBefore = 0,
-        backTicksAfter = 0;
-
-    while (goingBack >= 0) {
-        if (text[goingBack] === "`") backTicksBefore++;
-        goingBack--;
-    }
-
-    while (goingForward < text.length) {
-        if (text[goingForward] === "`") backTicksAfter++;
-        goingForward++;
-    }
-
-    // If there's an odd number of backticks before and after,
-    //  the marker is inside an inline code block
-    return backTicksBefore % 2 === 1 && backTicksAfter % 2 === 1;
-}
-
 function hasInlineMarker(text: string, marker: string): boolean {
     // 没有标记直接返回
     if (marker.length == 0) return false;
 
     // 从位�?0 开始查�?
     let startIndex = 0;
+    const codeContexts = findCodeContextSegments(text);
 
     while (true) {
         const markerIdx = text.indexOf(marker, startIndex);
@@ -86,7 +70,7 @@ function hasInlineMarker(text: string, marker: string): boolean {
         if (markerIdx === -1) return false;
 
         // 1. 检查是否在代码�?(Inline Code Block) �?
-        const isInsideCode = markerInsideCodeBlock(text, marker, markerIdx);
+        const isInsideCode = isIndexInsideCodeContext(markerIdx, codeContexts);
 
         // 2. 检查是否在 Anki 挖空格式 ({{c1::...}}) �?
         // 逻辑：截取分隔符前面的字符串，看结尾是否匹配 "{{c" + 数字
@@ -132,7 +116,6 @@ export function parse(text: string, options: ParserOptions): ParsedQuestionInfo[
     let firstLineNo = 0,
         lastLineNo = 0;
 
-    const clozecrafter = new ClozeCrafter(options.clozePatterns);
     const lines: string[] = text.replaceAll("\r\n", "\n").split("\n");
     for (let i = 0; i < lines.length; i++) {
         const currentLine = lines[i],
@@ -270,7 +253,11 @@ export function parse(text: string, options: ParserOptions): ParsedQuestionInfo[
                 // Keep ordinary code block contents inside a multi-line card.
                 cardText += "\n" + codeBlockContent + codeBlockClose;
             }
-        } else if (cardType === null && clozecrafter.isClozeNote(currentLine)) {
+        } else if (
+            cardType === null &&
+            (hasStandardClozeOutsideCode(currentLine, options.clozePatterns) ||
+                hasNonStandardClozeOutsideCode(currentLine, options.clozePatterns))
+        ) {
             // Pick up cloze cards (普�?Cloze 格式，AnkiCloze 已在前面检�?
             cardType = CardType.Cloze;
         }

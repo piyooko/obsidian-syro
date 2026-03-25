@@ -93,13 +93,16 @@
     /* 移除默认的边框 */
     margin: 0;
     /* 移除默认外边距 */
+    padding: 0;
+    min-height: auto;
+    /* 移除最小高度限制，显得更紧凑 */
+}
+
+.sr-setting-section .setting-items .setting-item > .sr-setting-item-main {
     padding: 12px 20px;
-    /* 调整内边距：上下紧凑，左右宽敞 */
     display: flex;
     align-items: center;
     justify-content: space-between;
-    min-height: auto;
-    /* 移除最小高度限制，显得更紧凑 */
 }
 
 /* 3. 中间分隔线 (两端不连接) */
@@ -154,7 +157,7 @@
 
 .sr-settings-panel .setting-item {
     border-top: 1px solid var(--background-modifier-border);
-    padding: 18px 0;
+    padding: 0;
     margin: 0;
 }
 
@@ -172,6 +175,26 @@
     font-size: 13px;
     margin-top: 4px;
     line-height: 1.5;
+}
+
+.sr-settings-panel .sr-setting-subsettings {
+    display: flex;
+    flex-direction: column;
+    margin: 0 20px 14px;
+    padding-left: 16px;
+    border-left: 2px solid var(--background-modifier-border);
+}
+
+.sr-settings-panel .sr-setting-subsettings > .setting-item {
+    border-top: none;
+}
+
+.sr-settings-panel .sr-setting-subsettings > .setting-item::before {
+    display: none;
+}
+
+.sr-settings-panel .sr-setting-subsettings > .setting-item > .sr-setting-item-main {
+    padding: 12px 0 0;
 }
 
 /* ==========================================

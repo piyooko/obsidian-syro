@@ -16,10 +16,17 @@
  * 1. src/NoteQuestionParser.ts (瑙ｆ瀽绗旇鏃讹紝鐢ㄥ畠鏉ョ敓鎴愬崱鐗囧唴瀹?
  * 2. src/FlashcardReviewSequencer.ts (铏界劧涓嶇洿鎺ュ紩鐢紝浣嗛€氳繃 Question 鍜?Card 闂存帴浣跨敤鍏剁敓鎴愮殑缁撴瀯)
  */
-import { ClozeCrafter, IClozeFormatter } from "clozecraft";
+import { IClozeFormatter } from "clozecraft";
 
 import { CardType } from "src/Question";
 import { SRSettings } from "src/settings";
+import {
+    createCodeAwareClozeNote,
+    extractStandardClozeMatches,
+    getNonStandardClozePatterns,
+    restoreCodeContextMask,
+    type StandardClozeType,
+} from "src/util/codeAwareCloze";
 import { resolveClozeReviewContext } from "src/util/cloze-review-context";
 import { findLineIndexOfSearchStringIgnoringWs } from "src/util/utils";
 
@@ -53,6 +60,10 @@ function encodeShownMarker(shownText: string): string {
 
 function encodeUnifiedMarker(placeholderText: string, answerText: string): string {
     return `${SR_MARKER_OPEN}SR_C:${encodeURIComponent(placeholderText)}:${encodeURIComponent(answerText)}${SR_MARKER_CLOSE}`;
+}
+
+function encodeCodeClozeMarker(content: string): string {
+    return `${SR_MARKER_OPEN}SR_CLOZE:${encodeURIComponent(content)}${SR_MARKER_CLOSE}`;
 }
 
 export interface CardExpansionContext {
@@ -148,113 +159,409 @@ class QuestionTypeMultiLineReversed implements IQuestionTypeHandler {
     }
 }
 
-class QuestionTypeCloze implements IQuestionTypeHandler {
-    private shouldKeepOtherHighlightClozeVisual(settings: SRSettings): boolean {
+type StandardClozeRenderMode = "front" | "back" | "review";
+type StandardClozeVisualMode = "wrapped" | "plain";
+
+interface RawStandardClozeRange {
+    type: StandardClozeType;
+    enabled: boolean;
+    start: number;
+    end: number;
+    delimiter: string;
+    fullMatch: string;
+    innerText: string;
+    lineNum: number;
+    children: RawStandardClozeRange[];
+}
+
+interface StandardClozeRange {
+    type: StandardClozeType;
+    start: number;
+    end: number;
+    delimiter: string;
+    fullMatch: string;
+    innerText: string;
+    lineNum: number;
+    children: StandardClozeRange[];
+    answerText: string;
+    visualMode: StandardClozeVisualMode;
+    contentStart: number;
+    contentEnd: number;
+}
+
+interface StandardClozeModel {
+    ranges: StandardClozeRange[];
+    roots: StandardClozeRange[];
+}
+
+function shouldKeepStandardClozeVisual(type: StandardClozeType, settings: SRSettings): boolean {
+    if (type === "highlight") {
         return !settings.convertHighlightsToClozes || settings.showOtherHighlightClozeVisual;
     }
 
-    private shouldKeepOtherBoldClozeVisual(settings: SRSettings): boolean {
-        return !settings.convertBoldTextToClozes || settings.showOtherBoldClozeVisual;
+    return !settings.convertBoldTextToClozes || settings.showOtherBoldClozeVisual;
+}
+
+function isStandardClozeTypeEnabled(type: StandardClozeType, settings: SRSettings): boolean {
+    return type === "highlight"
+        ? settings.convertHighlightsToClozes
+        : settings.convertBoldTextToClozes;
+}
+
+function getStandardClozeDelimiter(type: StandardClozeType): string {
+    return type === "highlight" ? "==" : "**";
+}
+
+function getLineNumberFromIndex(text: string, index: number): number {
+    let lineNum = 1;
+    for (let i = 0; i < index; i++) {
+        if (text[i] === "\n") {
+            lineNum++;
+        }
     }
+    return lineNum;
+}
 
-    private extractStandardClozeMatches(
-        questionText: string,
-        settings: SRSettings,
-    ): { type: "highlight" | "bold"; text: string; fullMatch: string; index: number }[] {
-        const matches: {
-            type: "highlight" | "bold";
-            text: string;
-            fullMatch: string;
-            index: number;
-        }[] = [];
+function stripStandardClozeSyntax(text: string): string {
+    let current = text;
 
-        if (settings.convertHighlightsToClozes) {
-            for (const match of questionText.matchAll(/==(.*?)==/g)) {
-                if (match.index === undefined) continue;
-                matches.push({
-                    type: "highlight",
-                    text: match[1],
-                    fullMatch: match[0],
-                    index: match.index,
-                });
+    while (true) {
+        const matches = extractStandardClozeMatches(current);
+        if (matches.length === 0) {
+            return current;
+        }
+
+        let stripped = "";
+        let cursor = 0;
+
+        for (const match of matches) {
+            if (match.start < cursor) {
+                continue;
             }
+
+            stripped += current.substring(cursor, match.start);
+            stripped += match.innerText;
+            cursor = match.end;
         }
 
-        if (settings.convertBoldTextToClozes) {
-            for (const match of questionText.matchAll(/\*\*(.*?)\*\*/g)) {
-                if (match.index === undefined) continue;
-                matches.push({
-                    type: "bold",
-                    text: match[1],
-                    fullMatch: match[0],
-                    index: match.index,
-                });
+        stripped += current.substring(cursor);
+        if (stripped === current) {
+            return stripped;
+        }
+
+        current = stripped;
+    }
+}
+
+function extractStandardClozeRanges(text: string, settings: SRSettings): RawStandardClozeRange[] {
+    return extractStandardClozeMatches(text).map((match) => ({
+        type: match.type,
+        enabled: isStandardClozeTypeEnabled(match.type, settings),
+        start: match.start,
+        end: match.end,
+        delimiter: match.delimiter,
+        fullMatch: match.fullMatch,
+        innerText: match.innerText,
+        lineNum: getLineNumberFromIndex(text, match.start),
+        children: [],
+    }));
+}
+
+function isEquivalentStandardWrapper(
+    outer: Pick<RawStandardClozeRange, "start" | "end" | "innerText">,
+    inner: Pick<RawStandardClozeRange, "start" | "end" | "fullMatch">,
+): boolean {
+    return outer.start < inner.start && outer.end > inner.end && outer.innerText === inner.fullMatch;
+}
+
+function rangesCross(
+    a: Pick<RawStandardClozeRange, "start" | "end">,
+    b: Pick<RawStandardClozeRange, "start" | "end">,
+): boolean {
+    return (
+        (a.start < b.start && b.start < a.end && a.end < b.end) ||
+        (b.start < a.start && a.start < b.end && b.end < a.end)
+    );
+}
+
+function containsStandardRange(
+    parent: Pick<RawStandardClozeRange, "start" | "end">,
+    child: Pick<RawStandardClozeRange, "start" | "end">,
+): boolean {
+    return parent.start < child.start && parent.end > child.end;
+}
+
+function buildStandardClozeTree(ranges: RawStandardClozeRange[]): RawStandardClozeRange[] {
+    const roots: RawStandardClozeRange[] = [];
+    const stack: RawStandardClozeRange[] = [];
+
+    for (const range of ranges) {
+        const nextRange: RawStandardClozeRange = { ...range, children: [] };
+
+        while (stack.length > 0 && !containsStandardRange(stack[stack.length - 1], nextRange)) {
+            stack.pop();
+        }
+
+        if (stack.length > 0) {
+            stack[stack.length - 1].children.push(nextRange);
+        } else {
+            roots.push(nextRange);
+        }
+
+        stack.push(nextRange);
+    }
+
+    return roots;
+}
+
+function getEquivalentStandardChild(range: RawStandardClozeRange): RawStandardClozeRange | undefined {
+    return range.children.find((child) => isEquivalentStandardWrapper(range, child));
+}
+
+function normalizeStandardClozeSubtree(range: RawStandardClozeRange): StandardClozeRange[] {
+    const equivalentChain: RawStandardClozeRange[] = [range];
+    let current = range;
+    let equivalentChild = getEquivalentStandardChild(current);
+
+    while (equivalentChild) {
+        equivalentChain.push(equivalentChild);
+        current = equivalentChild;
+        equivalentChild = getEquivalentStandardChild(current);
+    }
+
+    const semanticRange = [...equivalentChain].reverse().find((candidate) => candidate.enabled);
+    const normalizedChildren = current.children.flatMap((child) =>
+        normalizeStandardClozeSubtree(child),
+    );
+
+    if (!semanticRange) {
+        return normalizedChildren;
+    }
+
+    const outerRange = equivalentChain[0];
+    const visualMode: StandardClozeVisualMode =
+        equivalentChain.length > 1 ? "plain" : "wrapped";
+    const contentStart =
+        semanticRange.start + getStandardClozeDelimiter(semanticRange.type).length;
+    const contentEnd = semanticRange.end - getStandardClozeDelimiter(semanticRange.type).length;
+
+    return [
+        {
+            type: semanticRange.type,
+            start: outerRange.start,
+            end: outerRange.end,
+            delimiter: semanticRange.delimiter,
+            fullMatch: outerRange.fullMatch,
+            innerText: semanticRange.innerText,
+            lineNum: outerRange.lineNum,
+            children: normalizedChildren,
+            answerText: stripStandardClozeSyntax(semanticRange.innerText),
+            visualMode,
+            contentStart,
+            contentEnd,
+        },
+    ];
+}
+
+function flattenStandardClozeRanges(ranges: StandardClozeRange[]): StandardClozeRange[] {
+    return ranges.flatMap((range) => [range, ...flattenStandardClozeRanges(range.children)]);
+}
+
+function createStandardClozeModel(text: string, settings: SRSettings): StandardClozeModel {
+    const extracted = extractStandardClozeRanges(text, settings);
+    const nonCrossingRanges: RawStandardClozeRange[] = [];
+
+    for (const range of extracted) {
+        if (nonCrossingRanges.some((existing) => rangesCross(existing, range))) {
+            continue;
+        }
+
+        nonCrossingRanges.push(range);
+    }
+
+    const roots = buildStandardClozeTree(nonCrossingRanges).flatMap((range) =>
+        normalizeStandardClozeSubtree(range),
+    );
+    const ranges = flattenStandardClozeRanges(roots);
+
+    return { ranges, roots };
+}
+
+function renderStandardClozeSegment(
+    text: string,
+    ranges: StandardClozeRange[],
+    activeRange: StandardClozeRange,
+    settings: SRSettings,
+    mode: StandardClozeRenderMode,
+    segmentStart: number,
+    segmentEnd: number,
+    stripStandardSyntax: boolean = false,
+): string {
+    let result = "";
+    let cursor = segmentStart;
+
+    for (const range of ranges) {
+        if (range.start < cursor || range.end > segmentEnd) {
+            continue;
+        }
+
+        if (range.start >= segmentEnd) {
+            break;
+        }
+
+        if (range.start > cursor) {
+            const prefix = text.substring(cursor, range.start);
+            result += stripStandardSyntax ? stripStandardClozeSyntax(prefix) : prefix;
+        }
+
+        result += renderStandardClozeRange(text, range, activeRange, settings, mode);
+        cursor = Math.max(cursor, range.end);
+    }
+
+    if (cursor < segmentEnd) {
+        const suffix = text.substring(cursor, segmentEnd);
+        result += stripStandardSyntax ? stripStandardClozeSyntax(suffix) : suffix;
+    }
+
+    return result;
+}
+
+function renderStandardClozeRange(
+    text: string,
+    range: StandardClozeRange,
+    activeRange: StandardClozeRange,
+    settings: SRSettings,
+    mode: StandardClozeRenderMode,
+): string {
+    if (range === activeRange) {
+        if (mode === "front") {
+            return encodeHiddenMarker(buildClozePlaceholder());
+        }
+
+        if (mode === "back") {
+            return encodeShownMarker(range.answerText);
+        }
+
+        return encodeUnifiedMarker(buildClozePlaceholder(), range.answerText);
+    }
+
+    const innerRendered = renderStandardClozeSegment(
+        text,
+        range.children,
+        activeRange,
+        settings,
+        mode,
+        range.contentStart,
+        range.contentEnd,
+        range.visualMode === "plain",
+    );
+
+    if (range.visualMode === "plain") {
+        return innerRendered;
+    }
+
+    if (shouldKeepStandardClozeVisual(range.type, settings)) {
+        return `${range.delimiter}${innerRendered}${range.delimiter}`;
+    }
+
+    return innerRendered;
+}
+
+function createStandardClozeCardFrontBack(
+    text: string,
+    model: StandardClozeModel,
+    activeRange: StandardClozeRange,
+    settings: SRSettings,
+): CardFrontBack {
+    return new CardFrontBack(
+        renderStandardClozeSegment(text, model.roots, activeRange, settings, "front", 0, text.length),
+        renderStandardClozeSegment(text, model.roots, activeRange, settings, "back", 0, text.length),
+        renderStandardClozeSegment(text, model.roots, activeRange, settings, "review", 0, text.length),
+    );
+}
+
+function hasNonStandardClozePatterns(questionText: string, settings: SRSettings): boolean {
+    const nonStandardPatterns = getNonStandardClozePatterns(settings.clozePatterns ?? []);
+    if (nonStandardPatterns.length === 0) {
+        return false;
+    }
+
+    const codeAwareNote = createCodeAwareClozeNote(questionText, nonStandardPatterns);
+    return Boolean(codeAwareNote && codeAwareNote.note.numCards > 0);
+}
+
+function getStandardClozeOccurrenceIndex(
+    ranges: StandardClozeRange[],
+    targetRange: StandardClozeRange,
+): number {
+    let occurrenceIndex = 0;
+
+    for (const range of ranges) {
+        if (range.type === targetRange.type && range.fullMatch === targetRange.fullMatch) {
+            if (range === targetRange) {
+                return occurrenceIndex;
             }
-        }
 
-        matches.sort((a, b) => a.index - b.index);
-        return matches;
+            occurrenceIndex++;
+        }
     }
 
-    private keepStandardMatchVisual(
-        match: { type: "highlight" | "bold"; text: string; fullMatch: string },
-        settings: SRSettings,
-    ): string {
-        if (match.type === "highlight") {
-            return this.shouldKeepOtherHighlightClozeVisual(settings)
-                ? match.fullMatch
-                : match.text;
-        }
+    return 0;
+}
 
-        return this.shouldKeepOtherBoldClozeVisual(settings) ? match.fullMatch : match.text;
-    }
-
-    private expandStandardClozes(
-        questionText: string,
-        matches: { type: "highlight" | "bold"; text: string; fullMatch: string; index: number }[],
-        settings: SRSettings,
-    ): CardFrontBack[] {
-        return matches.map((activeMatch, activeIndex) => {
-            let front = "";
-            let back = "";
-            let review = "";
-            let lastEnd = 0;
-
-            matches.forEach((match, index) => {
-                front += questionText.substring(lastEnd, match.index);
-                back += questionText.substring(lastEnd, match.index);
-                review += questionText.substring(lastEnd, match.index);
-
-                if (index === activeIndex) {
-                    front += encodeHiddenMarker("[...]");
-                    back += encodeShownMarker(match.text);
-                    review += encodeUnifiedMarker("[...]", match.text);
-                } else {
-                    const rendered = this.keepStandardMatchVisual(match, settings);
-                    front += rendered;
-                    back += rendered;
-                    review += rendered;
-                }
-
-                lastEnd = match.index + match.fullMatch.length;
-            });
-
-            front += questionText.substring(lastEnd);
-            back += questionText.substring(lastEnd);
-            review += questionText.substring(lastEnd);
-            return new CardFrontBack(front, back, review);
+function findStandardClozeRangeInContext(
+    contextModel: StandardClozeModel,
+    questionText: string,
+    contextText: string,
+    originalRange: StandardClozeRange,
+    occurrenceIndex: number,
+): StandardClozeRange | null {
+    const questionOffset = contextText.indexOf(questionText);
+    if (questionOffset !== -1) {
+        const exactStart = questionOffset + originalRange.start;
+        const exactEnd = questionOffset + originalRange.end;
+        const exactMatch = contextModel.ranges.find((range) => {
+            return (
+                range.type === originalRange.type &&
+                range.start === exactStart &&
+                range.end === exactEnd &&
+                range.fullMatch === originalRange.fullMatch
+            );
         });
+
+        if (exactMatch) {
+            return exactMatch;
+        }
     }
 
-    expand(questionText: string, settings: SRSettings): CardFrontBack[] {
-        const standardMatches = this.extractStandardClozeMatches(questionText, settings);
-        const clozecrafter = new ClozeCrafter(settings.clozePatterns);
-        const clozeNote = clozecrafter.createClozeNote(questionText);
+    const exactCandidates = contextModel.ranges.filter((range) => {
+        return range.type === originalRange.type && range.fullMatch === originalRange.fullMatch;
+    });
+    if (exactCandidates.length > occurrenceIndex) {
+        return exactCandidates[occurrenceIndex];
+    }
 
-        // Standard highlight/bold clozes need the original markdown wrappers preserved
-        // so review rendering can keep "other cloze" visuals just like Anki clozes.
-        if (standardMatches.length > 0 && clozeNote.numCards === standardMatches.length) {
-            return this.expandStandardClozes(questionText, standardMatches, settings);
+    return (
+        exactCandidates[0] ??
+        contextModel.ranges.find((range) => {
+            return range.type === originalRange.type && range.innerText === originalRange.innerText;
+        }) ??
+        null
+    );
+}
+
+class QuestionTypeCloze implements IQuestionTypeHandler {
+    expand(questionText: string, settings: SRSettings): CardFrontBack[] {
+        const standardModel = createStandardClozeModel(questionText, settings);
+        if (standardModel.ranges.length > 0 && !hasNonStandardClozePatterns(questionText, settings)) {
+            return standardModel.ranges.map((range) =>
+                createStandardClozeCardFrontBack(questionText, standardModel, range, settings),
+            );
+        }
+
+        const codeAwareNote = createCodeAwareClozeNote(questionText, settings.clozePatterns);
+        if (!codeAwareNote) {
+            return [];
         }
 
         const clozeFormatter = new QuestionTypeClozeFormatter();
@@ -262,10 +569,10 @@ class QuestionTypeCloze implements IQuestionTypeHandler {
 
         let front: string, back: string, review: string;
         const result: CardFrontBack[] = [];
-        for (let i = 0; i < clozeNote.numCards; i++) {
-            front = clozeNote.getCardFront(i, clozeFormatter);
-            back = clozeNote.getCardBack(i, clozeFormatter);
-            review = clozeNote.getCardFront(i, reviewFormatter);
+        for (let i = 0; i < codeAwareNote.note.numCards; i++) {
+            front = restoreCodeContextMask(codeAwareNote.note.getCardFront(i, clozeFormatter), codeAwareNote.mask);
+            back = restoreCodeContextMask(codeAwareNote.note.getCardBack(i, clozeFormatter), codeAwareNote.mask);
+            review = restoreCodeContextMask(codeAwareNote.note.getCardFront(i, reviewFormatter), codeAwareNote.mask);
             result.push(new CardFrontBack(front, back, review));
         }
 
@@ -316,14 +623,6 @@ export class QuestionTypeReviewFormatter implements IClozeFormatter {
 class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
     private shouldKeepOtherAnkiClozeVisual(settings: SRSettings): boolean {
         return !settings.convertAnkiClozesToClozes || settings.showOtherAnkiClozeVisual;
-    }
-
-    private shouldKeepOtherHighlightClozeVisual(settings: SRSettings): boolean {
-        return !settings.convertHighlightsToClozes || settings.showOtherHighlightClozeVisual;
-    }
-
-    private shouldKeepOtherBoldClozeVisual(settings: SRSettings): boolean {
-        return !settings.convertBoldTextToClozes || settings.showOtherBoldClozeVisual;
     }
 
     expand(
@@ -379,11 +678,10 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                         const isActive = activeClozes.some((active) => active.start === info.start);
 
                         if (isActive) {
-                            const encoded = encodeURIComponent(info.content);
                             // 琛ュ伩琚?encodeURIComponent 鍚炴病鐨勬崲琛岀锛屼繚璇?lineNum 缁濆绋冲畾涓嶅嚭鍋忓樊
                             const newlineCount = (info.content.match(/\n/g) || []).length;
                             processedFullText +=
-                                `««SR_CLOZE:${encoded}»»` + "\n".repeat(newlineCount);
+                                encodeCodeClozeMarker(info.content) + "\n".repeat(newlineCount);
                         } else {
                             processedFullText += info.content;
                         }
@@ -427,80 +725,52 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         }
 
         // 2. 鍚屾椂鎻愬彇鏅€氶珮浜?绮椾綋
-        const standardClozeMatches: {
-            text: string;
-            fullMatch: string;
-            lineNum: number;
-            type: "highlight" | "bold";
-        }[] = [];
+        if (!isCodeBlock) {
+            const standardModel = createStandardClozeModel(questionText, settings);
+            standardModel.ranges.forEach((range) => {
+                const contextText = this.resolveTextContext(
+                    questionText,
+                    [range.lineNum],
+                    settings,
+                    context,
+                );
+                const contextModel = createStandardClozeModel(contextText, settings);
+                const occurrenceIndex = getStandardClozeOccurrenceIndex(standardModel.ranges, range);
+                const activeRange = findStandardClozeRangeInContext(
+                    contextModel,
+                    questionText,
+                    contextText,
+                    range,
+                    occurrenceIndex,
+                );
+                if (!activeRange) {
+                    return;
+                }
 
-        if (settings.convertHighlightsToClozes) {
-            const matches = [...questionText.matchAll(/==(.*?)==/g)];
-            matches.forEach((m) =>
-                standardClozeMatches.push({
-                    text: m[1],
-                    fullMatch: m[0],
-                    lineNum: this.getLineNumberFromIndex(questionText, m.index ?? 0),
-                    type: "highlight",
-                }),
-            );
+                const card = createStandardClozeCardFrontBack(
+                    contextText,
+                    contextModel,
+                    activeRange,
+                    settings,
+                );
+
+                if (!this.shouldKeepOtherAnkiClozeVisual(settings)) {
+                    card.front = this.stripOtherAnkiClozeVisual(card.front);
+                    card.back = this.stripOtherAnkiClozeVisual(card.back);
+                    if (card.review) {
+                        card.review = this.stripOtherAnkiClozeVisual(card.review);
+                    }
+                }
+
+                result.push(card);
+            });
         }
-        if (settings.convertBoldTextToClozes) {
-            const matches = [...questionText.matchAll(/\*\*(.*?)\*\*/g)];
-            matches.forEach((m) =>
-                standardClozeMatches.push({
-                    text: m[1],
-                    fullMatch: m[0],
-                    lineNum: this.getLineNumberFromIndex(questionText, m.index ?? 0),
-                    type: "bold",
-                }),
-            );
-        }
-
-        // 涓烘瘡涓櫘閫氭寲绌虹敓鎴愬崱鐗?
-        standardClozeMatches.forEach((match) => {
-            const contextText = this.resolveTextContext(
-                questionText,
-                [match.lineNum],
-                settings,
-                context,
-            );
-            const activeMatch = this.findActiveStandardMatch(contextText, match.type, match.text);
-            if (!activeMatch) {
-                return;
-            }
-
-            const front = this.applyOtherClozeVisibility(
-                this.replaceMatchAt(
-                    contextText,
-                    activeMatch.start,
-                    activeMatch.end,
-                    encodeHiddenMarker("[...]"),
-                ),
-                settings,
-            );
-            const back = this.applyOtherClozeVisibility(
-                this.replaceMatchAt(
-                    contextText,
-                    activeMatch.start,
-                    activeMatch.end,
-                    encodeShownMarker(match.text),
-                ),
-                settings,
-            );
-            const review = this.applyOtherClozeVisibility(
-                this.replaceMatchAt(
-                    contextText,
-                    activeMatch.start,
-                    activeMatch.end,
-                    encodeUnifiedMarker("[...]", match.text),
-                ),
-                settings,
-            );
-            result.push(new CardFrontBack(front, back, review));
-        });
 
         return result;
+
+
+        // 涓烘瘡涓櫘閫氭寲绌虹敓鎴愬崱鐗?
+
     }
 
     /**
@@ -637,36 +907,8 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         });
     }
 
-    private getLineNumberFromIndex(text: string, index: number): number {
-        let lineNum = 1;
-        for (let i = 0; i < index; i++) {
-            if (text[i] === "\n") {
-                lineNum++;
-            }
-        }
-        return lineNum;
-    }
-
-    private findActiveStandardMatch(
-        text: string,
-        type: "highlight" | "bold",
-        targetContent: string,
-    ): { start: number; end: number } | null {
-        const regex = type === "highlight" ? /==(.*?)==/g : /\*\*(.*?)\*\*/g;
-        for (const match of text.matchAll(regex)) {
-            if (match[1] === targetContent && match.index !== undefined) {
-                return {
-                    start: match.index,
-                    end: match.index + match[0].length,
-                };
-            }
-        }
-
-        return null;
-    }
-
-    private replaceMatchAt(text: string, start: number, end: number, replacement: string): string {
-        return text.substring(0, start) + replacement + text.substring(end);
+    private stripOtherAnkiClozeVisual(text: string): string {
+        return text.replace(/\{\{c\d+::(.*?)(?:::.*)?\}\}/gi, "$1");
     }
 
     /**
@@ -758,10 +1000,19 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         return result;
     }
 
+    private shouldKeepOtherHighlightClozeVisual(settings: SRSettings): boolean {
+        return !settings.convertHighlightsToClozes || settings.showOtherHighlightClozeVisual;
+    }
+
+    private shouldKeepOtherBoldClozeVisual(settings: SRSettings): boolean {
+        return !settings.convertBoldTextToClozes || settings.showOtherBoldClozeVisual;
+    }
+
     private applyOtherClozeVisibility(text: string, settings: SRSettings): string {
         let result = text;
 
         if (!this.shouldKeepOtherAnkiClozeVisual(settings)) {
+
             result = result.replace(/\{\{c(\d+)(?:::|锛氾細)(.*?)(?:::|锛氾細)?\}\}/gi, "$2");
         }
 

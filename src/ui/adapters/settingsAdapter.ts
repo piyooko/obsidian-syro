@@ -7,7 +7,13 @@
 
 
 
-import { SRSettings, DEFAULT_PROGRESS_BAR_STYLE, syncDefaultClozePatterns } from "../../settings";
+import {
+    SRSettings,
+    DEFAULT_PROGRESS_BAR_STYLE,
+    DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
+    hasSupporterLicenseState,
+    syncDefaultClozePatterns,
+} from "../../settings";
 import { DataLocation } from "../../dataStore/dataLocation";
 import { UISettingsState } from "../types/settingsTypes";
 
@@ -30,6 +36,9 @@ function getWeightedMultiplierSettings(settings: SRSettings): WeightedMultiplier
  */
 export function settingsToUIState(settings: SRSettings): UISettingsState {
     const weightedMultiplierSettings = getWeightedMultiplierSettings(settings);
+    const licenseState = settings.licenseState ?? null;
+    const isPro = hasSupporterLicenseState(licenseState) || settings.isPro === true;
+    const licenseKey = licenseState?.licenseKey || settings.licenseKey || "";
 
     return {
         // Flashcards
@@ -45,7 +54,8 @@ export function settingsToUIState(settings: SRSettings): UISettingsState {
         convertAnkiClozesToClozes: settings.convertAnkiClozesToClozes ?? true,
         enableNoteCachePersistence: settings.enableNoteCachePersistence ?? true,
         autoIncrementalSync: settings.autoIncrementalSync ?? true,
-        syncProgressDisplayMode: settings.syncProgressDisplayMode ?? "always",
+        syncProgressDisplayMode:
+            settings.syncProgressDisplayMode ?? DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
         parseClozesInCodeBlocks: settings.parseClozesInCodeBlocks ?? false,
         codeContextLines: settings.codeContextLines ?? 15,
         clozeContextMode: settings.clozeContextMode ?? "single",
@@ -113,8 +123,10 @@ export function settingsToUIState(settings: SRSettings): UISettingsState {
         disableFileMenuReviewOptions: settings.disableFileMenuReviewOptions ?? false,
 
         // License
-        licenseKey: settings.licenseKey || "",
-        isPro: settings.isPro ?? false,
+        licenseKey,
+        isPro,
+        licenseInstallationId: settings.licenseInstallationId || "",
+        licenseState,
     };
 }
 
@@ -273,6 +285,9 @@ export function mergeUIStateToSettings(
     // License
     if (uiChanges.licenseKey !== undefined) merged.licenseKey = uiChanges.licenseKey;
     if (uiChanges.isPro !== undefined) merged.isPro = uiChanges.isPro;
+    if (uiChanges.licenseInstallationId !== undefined)
+        merged.licenseInstallationId = uiChanges.licenseInstallationId;
+    if (uiChanges.licenseState !== undefined) merged.licenseState = uiChanges.licenseState;
 
     syncDefaultClozePatterns(merged);
 

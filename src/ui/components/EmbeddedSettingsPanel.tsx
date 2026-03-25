@@ -340,6 +340,19 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
                     desc={t("SETTINGS_CODE_CLOZE_DESC")}
                     value={settings.parseClozesInCodeBlocks}
                     onChange={(v) => handleLockedToggle("parseClozesInCodeBlocks", v, "代码块挖空")}
+                    subSettings={
+                        settings.parseClozesInCodeBlocks ? (
+                            <SliderRow
+                                label={t("SETTINGS_CODE_CONTEXT_LINES")}
+                                desc={t("SETTINGS_CODE_CONTEXT_LINES_DESC")}
+                                value={settings.codeContextLines}
+                                min={5}
+                                max={100}
+                                step={5}
+                                onChange={(v) => onChange("codeContextLines", v)}
+                            />
+                        ) : null
+                    }
                 />
                 <SelectRow
                     label={t("SETTINGS_CLOZE_CONTEXT_MODE")}
@@ -377,24 +390,6 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
                         onChange("clozeContextSoftLimitLines", Math.max(1, Math.min(1000, v)))
                     }
                 />
-                {settings.parseClozesInCodeBlocks && (
-                    <div
-                        style={{
-                            paddingLeft: "20px",
-                            borderLeft: "2px solid var(--background-modifier-border)",
-                        }}
-                    >
-                        <SliderRow
-                            label="代码上下文行数"
-                            desc="生成卡片时，保留挖空处上下多少行代码。防止卡片内容过长。"
-                            value={settings.codeContextLines}
-                            min={5}
-                            max={100}
-                            step={5}
-                            onChange={(v) => onChange("codeContextLines", v)}
-                        />
-                    </div>
-                )}
                 {settings.convertAnkiClozesToClozes && (
                     <ToggleRow
                         label={t("SETTINGS_SHOW_OTHER_ANKI_CLOZES")}
@@ -1299,6 +1294,8 @@ const LicenseTab: React.FC<LicenseTabProps> = ({ settings, onChange }) => {
             const { LicenseManager } = await import("src/services/LicenseManager");
             const mgr = LicenseManager.getInstance();
             const success = await mgr.activateLicense(inputKey.trim(), settings);
+            onChange("licenseInstallationId", settings.licenseInstallationId);
+            onChange("licenseState", settings.licenseState);
             if (success) {
                 onChange("isPro", true);
                 onChange("licenseKey", inputKey.trim());
@@ -1317,6 +1314,8 @@ const LicenseTab: React.FC<LicenseTabProps> = ({ settings, onChange }) => {
             const { LicenseManager } = await import("src/services/LicenseManager");
             const mgr = LicenseManager.getInstance();
             mgr.deactivateLicense(settings);
+            onChange("licenseInstallationId", settings.licenseInstallationId);
+            onChange("licenseState", settings.licenseState);
             onChange("isPro", false);
             onChange("licenseKey", "");
             setInputKey("");

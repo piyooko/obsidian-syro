@@ -251,6 +251,8 @@ function setupTestRuntime(
             }
             return 0;
         },
+        stageReviewItemDelta: (): void => undefined,
+        requestFlushReviewOverlay: (): void => undefined,
         saveReviewItemDelta: async (): Promise<void> => undefined,
         settings,
         updateReviewedCounts: (): void => undefined,

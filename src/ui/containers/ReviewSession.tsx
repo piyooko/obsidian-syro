@@ -145,6 +145,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     const [view, setView] = useState<ViewType>(initialView);
     const [direction, setDirection] = useState(0); // 1 = Push, -1 = Pop
     const [tick, setTick] = useState(0); // Force rerenders after sync or deck updates.
+    const [reviewUiResetToken, setReviewUiResetToken] = useState(0);
     const [recentDeckPath, setRecentDeckPath] = useState<string | null>(null);
     const deckListScrollTopRef = useRef(0);
 
@@ -185,6 +186,11 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     useEffect(() => {
         logRuntimeDebug(`[SR-DynSync] ReviewSession: tick=${tick}`);
     }, [tick, logRuntimeDebug]);
+    useEffect(() => {
+        return () => {
+            void plugin.flushReviewPersistence(1200);
+        };
+    }, [plugin]);
     const contextValue = useMemo(
         () => ({
             app: plugin.app,
@@ -238,6 +244,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
 
     // Return from card review to the deck list.
     const handleExitReview = useCallback(() => {
+        void plugin.flushReviewPersistence(1200);
         plugin.setSRViewInFocus(false);
         setDirection(-1);
         setView("deck-list");
@@ -266,6 +273,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
 
             if (sequencer.hasCurrentCard) {
                 logRuntimeDebug("[SR-DynSync] ReviewSession: current card remains, forceUpdate");
+                setReviewUiResetToken((value) => value + 1);
                 forceUpdate();
             } else {
                 logRuntimeDebug("[SR-DynSync] ReviewSession: sequencer exhausted, exiting review");
@@ -282,6 +290,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             return;
         }
         await sequencer.undoReview();
+        setReviewUiResetToken((value) => value + 1);
         forceUpdate();
     }, [sequencer, forceUpdate]);
 
@@ -289,6 +298,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     const handleDelete = useCallback(async () => {
         await sequencer.untrackCurrentCard();
         if (sequencer.hasCurrentCard) {
+            setReviewUiResetToken((value) => value + 1);
             forceUpdate();
         } else {
             handleExitReview();
@@ -383,6 +393,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                                 }}
                                 onExit={handleExitReview}
                                 tick={tick}
+                                uiResetToken={reviewUiResetToken}
                             />
                         </motion.div>
                     )}
@@ -611,6 +622,7 @@ interface CardReviewViewProps {
     onDelete: () => void;
     onExit: () => void;
     tick: number;
+    uiResetToken: number;
 }
 
 const CardReviewView: React.FC<CardReviewViewProps> = ({
@@ -622,6 +634,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     onDelete,
     onExit,
     tick,
+    uiResetToken,
 }) => {
     const card = sequencer.currentCard;
     const question = sequencer.currentQuestion;
@@ -803,6 +816,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
         >
             <LinearCard
                 card={cardState}
+                uiResetToken={uiResetToken}
                 stats={reviewStats}
                 cardType={cardType}
                 type={

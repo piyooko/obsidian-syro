@@ -199,8 +199,14 @@ export default class Commands {
             id: "global-sync-full",
             name: t("CMD_GLOBAL_SYNC_FULL"),
             callback: async () => {
-                await plugin.store.performGlobalGarbageCollection();
-                await plugin.sync(FlashcardReviewMode.Review, "full");
+                if (!plugin.syncLock) {
+                    await plugin.store.performGlobalGarbageCollection();
+                }
+                await plugin.requestSync({
+                    reviewMode: FlashcardReviewMode.Review,
+                    mode: "full",
+                    trigger: "manual",
+                });
             },
         });
 

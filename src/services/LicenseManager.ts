@@ -1,35 +1,55 @@
-/**
- * 这个文件主要是干什么的：
- * 管理插件的"会员激活"功能。就像一个门禁系统的总控制台。
- * 它负责：生成设备唯一标识（指纹）、把用户输入的激活码发到服务器验证、
- * 定期检查会员是否还有效、以及提供一个"门禁检查"的方法给未来的付费功能使用。
- *
- * 它在项目中属于：逻辑层 / 服务 (Services)
- *
- * 它会用到哪些文件：
- * 1. src/settings.ts（读取和写入激活状态相关的设置）
- * 2. obsidian 的 Plugin、Notice、requestUrl（插件基础能力）
- *
- * 哪些文件会用到它：
- * 1. src/main.ts（插件启动时初始化和执行后台检测）
- * 2. src/ui/components/EmbeddedSettingsPanel.tsx（设置界面的激活操作）
- */
-
 import { Notice, Platform, Plugin, requestUrl } from "obsidian";
-import type { SRSettings } from "src/settings";
-import { getBooleanProp, getRecordProp, getStringProp, isRecord } from "src/util/typeGuards";
+import type { LicensePlan, LicenseState, SRSettings } from "src/settings";
+import { hasSupporterLicenseState } from "src/settings";
+import {
+    getArrayProp,
+    getBooleanProp,
+    getRecordProp,
+    getStringProp,
+    isRecord,
+} from "src/util/typeGuards";
 
 type FileSystemAdapterLike = {
     basePath: string;
 };
 
-type LicenseSettingsLike = Pick<SRSettings, "licenseKey" | "isPro"> &
-    Partial<Pick<SRSettings, "vaultId" | "licenseToken" | "lastVerification">>;
+type LicenseSettingsLike = Pick<
+    SRSettings,
+    "licenseKey" | "isPro" | "licenseInstallationId" | "licenseState"
+>;
 
 type LicenseVerificationPayload = {
     valid: boolean;
     token?: string;
+    plan?: LicensePlan;
+    features?: string[];
+    error?: string;
 };
+
+type LicenseDiagnostics = {
+    clientPlatform: string;
+    clientVaultName: string;
+    clientVaultPathHash: string | null;
+};
+
+function normalizeLicenseKey(input: string): string {
+    return input.trim().toUpperCase();
+}
+
+function normalizeFeatureList(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return Array.from(
+        new Set(
+            value
+                .filter((entry): entry is string => typeof entry === "string")
+                .map((entry) => entry.trim())
+                .filter((entry) => entry.length > 0),
+        ),
+    );
+}
 
 function parseLicenseVerificationPayload(value: unknown): LicenseVerificationPayload | null {
     if (!isRecord(value)) {
@@ -41,294 +61,281 @@ function parseLicenseVerificationPayload(value: unknown): LicenseVerificationPay
         return null;
     }
 
+    const plan = getStringProp(value, "plan");
+
     return {
         valid,
         token: getStringProp(value, "token"),
+        plan: plan === "supporter" ? "supporter" : undefined,
+        features: normalizeFeatureList(getArrayProp(value, "features")),
+        error: getStringProp(value, "error"),
     };
 }
 
-function getVaultPlatform(): string {
-    if (Platform.isWin) return "windows";
-    if (Platform.isMacOS) return "macos";
-    if (Platform.isLinux) return "linux";
-    if (Platform.isMobile) return "mobile";
-    return "unknown";
+function parsePersistedSupporterAccess(pluginData: unknown): boolean {
+    if (!isRecord(pluginData)) {
+        return false;
+    }
+
+    const pluginSettings = getRecordProp(pluginData, "settings");
+    if (!pluginSettings) {
+        return false;
+    }
+
+    const licenseStateRecord = getRecordProp(pluginSettings, "licenseState");
+    if (licenseStateRecord) {
+        const token = getStringProp(licenseStateRecord, "token");
+        const plan = getStringProp(licenseStateRecord, "plan");
+        const features = normalizeFeatureList(getArrayProp(licenseStateRecord, "features"));
+        if (token && (plan === "supporter" || features.includes("supporter"))) {
+            return true;
+        }
+    }
+
+    return getBooleanProp(pluginSettings, "isPro") === true;
 }
 
-/**
- * License 管理器 —— 单例模式
- * 负责激活码验证、设备指纹生成、后台静默校验等核心逻辑
- */
+function getClientPlatform(): string {
+    if (Platform.isWin) return "Win32";
+    if (Platform.isMacOS) return "MacIntel";
+    if (Platform.isLinux) return "Linux";
+    if (Platform.isMobile) return "Mobile";
+    return "Unknown";
+}
+
+function createInstallationId(): string {
+    if (typeof crypto.randomUUID === "function") {
+        return crypto.randomUUID();
+    }
+
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    return [
+        hex.slice(0, 8),
+        hex.slice(8, 12),
+        hex.slice(12, 16),
+        hex.slice(16, 20),
+        hex.slice(20, 32),
+    ].join("-");
+}
+
+async function sha256Hex(value: string): Promise<string> {
+    const encoded = new TextEncoder().encode(value);
+    const digest = await crypto.subtle.digest("SHA-256", encoded);
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(
+        "",
+    );
+}
+
+function createLicenseState(
+    licenseKey: string,
+    deviceId: string,
+    payload: LicenseVerificationPayload,
+    existingState: LicenseState | null,
+): LicenseState {
+    const timestamp = Date.now();
+    const plan = payload.plan === "supporter" ? "supporter" : "supporter";
+    const features =
+        payload.features && payload.features.length > 0 ? payload.features : [plan];
+
+    return {
+        licenseKey,
+        deviceId,
+        token: payload.token ?? existingState?.token ?? "",
+        plan,
+        features,
+        lastVerifiedAt: timestamp,
+        activatedAt:
+            existingState &&
+            existingState.licenseKey === licenseKey &&
+            existingState.deviceId === deviceId
+                ? existingState.activatedAt
+                : timestamp,
+    };
+}
+
 export class LicenseManager {
     private static instance: LicenseManager | null = null;
     private plugin: Plugin;
 
-    /** Vercel 后端地址（后续替换为你自己的部署地址） */
-    private readonly API_URL = "https://plugin-auth-api.vercel.app";
-
-    /** 联网验证间隔（天） */
+    private readonly API_URL = "https://ob-syro.vercel.app";
     private readonly VERIFICATION_INTERVAL_DAYS = 7;
 
     private constructor(plugin: Plugin) {
         this.plugin = plugin;
     }
 
-    /**
-     * 获取单例实例
-     * @param plugin 插件实例（仅首次调用时必须传入）
-     */
     static getInstance(plugin?: Plugin): LicenseManager {
         if (!LicenseManager.instance) {
             if (!plugin) {
-                throw new Error("[LicenseManager] 首次调用必须传入 plugin 实例");
+                throw new Error("[LicenseManager] First initialization requires the plugin instance.");
             }
             LicenseManager.instance = new LicenseManager(plugin);
         }
         return LicenseManager.instance;
     }
 
-    // ========================================
-    // 设备指纹
-    // ========================================
-
-    /**
-     * 生成设备唯一标识（Vault ID）
-     * 基于笔记库路径 + 平台信息的 SHA-256 哈希
-     * 首次生成后保存到 settings，后续直接读取
-     */
-    async generateVaultId(settings: Pick<LicenseSettingsLike, "vaultId">): Promise<string> {
-        // 如果之前已经生成过，直接返回
-        if (settings.vaultId) {
-            return settings.vaultId;
+    private ensureInstallationId(settings: Pick<LicenseSettingsLike, "licenseInstallationId">): string {
+        if (settings.licenseInstallationId) {
+            return settings.licenseInstallationId;
         }
 
-        try {
-            // 获取笔记库路径信息
-            const adapter = this.plugin.app.vault.adapter;
-            let vaultPath = this.plugin.app.vault.getName();
-            if (adapter && "basePath" in adapter) {
-                vaultPath = (adapter as FileSystemAdapterLike).basePath + "/" + vaultPath;
-            }
-            const platform = getVaultPlatform();
-
-            // 组合因素并做 SHA-256 哈希
-            const vaultInfo = [vaultPath, platform].join("|");
-            const encoder = new TextEncoder();
-            const data = encoder.encode(vaultInfo);
-            const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            const vaultId = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
-            return vaultId;
-        } catch (error) {
-            // 出错时回退到简单哈希
-            console.warn("[LicenseManager] generateVaultId 出错，使用回退方案", error);
-            const vaultPath = this.plugin.app.vault.getName();
-            const encoder = new TextEncoder();
-            const data = encoder.encode(vaultPath);
-            const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-        }
+        const installationId = createInstallationId();
+        settings.licenseInstallationId = installationId;
+        return installationId;
     }
 
-    // ========================================
-    // 激活 / 解绑
-    // ========================================
+    private async collectDiagnostics(): Promise<LicenseDiagnostics> {
+        const adapter = this.plugin.app.vault.adapter;
+        const vaultName = this.plugin.app.vault.getName();
+        let vaultPath = vaultName;
 
-    /**
-     * 激活 License
-     * 将用户输入的 Key 和设备指纹发给服务器验证
-     * @returns 是否激活成功
-     */
-    async activateLicense(key: string, settings: LicenseSettingsLike): Promise<boolean> {
-        try {
-            const vaultId = await this.generateVaultId(settings);
-
-            const response = await requestUrl({
-                url: `${this.API_URL}/api/verify`,
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Accept: "application/json",
-                },
-                body: JSON.stringify({
-                    licenseKey: key,
-                    deviceId: vaultId,
-                }),
-            });
-
-            const data = parseLicenseVerificationPayload(response.json as unknown);
-
-            if (data?.valid) {
-                // 激活成功，更新本地设置
-                settings.licenseKey = key;
-                settings.isPro = true;
-                settings.vaultId = vaultId;
-                settings.licenseToken = data.token ?? "";
-                settings.lastVerification = Date.now();
-                return true;
-            }
-
-            return false;
-        } catch (error) {
-            console.error("[LicenseManager] activateLicense 失败:", error);
-            return false;
+        if (adapter && "basePath" in adapter) {
+            vaultPath = `${(adapter as FileSystemAdapterLike).basePath}/${vaultName}`;
         }
+
+        return {
+            clientPlatform: getClientPlatform(),
+            clientVaultName: vaultName,
+            clientVaultPathHash: vaultPath ? await sha256Hex(vaultPath) : null,
+        };
     }
 
-    /**
-     * 解绑 License
-     * 清除本地所有激活凭证，恢复为免费版
-     */
-    deactivateLicense(settings: LicenseSettingsLike): void {
-        settings.licenseKey = "";
+    private applyVerifiedLicense(
+        settings: LicenseSettingsLike,
+        licenseKey: string,
+        deviceId: string,
+        payload: LicenseVerificationPayload,
+    ): void {
+        const normalizedKey = normalizeLicenseKey(licenseKey);
+        settings.licenseKey = normalizedKey;
+        settings.licenseInstallationId = deviceId;
+        settings.licenseState = createLicenseState(normalizedKey, deviceId, payload, settings.licenseState);
+        settings.isPro = hasSupporterLicenseState(settings.licenseState);
+    }
+
+    private clearLicenseState(
+        settings: LicenseSettingsLike,
+        options: { clearEnteredKey?: boolean } = {},
+    ): void {
+        settings.licenseState = null;
         settings.isPro = false;
-        settings.licenseToken = "";
-        settings.lastVerification = 0;
-        // 注意：vaultId 不清除，因为它是设备指纹，下次激活还会用到
-    }
 
-    // ========================================
-    // 验证
-    // ========================================
-
-    /**
-     * 联网验证当前 License 是否仍然有效
-     * @returns 是否有效
-     */
-    private async verifyWithServer(settings: LicenseSettingsLike): Promise<boolean> {
-        try {
-            const vaultId = await this.generateVaultId(settings);
-
-            const response = await requestUrl({
-                url: `${this.API_URL}/api/verify`,
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Accept: "application/json",
-                    Authorization: `Bearer ${settings.licenseToken}`,
-                },
-                body: JSON.stringify({
-                    licenseKey: settings.licenseKey,
-                    deviceId: vaultId,
-                }),
-            });
-
-            const result = parseLicenseVerificationPayload(response.json as unknown);
-
-            if (result?.valid) {
-                // 刷新验证时间和 token
-                settings.licenseToken = result.token ?? settings.licenseToken;
-                settings.vaultId = vaultId;
-                settings.lastVerification = Date.now();
-                return true;
-            }
-
-            return false;
-        } catch (error) {
-            // 网络错误时，如果本地有 token，宽容处理（不立即降级）
-            console.warn("[LicenseManager] verifyWithServer 网络错误，保持当前状态", error);
-            return !!settings.licenseToken;
+        if (options.clearEnteredKey === true) {
+            settings.licenseKey = "";
         }
     }
 
-    /**
-     * 判断是否需要重新联网验证
-     */
-    private shouldVerify(settings: Pick<LicenseSettingsLike, "lastVerification">): boolean {
-        if (!settings.lastVerification) return true;
-        const daysSince = (Date.now() - settings.lastVerification) / (1000 * 60 * 60 * 24);
+    private shouldVerify(state: LicenseState | null | undefined): boolean {
+        if (!state?.lastVerifiedAt) {
+            return true;
+        }
+
+        const daysSince =
+            (Date.now() - state.lastVerifiedAt) / (1000 * 60 * 60 * 24);
         return daysSince >= this.VERIFICATION_INTERVAL_DAYS;
     }
 
-    /**
-     * 后台静默检测
-     * 用于插件启动时偷偷验一下，失效就悄悄降级，不弹窗打扰用户
-     * @returns 是否仍然有效
-     */
-    async backgroundCheck(settings: LicenseSettingsLike): Promise<boolean> {
-        // 没有 token 就不需要检测
-        if (!settings.licenseToken) {
+    private async postVerificationRequest(
+        licenseKey: string,
+        deviceId: string,
+        licenseState: LicenseState | null,
+    ): Promise<LicenseVerificationPayload | null> {
+        const diagnostics = await this.collectDiagnostics();
+        const response = await requestUrl({
+            url: `${this.API_URL}/api/verify`,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+                ...(licenseState?.token ? { Authorization: `Bearer ${licenseState.token}` } : {}),
+            },
+            body: JSON.stringify({
+                licenseKey,
+                deviceId,
+                isDeviceChanged:
+                    licenseState != null ? licenseState.deviceId !== deviceId : false,
+                clientPlatform: diagnostics.clientPlatform,
+                clientVaultName: diagnostics.clientVaultName,
+                clientVaultPathHash: diagnostics.clientVaultPathHash,
+            }),
+        });
+
+        return parseLicenseVerificationPayload(response.json as unknown);
+    }
+
+    async activateLicense(key: string, settings: LicenseSettingsLike): Promise<boolean> {
+        try {
+            const normalizedKey = normalizeLicenseKey(key);
+            const deviceId = this.ensureInstallationId(settings);
+            const payload = await this.postVerificationRequest(normalizedKey, deviceId, null);
+
+            if (!payload?.valid || !payload.token) {
+                return false;
+            }
+
+            this.applyVerifiedLicense(settings, normalizedKey, deviceId, payload);
+            return true;
+        } catch (error) {
+            console.error("[LicenseManager] Failed to activate license:", error);
+            return false;
+        }
+    }
+
+    deactivateLicense(settings: LicenseSettingsLike): void {
+        this.clearLicenseState(settings, { clearEnteredKey: true });
+    }
+
+    private async verifyWithServer(settings: LicenseSettingsLike): Promise<boolean> {
+        const licenseState = settings.licenseState;
+        const licenseKey = normalizeLicenseKey(licenseState?.licenseKey || settings.licenseKey || "");
+
+        if (!licenseState?.token || !licenseKey) {
             return false;
         }
 
-        // 不到验证周期就不联网
-        if (!this.shouldVerify(settings)) {
+        const deviceId = this.ensureInstallationId(settings);
+
+        try {
+            const payload = await this.postVerificationRequest(licenseKey, deviceId, licenseState);
+
+            if (!payload?.valid || !payload.token) {
+                this.clearLicenseState(settings, { clearEnteredKey: false });
+                return false;
+            }
+
+            this.applyVerifiedLicense(settings, licenseKey, deviceId, payload);
+            return true;
+        } catch (error) {
+            console.warn("[LicenseManager] License verification is offline, keeping cached access.", error);
+            return hasSupporterLicenseState(settings.licenseState);
+        }
+    }
+
+    async backgroundCheck(settings: LicenseSettingsLike): Promise<boolean> {
+        if (!settings.licenseState?.token) {
+            settings.isPro = false;
+            return false;
+        }
+
+        if (!this.shouldVerify(settings.licenseState)) {
+            settings.isPro = hasSupporterLicenseState(settings.licenseState);
             return settings.isPro;
         }
 
-        // 联网验证
-        const isValid = await this.verifyWithServer(settings);
-        if (!isValid && settings.isPro) {
-            // 服务器明确拒绝（非网络错误），悄悄降级
-            settings.isPro = false;
-        }
-        return isValid;
+        return this.verifyWithServer(settings);
     }
 
-    /**
-     * 校验 vaultId 是否与本机指纹匹配
-     * 用于防止用户复制别人的 data.json 来破解
-     * 如果不匹配，强制降级
-     */
-    async verifyVaultId(settings: LicenseSettingsLike): Promise<void> {
-        if (!settings.isPro || !settings.vaultId) return;
-
-        try {
-            // 重新生成当前机器的指纹
-            const adapter = this.plugin.app.vault.adapter;
-            let vaultPath = this.plugin.app.vault.getName();
-            if (adapter && "basePath" in adapter) {
-                vaultPath = (adapter as FileSystemAdapterLike).basePath + "/" + vaultPath;
-            }
-            const platform = getVaultPlatform();
-            const vaultInfo = [vaultPath, platform].join("|");
-
-            const encoder = new TextEncoder();
-            const data = encoder.encode(vaultInfo);
-            const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            const currentVaultId = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
-            // 与保存的指纹比对
-            if (currentVaultId !== settings.vaultId) {
-                console.warn("[LicenseManager] vaultId 不匹配，强制降级");
-                settings.isPro = false;
-                settings.licenseToken = "";
-                settings.lastVerification = 0;
-            }
-        } catch {
-            // 校验出错不做处理，避免误伤
-        }
-    }
-
-    // ========================================
-    // 门禁（预留给未来功能）
-    // ========================================
-
-    /**
-     * 通用门禁检查方法
-     * 未来给新付费功能用的。目前不被任何现有功能调用。
-     *
-     * 用法示例（未来）：
-     *   if (!await LicenseManager.getInstance().checkFeatureAccess('AI 助手')) return;
-     *
-     * @param featureName 功能名称（用于提示信息）
-     * @returns 是否有权限使用该功能
-     */
     async checkFeatureAccess(featureName: string): Promise<boolean> {
         try {
-            // 通过 plugin 拿到最新的 settings
             const pluginData = (await this.plugin.loadData()) as unknown;
-            const pluginSettings = isRecord(pluginData) ? getRecordProp(pluginData, "settings") : undefined;
-            const isPro = pluginSettings ? getBooleanProp(pluginSettings, "isPro") === true : false;
 
-            if (isPro) {
+            if (parsePersistedSupporterAccess(pluginData)) {
                 return true;
             }
 
-            // 没有权限，弹出友好提示
             new Notice(`🔒 「${featureName}」仅限 Supporter 使用`);
             return false;
         } catch {

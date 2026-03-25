@@ -905,6 +905,12 @@
     padding-top: 1px;
 }
 
+.sr-timeline-review-response-pill-wrap {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+}
+
 .sr-timeline-message-line {
     min-height: 1.2em;
 }

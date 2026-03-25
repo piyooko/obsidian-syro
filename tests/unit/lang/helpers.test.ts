@@ -72,6 +72,39 @@ test("Deck options labels stay Chinese-only in zh-cn", () => {
     });
 });
 
+test("Sync labels stay explicit in English and zh-cn", () => {
+    jest.isolateModules(() => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { moment } = require("obsidian");
+        const mockLocale = moment.locale as jest.MockedFunction<() => string>;
+
+        mockLocale.mockImplementation(() => "en");
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { t } = require("src/lang/helpers");
+        expect(t("DECK_TREE_FULL_SYNC_TITLE")).toEqual("Sync changes (incremental)");
+        expect(t("CMD_GLOBAL_SYNC_FULL")).toEqual("Rebuild all cards (reparse all notes)");
+        expect(t("CMD_GLOBAL_SYNC_CARDS")).toEqual("Repair tracked cards (clean ghost cards)");
+    });
+
+    jest.isolateModules(() => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { moment } = require("obsidian");
+        const mockLocale = moment.locale as jest.MockedFunction<() => string>;
+        mockLocale.mockImplementation(() => "zh-cn");
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { t } = require("src/lang/helpers");
+        expect(t("DECK_TREE_FULL_SYNC_TITLE")).toEqual(
+            "\u589e\u91cf\u540c\u6b65\uff08\u4ec5\u5904\u7406\u6539\u52a8\uff09",
+        );
+        expect(t("CMD_GLOBAL_SYNC_FULL")).toEqual(
+            "\u91cd\u5efa\u5168\u90e8\u5361\u7247\uff08\u91cd\u65b0\u89e3\u6790\u6240\u6709\u7b14\u8bb0\uff09",
+        );
+        expect(t("CMD_GLOBAL_SYNC_CARDS")).toEqual(
+            "\u4fee\u590d\u5df2\u8ffd\u8e2a\u5361\u7247\uff08\u6e05\u7406\u5e7d\u7075\u5361\uff09",
+        );
+    });
+});
+
 test("Test translation with interpolation in English", () => {
     jest.isolateModules(() => {
         // eslint-disable-next-line @typescript-eslint/no-var-requires

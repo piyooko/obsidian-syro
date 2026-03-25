@@ -110,7 +110,7 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
     isSyncing = false,
 }) => (
     <div className="sr-deck-header sr-deck-header-desktop">
-        <div className="sr-deck-header-name">{t("DECK_TREE_HEADER_DECK")}</div>
+        <div className="sr-deck-header-name">DECK</div>
         <div className={`sr-deck-header-stat new ${totalNew === 0 ? "dimmed" : ""}`}>
             {t("DECK_TREE_HEADER_NEW")}
         </div>

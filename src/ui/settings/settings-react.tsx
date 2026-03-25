@@ -6,7 +6,7 @@
  *
  * 濞达綀娉曢弫?React 缂備礁瀚▎銏ゅ即婢剁鏁╅柛妯煎枑濠€渚€鎯?Obsidian 閻犱礁澧介悿?API
  */
-import { App, PluginSettingTab } from "obsidian";
+import { App, Notice, PluginSettingTab } from "obsidian";
 import React from "react";
 import { createRoot, Root } from "react-dom/client";
 import { t } from "src/lang/helpers";
@@ -98,12 +98,19 @@ export class SRSettingTab extends PluginSettingTab {
                         return;
                     }
 
-                    void this.plugin.requestSync({ trigger: "manual", mode: "full" }).catch((error) => {
-                        console.error(
-                            "[SR-Settings] Failed to rebuild after card capture setting change:",
-                            error,
-                        );
-                    });
+                    void this.plugin
+                        .requestSync({ trigger: "manual", mode: "full" })
+                        .then((result) => {
+                            if (result.status === "queued") {
+                                new Notice(t("SETTINGS_CARD_CAPTURE_REBUILD_QUEUED"));
+                            }
+                        })
+                        .catch((error) => {
+                            console.error(
+                                "[SR-Settings] Failed to rebuild after card capture setting change:",
+                                error,
+                            );
+                        });
                 }).open();
             }
         });

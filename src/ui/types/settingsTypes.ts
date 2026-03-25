@@ -10,6 +10,7 @@ export type {
     DeckOptionsPreset,
     ProgressBarStyle,
     StatusBarAnimationStyle,
+    LicenseState,
 } from "../../settings";
 
 /**
@@ -95,6 +96,8 @@ export interface UISettingsState {
     // License
     licenseKey: string; // User-entered license key
     isPro: boolean; // Whether the current vault is Pro-enabled
+    licenseInstallationId: string; // Stable installation UUID
+    licenseState: import("../../settings").LicenseState | null; // Persisted license cache
 }
 
 // The remaining settings component props are defined alongside their React components.

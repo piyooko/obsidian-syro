@@ -17,6 +17,7 @@
  * - 鍝嶅簲寮忚璁★紝閫傞厤妗岄潰鍜岀Щ鍔ㄧ
  */
 import React, {
+    CSSProperties,
     useState,
     useEffect,
     useLayoutEffect,
@@ -52,6 +53,19 @@ import "../styles/linear-card.css";
 import { t } from "src/lang/helpers";
 import { transformLatex } from "../../utils/latexTransformer";
 import { createSanitizedHtmlFragment } from "src/util/safeHtml";
+import {
+    decodeUnifiedMarkerPayload,
+    normalizeSrMarkers,
+    postProcessMarkers,
+    preTokenizeSrMarkers,
+    toFallbackText,
+    tryDecodeSrMarkerText,
+} from "./linearCardMarkers";
+import {
+    buildScrollPositionInput,
+    getCenteredScrollTop,
+    getMixedCenterScrollTop,
+} from "./clozeScrollPosition";
 
 // 鍗＄墖鐘舵€佺被鍨?
 export interface CardState {
@@ -63,6 +77,7 @@ export interface CardState {
 
 interface LinearCardProps {
     card?: CardState;
+    uiResetToken?: number | string;
     deckPath?: string;
     stats?: { new: number; learning: number; due: number };
     type?: "basic" | "cloze";
@@ -95,9 +110,11 @@ interface LinearCardProps {
 
 type ToastMsg = { icon: ReactNode; text: string; id: number };
 type ResizeDirection = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+type ClozeRenderFace = "single" | "front" | "back";
 
 export const LinearCard: FC<LinearCardProps> = ({
     card,
+    uiResetToken,
     stats: initialStats = { new: 45, learning: 12, due: 68 },
     type = "basic",
     breadcrumbs = [],
@@ -145,12 +162,15 @@ export const LinearCard: FC<LinearCardProps> = ({
     const [stats, setStats] = useState(initialStats);
     const [currentType, setCurrentType] = useState<"new" | "learning" | "due">(cardType || "due");
     const [isFlipped, setIsFlipped] = useState(false);
-    const cardUiResetKey = [
+    const cardContentResetKey = [
         card?.front || "",
         card?.back || "",
         card?.review || "",
-        ...(card?.responseButtonLabels || []),
     ].join("\u001f");
+    const cardUiResetKey =
+        uiResetToken === undefined
+            ? cardContentResetKey
+            : `${String(uiResetToken)}\u001f${cardContentResetKey}`;
     const lastCardUiResetKeyRef = useRef(cardUiResetKey);
     const isCardUiResetPending = lastCardUiResetKeyRef.current !== cardUiResetKey;
     const renderIsFlipped = isCardUiResetPending ? false : isFlipped;
@@ -696,7 +716,7 @@ export const LinearCard: FC<LinearCardProps> = ({
 
                             {/* 璁℃椂鍣ㄨ繘搴︽潯 */}
                             <div className="sr-timer-bar-container">
-                                <AnimatePresence mode="wait">
+                                <AnimatePresence initial={false}>
                                     {
                                         (!renderIsFlipped && autoAdvanceSeconds > 0 && (
                                             <TimerBar
@@ -731,6 +751,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                     <div className="sr-card-content-scroll">
                                         {type === "cloze" ? (
                                             <ClozeContent
+                                                key={cardUiResetKey}
                                                 isFlipped={renderIsFlipped}
                                                 card={card}
                                                 renderMarkdown={renderMarkdown}
@@ -761,6 +782,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             />
                                         ) : (
                                             <BasicContent
+                                                key={cardUiResetKey}
                                                 isFlipped={renderIsFlipped}
                                                 card={card || { front: "Q", back: "A" }}
                                                 renderMarkdown={renderMarkdown}
@@ -772,7 +794,7 @@ export const LinearCard: FC<LinearCardProps> = ({
 
                             {/* Footer - 缂栬緫妯″紡涓嬫樉绀洪€€鍑烘寜閽?*/}
                             <div className="sr-card-footer">
-                                <AnimatePresence mode="wait" initial={false}>
+                                <AnimatePresence initial={false}>
                                     {
                                         (isEditing ? (
                                             <motion.div
@@ -1091,14 +1113,26 @@ const MarkdownDisplay = ({
     showAnswer?: boolean;
 }) => {
     const ref = useRef<HTMLDivElement>(null);
+    const renderGenerationRef = useRef(0);
+    const onRenderedRef = useRef(onRendered);
     const shouldRefreshForFlip = requiresFlipAwareMathRender(content);
+
+    useEffect(() => {
+        onRenderedRef.current = onRendered;
+    }, [onRendered]);
 
     useLayoutEffect(() => {
         let cancelled = false;
+        const renderGeneration = renderGenerationRef.current + 1;
+        renderGenerationRef.current = renderGeneration;
 
         const renderAsync = async () => {
             const target = ref.current;
             if (!target) return;
+            const isRenderCurrent = () =>
+                !cancelled &&
+                ref.current === target &&
+                renderGenerationRef.current === renderGeneration;
 
             // 妫€鏌ユ槸鍚︽湁浠ｇ爜鍧?cloze 鏍囪
             const clozeMatch = content.match(/<!--SR_CODE_CLOZE:(\d+):(\d+)-->/);
@@ -1131,23 +1165,33 @@ const MarkdownDisplay = ({
                 shouldRefreshForFlip ? (showAnswer ? "highlight" : "mask") : "highlight",
             );
 
+            const fallbackText = toFallbackText(cleanContent, { showAnswer });
+            const tokenizedContent = preTokenizeSrMarkers(cleanContent);
+
             if (!renderMarkdown) {
-                target.replaceChildren(document.createTextNode(toFallbackText(cleanContent)));
-                onRendered?.(target);
+                if (!isRenderCurrent()) {
+                    return;
+                }
+                target.replaceChildren(document.createTextNode(fallbackText));
+                onRenderedRef.current?.(target);
                 return;
             }
 
             const buffer = document.createElement("div");
 
             try {
-                await renderMarkdown(cleanContent, buffer);
+                await renderMarkdown(tokenizedContent, buffer);
 
-                if (cancelled || ref.current !== target) {
+                if (!isRenderCurrent()) {
                     return;
                 }
 
                 // 3. 鍚屾鎵ц鎵€鏈夊悗澶勭悊鍣?
-                postProcessMarkers(buffer);
+                await postProcessMarkers(buffer, renderMarkdown);
+
+                if (!isRenderCurrent()) {
+                    return;
+                }
 
                 // 濡傛灉鏄唬鐮佸潡 cloze锛岃繘琛岄澶栧鐞嗭紙琛屽彿銆侀珮浜瓑锛?
                 if (clozeLine !== null || (hasCodeBlock && hasPlaceholder)) {
@@ -1158,22 +1202,20 @@ const MarkdownDisplay = ({
                 if (renderedNodes.length > 0 || buffer.textContent?.trim()) {
                     target.replaceChildren(...renderedNodes);
                 } else {
-                    target.replaceChildren(document.createTextNode(toFallbackText(cleanContent)));
+                    target.replaceChildren(document.createTextNode(fallbackText));
                 }
 
-                if (!cancelled && ref.current === target) {
-                    onRendered?.(target);
+                if (isRenderCurrent()) {
+                    onRenderedRef.current?.(target);
                 }
             } catch (error) {
-                if (cancelled || ref.current !== target) {
+                if (!isRenderCurrent()) {
                     return;
                 }
 
                 console.error("[LinearCard] Failed to render markdown", error);
-                if (target.childNodes.length === 0) {
-                    target.replaceChildren(document.createTextNode(toFallbackText(cleanContent)));
-                }
-                onRendered?.(target);
+                target.replaceChildren(document.createTextNode(fallbackText));
+                onRenderedRef.current?.(target);
             }
         };
 
@@ -1181,7 +1223,7 @@ const MarkdownDisplay = ({
         return () => {
             cancelled = true;
         };
-    }, [content, renderMarkdown, onRendered, shouldRefreshForFlip ? showAnswer : undefined]);
+    }, [content, renderMarkdown, shouldRefreshForFlip ? showAnswer : undefined]);
 
     return (
         <div
@@ -1199,47 +1241,6 @@ function containsMathExpression(content: string): boolean {
 function requiresFlipAwareMathRender(content: string): boolean {
     const normalized = normalizeSrMarkers(content.replace(/<!--SR_CODE_CLOZE:\d+:\d+-->\n?/g, ""));
     return normalized.includes("««SR_C:") && containsMathExpression(normalized);
-}
-
-function decodeUnifiedMarkerPayload(
-    payload: string,
-): { placeholderText: string; answerText: string } | null {
-    const separatorIndex = payload.indexOf(":");
-    if (separatorIndex === -1) {
-        return null;
-    }
-
-    try {
-        return {
-            placeholderText: decodeURIComponent(payload.slice(0, separatorIndex)),
-            answerText: decodeURIComponent(payload.slice(separatorIndex + 1)),
-        };
-    } catch {
-        return null;
-    }
-}
-
-function toFallbackText(content: string): string {
-    const normalized = normalizeSrMarkers(content.replace(/<!--SR_CODE_CLOZE:\d+:\d+-->\n?/g, ""));
-    const decodeMarker = (encoded: string, hiddenText: string) => {
-        try {
-            return decodeURIComponent(encoded);
-        } catch {
-            return hiddenText;
-        }
-    };
-
-    return normalized
-        .replace(/««SR_C:([^»]+)»»/g, (_match: string, payload: string) => {
-            return decodeUnifiedMarkerPayload(payload)?.placeholderText ?? "[...]";
-        })
-        .replace(
-            /««SR_CLOZE:([^»]+)»»/g,
-            (_match: string, encoded: string) => `[${decodeMarker(encoded, "...")}]`,
-        )
-        .replace(/««SR_H:([^»]+)»»/g, () => "[...]")
-        .replace(/««SR_S:([^»]+)»»/g, (_match: string, encoded: string) => decodeMarker(encoded, ""))
-        .replace(/{{c\d+::(.*?)(?:::.*)?}}/g, "[...]");
 }
 
 /**
@@ -1284,16 +1285,6 @@ function preprocessMathCloze(
     return result;
 }
 
-function normalizeSrMarkers(text: string): string {
-    return text
-        .replace(/&laquo;/g, "«")
-        .replace(/&raquo;/g, "»")
-        .replace(/&#171;/g, "«")
-        .replace(/&#187;/g, "»")
-        .replace(/鑺﹁姦/g, "««")
-        .replace(/绂勭/g, "»»");
-}
-
 /**
  * 灏嗗叕寮忎腑鐨?cloze HTML span 鏍囩杞崲涓?LaTeX \color{} 鍛戒护
  *
@@ -1303,94 +1294,6 @@ function normalizeSrMarkers(text: string): string {
  * 杈撳叆锛? <span class='sr-cloze-shown'>x^2</span> + y
  * 杈撳嚭锛? {\color{#60a5fa}x^2} + y
  */
-
-/**
- * 鍏ㄥ眬鍚庡鐞嗗櫒锛氬皢鎵€鏈夋爣璁版浛鎹负甯︽牱寮忕殑 HTML
- * 杩愯鍦?Markdown 娓叉煋涔嬪悗锛岀‘淇濇爣璁颁笉浼氳 Obsidian 杞箟
- */
-function postProcessMarkers(container: HTMLElement) {
-    // 澶勭悊鎵€鏈夋枃鏈妭鐐癸紙鏇村畨鍏紝涓嶄細鐮村潖宸叉湁 DOM 缁撴瀯锛?
-    const walk = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
-    let node;
-    const nodesToReplace: { node: Text; fragments: (Text | HTMLElement)[] }[] = [];
-
-    while ((node = walk.nextNode() as Text)) {
-        let text = normalizeSrMarkers(node.textContent || "");
-
-        if (!text.includes("««SR_")) continue;
-
-        const fragments: (Text | HTMLElement)[] = [];
-        let lastEnd = 0;
-        const regex = /««SR_([HSC]):([^»]+)»»/g;
-        let match;
-
-        while ((match = regex.exec(text)) !== null) {
-            // 鍓嶉潰鐨勬櫘閫氭枃鏈?
-            if (match.index > lastEnd) {
-                fragments.push(document.createTextNode(text.substring(lastEnd, match.index)));
-            }
-
-            const type = match[1];
-            const encoded = match[2];
-            if (type === "C") {
-                const unifiedMarker = decodeUnifiedMarkerPayload(encoded);
-                if (!unifiedMarker) {
-                    fragments.push(document.createTextNode(match[0]));
-                    lastEnd = regex.lastIndex;
-                    continue;
-                }
-
-                const wrapper = document.createElement("span");
-                wrapper.className = "sr-cloze-wrapper";
-
-                const placeholder = document.createElement("span");
-                placeholder.className = "sr-cloze-placeholder";
-                placeholder.textContent = unifiedMarker.placeholderText;
-
-                const answer = document.createElement("span");
-                answer.className = "sr-cloze-answer";
-                answer.textContent = unifiedMarker.answerText;
-
-                wrapper.appendChild(placeholder);
-                wrapper.appendChild(answer);
-                fragments.push(wrapper);
-            } else {
-                try {
-                    const content = decodeURIComponent(encoded);
-                    const span = document.createElement("span");
-                    if (type === "H") {
-                        span.className = "sr-cloze-hidden";
-                        span.textContent = content;
-                    } else {
-                        span.className = "sr-cloze-shown sr-is-active";
-                        span.textContent = content;
-                    }
-                    fragments.push(span);
-                } catch {
-                    fragments.push(document.createTextNode(match[0]));
-                }
-            }
-            lastEnd = regex.lastIndex;
-        }
-
-        if (lastEnd < text.length) {
-            fragments.push(document.createTextNode(text.substring(lastEnd)));
-        }
-
-        if (fragments.length > 0) {
-            nodesToReplace.push({ node, fragments });
-        }
-    }
-
-    // 鎵ц鏇挎崲
-    nodesToReplace.forEach(({ node, fragments }) => {
-        const parent = node.parentNode;
-        if (parent) {
-            fragments.forEach((frag) => parent.insertBefore(frag, node));
-            parent.removeChild(node);
-        }
-    });
-}
 
 const CODE_LINE_HTML_OPTIONS = {
     allowedTags: ["span"],
@@ -1463,7 +1366,7 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
         const rawLines = codeContent.split("\n");
         rawLines.forEach((line, idx) => {
             const cleanLine = line.replace(/<[^>]+>/g, "");
-            if (cleanLine.includes("««SR_CLOZE:")) {
+            if (cleanLine.includes("««SR_CLOZE:") || cleanLine.includes("««SR_C:")) {
                 clozeLineIndices.add(idx);
             }
         });
@@ -1472,12 +1375,22 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
             const cleanMatch = match.replace(/<[^>]+>/g, "");
             if (cleanMatch.startsWith("««SR_CLOZE:")) {
                 const encoded = cleanMatch.substring(11, cleanMatch.length - 2);
-                try {
-                    const decoded = decodeURIComponent(encoded);
-                    return `<span class="sr-cloze-wrapper"><span class="sr-cloze-placeholder">[...]</span><span class="sr-cloze-answer">${decoded}</span></span>`;
-                } catch {
+                const decoded = tryDecodeSrMarkerText(encoded);
+                if (decoded === null) {
                     return match;
                 }
+
+                return `<span class="sr-cloze-wrapper"><span class="sr-cloze-placeholder">[...]</span><span class="sr-cloze-answer">${decoded}</span></span>`;
+            }
+            if (cleanMatch.startsWith("««SR_C:")) {
+                const decoded = decodeUnifiedMarkerPayload(
+                    cleanMatch.substring(6, cleanMatch.length - 2),
+                );
+                if (!decoded) {
+                    return match;
+                }
+
+                return `<span class="sr-cloze-wrapper"><span class="sr-cloze-placeholder">${decoded.placeholderText}</span><span class="sr-cloze-answer">${decoded.answerText}</span></span>`;
             }
             return match;
         });
@@ -1602,13 +1515,54 @@ function findActiveClozeTarget(container: HTMLElement, isFlipped: boolean): HTML
 }
 
 function centerElementInScrollContainer(target: HTMLElement, scrollContainer: HTMLElement) {
-    const scrollRect = scrollContainer.getBoundingClientRect();
-    const targetRect = target.getBoundingClientRect();
-    const delta = targetRect.top + targetRect.height / 2 - (scrollRect.top + scrollRect.height / 2);
-    const maxScrollTop = scrollContainer.scrollHeight - scrollContainer.clientHeight;
-    const nextScrollTop = Math.max(0, Math.min(scrollContainer.scrollTop + delta, maxScrollTop));
+    const input = buildScrollPositionInput(target, scrollContainer);
+    scrollContainer.scrollTop = getCenteredScrollTop(input);
+}
 
-    scrollContainer.scrollTop = nextScrollTop;
+function getScrollContainerSafeInsets(scrollContainer: HTMLElement): { top: number; bottom: number } {
+    const styles = window.getComputedStyle(scrollContainer);
+    const scrollPaddingTop = Number.parseFloat(styles.scrollPaddingTop || "0");
+    const scrollPaddingBottom = Number.parseFloat(styles.scrollPaddingBottom || "0");
+    const paddingTop = Number.parseFloat(styles.paddingTop || "0");
+    const paddingBottom = Number.parseFloat(styles.paddingBottom || "0");
+
+    return {
+        top: scrollPaddingTop > 0 ? scrollPaddingTop : Math.max(paddingTop, 24),
+        bottom: scrollPaddingBottom > 0 ? scrollPaddingBottom : Math.max(paddingBottom, 24),
+    };
+}
+
+function positionElementWithMixedCentering(target: HTMLElement, scrollContainer: HTMLElement) {
+    const safeInsets = getScrollContainerSafeInsets(scrollContainer);
+    const input = buildScrollPositionInput(target, scrollContainer, safeInsets);
+    scrollContainer.scrollTop = getMixedCenterScrollTop(input);
+}
+
+function getClozeFaceHost(
+    container: HTMLElement | null,
+    face: ClozeRenderFace,
+): HTMLElement | null {
+    return container?.querySelector<HTMLElement>(`[data-sr-face="${face}"]`) ?? null;
+}
+
+function getClozeFaceShowAnswer(face: ClozeRenderFace, isFlipped: boolean): boolean {
+    if (face === "front") {
+        return false;
+    }
+    if (face === "back") {
+        return true;
+    }
+    return isFlipped;
+}
+
+function getInactivePreRenderedFaceStyle(): CSSProperties {
+    return {
+        position: "absolute",
+        inset: 0,
+        visibility: "hidden",
+        pointerEvents: "none",
+        overflow: "hidden",
+    };
 }
 
 const ClozeContent = ({
@@ -1628,33 +1582,53 @@ const ClozeContent = ({
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const frameRef = useRef<number | null>(null);
+    const isCodeBlockCloze = (card?.front || "").includes("««SR_CLOZE:");
+    const frontContent = card?.front || "";
+    const backContent = card?.back || frontContent;
+    const reviewContent = card?.review || "";
+    const hasReviewContent = reviewContent.length > 0;
+    const mathFlipContent = hasReviewContent ? reviewContent : frontContent;
+    const shouldPreRenderMathFaces =
+        !isCodeBlockCloze && requiresFlipAwareMathRender(mathFlipContent);
+    const activeFace: ClozeRenderFace = shouldPreRenderMathFaces
+        ? isFlipped
+            ? "back"
+            : "front"
+        : "single";
 
-    const centerActiveCloze = useCallback(() => {
+    const positionActiveCloze = useCallback(() => {
         const container = containerRef.current;
+        const activeHost = getClozeFaceHost(container, activeFace);
         const scrollContainer = getScrollContainer(container);
-        if (!container || !scrollContainer) return;
+        if (!activeHost || !scrollContainer) return;
 
-        const target = findActiveClozeTarget(container, isFlipped);
+        const target = findActiveClozeTarget(
+            activeHost,
+            getClozeFaceShowAnswer(activeFace, isFlipped),
+        );
         if (!target) return;
 
-        centerElementInScrollContainer(target, scrollContainer);
-    }, [isFlipped]);
+        if (isCodeBlockCloze) {
+            centerElementInScrollContainer(target, scrollContainer);
+            return;
+        }
 
-    const scheduleCenterActiveCloze = useCallback(() => {
+        positionElementWithMixedCentering(target, scrollContainer);
+    }, [activeFace, isCodeBlockCloze, isFlipped]);
+
+    const schedulePositionActiveCloze = useCallback((face?: ClozeRenderFace) => {
+        if (face && face !== activeFace) {
+            return;
+        }
         if (frameRef.current !== null) {
             cancelAnimationFrame(frameRef.current);
         }
 
         frameRef.current = requestAnimationFrame(() => {
-            frameRef.current = requestAnimationFrame(() => {
-                centerActiveCloze();
-                frameRef.current = null;
-            });
+            positionActiveCloze();
+            frameRef.current = null;
         });
-    }, [centerActiveCloze]);
-
-    // 妫€娴嬫槸鍚︿负浠ｇ爜鍧楃被鍨嬬殑 Cloze锛堝寘鍚壒娈婂崰浣嶇锛?
-    const isCodeBlockCloze = (card?.front || "").includes("««SR_CLOZE:");
+    }, [activeFace, positionActiveCloze]);
 
     // 缈婚潰鏃舵洿鏂板鍣ㄧ殑 class锛堜粎鐢ㄤ簬浠ｇ爜鍧?Cloze锛?
     useEffect(() => {
@@ -1672,15 +1646,15 @@ const ClozeContent = ({
 
     // 婊氬姩鍒扮涓€涓～绌轰綅缃?
     useEffect(() => {
-        const container = containerRef.current;
-        if (!container) return;
-        scheduleCenterActiveCloze();
+        const activeHost = getClozeFaceHost(containerRef.current, activeFace);
+        if (!activeHost) return;
+        schedulePositionActiveCloze(activeFace);
 
         const observer = new MutationObserver(() => {
-            scheduleCenterActiveCloze();
+            schedulePositionActiveCloze(activeFace);
         });
 
-        observer.observe(container, { childList: true, subtree: true, characterData: true });
+        observer.observe(activeHost, { childList: true, subtree: true, characterData: true });
 
                 // 浼樺厛鏌ユ壘 cloze 鍗犱綅绗?class
 
@@ -1692,13 +1666,9 @@ const ClozeContent = ({
                 frameRef.current = null;
             }
         };
-    }, [card?.front, card?.back, card?.review, isFlipped, scheduleCenterActiveCloze]);
+    }, [activeFace, card?.front, card?.back, card?.review, isFlipped, schedulePositionActiveCloze]);
 
     // 鏍规嵁鏄惁涓轰唬鐮佸潡 Cloze 閫夋嫨娓叉煋绛栫暐
-    const frontContent = card?.front || "";
-    const backContent = card?.back || frontContent;
-    const reviewContent = card?.review || "";
-    const hasReviewContent = reviewContent.length > 0;
     const contentToRender = isCodeBlockCloze
         ? frontContent
         : hasReviewContent
@@ -1785,13 +1755,50 @@ const ClozeContent = ({
     ]);
 
     return (
-        <div className={`sr-cloze-content ${isFlipped ? "sr-flipped" : ""}`} ref={containerRef}>
-            <MarkdownDisplay
-                content={contentToRender}
-                renderMarkdown={renderMarkdown}
-                onRendered={scheduleCenterActiveCloze}
-                showAnswer={isFlipped}
-            />
+        <div
+            className={`sr-cloze-content ${isFlipped ? "sr-flipped" : ""}`}
+            ref={containerRef}
+            style={shouldPreRenderMathFaces ? { position: "relative" } : undefined}
+        >
+            {shouldPreRenderMathFaces ? (
+                <>
+                    <div
+                        data-sr-face="front"
+                        data-sr-active={String(!isFlipped)}
+                        aria-hidden={isFlipped}
+                        style={isFlipped ? getInactivePreRenderedFaceStyle() : undefined}
+                    >
+                        <MarkdownDisplay
+                            content={mathFlipContent}
+                            renderMarkdown={renderMarkdown}
+                            onRendered={() => schedulePositionActiveCloze("front")}
+                            showAnswer={false}
+                        />
+                    </div>
+                    <div
+                        data-sr-face="back"
+                        data-sr-active={String(isFlipped)}
+                        aria-hidden={!isFlipped}
+                        style={!isFlipped ? getInactivePreRenderedFaceStyle() : undefined}
+                    >
+                        <MarkdownDisplay
+                            content={mathFlipContent}
+                            renderMarkdown={renderMarkdown}
+                            onRendered={() => schedulePositionActiveCloze("back")}
+                            showAnswer={true}
+                        />
+                    </div>
+                </>
+            ) : (
+                <div data-sr-face="single" data-sr-active="true">
+                    <MarkdownDisplay
+                        content={contentToRender}
+                        renderMarkdown={renderMarkdown}
+                        onRendered={() => schedulePositionActiveCloze("single")}
+                        showAnswer={isFlipped}
+                    />
+                </div>
+            )}
         </div>
     );
 };

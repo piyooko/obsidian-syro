@@ -830,23 +830,17 @@ const TimelineRenderedMessage: React.FC<{
     return (
         <div className="sr-timeline-message-rendered">
             {durationChip && durationPlacement === "top" && durationChip}
-            {(reviewResponsePillText ||
-                hasBody ||
-                shouldRenderEmptyPlaceholder ||
-                durationPlacement === "inline-after-label") && (
+            {reviewResponsePillText && (
+                <div className="sr-timeline-review-response-pill-wrap">
+                    <span className="sr-timeline-duration-pill" title={reviewResponsePillText}>
+                        {reviewResponsePillText}
+                    </span>
+                </div>
+            )}
+            {(hasBody || shouldRenderEmptyPlaceholder || durationPlacement === "inline-after-label") && (
                 <div
                     className={`sr-timeline-message-content ${isInlineDuration ? "is-inline-duration" : ""}`}
                 >
-                    {reviewResponsePillText && (
-                        <div className="sr-timeline-inline-duration-wrap">
-                            <span
-                                className="sr-timeline-duration-pill"
-                                title={reviewResponsePillText}
-                            >
-                                {reviewResponsePillText}
-                            </span>
-                        </div>
-                    )}
                     {(hasBody || shouldRenderEmptyPlaceholder) && (
                         <div
                             className={`sr-timeline-message-content-text ${isInlineDuration ? "is-inline-duration" : ""}`}

@@ -241,40 +241,69 @@ export class Question {
         return settings.cardCommentOnSameLine ? " " : "\n";
     }
 
-    updateQuestionText(noteText: string, settings: SRSettings): string {
-        // Get the entire text for the question including:
-        //      1. the topic path (if present),
-        //      2. the question text
-        //      3. the schedule HTML comment (if present)
+    prepareQuestionTextUpdate(
+        noteText: string,
+        settings: SRSettings,
+    ): {
+        didReplace: boolean;
+        newText: string;
+        originalText: string;
+        replacementText: string;
+    } {
         const replacementText = this.formatForNote(settings);
         const originalText: string = this.questionText.original;
+        const nextText = MultiLineTextFinder.findAndReplace(noteText, originalText, replacementText);
 
-        let newText = MultiLineTextFinder.findAndReplace(noteText, originalText, replacementText);
-        if (newText) {
+        return {
+            didReplace: nextText != null,
+            newText: nextText ?? noteText,
+            originalText,
+            replacementText,
+        };
+    }
+
+    commitPreparedQuestionTextUpdate(replacementText: string, settings: SRSettings): void {
+        this.questionText = QuestionText.create(
+            replacementText,
+            this.questionText.textDirection,
+            settings,
+        );
+        this.hasChanged = false;
+    }
+
+    updateQuestionText(noteText: string, settings: SRSettings): string {
+        const prepared = this.prepareQuestionTextUpdate(noteText, settings);
+        if (prepared.didReplace) {
             // Don't support changing the textDirection setting
-            this.questionText = QuestionText.create(
-                replacementText,
-                this.questionText.textDirection,
-                settings,
-            );
+            this.commitPreparedQuestionTextUpdate(prepared.replacementText, settings);
         } else {
             console.error(
-                `updateQuestionText: Text not found: ${originalText.substring(
+                `updateQuestionText: Text not found: ${prepared.originalText.substring(
                     0,
                     100,
                 )} in note: ${noteText.substring(0, 100)}`,
             );
-            newText = noteText;
         }
-        return newText;
+        return prepared.newText;
     }
 
     async writeQuestion(settings: SRSettings): Promise<void> {
         const fileText: string = await this.note.file.read();
+        const prepared = this.prepareQuestionTextUpdate(fileText, settings);
+        if (!prepared.didReplace) {
+            console.error(
+                `writeQuestion: Text not found: ${prepared.originalText.substring(
+                    0,
+                    100,
+                )} in note: ${fileText.substring(0, 100)}`,
+            );
+            return;
+        }
 
-        const newText: string = this.updateQuestionText(fileText, settings);
-        await this.note.file.write(newText);
-        this.hasChanged = false;
+        if (prepared.newText !== fileText) {
+            await this.note.file.write(prepared.newText);
+        }
+        this.commitPreparedQuestionTextUpdate(prepared.replacementText, settings);
     }
 
     formatTopicPathList(): string {

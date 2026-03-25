@@ -132,6 +132,24 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         return Math.max(0, this.settings.learnAheadMinutes) * 60 * 1000;
     }
 
+    private queueReviewOverlayFlush(item: RepetitionItem | null | undefined): void {
+        const store = DataStore.getInstance();
+        store.stageReviewItemDelta(item);
+        store.requestFlushReviewOverlay();
+    }
+
+    private queueQuestionWrite(question: Question): void {
+        const plugin = SRPlugin.getInstance();
+        if (plugin?.reviewPersistenceCoordinator) {
+            plugin.reviewPersistenceCoordinator.queueQuestionWrite(question, this.settings);
+            return;
+        }
+
+        void question.writeQuestion(this.settings).catch((error) => {
+            console.error("[SR] background question write failed", error);
+        });
+    }
+
     constructor(
         reviewMode: FlashcardReviewMode,
         cardSequencer: IDeckTreeIterator,
@@ -323,7 +341,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
     // ============================================================
     // 鏍稿績閫昏緫锛氬鐞嗗涔?
     // ============================================================
-    async processReview(response: ReviewResponse): Promise<void> {
+    processReview(response: ReviewResponse): void {
         this.logRuntimeDebug(`[SR-DynSync] sequencer.processReview: 鍝嶅簲=${ReviewResponse[response]}`);
         const card = this.currentCard;
         if (!card) {
@@ -380,23 +398,22 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         if (this.reviewMode === FlashcardReviewMode.Review && !this._isLearning) {
             const plugin = SRPlugin.getInstance();
             const deckName = card.question.topicPathList?.list[0]?.path.join("/") || "default";
-            await plugin.incrementDailyCounts(deckName, historyItem.wasNew);
+            plugin.incrementDailyCounts(deckName, historyItem.wasNew);
         }
 
         if (this.reviewMode === FlashcardReviewMode.Review) {
-            await this.processReview_ReviewMode(response, item);
+            this.processReview_ReviewMode(response, item);
         } else {
             this.processReview_CramMode(response);
         }
         this.logRuntimeDebug("[SR-DynSync] sequencer.processReview: completed");
     }
 
-    async processReview_ReviewMode(
+    processReview_ReviewMode(
         response: ReviewResponse,
         item: RepetitionItem | null,
-    ): Promise<void> {
+    ): void {
         const card = this.currentCard;
-        const store = DataStore.getInstance();
         const currentStep = item?.learningStep ?? 0;
 
         const deckPath =
@@ -507,7 +524,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
                         }
                     }
                 }
-                await store.saveReviewItemDelta(item);
+                this.queueReviewOverlayFlush(item);
                 this.syncGlobalRemainingDeckTree(card, nextStep !== null);
             } else {
                 if (item) {
@@ -519,7 +536,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
                     item?.getSched() ?? null,
                 );
 
-                await store.saveReviewItemDelta(item);
+                this.queueReviewOverlayFlush(item);
                 if (!this._isLearning) this.cardSequencer.deleteCurrentCardFromAllDecks();
 
                 const deck = this.findDeckForCard(card);
@@ -535,9 +552,9 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
             card.scheduleInfo = NoteCardScheduleParser.createInfo_algo(item?.getSched() ?? null);
             if (this.settings.dataLocation === DataLocation.SaveOnNoteFile) {
-                await card.question.writeQuestion(this.settings);
+                this.queueQuestionWrite(card.question);
             }
-            await store.saveReviewItemDelta(item);
+            this.queueReviewOverlayFlush(item);
 
             if (!this._isLearning) this.cardSequencer.deleteCurrentCardFromAllDecks();
             const deck = this.findDeckForCard(card);
@@ -736,7 +753,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         await this.currentQuestion.writeQuestion(this.settings);
     }
 
-    async undoReview(): Promise<void> {
+    undoReview(): void {
         if (this.history.length === 0) {
             new Notice("No review action to undo.");
             return;
@@ -768,7 +785,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             Object.assign(item, lastAction.itemSnapshot);
             item.learningStep = lastAction.learningStepSnapshot;
         }
-        await store.saveReviewItemDelta(item);
+        this.queueReviewOverlayFlush(item);
 
         const deck = lastAction.originalDeck;
 
@@ -780,7 +797,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
                 card.question.topicPathList?.list[0]?.path.join("/") ||
                 deck.getTopicPath().path.join("/") ||
                 "default";
-            await plugin.decrementDailyCounts(deckName, lastAction.wasNew);
+            plugin.decrementDailyCounts(deckName, lastAction.wasNew);
         }
 
         // 3. Restore to Queues

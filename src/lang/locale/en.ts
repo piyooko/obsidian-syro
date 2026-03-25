@@ -164,8 +164,8 @@ export default normalizeSentenceCaseLocale({
     STATUS_BAR_NOTE_DUE_SINGULAR: "${dueNotesCount} note due",
     NOTICE_TEXT_SELECTION_REQUIRED: "Please select text to create cloze",
     NOTICE_CLOZE_CREATED: "Cloze c${nextId} created",
-    DECK_TREE_FULL_SYNC_TITLE: "Sync cache (incremental)",
-    CMD_GLOBAL_SYNC_FULL: "Rebuild Cache (Full Parse)",
+    DECK_TREE_FULL_SYNC_TITLE: "Sync changes (Incremental)",
+    CMD_GLOBAL_SYNC_FULL: "Rebuild all cards (Reparse all notes)",
     SYNC_PROGRESS_START: "Syncing...",
     SYNC_PROGRESS_PARSE_NOTES: "Parsing notes (${current}/${total})...",
     SYNC_PROGRESS_BUILD_TREE: "Building deck tree...",
@@ -615,7 +615,7 @@ export default normalizeSentenceCaseLocale({
     CMD_UPDATE_ITEMS: "Update Items",
     CMD_INPUT_POSITIVE_NUMBER: "please input positive number",
     CMD_NOTE_POSTPONED: "This note has been postponed ${days} days",
-    CMD_GLOBAL_SYNC_CARDS: "Global Sync Cards (Clean Ghost Cards)",
+    CMD_GLOBAL_SYNC_CARDS: "Repair tracked cards (Clean ghost cards)",
     CMD_CREATE_CLOZE_SAME_LEVEL: "Create Cloze (Same Level)",
     CMD_CREATE_CLOZE_NEW_LEVEL: "Create Cloze (New Level)",
 
@@ -785,7 +785,9 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_SYNC_PROGRESS_DISPLAY_FULL_ONLY: "Only on Full Rebuild",
     SETTINGS_SYNC_PROGRESS_DISPLAY_NEVER: "Never",
     SETTINGS_CARD_CAPTURE_REBUILD_CONFIRM:
-        "**Card capture rules changed.** Existing notes need a rebuild sync before they can be reparsed with the new capture settings.\n\nRebuild now?",
+        '**Card capture rules changed.** Run "Rebuild all cards" to reparse every note with the new capture rules.\n\nRebuild all cards now?',
+    SETTINGS_CARD_CAPTURE_REBUILD_QUEUED:
+        "A sync is already running. Full rebuild has been queued and will start automatically when the current sync finishes.",
     SETTINGS_SECTION_SYNC: "Sync",
     SETTINGS_AUTO_INCREMENTAL_SYNC: "Automatic Incremental Sync",
     SETTINGS_AUTO_INCREMENTAL_SYNC_DESC:
@@ -805,6 +807,9 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_ANKI_CLOZE_DESC: "Convert {{c1::...}} to clozes.",
     SETTINGS_CODE_CLOZE: "Code Block Cloze",
     SETTINGS_CODE_CLOZE_DESC: "Parse {{c1::...}} in code blocks as cloze cards.",
+    SETTINGS_CODE_CONTEXT_LINES: "Code Context Lines",
+    SETTINGS_CODE_CONTEXT_LINES_DESC:
+        "When generating cards, keep this many lines of code above and below the cloze to avoid overly long cards.",
     SETTINGS_CLOZE_CONTEXT_MODE: "Cloze Context Range",
     SETTINGS_CLOZE_CONTEXT_MODE_TOOLTIP: "Choose how much review context to show.",
     SETTINGS_CLOZE_CONTEXT_SINGLE: "Single Segment",
