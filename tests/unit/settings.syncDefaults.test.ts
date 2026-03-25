@@ -12,6 +12,11 @@ describe("sync progress display defaults", () => {
         expect(DEFAULT_SETTINGS.syncProgressDisplayMode).toBe("full-only");
     });
 
+    test("new deck presets enable auto-advance with the progress bar by default", () => {
+        expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.autoAdvance).toBe(true);
+        expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.showProgressBar).toBe(true);
+    });
+
     test("upgradeSettings backfills the new default when the setting is missing", () => {
         const settings = {
             ...DEFAULT_SETTINGS,

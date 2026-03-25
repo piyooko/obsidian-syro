@@ -20,6 +20,7 @@ import type { FC } from "react";
 import { EditorView, keymap, drawSelection, dropCursor } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { Notice } from "obsidian";
+import { t } from "src/lang/helpers";
 import type SRPlugin from "src/main";
 import { livePreviewPlugin, livePreviewTheme } from "src/editor/live-preview-decoration";
 
@@ -59,7 +60,7 @@ const insertCloze = (view: EditorView, type: "same" | "new"): void => {
     const selectedText = state.sliceDoc(selection.from, selection.to);
 
     if (!selectedText) {
-        new Notice("Select text before creating a cloze.");
+        new Notice(t("NOTICE_TEXT_SELECTION_REQUIRED"));
         return;
     }
 
@@ -79,9 +80,7 @@ const insertCloze = (view: EditorView, type: "same" | "new"): void => {
         selection: { anchor: selection.from + replacement.length },
     });
 
-    new Notice(
-        `闂佽娴烽幊鎾诲箟闄囬妵鎰板礃椤旂厧鐎梺鍛婎殘閸庢劙宕甸崼銉︾厽闁瑰浼濋鍫晪鐟滃繒妲?c${nextId}`,
-    );
+    new Notice(t("NOTICE_CLOZE_CREATED", { nextId }));
 };
 
 // ==========================================
@@ -153,7 +152,7 @@ export const CardEditorView: FC<CardEditorViewProps> = ({ value, onChange, onExi
                 key: "Ctrl-Alt-Shift-c",
                 run: (view) => {
                     if (!plugin.data.settings.isPro) {
-                        new Notice("Anki cloze is only available to supporters.");
+                        new Notice(t("NOTICE_ANKI_CLOZE_SUPPORTER_ONLY"));
                         return true;
                     }
                     insertCloze(view, "same");
@@ -165,7 +164,7 @@ export const CardEditorView: FC<CardEditorViewProps> = ({ value, onChange, onExi
                 key: "Alt-Shift-c",
                 run: (view) => {
                     if (!plugin.data.settings.isPro) {
-                        new Notice("Anki cloze is only available to supporters.");
+                        new Notice(t("NOTICE_ANKI_CLOZE_SUPPORTER_ONLY"));
                         return true;
                     }
                     insertCloze(view, "new");
@@ -260,15 +259,15 @@ export const CardEditorView: FC<CardEditorViewProps> = ({ value, onChange, onExi
         <div className="sr-card-editor-view">
             <div className="sr-cm-container" ref={containerRef} />
             <div className="sr-editor-hint">
-                <span>Editor mode</span>
+                <span>{t("UI_EDITOR_MODE_LABEL")}</span>
                 <span className="sr-key-hints">
-                    <span>Ctrl+B Bold</span>
+                    <span>{t("UI_BOLD_KEY_HINT")}</span>
                     <span className="sr-divider">|</span>
-                    <span>Ctrl+I Italic</span>
+                    <span>{t("UI_ITALIC_KEY_HINT")}</span>
                     <span className="sr-divider">|</span>
-                    <span>Alt+Shift+C Cloze</span>
+                    <span>{t("UI_CLOZE_KEY_HINT")}</span>
                     <span className="sr-divider">|</span>
-                    <span>Esc Exit</span>
+                    <span>{t("UI_EXIT_KEY_HINT")}</span>
                 </span>
             </div>
         </div>

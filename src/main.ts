@@ -137,10 +137,7 @@ import {
     type SyncRequestResult,
     type SyncTrigger,
 } from "src/syncRequest";
-import {
-    FIRST_RUN_TUTORIAL_NOTE_CONTENT,
-    FIRST_RUN_TUTORIAL_NOTE_PATH,
-} from "src/firstRunTutorial";
+import { getFirstRunTutorial } from "src/firstRunTutorial";
 
 // 姣忔棩鐗岀粍缁熻鏁版嵁缁撴瀯锛堟寔涔呭寲瀛樺偍锛?
 // 姣忔棩鐗岀粍缁熻鏁版嵁缁撴瀯锛堟寔涔呭寲瀛樺偍锛?
@@ -352,7 +349,7 @@ export default class SRPlugin extends Plugin {
         ]);
 
         if (!results) {
-            new Notice("Syro: review changes are still pending save and will keep retrying.");
+            new Notice(t("DATA_REVIEW_SAVE_PENDING"));
         }
 
         return results;
@@ -1349,20 +1346,15 @@ export default class SRPlugin extends Plugin {
     }
 
     private async initializeFirstRunTutorialNote(): Promise<void> {
-        let tutorialFile = this.app.vault.getAbstractFileByPath(FIRST_RUN_TUTORIAL_NOTE_PATH);
+        const tutorial = getFirstRunTutorial();
+        let tutorialFile = this.app.vault.getAbstractFileByPath(tutorial.path);
 
         if (!tutorialFile) {
-            tutorialFile = await this.app.vault.create(
-                FIRST_RUN_TUTORIAL_NOTE_PATH,
-                FIRST_RUN_TUTORIAL_NOTE_CONTENT,
-            );
+            tutorialFile = await this.app.vault.create(tutorial.path, tutorial.content);
         }
 
         if (!(tutorialFile instanceof TFile)) {
-            console.warn(
-                "[SR] First-run tutorial path is not a markdown file:",
-                FIRST_RUN_TUTORIAL_NOTE_PATH,
-            );
+            console.warn("[SR] First-run tutorial path is not a markdown file:", tutorial.path);
             return;
         }
 

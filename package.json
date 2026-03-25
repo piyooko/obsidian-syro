@@ -11,6 +11,7 @@
         "lint:review": "pnpm dlx eslint@9 --no-config-lookup --config eslint.review.config.mjs --report-unused-disable-directives src",
         "lint:obsidian": "pnpm run lint:review",
         "check:mojibake": "node scripts/detect-mojibake.mjs",
+        "check:i18n": "node scripts/check-i18n.mjs",
         "test": "jest",
         "validate": "concurrently --kill-others-on-fail -g -p \"[{name}]\" -n \"format,lint,obsidian,test\" \"pnpm:format\" \"pnpm:lint\" \"pnpm run lint:obsidian\" \"pnpm:test\"",
         "precommit-msg": "echo 'Pre-commit checks... includes pnpm lint:obsidian for Obsidian review rules.'",

@@ -1,3 +1,0 @@
-// Vietnamese
-
-export default {};

@@ -50,9 +50,9 @@ const LabelWithSupporter = ({ label, isLocked }: { label: string; isLocked: bool
     <span className="sr-supporter-label-wrap">
         <span>{label}</span>
         {isLocked && (
-            <span className="sr-supporter-badge" aria-label="支持者功能">
+            <span className="sr-supporter-badge" aria-label={t("SETTINGS_SUPPORTER_BADGE")}>
                 <SupporterDiamond />
-                <span>支持者功能</span>
+                <span>{t("SETTINGS_SUPPORTER_BADGE")}</span>
             </span>
         )}
     </span>
@@ -259,7 +259,7 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
         featureName: string,
     ) => {
         if (isFree && value === true) {
-            new Notice(`「${featureName}」为支持者版功能`);
+            new Notice(t("NOTICE_SUPPORTER_ONLY_FEATURE", { featureName }));
             onChange(key, false);
         } else {
             onChange(key, value);
@@ -315,7 +315,7 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
                     desc={t("SETTINGS_ANKI_CLOZE_DESC")}
                     value={settings.convertAnkiClozesToClozes}
                     onChange={(v) =>
-                        handleLockedToggle("convertAnkiClozesToClozes", v, "Anki 挖空")
+                        handleLockedToggle("convertAnkiClozesToClozes", v, t("SETTINGS_ANKI_CLOZE"))
                     }
                 />
                 <ToggleRow
@@ -324,7 +324,9 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
                     }
                     desc={t("SETTINGS_CODE_CLOZE_DESC")}
                     value={settings.parseClozesInCodeBlocks}
-                    onChange={(v) => handleLockedToggle("parseClozesInCodeBlocks", v, "代码块挖空")}
+                    onChange={(v) =>
+                        handleLockedToggle("parseClozesInCodeBlocks", v, t("SETTINGS_CODE_CLOZE"))
+                    }
                 />
                 {settings.parseClozesInCodeBlocks && (
                     <div
@@ -456,7 +458,7 @@ const AlgoTab: React.FC<TabProps> = ({ settings, onChange }) => {
     return (
         <div className="sr-settings-sections">
             {/* 1. 定位算法部分 (保持不变) */}
-            <Section title={t("ALGO_LOCATOR_TITLE") || "Locator"}>
+            <Section title={t("ALGO_LOCATOR_TITLE")}>
                 <div style={{ padding: "12px 20px" }}>
                     <p
                         style={{
@@ -1243,22 +1245,16 @@ const UITab: React.FC<TabProps> = ({ settings, onChange }) => (
             />
         </Section>
 
-        <Section title={t("SETTINGS_SECTION_DEBUG") || "高级选项与调试"}>
+        <Section title={t("SETTINGS_SECTION_DEBUG")}>
             <ToggleRow
-                label={t("SETTINGS_RUNTIME_DEBUG_MESSAGES") || "Debug 调试输出"}
-                desc={
-                    t("SETTINGS_RUNTIME_DEBUG_MESSAGES_DESC") ||
-                    "在开发者控制台显示运行期调试日志，例如同步流程、牌组树刷新和复习会话状态变化。"
-                }
+                label={t("SETTINGS_RUNTIME_DEBUG_MESSAGES")}
+                desc={t("SETTINGS_RUNTIME_DEBUG_MESSAGES_DESC")}
                 value={settings.showRuntimeDebugMessages}
                 onChange={(v) => onChange("showRuntimeDebugMessages", v)}
             />
             <ToggleRow
-                label={t("SETTINGS_ENABLE_CARD_TRACE") || "对象级调试追踪 (开发者)"}
-                desc={
-                    t("SETTINGS_ENABLE_CARD_TRACE_DESC") ||
-                    "开启后，将在卡片对象本体内收集追踪生命数据流向。"
-                }
+                label={t("SETTINGS_ENABLE_CARD_TRACE")}
+                desc={t("SETTINGS_ENABLE_CARD_TRACE_DESC")}
                 value={settings.enableCardLevelTrace}
                 onChange={(v) => onChange("enableCardLevelTrace", v)}
             />

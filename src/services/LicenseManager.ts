@@ -1,4 +1,5 @@
 import { Notice, Platform, Plugin, requestUrl } from "obsidian";
+import { t } from "src/lang/helpers";
 import type { LicensePlan, LicenseState, SRSettings } from "src/settings";
 import { hasSupporterLicenseState } from "src/settings";
 import {
@@ -347,7 +348,7 @@ export class LicenseManager {
                 return true;
             }
 
-            new Notice(`🔒 「${featureName}」仅限 Supporter 使用`);
+            new Notice(t("NOTICE_SUPPORTER_ONLY_FEATURE", { featureName }));
             return false;
         } catch {
             return false;

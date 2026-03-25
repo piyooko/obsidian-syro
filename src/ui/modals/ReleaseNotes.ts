@@ -1,4 +1,5 @@
 import { App, Component, MarkdownRenderer, Modal, Notice, moment, request } from "obsidian";
+import { resolveSupportedLocale, t } from "src/lang/helpers";
 import { errorlog, isVersionNewerThanOther } from "src/util/utils_recall";
 import SRPlugin from "src/main";
 import README from "README.md";
@@ -6,7 +7,7 @@ import README_ZH from "docs/README_ZH.md";
 import RELEASE_CHANGELOG from "docs/docs/changelog.md";
 
 const local = moment.locale();
-const README_LOC = local === "zh-cn" || local === "zh-tw" ? README_ZH : README;
+const README_LOC = resolveSupportedLocale(local) === "zh-cn" ? README_ZH : README;
 const CHANGELOG_SECTIONS = RELEASE_CHANGELOG.match(/## \[(?:.|\r?\n)*?(?=\r?\n## \[|$)/gm) ?? [];
 
 let PLUGIN_VERSION: string;
@@ -129,7 +130,10 @@ export class ReleaseNotes extends Modal {
 
             if (latestVersion && isVersionNewerThanOther(latestVersion, PLUGIN_VERSION)) {
                 new Notice(
-                    `A newer version of Syro is available in BRAT Plugins.\n\nYou are using ${PLUGIN_VERSION}.\nThe latest is ${latestVersion}`,
+                    t("NOTICE_UPDATE_AVAILABLE", {
+                        currentVersion: PLUGIN_VERSION,
+                        latestVersion,
+                    }),
                 );
             }
         } catch (e) {

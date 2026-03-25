@@ -451,7 +451,7 @@ export class ReactNoteReviewView extends ItemView {
 
         fileMenu.addItem((menuItem) => {
             menuItem
-                .setTitle(t("OPEN_IN_NEW_WINDOW") || "Open in new window")
+                .setTitle(t("OPEN_IN_NEW_WINDOW"))
                 .setIcon("scan-line")
                 .onClick(() => {
                     this.runAsync(
@@ -468,7 +468,7 @@ export class ReactNoteReviewView extends ItemView {
         // Let's add Rename as it's standard.
         fileMenu.addItem((menuItem) => {
             menuItem
-                .setTitle(t("RENAME") || "Rename")
+                .setTitle(t("RENAME"))
                 .setIcon("pencil")
                 .onClick(() => {
                     const fileManager = this.app.fileManager as typeof this.app.fileManager & {
@@ -569,7 +569,7 @@ export class ReactNoteReviewView extends ItemView {
                 this.redraw();
             }, 100);
         } catch (error) {
-            console.error("Failed to add tag:", error);
+            console.error(t("SIDEBAR_TAG_ADD_FAILED"), error);
             new Notice(t("SIDEBAR_TAG_ADD_FAILED"));
         }
     }
@@ -594,7 +594,7 @@ export class ReactNoteReviewView extends ItemView {
                 new Notice(t("SIDEBAR_NOTE_DATA_NOT_FOUND"));
             }
         } catch (error) {
-            console.error("Failed to update priority:", error);
+            console.error(t("SIDEBAR_PRIORITY_CHANGE_FAILED"), error);
             new Notice(t("SIDEBAR_PRIORITY_CHANGE_FAILED"));
         }
     }

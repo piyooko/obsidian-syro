@@ -38,6 +38,7 @@ import { Notice } from "obsidian";
 import SRPlugin from "./main";
 import { FsrsData } from "./algorithms/fsrs";
 import { DeckStatsService } from "./dataStore/deckStatsService";
+import { t } from "src/lang/helpers";
 
 interface CardScheduleSnapshot {
     dueDate: number | null;
@@ -748,7 +749,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
     undoReview(): void {
         if (this.history.length === 0) {
-            new Notice("No review action to undo.");
+            new Notice(t("REVIEW_NO_UNDO"));
             return;
         }
 

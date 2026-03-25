@@ -84,6 +84,7 @@ interface LinearCardProps {
     breadcrumbs?: string[];
     filename?: string;
     autoAdvanceSeconds?: number;
+    showProgressBar?: boolean;
     onAnswer?: (rating: number) => void;
     onShowAnswer?: () => void;
     onUndo?: () => void;
@@ -120,6 +121,7 @@ export const LinearCard: FC<LinearCardProps> = ({
     breadcrumbs = [],
     filename = "Card.md",
     autoAdvanceSeconds = 10,
+    showProgressBar = true,
     onAnswer,
     onShowAnswer,
     onUndo,
@@ -292,6 +294,20 @@ export const LinearCard: FC<LinearCardProps> = ({
             setTimeExpired(false);
         }
     }, [isFlipped]);
+
+    useEffect(() => {
+        if (renderIsFlipped || autoAdvanceSeconds <= 0) {
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            setTimeExpired(true);
+            setIsFlipped(true);
+            onShowAnswer?.();
+        }, autoAdvanceSeconds * 1000);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [autoAdvanceSeconds, onShowAnswer, renderIsFlipped]);
 
     // 閲嶇疆鍗＄墖鐩稿叧鐨勫眬閮?UI 鐘舵€侊紝閬垮厤鍒囧崱鍚庢畫鐣欎笂涓€寮犲崱鐨勮彍鍗?鎻愮ず/鍒犻櫎鎬?
     useLayoutEffect(() => {
@@ -704,14 +720,9 @@ export const LinearCard: FC<LinearCardProps> = ({
                         {/* 璁℃椂鍣ㄨ繘搴︽潯 */}
                         <div className="sr-timer-bar-container">
                             <AnimatePresence initial={false}>
-                                {!renderIsFlipped && autoAdvanceSeconds > 0 && (
+                                {!renderIsFlipped && autoAdvanceSeconds > 0 && showProgressBar && (
                                     <TimerBar
                                         duration={autoAdvanceSeconds}
-                                        onComplete={() => {
-                                            setTimeExpired(true);
-                                            setIsFlipped(true);
-                                            onShowAnswer?.();
-                                        }}
                                         timeExpired={timeExpired}
                                     />
                                 )}
@@ -788,7 +799,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             onClick={toggleEditMode}
                                             className="sr-show-answer-btn sr-exit-edit-btn"
                                         >
-                                            <Save size={16} /> 瀹屾垚缂栬緫{" "}
+                                            <Save size={16} /> {t("UI_FINISH_EDITING")}{" "}
                                             <span className="sr-kbd">ESC</span>
                                         </button>
                                     </motion.div>
@@ -885,11 +896,9 @@ export const LinearCard: FC<LinearCardProps> = ({
 
 const TimerBar = ({
     duration,
-    onComplete,
     timeExpired,
 }: {
     duration: number;
-    onComplete: () => void;
     timeExpired: boolean;
 }) => (
     <motion.div
@@ -906,16 +915,6 @@ const TimerBar = ({
         transition={{
             width: { duration: duration, ease: "linear" },
             backgroundColor: { times: [0, 0.7, 1], duration: duration, ease: "linear" },
-        }}
-        onAnimationComplete={(definition) => {
-            if (
-                definition === "animate" ||
-                (typeof definition === "object" &&
-                    "width" in definition &&
-                    definition.width === "100%")
-            ) {
-                onComplete();
-            }
         }}
         className="sr-timer-bar"
     />
@@ -1778,10 +1777,10 @@ const BasicContent = ({
 }) => (
     <div className="sr-basic-content">
         <div>
-            <div className="sr-content-label">Question</div>
+            <div className="sr-content-label">{t("UI_QUESTION_LABEL")}</div>
             <div className="sr-content-text">
                 <MarkdownDisplay
-                    content={card.front || "Question Content"}
+                    content={card.front || t("UI_QUESTION_CONTENT")}
                     renderMarkdown={renderMarkdown}
                 />
             </div>
@@ -1796,10 +1795,10 @@ const BasicContent = ({
                 >
                     <>
                         <div className="sr-content-divider" />
-                        <div className="sr-content-label">Answer</div>
+                        <div className="sr-content-label">{t("UI_ANSWER_LABEL")}</div>
                         <div className="sr-content-text answer">
                             <MarkdownDisplay
-                                content={card.back || "Answer Content"}
+                                content={card.back || t("UI_ANSWER_CONTENT")}
                                 renderMarkdown={renderMarkdown}
                             />
                         </div>

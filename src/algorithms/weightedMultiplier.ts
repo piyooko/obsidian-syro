@@ -15,6 +15,7 @@
  * [算法层：负责计算下一次复习的时间、间隔和难度] [核心] 另一种加权乘数算法实现。
  */
 import { Setting, Notice } from "obsidian";
+import { t } from "src/lang/helpers";
 import { DateUtils } from "src/util/utils_recall";
 import { SrsAlgorithm, algorithmNames } from "./algorithms";
 import deepcopy from "deepcopy";
@@ -211,43 +212,24 @@ export class WeightedMultiplierAlgorithm extends SrsAlgorithm {
     ): void {
         const introEl = containerEl.createDiv();
         introEl.createEl("p").createEl("strong", {
-            text: "Weighted multiplier scheduler",
+            text: t("WMS_ALGORITHM"),
         });
         introEl.createEl("p", {
-            text: "Designed for incremental reading. It adjusts review intervals with priority weighting and interval inheritance.",
+            text: t("WMS_ALGORITHM_DESC"),
         });
         introEl.createEl("p").createEl("strong", {
-            text: "Key behaviors:",
+            text: t("WMS_CORE_FEATURES"),
         });
         const behaviorListEl = introEl.createEl("ul");
-
-        const separationEl = behaviorListEl.createEl("li");
-        separationEl.createEl("strong", {
-            text: "Logic separation:",
-        });
-        separationEl.appendText(
-            ' Hard and Again do not use the importance multiplier, so "Hard" always shortens the interval.',
-        );
-
-        const inheritanceEl = behaviorListEl.createEl("li");
-        inheritanceEl.createEl("strong", {
-            text: "Interval inheritance:",
-        });
-        inheritanceEl.appendText(
-            " Manual postpones update the current interval, and later calculations continue from the new interval.",
-        );
-
-        const mappingEl = behaviorListEl.createEl("li");
-        mappingEl.createEl("strong", {
-            text: "Importance mapping:",
-        });
-        mappingEl.appendText(
-            " 1 is the highest priority with the most frequent reviews, while 10 is the lowest priority.",
+        [t("WMS_FEATURE_LOGIC"), t("WMS_FEATURE_INHERITANCE"), t("WMS_FEATURE_MAPPING")].forEach(
+            (text) => {
+                behaviorListEl.createEl("li", { text });
+            },
         );
 
         new Setting(containerEl)
-            .setName("最小乘数 (重要性1)")
-            .setDesc("重要性为1（最重要）时对应的乘数因子")
+            .setName(t("WMS_IMP_MIN"))
+            .setDesc(t("WMS_IMP_MIN_DESC"))
             .addText((text) =>
                 text
                     .setPlaceholder("1.0")
@@ -255,7 +237,7 @@ export class WeightedMultiplierAlgorithm extends SrsAlgorithm {
                     .onChange((newValue) => {
                         const value = Number(newValue);
                         if (isNaN(value) || value < 0.1 || value > 5.0) {
-                            new Notice("请输入0.1到5.0之间的数值");
+                            new Notice(t("WMS_IMP_MIN_ERROR"));
                             return;
                         }
                         this.settings.impMin = value;
@@ -264,8 +246,8 @@ export class WeightedMultiplierAlgorithm extends SrsAlgorithm {
             );
 
         new Setting(containerEl)
-            .setName("最大乘数 (重要性10)")
-            .setDesc("重要性为10（最不重要）时对应的乘数因子")
+            .setName(t("WMS_IMP_MAX"))
+            .setDesc(t("WMS_IMP_MAX_DESC"))
             .addText((text) =>
                 text
                     .setPlaceholder("2.0")
@@ -273,11 +255,11 @@ export class WeightedMultiplierAlgorithm extends SrsAlgorithm {
                     .onChange((newValue) => {
                         const value = Number(newValue);
                         if (isNaN(value) || value < 0.1 || value > 10.0) {
-                            new Notice("请输入0.1到10.0之间的数值");
+                            new Notice(t("WMS_IMP_MAX_ERROR"));
                             return;
                         }
                         if (value < this.settings.impMin) {
-                            new Notice("最大乘数必须大于等于最小乘数");
+                            new Notice(t("WMS_IMP_ORDER_ERROR"));
                             return;
                         }
                         this.settings.impMax = value;
@@ -293,19 +275,17 @@ export class WeightedMultiplierAlgorithm extends SrsAlgorithm {
             background: "var(--background-secondary)",
             borderRadius: "4px",
         });
-        formulaEl.createEl("strong", {
-            text: "Formula summary:",
-        });
+        formulaEl.createEl("strong", { text: t("WMS_FORMULA_TITLE") });
         formulaEl.createEl("br");
-        formulaEl.appendText("Again: I_next = 1 day");
+        formulaEl.appendText(t("WMS_FORMULA_AGAIN"));
         formulaEl.createEl("br");
-        formulaEl.appendText("Hard: I_next = Round(I_current x 0.7)");
+        formulaEl.appendText(t("WMS_FORMULA_HARD"));
         formulaEl.createEl("br");
-        formulaEl.appendText("Good: I_next = Round(I_current x 1.3 x F_importance)");
+        formulaEl.appendText(t("WMS_FORMULA_GOOD"));
         formulaEl.createEl("br");
-        formulaEl.appendText("Easy: I_next = Round(I_current x 2.0 x F_importance)");
+        formulaEl.appendText(t("WMS_FORMULA_EASY"));
         formulaEl.createEl("br");
         formulaEl.createEl("br");
-        formulaEl.appendText("F_importance = impMin + (priority - 1) x (impMax - impMin) / 9");
+        formulaEl.appendText(`${t("WMS_FORMULA_MATH_PREFIX")} impMin + (priority - 1) x (impMax - impMin) / 9`);
     }
 }

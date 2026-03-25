@@ -1,3 +1,0 @@
-// Urdu
-
-export default {};

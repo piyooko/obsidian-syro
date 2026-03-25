@@ -55,7 +55,7 @@ export interface LicenseState {
 
 export const DEFAULT_DECK_OPTIONS_PRESET: DeckOptionsPreset = {
     name: "\u9ed8\u8ba4\u65b9\u6848",
-    autoAdvance: false,
+    autoAdvance: true,
     autoAdvanceSeconds: 10,
     showProgressBar: true,
     maxNewCards: 20, // Default daily new card limit

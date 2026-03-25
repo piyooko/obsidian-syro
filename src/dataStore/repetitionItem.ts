@@ -23,6 +23,7 @@ import { Notice } from "obsidian";
 import { AnkiData } from "src/algorithms/anki";
 import { balance } from "src/algorithms/balance/balance";
 import { FsrsData } from "src/algorithms/fsrs";
+import { t } from "src/lang/helpers";
 import { DateUtils } from "src/util/utils_recall";
 import { isRecord } from "src/util/typeGuards";
 
@@ -210,14 +211,12 @@ export class RepetitionItem {
         }
         if (this.nextReview - Date.now() < 100) {
             new Notice(
-                "Error: reviewUpdate: " +
-                    this.nextReview +
-                    "\t last:" +
-                    old_nr +
-                    "\t itvl:" +
-                    result.nextReview +
-                    "\t new itvl:" +
-                    newitvl,
+                t("NOTICE_REVIEW_UPDATE_ERROR", {
+                    nextReview: this.nextReview,
+                    lastReview: old_nr,
+                    reviewInterval: result.nextReview,
+                    balancedInterval: newitvl,
+                }),
             );
         }
         // const dt = new Date(this.nextReview).toISOString();

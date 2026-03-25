@@ -1,4 +1,5 @@
 import { App, ButtonComponent, Modal, Setting, TextComponent } from "obsidian";
+import { t } from "src/lang/helpers";
 
 /**
  * GetInputModal 类
@@ -63,7 +64,7 @@ export class GetInputModal extends Modal {
 
         // --- Do it 按钮 ---
         new ButtonComponent(buttonDiv)
-            .setButtonText("Do it")
+            .setButtonText(t("CONFIRM"))
             .onClick(() => {
                 if (this.days > 0) {
                     this.submitCallback(this.days); // 提交
@@ -73,7 +74,7 @@ export class GetInputModal extends Modal {
             .setCta(); // 高亮样式
 
         // --- Cancel 按钮 ---
-        new ButtonComponent(buttonDiv).setButtonText("Cancel").onClick(() => {
+        new ButtonComponent(buttonDiv).setButtonText(t("CANCEL")).onClick(() => {
             this.close();
         });
     }

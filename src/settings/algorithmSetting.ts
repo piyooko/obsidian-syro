@@ -40,7 +40,14 @@ export const DEFAULT_responseOptionBtnsText: Record<string, string[]> = {
     Default: [t("RESET"), t("HARD"), t("GOOD"), t("EASY")],
     Fsrs: [t("RESET"), t("HARD"), t("GOOD"), t("EASY")],
     Anki: [t("RESET"), t("HARD"), t("GOOD"), t("EASY")],
-    SM2: ["Blackout", "Incorrect", "Incorrect (Easy)", t("HARD"), t("GOOD"), t("EASY")],
+    SM2: [
+        t("SM2_BLACKOUT"),
+        t("SM2_INCORRECT"),
+        t("SM2_INCORRECT_EASY"),
+        t("HARD"),
+        t("GOOD"),
+        t("EASY"),
+    ],
     WeightedMultiplier: [t("RESET"), t("HARD"), t("GOOD"), t("EASY")],
 };
 

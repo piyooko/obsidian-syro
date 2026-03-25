@@ -965,7 +965,8 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
                     </svg>
                 </div>
                 <span className="sr-timeline-header-title">
-                    Timeline{selectedItem ? `: ${selectedItem.title}` : ""}
+                    {t("TIMELINE_TITLE")}
+                    {selectedItem ? `: ${selectedItem.title}` : ""}
                 </span>
             </div>
 
@@ -1006,7 +1007,7 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
                                     >
                                         <polyline points="20 6 9 17 4 12" />
                                     </svg>
-                                    <span>Commit (Ctrl+Enter)</span>
+                                    <span>{t("TIMELINE_COMMIT_BUTTON")}</span>
                                 </button>
                             </div>
 
@@ -1338,7 +1339,7 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
 
                 <div className="sr-new-item-meta-row">
                     <span className="sr-new-item-tag" title={displayTag || ""}>
-                        {displayTag || <span style={{ opacity: 0.3 }}>No tag</span>}
+                        {displayTag || <span style={{ opacity: 0.3 }}>{t("SIDEBAR_NO_TAG")}</span>}
                     </span>
                 </div>
             </div>
@@ -1661,7 +1662,9 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
             <div className="sr-note-sidebar__content">
                 {filteredSections.length === 0 ? (
                     <div className="sr-note-sidebar__empty">
-                        {selectedTags.size > 0 ? <span>No notes with selected tags</span> : null}
+                        {selectedTags.size > 0 ? (
+                            <span>{t("SIDEBAR_NO_NOTES_WITH_SELECTED_TAGS")}</span>
+                        ) : null}
                     </div>
                 ) : (
                     <div className="sr-sections-container">

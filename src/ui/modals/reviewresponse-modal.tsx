@@ -478,7 +478,7 @@ export class reviewResponseModal {
         const btn = containerEl.createEl("button");
         btn.addClasses(["sr-button"]);
         setIcon(btn, "clock");
-        btn.setAttribute("aria-label", "Toggle interval display");
+        btn.setAttribute("aria-label", t("INTERVAL_SHOWHIDE"));
         btn.addEventListener("click", () => {
             this.toggleShowInterval();
             this.showAnswer(); // 闂佸憡甯￠弨閬嶅蓟婵犲洤绠板鑸靛姈鐏忥箓鏌￠崒姘婵犫偓?
@@ -492,11 +492,11 @@ export class reviewResponseModal {
         this.infoButton = containerEl.createEl("button");
         this.infoButton.addClasses(["sr-button"]);
         setIcon(this.infoButton, "info");
-        this.infoButton.setAttribute("aria-label", "Show card info");
+        this.infoButton.setAttribute("aria-label", t("UI_CARD_INFO"));
         this.infoButton.addEventListener("click", () => {
             // 闂佸搫瀚晶浠嬪Φ濮樼偨浜归柟鎯у暱椤ゅ懎顪冮妶鍛础婵炲弶澹嗛幏鐘绘晜閽樺澹?
             if (this.item) {
-                new Notice(`Times reviewed: ${this.item.timesReviewed}`);
+                new Notice(t("REVIEW_TIMES_REVIEWED", { count: this.item.timesReviewed }));
             }
         });
     }
@@ -508,7 +508,7 @@ export class reviewResponseModal {
         this.skipButton = containerEl.createEl("button");
         this.skipButton.addClasses(["sr-button"]);
         setIcon(this.skipButton, "skip-forward");
-        this.skipButton.setAttribute("aria-label", "Skip");
+        this.skipButton.setAttribute("aria-label", t("SKIP"));
         this.skipButton.addEventListener("click", () => {
             this.hide();
         });

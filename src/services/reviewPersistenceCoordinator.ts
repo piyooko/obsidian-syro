@@ -1,5 +1,6 @@
 import { Notice } from "obsidian";
 import { Question } from "src/Question";
+import { t } from "src/lang/helpers";
 import { SRSettings } from "src/settings";
 
 const NOTE_WRITE_RETRY_DELAYS_MS = [200, 1000, 3000];
@@ -161,7 +162,7 @@ export class ReviewPersistenceCoordinator {
                 this.debug("[SR-Persist] note write flush failed", notePath, error);
                 if (!this.noteFailureNotified) {
                     this.noteFailureNotified = true;
-                    new Notice("Syro: review note changes are pending save and will retry.");
+                    new Notice(t("DATA_NOTE_SAVE_PENDING"));
                 }
 
                 const attempt = currentBucket?.attempts ?? bucket.attempts;

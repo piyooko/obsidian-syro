@@ -371,6 +371,47 @@ describe("LinearCard math cloze rendering", () => {
         document.body.innerHTML = "";
     });
 
+    test("keeps auto-flip working when the progress bar is hidden", async () => {
+        jest.useFakeTimers();
+
+        const container = document.createElement("div");
+        document.body.appendChild(container);
+        const root = createRoot(container);
+        const onShowAnswer = jest.fn();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    autoAdvanceSeconds: 1,
+                    showProgressBar: false,
+                    card: {
+                        front: "Question",
+                        back: "Answer",
+                    },
+                    onShowAnswer,
+                    type: "basic",
+                }),
+            );
+        });
+
+        try {
+            expect(container.querySelector(".sr-timer-bar")).toBeNull();
+            expect(container.querySelector(".sr-show-answer-btn")).not.toBeNull();
+
+            await act(async () => {
+                jest.advanceTimersByTime(1000);
+                await Promise.resolve();
+            });
+
+            expect(onShowAnswer).toHaveBeenCalledTimes(1);
+            expect(container.querySelector(".sr-show-answer-btn")).toBeNull();
+            expect(container.querySelector(".sr-rating-buttons")).not.toBeNull();
+        } finally {
+            act(() => root.unmount());
+            jest.useRealTimers();
+        }
+    });
+
     test("does not expose intermediate LaTeX source while face renders are pending", async () => {
         const { pending, renderMarkdown } = createDeferredRenderMarkdown();
         const { container, root } = mountLinearCard(renderMarkdown);

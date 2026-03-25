@@ -84,7 +84,7 @@ export class PriorityInputModal extends Modal {
         });
         submitButton.addEventListener("click", () => {
             if (this.priority < 1 || this.priority > 10) {
-                new Notice("重要性必须在1-10之间");
+                new Notice(t("PRIORITY_RANGE_ERROR"));
                 return;
             }
             this.onSubmit(this.priority);

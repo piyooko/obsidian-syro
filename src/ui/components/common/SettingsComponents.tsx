@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import React from "react";
+import { t } from "src/lang/helpers";
 
 // ==========================================
 // Base Component (Standard Obsidian Setting Item)
@@ -262,7 +263,7 @@ export const LinkRow: React.FC<LinkRowProps> = ({ label, onClick }) => (
         </div>
         <div className="setting-item-control">
             <button onClick={onClick} style={{ cursor: "pointer" }}>
-                Open
+                {t("OPEN")}
             </button>
         </div>
     </div>

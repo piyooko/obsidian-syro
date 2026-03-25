@@ -1,3 +1,0 @@
-// Thai
-
-export default {};

@@ -1,4 +1,5 @@
 import { Modal, ButtonComponent, Component, MarkdownRenderer } from "obsidian";
+import { t } from "src/lang/helpers";
 import SRPlugin from "src/main";
 
 // 确认回调函数类型定义
@@ -52,7 +53,7 @@ export default class ConfirmModal {
 
         // --- Confirm 按钮 ---
         new ButtonComponent(buttonDiv)
-            .setButtonText("Confirm")
+            .setButtonText(t("CONFIRM"))
             .onClick(() => {
                 this.callback(true); // 回调 true
                 this.close();
@@ -60,7 +61,7 @@ export default class ConfirmModal {
             .setCta(); // 设置为 Call To Action 样式 (通常是高亮色)
 
         // --- Cancel 按钮 ---
-        new ButtonComponent(buttonDiv).setButtonText("Cancel").onClick(() => {
+        new ButtonComponent(buttonDiv).setButtonText(t("CANCEL")).onClick(() => {
             this.callback(false); // 回调 false
             this.close();
         });
