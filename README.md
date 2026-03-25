@@ -6,6 +6,21 @@
 
 <img width="2494" height="1036" alt="image" src="https://github.com/user-attachments/assets/08e782b0-3bad-4cbc-ab57-2f80e08af323" />
 
+## Core Features
+
+-   **Context-Aware Flashcards (No More "Island Effect")**
+    Create flashcards directly inline using native Markdown (like `==highlights==` or `::`). When reviewing, if you forget a card, one click teleports you back to the exact paragraph in your original note. You memorize in the full context, not in isolated fragments. 
+
+-   **Incremental Reading Queue**
+    Toss dozens of heavy books, long web clips, or dense articles into the right-sidebar queue. Filter them by tags, and let the FSRS algorithm decide what you should read today. It breaks massive reading backlogs into stress-free daily micro-tasks.
+
+-   **Timeline (Like "Git Commits" for Reading)**
+    Read halfway and got tired? Just close it. Syro automatically saves your exact scroll percentage. Days later, when the article pops up again, click the Timeline to jump right back to where you left off. You can even leave a "commit message" to remind your future self of your thoughts.
+
+-   **Modern UI & Advanced FSRS Algorithm**
+    Built with a clean, modern interface that looks native to Obsidian (with Style Settings support coming). Under the hood, it’s powered by the cutting-edge **FSRS** algorithm to ensure you achieve maximum retention with minimum review time.
+
+
 ## When Your Knowledge Vault Becomes a Collection Graveyard
 
 Many of us face a common dilemma: we meticulously collect a vast library of web pages, articles, and notes in Obsidian, only for these valuable resources to sink into oblivion after being saved. Traditional note-taking methods like passive re-reading and highlighting are often ineffective for long-term retention, trapping our knowledge bases in a "write-and-forget" cycle.
@@ -14,50 +29,25 @@ Syro aims to provide a solution. It is not designed to replace your existing not
 
 ## Who Is This For?
 
-Syro's core mechanics—Spaced Repetition and Incremental Reading—are especially suited for the following types of Obsidian users:
+- *Digital Hoarders*: Turn your read-it-later graveyard into a daily digestible feed.
+  
+- *Students & Professionals*: Memorize complex terms in their original context, not in isolated Anki decks.
+  
+- *Zettelkasten Users*: Resurface fleeting notes naturally over time to build deeper connections.
 
--   **Digital Hoarders Battling the "Collector's Fallacy"**
-    For those who have clipped a massive amount of content but lack the capacity to read it all, Syro's Incremental Reading feature breaks down overwhelming backlogs into daily, digestible micro-tasks. The algorithm periodically brings this content to the surface, helping you transform a static "digital filing cabinet" into a dynamic stream of absorbed knowledge.
 
--   **Practitioners of Zettelkasten and Evergreen Notes**
-    Syro allows knowledge to grow and mature over time. The algorithm periodically resurfaces your fleeting ideas and half-formed draft notes, encouraging you to refine, elaborate, and form new connections over multiple encounters. This facilitates a process of "incremental thinking" and "incremental writing."
-
--   **Creative Workers Seeking Interdisciplinary Sparks**
-    By facilitating interleaved learning across different topics and notes, Syro can help generate unexpected semantic connections. This "neuro-creativity" fosters an environment ripe for breakthroughs and deep insights when tackling complex problems.
-
--   **Professionals and Students Tackling Complex Knowledge**
-    When facing dense subjects, Syro allows you to turn essential terminology, formulas, and core definitions into flashcards. Train these concepts to the point of automatic recall, freeing up valuable cognitive resources for higher-order reasoning and conceptual integration.
-
--   **Implementers Who Need "Programmable Attention"**
-    The system takes over the tedious task of review scheduling, eliminating the "what should I study today?" decision fatigue. It acts like a "cron job for your brain," generating a scientifically-backed set of micro-tasks each day, allowing you to efficiently combat forgetting simply by following its lead.
-
-## 🌟 Core Features
-
--   **Contextual Flashcards**
-    Create flashcards directly within your notes using natural Markdown syntax (e.g., `==highlighting==` or `::`). If you forget an answer during review, you can instantly jump back to the original source. This **helps you** memorize in full context, rather than relying on isolated rote learning.
-
--   **Incremental Reading**
-    Add long-form articles or notes to a review queue. The algorithm intelligently breaks them down for future reading sessions. A Timeline feature tracks your reading position, enabling **effortless, pressure-free, long-term learning**.
-
--   **Advanced Scheduling Algorithm**
-    Powered by the cutting-edge **FSRS** (Free Spaced Repetition Scheduler) algorithm. Compared to traditional algorithms, it more accurately predicts your forgetting curve, **aiming to** achieve higher retention with fewer reviews.
-
--   **Local-First and Secure**
-    Built on the Obsidian philosophy. All review data is stored securely in plain-text JSON files within your local vault. Your knowledge remains yours, and yours alone.
-
-## 📖 Explore the Documentation
+##  Explore the Documentation
 
 To dive deeper into Syro's potential, start with the documentation hub below. The English and Chinese documentation trees now mirror each other.
 
--   🏠 **[Syro Documentation Hub](./docs/docs/en/index.md)**
--   📦 **[Core Concepts](./docs/docs/en/getting-started/introduction.md)**
--   🚀 **[5-Minute Quick Start](./docs/docs/en/getting-started/quick-start.md)**
--   🧠 **[Flashcards Overview](./docs/docs/en/flashcards/index.md)**
--   📚 **[Note Review Overview](./docs/docs/en/note-review/index.md)**
--   ⚙️ **[Advanced & FAQ](./docs/docs/en/advanced-and-faq/data-and-sync.md)**
--   🇨🇳 **[Chinese Documentation Hub](./docs/docs/zh/index.md)**
+-    **[Syro Documentation Hub](./docs/docs/en/index.md)**
+-    **[Core Concepts](./docs/docs/en/getting-started/introduction.md)**
+-    **[5-Minute Quick Start](./docs/docs/en/getting-started/quick-start.md)**
+-    **[Flashcards Overview](./docs/docs/en/flashcards/index.md)**
+-    **[Note Review Overview](./docs/docs/en/note-review/index.md)**
+-    **[Advanced & FAQ](./docs/docs/en/advanced-and-faq/data-and-sync.md)**
 
-## ⬇️ Installation Guide
+##  Installation Guide
 
 ### Via BRAT
 
