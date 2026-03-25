@@ -19,8 +19,10 @@ import en from "./locale/en";
 import zhCN from "./locale/zh-cn";
 
 export type SupportedLocale = "en" | "zh-cn";
+export type TranslationKey = keyof typeof en;
+type TranslationDictionary = typeof en;
 
-export const localeMap: Record<SupportedLocale, typeof en> = {
+export const localeMap: Record<SupportedLocale, TranslationDictionary> = {
     en,
     "zh-cn": zhCN,
 };
@@ -59,9 +61,13 @@ function interpolate(str: string, params: Record<string, unknown>): string {
     });
 }
 
-export function t(str: keyof typeof en | string, params?: Record<string, unknown>): string {
-    const locale = localeMap[resolveSupportedLocale(moment.locale())] as Record<string, string>;
-    const result = locale[str] || en[str as keyof typeof en] || str;
+function isTranslationKey(value: string): value is TranslationKey {
+    return Object.prototype.hasOwnProperty.call(en, value) === true;
+}
+
+export function t(str: string, params?: Record<string, unknown>): string {
+    const locale = localeMap[resolveSupportedLocale(moment.locale())];
+    const result = isTranslationKey(str) ? locale[str] ?? en[str] : str;
 
     if (params) {
         return interpolate(result, params);

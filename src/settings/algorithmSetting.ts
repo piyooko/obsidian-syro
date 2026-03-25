@@ -23,7 +23,7 @@ import { Setting } from "obsidian";
 import { algorithmNames } from "src/algorithms/algorithms";
 import { algorithmSwitchData, algorithms } from "src/algorithms/algorithms_switch";
 import ConfirmModal from "src/ui/modals/confirm";
-import { t } from "src/lang/helpers";
+import { t, type TranslationKey } from "src/lang/helpers";
 import SRPlugin from "src/main";
 import { applySettingsUpdate } from "src/ui/settings/applySettingsUpdate";
 
@@ -32,9 +32,40 @@ type PluginController = {
     enablePlugin(id: string): Promise<void>;
 };
 
-type TranslationKey = Parameters<typeof t>[0];
-
 // Legacy migration note retained from the pre-Syro codebase.
+
+const RESPONSE_TEXT_KEYS = {
+    AGAIN: "AGAIN",
+    RESET: "RESET",
+    HARD: "HARD",
+    GOOD: "GOOD",
+    EASY: "EASY",
+    BLACKOUT: "SM2_BLACKOUT",
+    INCORRECT: "SM2_INCORRECT",
+    "INCORRECT (EASY)": "SM2_INCORRECT_EASY",
+} as const satisfies Record<string, TranslationKey>;
+
+const RESPONSE_LABEL_KEYS = {
+    AGAIN: "FLASHCARD_AGAIN_LABEL",
+    RESET: "FLASHCARD_AGAIN_LABEL",
+    HARD: "FLASHCARD_HARD_LABEL",
+    GOOD: "FLASHCARD_GOOD_LABEL",
+    EASY: "FLASHCARD_EASY_LABEL",
+    BLACKOUT: "FLASHCARD_BLACKOUT_LABEL",
+    INCORRECT: "FLASHCARD_INCORRECT_LABEL",
+    "INCORRECT (EASY)": "FLASHCARD_INCORRECT (EASY)_LABEL",
+} as const satisfies Record<string, TranslationKey>;
+
+const RESPONSE_DESC_KEYS = {
+    AGAIN: "FLASHCARD_AGAIN_DESC",
+    RESET: "FLASHCARD_AGAIN_DESC",
+    HARD: "FLASHCARD_HARD_DESC",
+    GOOD: "FLASHCARD_GOOD_DESC",
+    EASY: "FLASHCARD_EASY_DESC",
+    BLACKOUT: "FLASHCARD_BLACKOUT_DESC",
+    INCORRECT: "FLASHCARD_INCORRECT_DESC",
+    "INCORRECT (EASY)": "FLASHCARD_INCORRECT (EASY)_DESC",
+} as const satisfies Record<string, TranslationKey>;
 
 export const DEFAULT_responseOptionBtnsText: Record<string, string[]> = {
     Default: [t("RESET"), t("HARD"), t("GOOD"), t("EASY")],
@@ -67,12 +98,31 @@ async function reloadPlugin(plugin: SRPlugin): Promise<void> {
     await pluginController.enablePlugin(plugin.manifest.id);
 }
 
+function getResponseOptionTranslationKey(
+    opt: string,
+    keyMap: Record<string, TranslationKey>,
+    label: string,
+): TranslationKey {
+    const normalizedOption = opt.toUpperCase();
+    const translationKey = keyMap[normalizedOption];
+
+    if (!translationKey) {
+        throw new Error(`[algorithmSetting] Missing ${label} translation key for "${opt}".`);
+    }
+
+    return translationKey;
+}
+
+function getResponseTextKey(opt: string): TranslationKey {
+    return getResponseOptionTranslationKey(opt, RESPONSE_TEXT_KEYS, "response text");
+}
+
 function getResponseLabelKey(opt: string): TranslationKey {
-    return `FLASHCARD_${opt.toUpperCase()}_LABEL` as TranslationKey;
+    return getResponseOptionTranslationKey(opt, RESPONSE_LABEL_KEYS, "response label");
 }
 
 function getResponseDescKey(opt: string): TranslationKey {
-    return `FLASHCARD_${opt.toUpperCase()}_DESC` as TranslationKey;
+    return getResponseOptionTranslationKey(opt, RESPONSE_DESC_KEYS, "response description");
 }
 
 /**
@@ -213,9 +263,7 @@ export function addCardResponseButtonTextSetting(containerEl: HTMLElement, plugi
 
     if (btnText[algo] == null) {
         btnText[algo] = [];
-        options.forEach(
-            (opt, ind) => (btnText[algo][ind] = t(opt.toUpperCase() as TranslationKey)),
-        );
+        options.forEach((opt, ind) => (btnText[algo][ind] = t(getResponseTextKey(opt))));
     }
 
     options.forEach((opt, ind) => {
@@ -256,9 +304,7 @@ export function addNoteResponseButtonTextSetting(containerEl: HTMLElement, plugi
 
     if (btnText[algo] == null) {
         btnText[algo] = [];
-        options.forEach(
-            (opt, ind) => (btnText[algo][ind] = t(opt.toUpperCase() as TranslationKey)),
-        );
+        options.forEach((opt, ind) => (btnText[algo][ind] = t(getResponseTextKey(opt))));
     }
 
     options.forEach((opt, ind) => {
