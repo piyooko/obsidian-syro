@@ -256,7 +256,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
 
     // Submit a review response for the current card.
     const handleAnswer = useCallback(
-        async (rating: number) => {
+        (rating: number) => {
             logRuntimeDebug(`[SR-DynSync] ReviewSession: handleAnswer rating=${rating}`);
             const responseMap = [
                 ReviewResponse.Reset,
@@ -267,7 +267,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
 
             try {
                 logRuntimeDebug("[SR-DynSync] ReviewSession: calling sequencer.processReview");
-                await sequencer.processReview(responseMap[rating] ?? ReviewResponse.Good);
+                sequencer.processReview(responseMap[rating] ?? ReviewResponse.Good);
                 logRuntimeDebug("[SR-DynSync] ReviewSession: sequencer.processReview completed");
             } catch (e) {
                 console.error("[SR] processReview 鐎殿喖鍊搁悥?", e);
@@ -285,12 +285,12 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         [sequencer, forceUpdate, handleExitReview, logRuntimeDebug],
     );
 
-    const handleUndo = useCallback(async () => {
+    const handleUndo = useCallback(() => {
         if (!sequencer.canUndo) {
             new Notice(t("REVIEW_NO_UNDO"));
             return;
         }
-        await sequencer.undoReview();
+        sequencer.undoReview();
         setReviewUiResetToken((value) => value + 1);
         forceUpdate();
     }, [sequencer, forceUpdate]);

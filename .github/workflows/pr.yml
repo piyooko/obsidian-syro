@@ -30,8 +30,8 @@ jobs:
                   cache: "pnpm"
             - run: pnpm i
 
-            # - name: Eslint
-            #   run: pnpm run lint
+            - name: Run Obsidian review lint
+              run: pnpm run lint:obsidian
 
             - name: Run test
               run: pnpm run test
@@ -77,6 +77,9 @@ jobs:
 
             - name: Lint
               run: pnpm lint
+
+            - name: Obsidian review lint
+              run: pnpm lint:obsidian
 
             - name: Test
               run: pnpm test

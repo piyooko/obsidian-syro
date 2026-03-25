@@ -13,8 +13,9 @@ jest.mock("obsidian", () => ({
     },
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    true;
+(
+    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 function createSettings(overrides: Partial<UISettingsState> = {}): UISettingsState {
     return {
@@ -90,7 +91,9 @@ function createSettings(overrides: Partial<UISettingsState> = {}): UISettingsSta
 function findSettingItemByName(container: HTMLElement, names: string[]): HTMLElement | null {
     return (
         Array.from(container.querySelectorAll<HTMLElement>(".setting-item")).find((item) =>
-            names.some((name) => item.querySelector(".setting-item-name")?.textContent?.includes(name)),
+            names.some((name) =>
+                item.querySelector(".setting-item-name")?.textContent?.includes(name),
+            ),
         ) ?? null
     );
 }
@@ -129,8 +132,12 @@ describe("EmbeddedSettingsPanel", () => {
         const view = renderPanel(createSettings({ parseClozesInCodeBlocks: false }));
 
         try {
-            expect(findSettingItemByName(view.container, ["Code block cloze", "代码块填空"])).not.toBeNull();
-            expect(findSettingItemByName(view.container, ["Code context lines", "代码上下文行数"])).toBeNull();
+            expect(
+                findSettingItemByName(view.container, ["Code block cloze", "代码块填空"]),
+            ).not.toBeNull();
+            expect(
+                findSettingItemByName(view.container, ["Code context lines", "代码上下文行数"]),
+            ).toBeNull();
         } finally {
             view.cleanup();
         }
@@ -140,7 +147,10 @@ describe("EmbeddedSettingsPanel", () => {
         const view = renderPanel(createSettings({ parseClozesInCodeBlocks: true }));
 
         try {
-            const codeBlockItem = findSettingItemByName(view.container, ["Code block cloze", "代码块填空"]);
+            const codeBlockItem = findSettingItemByName(view.container, [
+                "Code block cloze",
+                "代码块填空",
+            ]);
             const codeContextItem = findSettingItemByName(view.container, [
                 "Code context lines",
                 "代码上下文行数",

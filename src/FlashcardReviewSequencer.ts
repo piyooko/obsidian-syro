@@ -97,9 +97,9 @@ export interface IFlashcardReviewSequencer {
     getDeckStats(topicPath: TopicPath): DeckStats;
     skipCurrentCard(): void;
     determineCardSchedule(response: ReviewResponse, card: Card): CardScheduleInfo;
-    processReview(response: ReviewResponse): Promise<void>;
+    processReview(response: ReviewResponse): void;
     updateCurrentQuestionText(text: string): Promise<void>;
-    undoReview(): Promise<void>;
+    undoReview(): void;
     untrackCurrentCard(): Promise<void>;
 }
 
@@ -338,7 +338,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
     // ============================================================
     // 鏍稿績閫昏緫锛氬鐞嗗涔?
     // ============================================================
-    async processReview(response: ReviewResponse): Promise<void> {
+    processReview(response: ReviewResponse): void {
         this.logRuntimeDebug(
             `[SR-DynSync] sequencer.processReview: 鍝嶅簲=${ReviewResponse[response]}`,
         );
@@ -401,17 +401,14 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         }
 
         if (this.reviewMode === FlashcardReviewMode.Review) {
-            await this.processReview_ReviewMode(response, item);
+            this.processReview_ReviewMode(response, item);
         } else {
             this.processReview_CramMode(response);
         }
         this.logRuntimeDebug("[SR-DynSync] sequencer.processReview: completed");
     }
 
-    async processReview_ReviewMode(
-        response: ReviewResponse,
-        item: RepetitionItem | null,
-    ): Promise<void> {
+    processReview_ReviewMode(response: ReviewResponse, item: RepetitionItem | null): void {
         const card = this.currentCard;
         const currentStep = item?.learningStep ?? 0;
 
@@ -749,7 +746,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         await this.currentQuestion.writeQuestion(this.settings);
     }
 
-    async undoReview(): Promise<void> {
+    undoReview(): void {
         if (this.history.length === 0) {
             new Notice("No review action to undo.");
             return;
