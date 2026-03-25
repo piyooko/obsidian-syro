@@ -10,7 +10,6 @@ interface BaseComponentProps {
     tooltip?: string;
     children: React.ReactNode;
     className?: string;
-    subSettings?: React.ReactNode;
 }
 
 export const BaseComponent: React.FC<BaseComponentProps> = ({
@@ -19,17 +18,13 @@ export const BaseComponent: React.FC<BaseComponentProps> = ({
     tooltip,
     children,
     className = "",
-    subSettings,
 }) => (
-    <div className={`setting-item ${className} ${subSettings ? "has-sub-settings" : ""}`.trim()}>
-        <div className="sr-setting-item-main">
-            <div className="setting-item-info" title={tooltip}>
-                <div className="setting-item-name">{label}</div>
-                {desc && <div className="setting-item-description">{desc}</div>}
-            </div>
-            <div className="setting-item-control">{children}</div>
+    <div className={`setting-item ${className}`}>
+        <div className="setting-item-info" title={tooltip}>
+            <div className="setting-item-name">{label}</div>
+            {desc && <div className="setting-item-description">{desc}</div>}
         </div>
-        {subSettings && <div className="sr-setting-subsettings">{subSettings}</div>}
+        <div className="setting-item-control">{children}</div>
     </div>
 );
 
@@ -58,24 +53,10 @@ interface ToggleRowProps {
     tooltip?: string;
     value: boolean;
     onChange: (v: boolean) => void;
-    subSettings?: React.ReactNode;
 }
 
-export const ToggleRow: React.FC<ToggleRowProps> = ({
-    label,
-    desc,
-    tooltip,
-    value,
-    onChange,
-    subSettings,
-}) => (
-    <BaseComponent
-        label={label}
-        desc={desc}
-        tooltip={tooltip}
-        className="mod-toggle"
-        subSettings={subSettings}
-    >
+export const ToggleRow: React.FC<ToggleRowProps> = ({ label, desc, tooltip, value, onChange }) => (
+    <BaseComponent label={label} desc={desc} tooltip={tooltip} className="mod-toggle">
         <div
             className={`checkbox-container ${value ? "is-enabled" : ""}`}
             onClick={() => onChange(!value)}
@@ -97,7 +78,6 @@ interface InputRowProps {
     onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
     onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
     type?: string;
-    subSettings?: React.ReactNode;
 }
 
 export const InputRow: React.FC<InputRowProps> = ({
@@ -109,9 +89,8 @@ export const InputRow: React.FC<InputRowProps> = ({
     onFocus,
     onBlur,
     type = "text",
-    subSettings,
 }) => (
-    <BaseComponent label={label} desc={desc} tooltip={tooltip} subSettings={subSettings}>
+    <BaseComponent label={label} desc={desc} tooltip={tooltip}>
         <input
             type={type}
             value={value}
@@ -132,7 +111,6 @@ interface TextAreaRowProps {
     value: string;
     onChange: (v: string) => void;
     rows?: number;
-    subSettings?: React.ReactNode;
 }
 
 export const TextAreaRow: React.FC<TextAreaRowProps> = ({
@@ -142,9 +120,8 @@ export const TextAreaRow: React.FC<TextAreaRowProps> = ({
     value,
     onChange,
     rows = 3,
-    subSettings,
 }) => (
-    <BaseComponent label={label} desc={desc} tooltip={tooltip} subSettings={subSettings}>
+    <BaseComponent label={label} desc={desc} tooltip={tooltip}>
         <textarea
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -170,7 +147,6 @@ interface SelectRowProps {
     options: SelectOption[];
     onChange: (v: string) => void;
     disabled?: boolean;
-    subSettings?: React.ReactNode;
 }
 
 export const SelectRow: React.FC<SelectRowProps> = ({
@@ -181,9 +157,8 @@ export const SelectRow: React.FC<SelectRowProps> = ({
     options,
     onChange,
     disabled,
-    subSettings,
 }) => (
-    <BaseComponent label={label} desc={desc} tooltip={tooltip} subSettings={subSettings}>
+    <BaseComponent label={label} desc={desc} tooltip={tooltip}>
         <select
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -208,7 +183,6 @@ interface ColorPickerRowProps {
     tooltip?: string;
     value: string;
     onChange: (v: string) => void;
-    subSettings?: React.ReactNode;
 }
 
 export const ColorPickerRow: React.FC<ColorPickerRowProps> = ({
@@ -217,9 +191,8 @@ export const ColorPickerRow: React.FC<ColorPickerRowProps> = ({
     tooltip,
     value,
     onChange,
-    subSettings,
 }) => (
-    <BaseComponent label={label} desc={desc} tooltip={tooltip} subSettings={subSettings}>
+    <BaseComponent label={label} desc={desc} tooltip={tooltip}>
         <input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
     </BaseComponent>
 );
@@ -236,7 +209,6 @@ interface SliderRowProps {
     max: number;
     step: number;
     onChange: (v: number) => void;
-    subSettings?: React.ReactNode;
 }
 
 export const SliderRow: React.FC<SliderRowProps> = ({
@@ -248,15 +220,8 @@ export const SliderRow: React.FC<SliderRowProps> = ({
     max,
     step,
     onChange,
-    subSettings,
 }) => (
-    <BaseComponent
-        label={label}
-        desc={desc}
-        tooltip={tooltip}
-        className="cmdr-slider"
-        subSettings={subSettings}
-    >
+    <BaseComponent label={label} desc={desc} tooltip={tooltip} className="cmdr-slider">
         <div style={{ display: "flex", alignItems: "center", width: "100%", gap: "8px" }}>
             <input
                 type="range"

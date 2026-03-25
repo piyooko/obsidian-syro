@@ -325,20 +325,25 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
                     desc={t("SETTINGS_CODE_CLOZE_DESC")}
                     value={settings.parseClozesInCodeBlocks}
                     onChange={(v) => handleLockedToggle("parseClozesInCodeBlocks", v, "代码块挖空")}
-                    subSettings={
-                        settings.parseClozesInCodeBlocks ? (
-                            <SliderRow
-                                label={t("SETTINGS_CODE_CONTEXT_LINES")}
-                                desc={t("SETTINGS_CODE_CONTEXT_LINES_DESC")}
-                                value={settings.codeContextLines}
-                                min={5}
-                                max={100}
-                                step={5}
-                                onChange={(v) => onChange("codeContextLines", v)}
-                            />
-                        ) : null
-                    }
                 />
+                {settings.parseClozesInCodeBlocks && (
+                    <div
+                        style={{
+                            paddingLeft: "20px",
+                            borderLeft: "2px solid var(--background-modifier-border)",
+                        }}
+                    >
+                        <SliderRow
+                            label={t("SETTINGS_CODE_CONTEXT_LINES")}
+                            desc={t("SETTINGS_CODE_CONTEXT_LINES_DESC")}
+                            value={settings.codeContextLines}
+                            min={5}
+                            max={100}
+                            step={5}
+                            onChange={(v) => onChange("codeContextLines", v)}
+                        />
+                    </div>
+                )}
                 <SelectRow
                     label={t("SETTINGS_CLOZE_CONTEXT_MODE")}
                     desc={getClozeContextModeDesc(settings.clozeContextMode)}
