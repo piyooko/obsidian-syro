@@ -40,7 +40,8 @@ export abstract class SrsAlgorithm {
     }
 
     updateSettings(settings: unknown): void {
-        const normalizedSettings = typeof settings === "object" && settings !== null ? settings : {};
+        const normalizedSettings =
+            typeof settings === "object" && settings !== null ? settings : {};
         this.settings = MiscUtils.assignOnly(this.defaultSettings(), normalizedSettings);
         // this.plugin = plugin;
         SrsAlgorithm.instance = this;

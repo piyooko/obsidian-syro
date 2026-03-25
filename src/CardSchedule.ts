@@ -3,13 +3,6 @@
  * This file parses `<!--SR:...-->` comments and computes updated schedule values.
  */
 
-
-
-
-
-
-
-
 import { moment } from "obsidian";
 import {
     LEGACY_SCHEDULING_EXTRACTOR,
@@ -39,7 +32,12 @@ export class CardScheduleInfo {
     // This is done by using this magic value for the date
     private static dummyDueDateForNewCard: string = "2000-01-01";
 
-    constructor(dueDate: MomentValue, interval: number, ease: number, delayBeforeReviewTicks: number) {
+    constructor(
+        dueDate: MomentValue,
+        interval: number,
+        ease: number,
+        delayBeforeReviewTicks: number,
+    ) {
         this.dueDate = dueDate;
         this.interval = interval;
         this.ease = ease;
@@ -153,8 +151,6 @@ export class CardScheduleCalculator {
      * Schedule a new card, optionally using preset learning steps.
      */
 
-
-
     getNewCardSchedule(
         response: ReviewResponse,
         notePath: string,
@@ -215,8 +211,6 @@ export class CardScheduleCalculator {
     /**
      * Update a review card schedule, optionally using preset relearning steps.
      */
-
-
 
     calcUpdatedSchedule(
         response: ReviewResponse,
@@ -323,6 +317,3 @@ export class NoteCardScheduleParser {
         return questionText.replace(/<!--SR:.+-->/gm, "");
     }
 }
-
-
-

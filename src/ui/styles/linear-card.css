@@ -572,9 +572,7 @@
 .sr-card-content-scroll {
     flex: 1;
     overflow-y: auto;
-    padding:
-        var(--syro-review-content-padding-y, 24px)
-        var(--syro-review-content-padding-x, 40px);
+    padding: var(--syro-review-content-padding-y, 24px) var(--syro-review-content-padding-x, 40px);
     scroll-padding-block: clamp(32px, 10vh, 72px);
 }
 
@@ -1602,8 +1600,7 @@ body.syro-review-compact-actions .sr-linear-btn-sub {
 /* 移动端：内容区域优化 */
 .is-mobile .sr-card-content-scroll,
 .is-phone .sr-card-content-scroll {
-    padding:
-        max(20px, calc(var(--syro-review-content-padding-y, 24px) - 8px))
+    padding: max(20px, calc(var(--syro-review-content-padding-y, 24px) - 8px))
         max(16px, calc(var(--syro-review-content-padding-x, 40px) - 24px));
     scroll-padding-block: 72px;
 }

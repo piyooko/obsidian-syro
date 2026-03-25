@@ -217,4 +217,3 @@ export function addFileMenuEvt(plugin: SRPlugin, menu: Menu, fileish: TAbstractF
         });
     });
 }
-

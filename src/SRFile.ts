@@ -155,4 +155,3 @@ export class SrTFile implements ISRFile {
         await this.vault.modify(this.file, content);
     }
 }
-

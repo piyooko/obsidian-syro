@@ -89,7 +89,8 @@
     --sr-deck-collapse-btn-size: 18px;
     --sr-deck-collapse-btn-center-offset: 9px;
     --sr-deck-children-guide-offset: calc(
-        var(--sr-deck-row-inline-margin) + var(--sr-deck-row-inline-padding) + var(--sr-deck-collapse-btn-center-offset)
+        var(--sr-deck-row-inline-margin) + var(--sr-deck-row-inline-padding) +
+            var(--sr-deck-collapse-btn-center-offset)
     );
     --sr-deck-children-inline-padding: 12px;
     width: 100%;

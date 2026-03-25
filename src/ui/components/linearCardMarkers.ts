@@ -89,10 +89,7 @@ function clearMarkerMarkdown(target: HTMLElement) {
     delete target.dataset.srMarkdownEncoded;
 }
 
-function createUnifiedMarkerElement(
-    placeholderText: string,
-    answerText: string,
-): HTMLElement {
+function createUnifiedMarkerElement(placeholderText: string, answerText: string): HTMLElement {
     const wrapper = document.createElement("span");
     wrapper.className = "sr-cloze-wrapper";
 
@@ -209,7 +206,9 @@ function findMathSegments(text: string): TextRange[] {
     while ((match = inlineRegex.exec(text)) !== null) {
         const start = match.index;
         const end = match.index + match[0].length;
-        const overlapsBlock = segments.some((segment) => start < segment.end && end > segment.start);
+        const overlapsBlock = segments.some(
+            (segment) => start < segment.end && end > segment.start,
+        );
         if (overlapsBlock) {
             continue;
         }
@@ -250,7 +249,9 @@ export function preTokenizeSrMarkers(content: string): string {
 
     for (const range of protectedRanges) {
         if (cursor < range.start) {
-            result += tokenizeSrMarkersOutsideProtectedRanges(normalized.slice(cursor, range.start));
+            result += tokenizeSrMarkersOutsideProtectedRanges(
+                normalized.slice(cursor, range.start),
+            );
         }
 
         result += normalized.slice(range.start, range.end);
@@ -339,10 +340,7 @@ export function normalizeSrMarkers(text: string): string {
         .replace(new RegExp(escapeRegExp(LEGACY_MARKER_CLOSE), "g"), SR_MARKER_CLOSE);
 }
 
-export function toFallbackText(
-    content: string,
-    options?: { showAnswer?: boolean },
-): string {
+export function toFallbackText(content: string, options?: { showAnswer?: boolean }): string {
     const showAnswer = options?.showAnswer ?? false;
     const normalized = normalizeSrMarkers(content.replace(/<!--SR_CODE_CLOZE:\d+:\d+-->\n?/g, ""));
 

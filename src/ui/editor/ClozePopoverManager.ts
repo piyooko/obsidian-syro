@@ -238,7 +238,7 @@ export class ClozePopoverManager {
         // 如果想要真正的“合并所有”，通常意味着所有都变成 c1
         const changes = this.allClozes.map((cloze) => {
             const originalText = this.view.state.doc.sliceString(cloze.start, cloze.end);
-            const newText = originalText.replace(/^\{\{c\d+::/, `{{c1::`);
+            const newText = originalText.replace(/^\{\{c\d+::/, "{{c1::");
             return { from: cloze.start, to: cloze.end, insert: newText };
         });
 

@@ -51,9 +51,9 @@ export class LinkRank {
         console.debug("[SR Debug LinkRank] settings.noteAlgorithm:", this.settings.noteAlgorithm);
         console.debug("[SR Debug LinkRank] algorithmSettings:", this.settings.algorithmSettings);
 
-        const algoSettings = this.settings.algorithmSettings[
-            this.settings.noteAlgorithm
-        ] as BaseEaseSettings | undefined;
+        const algoSettings = this.settings.algorithmSettings[this.settings.noteAlgorithm] as
+            | BaseEaseSettings
+            | undefined;
         console.debug("[SR Debug LinkRank] algoSettings:", algoSettings);
 
         if (!algoSettings) {
@@ -169,4 +169,3 @@ export class LinkRank {
         });
     }
 }
-

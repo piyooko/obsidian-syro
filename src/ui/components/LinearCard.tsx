@@ -162,11 +162,9 @@ export const LinearCard: FC<LinearCardProps> = ({
     const [stats, setStats] = useState(initialStats);
     const [currentType, setCurrentType] = useState<"new" | "learning" | "due">(cardType || "due");
     const [isFlipped, setIsFlipped] = useState(false);
-    const cardContentResetKey = [
-        card?.front || "",
-        card?.back || "",
-        card?.review || "",
-    ].join("\u001f");
+    const cardContentResetKey = [card?.front || "", card?.back || "", card?.review || ""].join(
+        "\u001f",
+    );
     const cardUiResetKey =
         uiResetToken === undefined
             ? cardContentResetKey
@@ -475,20 +473,18 @@ export const LinearCard: FC<LinearCardProps> = ({
             {/* Toast 瀹瑰櫒 */}
             <div className="sr-toast-container">
                 <AnimatePresence>
-                    {
-                        toasts.map((toast) => (
-                            <motion.div
-                                key={toast.id}
-                                initial={{ opacity: 0, y: 20, scale: 0.9 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.9 }}
-                                className="sr-toast"
-                            >
-                                {toast.icon}
-                                <span>{toast.text}</span>
-                            </motion.div>
-                        ))
-                    }
+                    {toasts.map((toast) => (
+                        <motion.div
+                            key={toast.id}
+                            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            className="sr-toast"
+                        >
+                            {toast.icon}
+                            <span>{toast.text}</span>
+                        </motion.div>
+                    ))}
                 </AnimatePresence>
             </div>
 
@@ -518,400 +514,356 @@ export const LinearCard: FC<LinearCardProps> = ({
                 }}
             >
                 {
-                    (
-                        <>
-                            {/* Resize Handles (鏀寔榧犳爣鍜岃Е鎽? */}
-                            <div
-                                className="sr-resize-handle-n"
-                                onMouseDown={(e) => handleResizeStart(e, "n")}
-                                onTouchStart={(e) => handleResizeStart(e, "n")}
-                            />
-                            <div
-                                className="sr-resize-handle-s"
-                                onMouseDown={(e) => handleResizeStart(e, "s")}
-                                onTouchStart={(e) => handleResizeStart(e, "s")}
-                            />
-                            <div
-                                className="sr-resize-handle-e"
-                                onMouseDown={(e) => handleResizeStart(e, "e")}
-                                onTouchStart={(e) => handleResizeStart(e, "e")}
-                            />
-                            <div
-                                className="sr-resize-handle-w"
-                                onMouseDown={(e) => handleResizeStart(e, "w")}
-                                onTouchStart={(e) => handleResizeStart(e, "w")}
-                            />
-                            <div
-                                className="sr-resize-handle-ne"
-                                onMouseDown={(e) => handleResizeStart(e, "ne")}
-                                onTouchStart={(e) => handleResizeStart(e, "ne")}
-                            />
-                            <div
-                                className="sr-resize-handle-nw"
-                                onMouseDown={(e) => handleResizeStart(e, "nw")}
-                                onTouchStart={(e) => handleResizeStart(e, "nw")}
-                            />
-                            <div
-                                className="sr-resize-handle-se"
-                                onMouseDown={(e) => handleResizeStart(e, "se")}
-                                onTouchStart={(e) => handleResizeStart(e, "se")}
-                            />
-                            <div
-                                className="sr-resize-handle-sw"
-                                onMouseDown={(e) => handleResizeStart(e, "sw")}
-                                onTouchStart={(e) => handleResizeStart(e, "sw")}
-                            />
+                    <>
+                        {/* Resize Handles (鏀寔榧犳爣鍜岃Е鎽? */}
+                        <div
+                            className="sr-resize-handle-n"
+                            onMouseDown={(e) => handleResizeStart(e, "n")}
+                            onTouchStart={(e) => handleResizeStart(e, "n")}
+                        />
+                        <div
+                            className="sr-resize-handle-s"
+                            onMouseDown={(e) => handleResizeStart(e, "s")}
+                            onTouchStart={(e) => handleResizeStart(e, "s")}
+                        />
+                        <div
+                            className="sr-resize-handle-e"
+                            onMouseDown={(e) => handleResizeStart(e, "e")}
+                            onTouchStart={(e) => handleResizeStart(e, "e")}
+                        />
+                        <div
+                            className="sr-resize-handle-w"
+                            onMouseDown={(e) => handleResizeStart(e, "w")}
+                            onTouchStart={(e) => handleResizeStart(e, "w")}
+                        />
+                        <div
+                            className="sr-resize-handle-ne"
+                            onMouseDown={(e) => handleResizeStart(e, "ne")}
+                            onTouchStart={(e) => handleResizeStart(e, "ne")}
+                        />
+                        <div
+                            className="sr-resize-handle-nw"
+                            onMouseDown={(e) => handleResizeStart(e, "nw")}
+                            onTouchStart={(e) => handleResizeStart(e, "nw")}
+                        />
+                        <div
+                            className="sr-resize-handle-se"
+                            onMouseDown={(e) => handleResizeStart(e, "se")}
+                            onTouchStart={(e) => handleResizeStart(e, "se")}
+                        />
+                        <div
+                            className="sr-resize-handle-sw"
+                            onMouseDown={(e) => handleResizeStart(e, "sw")}
+                            onTouchStart={(e) => handleResizeStart(e, "sw")}
+                        />
 
-                            {/* 椤堕儴楂樺厜绾?*/}
-                            <div className="sr-card-highlight" />
+                        {/* 椤堕儴楂樺厜绾?*/}
+                        <div className="sr-card-highlight" />
 
-                            {/* Header */}
-                            <div className="sr-card-header">
-                                {/* 宸︿晶锛氳繑鍥炰笌闈㈠寘灞?*/}
-                                <div className="sr-header-left">
-                                    {onExit && (
-                                        <button
-                                            className="sr-header-btn"
-                                            onClick={onExit}
-                                            title={t("UI_BACK")}
+                        {/* Header */}
+                        <div className="sr-card-header">
+                            {/* 宸︿晶锛氳繑鍥炰笌闈㈠寘灞?*/}
+                            <div className="sr-header-left">
+                                {onExit && (
+                                    <button
+                                        className="sr-header-btn"
+                                        onClick={onExit}
+                                        title={t("UI_BACK")}
+                                    >
+                                        <ArrowLeft size={16} />
+                                    </button>
+                                )}
+                                {(breadcrumbs.length > 0 || filename) && (
+                                    <div className="sr-breadcrumbs">
+                                        <div
+                                            className="sr-filename-badge"
+                                            onClick={() => handleMenuAction("OPEN")}
+                                            title={t("UI_OPEN_FILE_LOCATION")}
                                         >
-                                            <ArrowLeft size={16} />
-                                        </button>
-                                    )}
-                                    {(breadcrumbs.length > 0 || filename) && (
-                                        <div className="sr-breadcrumbs">
-                                            <div
-                                                className="sr-filename-badge"
-                                                onClick={() => handleMenuAction("OPEN")}
-                                                title={t("UI_OPEN_FILE_LOCATION")}
-                                            >
-                                                <FileText size={10} />
-                                                <span>{filename.replace(/\.md$/i, "")}</span>
-                                            </div>
-
-                                            {breadcrumbs.length > 0 && (
-                                                <ChevronRight
-                                                    size={10}
-                                                    className="sr-breadcrumb-separator"
-                                                />
-                                            )}
-
-                                            {breadcrumbs.map((crumb, index) => (
-                                                <Fragment key={index}>
-                                                    <span className="sr-breadcrumb-item">{crumb}</span>
-                                                    {index < breadcrumbs.length - 1 && (
-                                                        <ChevronRight
-                                                            size={10}
-                                                            className="sr-breadcrumb-separator"
-                                                        />
-                                                    )}
-                                                </Fragment>
-                                            ))}
+                                            <FileText size={10} />
+                                            <span>{filename.replace(/\.md$/i, "")}</span>
                                         </div>
-                                    )}
-                                </div>
 
-                                {/* 鍙充晶锛氱粺璁′笌鑿滃崟 */}
-                                <div className="sr-header-right">
-                                    <div className="sr-stats-panel">
-                                        <StatBadge
-                                            type="new"
-                                            count={stats.new}
-                                            isActive={currentType === "new"}
-                                        />
-                                        <div className="sr-stats-divider" />
-                                        <StatBadge
-                                            type="learn"
-                                            count={stats.learning}
-                                            isActive={currentType === "learning"}
-                                        />
-                                        <div className="sr-stats-divider" />
-                                        <StatBadge
-                                            type="due"
-                                            count={stats.due}
-                                            isActive={currentType === "due"}
-                                        />
-                                    </div>
-
-                                    <div className="sr-menu-container">
-                                        <button
-                                            onClick={() => setShowMenu(!showMenu)}
-                                            className={`sr-header-btn ${showMenu ? "active" : ""}`}
-                                        >
-                                            <MoreHorizontal size={16} />
-                                        </button>
-
-                                        <AnimatePresence>
-                                            {
-                                                (showMenu && (
-                                                    <>
-                                                        <div
-                                                            className="sr-menu-backdrop"
-                                                            onClick={() => setShowMenu(false)}
-                                                        />
-                                                        <motion.div
-                                                            initial={{
-                                                                opacity: 0,
-                                                                scale: 0.95,
-                                                                y: 5,
-                                                            }}
-                                                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                                                            exit={{ opacity: 0, scale: 0.95, y: 5 }}
-                                                            transition={{ duration: 0.1 }}
-                                                            className="sr-dropdown-menu"
-                                                        >
-                                                            <>
-                                                                <MenuItem
-                                                                    onClick={() =>
-                                                                        handleMenuAction("UNDO")
-                                                                    }
-                                                                    icon={<Undo2 size={14} />}
-                                                                    label={t("UI_UNDO")}
-                                                                    kbd="Ctrl+Z"
-                                                                />
-                                                                <div className="sr-menu-divider" />
-                                                                <MenuItem
-                                                                    onClick={() =>
-                                                                        handleMenuAction("OPEN")
-                                                                    }
-                                                                    icon={<FileText size={14} />}
-                                                                    label={t("UI_OPEN_LOCATION")}
-                                                                    kbd="O"
-                                                                />
-                                                                <MenuItem
-                                                                    onClick={() =>
-                                                                        handleMenuAction("INFO")
-                                                                    }
-                                                                    icon={<Info size={14} />}
-                                                                    label={t("UI_CARD_INFO")}
-                                                                    kbd="I"
-                                                                />
-                                                                <MenuItem
-                                                                    onClick={() =>
-                                                                        handleMenuAction("POSTPONE")
-                                                                    }
-                                                                    icon={<Clock size={14} />}
-                                                                    label={t("UI_POSTPONE_ONE_DAY")}
-                                                                    kbd="P"
-                                                                />
-                                                                <div className="sr-menu-divider" />
-                                                                <MenuItem
-                                                                    onClick={() =>
-                                                                        handleMenuAction("DELETE")
-                                                                    }
-                                                                    icon={<Trash2 size={14} />}
-                                                                    label={t("UI_DELETE_CARD")}
-                                                                    intent="danger"
-                                                                    kbd="Del"
-                                                                />
-                                                            </>
-                                                        </motion.div>
-                                                    </>
-                                                ))
-                                            }
-                                        </AnimatePresence>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* 璁℃椂鍣ㄨ繘搴︽潯 */}
-                            <div className="sr-timer-bar-container">
-                                <AnimatePresence initial={false}>
-                                    {
-                                        (!renderIsFlipped && autoAdvanceSeconds > 0 && (
-                                            <TimerBar
-                                                duration={autoAdvanceSeconds}
-                                                onComplete={() => {
-                                                    setTimeExpired(true);
-                                                    setIsFlipped(true);
-                                                    onShowAnswer?.();
-                                                }}
-                                                timeExpired={timeExpired}
-                                            />
-                                        ))
-                                    }
-                                </AnimatePresence>
-                            </div>
-
-                            {/* 鍐呭鍖哄煙 */}
-                            <div
-                                className={`sr-card-content-area ${isEditing ? "sr-is-editing" : ""}`}
-                            >
-                                {isEditing && plugin ? (
-                                    <CardEditorView
-                                        value={editText}
-                                        onChange={(val) => {
-                                            setEditText(val);
-                                            onUpdateContent?.(val);
-                                        }}
-                                        onExit={toggleEditMode}
-                                        plugin={plugin}
-                                    />
-                                ) : (
-                                    <div className="sr-card-content-scroll">
-                                        {type === "cloze" ? (
-                                            <ClozeContent
-                                                key={cardUiResetKey}
-                                                isFlipped={renderIsFlipped}
-                                                card={card}
-                                                renderMarkdown={renderMarkdown}
-                                                showOtherAnkiClozeVisual={
-                                                    plugin
-                                                        ? !plugin.data.settings
-                                                              .convertAnkiClozesToClozes ||
-                                                          plugin.data.settings
-                                                              .showOtherAnkiClozeVisual
-                                                        : false
-                                                }
-                                                showOtherHighlightClozeVisual={
-                                                    plugin
-                                                        ? !plugin.data.settings
-                                                              .convertHighlightsToClozes ||
-                                                          plugin.data.settings
-                                                              .showOtherHighlightClozeVisual
-                                                        : false
-                                                }
-                                                showOtherBoldClozeVisual={
-                                                    plugin
-                                                        ? !plugin.data.settings
-                                                              .convertBoldTextToClozes ||
-                                                          plugin.data.settings
-                                                              .showOtherBoldClozeVisual
-                                                        : false
-                                                }
-                                            />
-                                        ) : (
-                                            <BasicContent
-                                                key={cardUiResetKey}
-                                                isFlipped={renderIsFlipped}
-                                                card={card || { front: "Q", back: "A" }}
-                                                renderMarkdown={renderMarkdown}
+                                        {breadcrumbs.length > 0 && (
+                                            <ChevronRight
+                                                size={10}
+                                                className="sr-breadcrumb-separator"
                                             />
                                         )}
+
+                                        {breadcrumbs.map((crumb, index) => (
+                                            <Fragment key={index}>
+                                                <span className="sr-breadcrumb-item">{crumb}</span>
+                                                {index < breadcrumbs.length - 1 && (
+                                                    <ChevronRight
+                                                        size={10}
+                                                        className="sr-breadcrumb-separator"
+                                                    />
+                                                )}
+                                            </Fragment>
+                                        ))}
                                     </div>
                                 )}
                             </div>
 
-                            {/* Footer - 缂栬緫妯″紡涓嬫樉绀洪€€鍑烘寜閽?*/}
-                            <div className="sr-card-footer">
-                                <AnimatePresence initial={false}>
-                                    {
-                                        (isEditing ? (
-                                            <motion.div
-                                                key="edit-footer"
-                                                initial={{ opacity: 0, y: 5 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                exit={{ opacity: 0, y: -5 }}
-                                                transition={{ duration: 0.1 }}
-                                            >
-                                                <button
-                                                    onClick={toggleEditMode}
-                                                    className="sr-show-answer-btn sr-exit-edit-btn"
-                                                >
-                                                    <Save size={16} /> 瀹屾垚缂栬緫{" "}
-                                                    <span className="sr-kbd">ESC</span>
-                                                </button>
-                                            </motion.div>
-                                        ) : !renderIsFlipped ? (
-                                            <motion.div
-                                                key="show-answer"
-                                                initial={{ opacity: 0, y: 5 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                exit={{ opacity: 0, y: -5 }}
-                                                transition={{ duration: 0.1 }}
-                                            >
-                                                <button
-                                                    onClick={() => {
-                                                        setIsFlipped(true);
-                                                        onShowAnswer?.();
+                            {/* 鍙充晶锛氱粺璁′笌鑿滃崟 */}
+                            <div className="sr-header-right">
+                                <div className="sr-stats-panel">
+                                    <StatBadge
+                                        type="new"
+                                        count={stats.new}
+                                        isActive={currentType === "new"}
+                                    />
+                                    <div className="sr-stats-divider" />
+                                    <StatBadge
+                                        type="learn"
+                                        count={stats.learning}
+                                        isActive={currentType === "learning"}
+                                    />
+                                    <div className="sr-stats-divider" />
+                                    <StatBadge
+                                        type="due"
+                                        count={stats.due}
+                                        isActive={currentType === "due"}
+                                    />
+                                </div>
+
+                                <div className="sr-menu-container">
+                                    <button
+                                        onClick={() => setShowMenu(!showMenu)}
+                                        className={`sr-header-btn ${showMenu ? "active" : ""}`}
+                                    >
+                                        <MoreHorizontal size={16} />
+                                    </button>
+
+                                    <AnimatePresence>
+                                        {showMenu && (
+                                            <>
+                                                <div
+                                                    className="sr-menu-backdrop"
+                                                    onClick={() => setShowMenu(false)}
+                                                />
+                                                <motion.div
+                                                    initial={{
+                                                        opacity: 0,
+                                                        scale: 0.95,
+                                                        y: 5,
                                                     }}
-                                                    className="sr-show-answer-btn"
+                                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                                    exit={{ opacity: 0, scale: 0.95, y: 5 }}
+                                                    transition={{ duration: 0.1 }}
+                                                    className="sr-dropdown-menu"
                                                 >
-                                                    <Eye size={16} /> {t("SHOW_ANSWER")}{" "}
-                                                    <span className="sr-kbd">SPACE</span>
-                                                </button>
-                                            </motion.div>
-                                        ) : (
-                                            <motion.div
-                                                key="rating-buttons"
-                                                initial={{ opacity: 0, y: 5 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                transition={{ duration: 0.1 }}
-                                                className="sr-rating-buttons"
-                                            >
-                                                {
-                                                    (
-                                                        <>
-                                                            <LinearButton
-                                                                icon={<RotateCcw size={12} />}
-                                                                label={t("UI_RESET")}
-                                                                sub={
-                                                                    card
-                                                                        ?.responseButtonLabels?.[0] ||
-                                                                    "1m"
-                                                                }
-                                                                shortcut="1"
-                                                                className="is-reset"
-                                                                variant="reset"
-                                                                onClick={() =>
-                                                                    handleAnswerInternal(0)
-                                                                }
-                                                            />
-                                                            <LinearButton
-                                                                icon={<ThumbsDown size={12} />}
-                                                                label={t("UI_HARD")}
-                                                                sub={
-                                                                    card
-                                                                        ?.responseButtonLabels?.[1] ||
-                                                                    "10m"
-                                                                }
-                                                                shortcut="2"
-                                                                className="is-hard"
-                                                                variant="hard"
-                                                                onClick={() =>
-                                                                    handleAnswerInternal(1)
-                                                                }
-                                                            />
-                                                            <LinearButton
-                                                                icon={<Check size={12} />}
-                                                                label={t("UI_GOOD")}
-                                                                sub={
-                                                                    card
-                                                                        ?.responseButtonLabels?.[2] ||
-                                                                    "3d"
-                                                                }
-                                                                shortcut="3"
-                                                                className="is-good"
-                                                                variant="good"
-                                                                onClick={() =>
-                                                                    handleAnswerInternal(2)
-                                                                }
-                                                            />
-                                                            <LinearButton
-                                                                icon={<Zap size={12} />}
-                                                                label={t("UI_EASY")}
-                                                                sub={
-                                                                    card
-                                                                        ?.responseButtonLabels?.[3] ||
-                                                                    "7d"
-                                                                }
-                                                                shortcut="4"
-                                                                className="is-easy"
-                                                                variant="easy"
-                                                                onClick={() =>
-                                                                    handleAnswerInternal(3)
-                                                                }
-                                                            />
-                                                        </>
-                                                    )
-                                                }
-                                            </motion.div>
-                                        ))
-                                    }
-                                </AnimatePresence>
+                                                    <>
+                                                        <MenuItem
+                                                            onClick={() => handleMenuAction("UNDO")}
+                                                            icon={<Undo2 size={14} />}
+                                                            label={t("UI_UNDO")}
+                                                            kbd="Ctrl+Z"
+                                                        />
+                                                        <div className="sr-menu-divider" />
+                                                        <MenuItem
+                                                            onClick={() => handleMenuAction("OPEN")}
+                                                            icon={<FileText size={14} />}
+                                                            label={t("UI_OPEN_LOCATION")}
+                                                            kbd="O"
+                                                        />
+                                                        <MenuItem
+                                                            onClick={() => handleMenuAction("INFO")}
+                                                            icon={<Info size={14} />}
+                                                            label={t("UI_CARD_INFO")}
+                                                            kbd="I"
+                                                        />
+                                                        <MenuItem
+                                                            onClick={() =>
+                                                                handleMenuAction("POSTPONE")
+                                                            }
+                                                            icon={<Clock size={14} />}
+                                                            label={t("UI_POSTPONE_ONE_DAY")}
+                                                            kbd="P"
+                                                        />
+                                                        <div className="sr-menu-divider" />
+                                                        <MenuItem
+                                                            onClick={() =>
+                                                                handleMenuAction("DELETE")
+                                                            }
+                                                            icon={<Trash2 size={14} />}
+                                                            label={t("UI_DELETE_CARD")}
+                                                            intent="danger"
+                                                            kbd="Del"
+                                                        />
+                                                    </>
+                                                </motion.div>
+                                            </>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
                             </div>
-                        </>
-                    )
+                        </div>
+
+                        {/* 璁℃椂鍣ㄨ繘搴︽潯 */}
+                        <div className="sr-timer-bar-container">
+                            <AnimatePresence initial={false}>
+                                {!renderIsFlipped && autoAdvanceSeconds > 0 && (
+                                    <TimerBar
+                                        duration={autoAdvanceSeconds}
+                                        onComplete={() => {
+                                            setTimeExpired(true);
+                                            setIsFlipped(true);
+                                            onShowAnswer?.();
+                                        }}
+                                        timeExpired={timeExpired}
+                                    />
+                                )}
+                            </AnimatePresence>
+                        </div>
+
+                        {/* 鍐呭鍖哄煙 */}
+                        <div className={`sr-card-content-area ${isEditing ? "sr-is-editing" : ""}`}>
+                            {isEditing && plugin ? (
+                                <CardEditorView
+                                    value={editText}
+                                    onChange={(val) => {
+                                        setEditText(val);
+                                        onUpdateContent?.(val);
+                                    }}
+                                    onExit={toggleEditMode}
+                                    plugin={plugin}
+                                />
+                            ) : (
+                                <div className="sr-card-content-scroll">
+                                    {type === "cloze" ? (
+                                        <ClozeContent
+                                            key={cardUiResetKey}
+                                            isFlipped={renderIsFlipped}
+                                            card={card}
+                                            renderMarkdown={renderMarkdown}
+                                            showOtherAnkiClozeVisual={
+                                                plugin
+                                                    ? !plugin.data.settings
+                                                          .convertAnkiClozesToClozes ||
+                                                      plugin.data.settings.showOtherAnkiClozeVisual
+                                                    : false
+                                            }
+                                            showOtherHighlightClozeVisual={
+                                                plugin
+                                                    ? !plugin.data.settings
+                                                          .convertHighlightsToClozes ||
+                                                      plugin.data.settings
+                                                          .showOtherHighlightClozeVisual
+                                                    : false
+                                            }
+                                            showOtherBoldClozeVisual={
+                                                plugin
+                                                    ? !plugin.data.settings
+                                                          .convertBoldTextToClozes ||
+                                                      plugin.data.settings.showOtherBoldClozeVisual
+                                                    : false
+                                            }
+                                        />
+                                    ) : (
+                                        <BasicContent
+                                            key={cardUiResetKey}
+                                            isFlipped={renderIsFlipped}
+                                            card={card || { front: "Q", back: "A" }}
+                                            renderMarkdown={renderMarkdown}
+                                        />
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer - 缂栬緫妯″紡涓嬫樉绀洪€€鍑烘寜閽?*/}
+                        <div className="sr-card-footer">
+                            <AnimatePresence initial={false}>
+                                {isEditing ? (
+                                    <motion.div
+                                        key="edit-footer"
+                                        initial={{ opacity: 0, y: 5 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -5 }}
+                                        transition={{ duration: 0.1 }}
+                                    >
+                                        <button
+                                            onClick={toggleEditMode}
+                                            className="sr-show-answer-btn sr-exit-edit-btn"
+                                        >
+                                            <Save size={16} /> 瀹屾垚缂栬緫{" "}
+                                            <span className="sr-kbd">ESC</span>
+                                        </button>
+                                    </motion.div>
+                                ) : !renderIsFlipped ? (
+                                    <motion.div
+                                        key="show-answer"
+                                        initial={{ opacity: 0, y: 5 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -5 }}
+                                        transition={{ duration: 0.1 }}
+                                    >
+                                        <button
+                                            onClick={() => {
+                                                setIsFlipped(true);
+                                                onShowAnswer?.();
+                                            }}
+                                            className="sr-show-answer-btn"
+                                        >
+                                            <Eye size={16} /> {t("SHOW_ANSWER")}{" "}
+                                            <span className="sr-kbd">SPACE</span>
+                                        </button>
+                                    </motion.div>
+                                ) : (
+                                    <motion.div
+                                        key="rating-buttons"
+                                        initial={{ opacity: 0, y: 5 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ duration: 0.1 }}
+                                        className="sr-rating-buttons"
+                                    >
+                                        {
+                                            <>
+                                                <LinearButton
+                                                    icon={<RotateCcw size={12} />}
+                                                    label={t("UI_RESET")}
+                                                    sub={card?.responseButtonLabels?.[0] || "1m"}
+                                                    shortcut="1"
+                                                    className="is-reset"
+                                                    variant="reset"
+                                                    onClick={() => handleAnswerInternal(0)}
+                                                />
+                                                <LinearButton
+                                                    icon={<ThumbsDown size={12} />}
+                                                    label={t("UI_HARD")}
+                                                    sub={card?.responseButtonLabels?.[1] || "10m"}
+                                                    shortcut="2"
+                                                    className="is-hard"
+                                                    variant="hard"
+                                                    onClick={() => handleAnswerInternal(1)}
+                                                />
+                                                <LinearButton
+                                                    icon={<Check size={12} />}
+                                                    label={t("UI_GOOD")}
+                                                    sub={card?.responseButtonLabels?.[2] || "3d"}
+                                                    shortcut="3"
+                                                    className="is-good"
+                                                    variant="good"
+                                                    onClick={() => handleAnswerInternal(2)}
+                                                />
+                                                <LinearButton
+                                                    icon={<Zap size={12} />}
+                                                    label={t("UI_EASY")}
+                                                    sub={card?.responseButtonLabels?.[3] || "7d"}
+                                                    shortcut="4"
+                                                    className="is-easy"
+                                                    variant="easy"
+                                                    onClick={() => handleAnswerInternal(3)}
+                                                />
+                                            </>
+                                        }
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    </>
                 }
             </motion.div>
 
@@ -1357,7 +1309,10 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
             .replace(/&#187;/g, "»");
 
         console.debug("[SR Debug] After entity decode:", codeContent.substring(0, 200));
-        console.debug("[SR Debug] Contains placeholder marker:", codeContent.includes("««SR_CLOZE:"));
+        console.debug(
+            "[SR Debug] Contains placeholder marker:",
+            codeContent.includes("««SR_CLOZE:"),
+        );
 
         // 璁板綍鍖呭惈鍗犱綅绗︾殑琛岀储寮曪紙鐢ㄤ簬澶氳楂樹寒锛?
         const clozeLineIndices: Set<number> = new Set();
@@ -1400,14 +1355,17 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
             /««SR_CLOZE_FRONT»»/g,
             '<span class="sr-cloze-placeholder">[...]</span>',
         );
-        codeContent = codeContent.replace(/««SR_CLOZE_BACK:([^»]+)»»/g, (match: string, encoded: string) => {
-            try {
-                const decoded = decodeURIComponent(encoded);
-                return `<span class="sr-cloze-answer">${decoded}</span>`;
-            } catch {
-                return match;
-            }
-        });
+        codeContent = codeContent.replace(
+            /««SR_CLOZE_BACK:([^»]+)»»/g,
+            (match: string, encoded: string) => {
+                try {
+                    const decoded = decodeURIComponent(encoded);
+                    return `<span class="sr-cloze-answer">${decoded}</span>`;
+                } catch {
+                    return match;
+                }
+            },
+        );
 
         const lines = codeContent.split("\n");
 
@@ -1476,7 +1434,7 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
         // 婊氬姩鍒扮涓€涓?cloze 琛岋紙灞呬腑鏄剧ず锛?
         if (firstClozeDiv) {
             setTimeout(() => {
-                (firstClozeDiv).scrollIntoView({
+                firstClozeDiv.scrollIntoView({
                     block: "center",
                     behavior: "auto",
                 });
@@ -1519,7 +1477,10 @@ function centerElementInScrollContainer(target: HTMLElement, scrollContainer: HT
     scrollContainer.scrollTop = getCenteredScrollTop(input);
 }
 
-function getScrollContainerSafeInsets(scrollContainer: HTMLElement): { top: number; bottom: number } {
+function getScrollContainerSafeInsets(scrollContainer: HTMLElement): {
+    top: number;
+    bottom: number;
+} {
     const styles = window.getComputedStyle(scrollContainer);
     const scrollPaddingTop = Number.parseFloat(styles.scrollPaddingTop || "0");
     const scrollPaddingBottom = Number.parseFloat(styles.scrollPaddingBottom || "0");
@@ -1616,19 +1577,22 @@ const ClozeContent = ({
         positionElementWithMixedCentering(target, scrollContainer);
     }, [activeFace, isCodeBlockCloze, isFlipped]);
 
-    const schedulePositionActiveCloze = useCallback((face?: ClozeRenderFace) => {
-        if (face && face !== activeFace) {
-            return;
-        }
-        if (frameRef.current !== null) {
-            cancelAnimationFrame(frameRef.current);
-        }
+    const schedulePositionActiveCloze = useCallback(
+        (face?: ClozeRenderFace) => {
+            if (face && face !== activeFace) {
+                return;
+            }
+            if (frameRef.current !== null) {
+                cancelAnimationFrame(frameRef.current);
+            }
 
-        frameRef.current = requestAnimationFrame(() => {
-            positionActiveCloze();
-            frameRef.current = null;
-        });
-    }, [activeFace, positionActiveCloze]);
+            frameRef.current = requestAnimationFrame(() => {
+                positionActiveCloze();
+                frameRef.current = null;
+            });
+        },
+        [activeFace, positionActiveCloze],
+    );
 
     // 缈婚潰鏃舵洿鏂板鍣ㄧ殑 class锛堜粎鐢ㄤ簬浠ｇ爜鍧?Cloze锛?
     useEffect(() => {
@@ -1656,9 +1620,9 @@ const ClozeContent = ({
 
         observer.observe(activeHost, { childList: true, subtree: true, characterData: true });
 
-                // 浼樺厛鏌ユ壘 cloze 鍗犱綅绗?class
+        // 浼樺厛鏌ユ壘 cloze 鍗犱綅绗?class
 
-                // 鍏煎鏃ф牸寮忥細鏌ユ壘甯︽湁钃濊壊鏍峰紡鐨?[...] span
+        // 鍏煎鏃ф牸寮忥細鏌ユ壘甯︽湁钃濊壊鏍峰紡鐨?[...] span
         return () => {
             observer.disconnect();
             if (frameRef.current !== null) {
@@ -1845,5 +1809,3 @@ const BasicContent = ({
         </AnimatePresence>
     </div>
 );
-
-

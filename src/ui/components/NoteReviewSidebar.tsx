@@ -166,7 +166,7 @@ const SortModeButton: React.FC<{
 // ==========================================
 const FilterBar: React.FC<FilterBarProps> = ({
     tags,
-    totalCount,
+    totalCount: _totalCount,
     selectedTags,
     onToggleTag,
     onClearTags,
@@ -175,7 +175,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
     customOrder,
     onCustomOrderChange,
     height,
-    onHeightChange,
+    onHeightChange: _onHeightChange,
     onDragTagStart,
     onIgnoreTag,
     onShowTagContextMenu,
@@ -311,7 +311,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
         [sortMode, onDragTagStart],
     );
 
-    const handleDragOver = useCallback((e: React.DragEvent, tag: string) => {
+    const handleDragOver = useCallback((e: React.DragEvent, _tag: string) => {
         // 允许放置
         e.preventDefault();
     }, []);
@@ -353,7 +353,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
     );
 
     const handleDrop = useCallback(
-        (e: React.DragEvent, targetTag: string) => {
+        (e: React.DragEvent, _targetTag: string) => {
             if (sortMode === "custom") {
                 const currentDragged = draggedTagRef.current;
                 if (currentDragged) {
@@ -488,7 +488,9 @@ const FilterBar: React.FC<FilterBarProps> = ({
                 // 检测是否放在笔记上（添加标签）
                 const elementUnderTouch = document.elementFromPoint(touch.clientX, touch.clientY);
                 if (elementUnderTouch) {
-                    const notePath = getNotePathFromElement(elementUnderTouch.closest(".sr-new-item"));
+                    const notePath = getNotePathFromElement(
+                        elementUnderTouch.closest(".sr-new-item"),
+                    );
                     if (notePath && onMobileTagDrop) {
                         onMobileTagDrop(notePath, draggedTagRef.current);
                     }
@@ -837,7 +839,9 @@ const TimelineRenderedMessage: React.FC<{
                     </span>
                 </div>
             )}
-            {(hasBody || shouldRenderEmptyPlaceholder || durationPlacement === "inline-after-label") && (
+            {(hasBody ||
+                shouldRenderEmptyPlaceholder ||
+                durationPlacement === "inline-after-label") && (
                 <div
                     className={`sr-timeline-message-content ${isInlineDuration ? "is-inline-duration" : ""}`}
                 >
@@ -888,7 +892,7 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
     onCommitContextMenu,
     editingId,
     onEditCommit,
-    onStartEdit,
+    onStartEdit: _onStartEdit,
     onCancelEdit,
     onCommitSelect,
     showScrollPercentage = true,
@@ -980,9 +984,7 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
                                         value={message}
                                         onChange={setMessage}
                                         placeholder={t("TIMELINE_INPUT_PLACEHOLDER")}
-                                        enableDurationPrefixSyntax={
-                                            enableDurationPrefixSyntax
-                                        }
+                                        enableDurationPrefixSyntax={enableDurationPrefixSyntax}
                                         className="sr-timeline-textarea"
                                         onSubmit={handleCommit}
                                     />
@@ -1132,7 +1134,7 @@ const SectionGroupModern: React.FC<SectionGroupModernProps> = ({
     activeFilePath,
     ignoredTags,
     onNoteClick,
-    onNoteDoubleClick,
+    onNoteDoubleClick: _onNoteDoubleClick,
     onNoteContextMenu,
     onTagDrop,
     onPriorityChange,
@@ -1180,7 +1182,7 @@ const SectionGroupModern: React.FC<SectionGroupModernProps> = ({
                         isActive={activeFilePath === item.path}
                         ignoredTags={ignoredTags}
                         onClick={() => onNoteClick(item)}
-                        onDoubleClick={() => onNoteDoubleClick && onNoteDoubleClick(item)}
+                        onDoubleClick={() => _onNoteDoubleClick && _onNoteDoubleClick(item)}
                         onContextMenu={(e) => onNoteContextMenu(item, e)}
                         onTagDrop={onTagDrop}
                         onPriorityChange={onPriorityChange}
@@ -1414,14 +1416,14 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     timelineHeight = 300,
     onTimelineHeightChange,
     onNoteSelect,
-    onNoteDoubleClick,
+    onNoteDoubleClick: _onNoteDoubleClick,
     onCommitContextMenu,
     editingId = null,
     onEditCommit,
-    onStartEdit,
+    onStartEdit: _onStartEdit,
     onCancelEdit,
     onCommitSelect,
-    isLoading = false,
+    isLoading: _isLoading = false,
     showScrollPercentage = true,
     enableDurationPrefixSyntax = false,
 }) => {
@@ -1603,7 +1605,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     );
 
     // 双击保持原样或留空 (单击已处理打开文件)
-    const handleNoteDoubleClick = useCallback((item: NoteReviewItem) => {
+    const handleNoteDoubleClick = useCallback((_item: NoteReviewItem) => {
         // 单击已处理
     }, []);
 
@@ -1704,7 +1706,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                     onCommitContextMenu={onCommitContextMenu}
                     editingId={editingId}
                     onEditCommit={onEditCommit}
-                    onStartEdit={onStartEdit}
+                    onStartEdit={_onStartEdit}
                     onCancelEdit={onCancelEdit}
                     onCommitSelect={onCommitSelect}
                     showScrollPercentage={showScrollPercentage}

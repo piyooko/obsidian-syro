@@ -229,7 +229,7 @@ export class Question {
         this.cards.forEach((card) => (card.question = this));
     }
 
-    formatForNote(settings: SRSettings): string {
+    formatForNote(_settings: SRSettings): string {
         return this.questionText.formatTopicAndQuestion();
     }
 
@@ -252,7 +252,11 @@ export class Question {
     } {
         const replacementText = this.formatForNote(settings);
         const originalText: string = this.questionText.original;
-        const nextText = MultiLineTextFinder.findAndReplace(noteText, originalText, replacementText);
+        const nextText = MultiLineTextFinder.findAndReplace(
+            noteText,
+            originalText,
+            replacementText,
+        );
 
         return {
             didReplace: nextText != null,

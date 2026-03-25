@@ -26,7 +26,8 @@ export class TopicPath {
 
     constructor(path: string[]) {
         if (path == null) throw new Error("null path");
-        if (path.some((str) => str.includes("/"))) throw new Error("path entries must not contain '/'");
+        if (path.some((str) => str.includes("/")))
+            throw new Error("path entries must not contain '/'");
         this.path = path;
     }
 

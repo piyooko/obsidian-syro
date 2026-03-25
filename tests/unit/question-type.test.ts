@@ -134,20 +134,20 @@ test("CardType.Cloze ignores fenced code operators while keeping outer cloze tex
     expect(
         CardFrontBackUtil.expand(
             CardType.Cloze,
-            "Prefix ==visible==\n```js\nif (from && typeof from === \"object\" || typeof from === \"function\") {\n  return value ** 2;\n}\n```",
+            'Prefix ==visible==\n```js\nif (from && typeof from === "object" || typeof from === "function") {\n  return value ** 2;\n}\n```',
             DEFAULT_SETTINGS,
         ),
     ).toEqual([
         new CardFrontBack(
             "Prefix " +
                 clozeFormatter.asking() +
-                "\n```js\nif (from && typeof from === \"object\" || typeof from === \"function\") {\n  return value ** 2;\n}\n```",
+                '\n```js\nif (from && typeof from === "object" || typeof from === "function") {\n  return value ** 2;\n}\n```',
             "Prefix " +
                 clozeFormatter.showingAnswer("visible") +
-                "\n```js\nif (from && typeof from === \"object\" || typeof from === \"function\") {\n  return value ** 2;\n}\n```",
+                '\n```js\nif (from && typeof from === "object" || typeof from === "function") {\n  return value ** 2;\n}\n```',
             "Prefix " +
                 reviewFormatter.asking("visible") +
-                "\n```js\nif (from && typeof from === \"object\" || typeof from === \"function\") {\n  return value ** 2;\n}\n```",
+                '\n```js\nif (from && typeof from === "object" || typeof from === "function") {\n  return value ** 2;\n}\n```',
         ),
     ]);
 });
@@ -176,7 +176,7 @@ test("CardType.AnkiCloze keeps fenced code blocks in Anki-only mode", () => {
 
     const result = CardFrontBackUtil.expand(
         CardType.AnkiCloze,
-        "```js\nif (from && typeof from === \"object\" || typeof from === \"function\") {\n  return {{c1::value}} ** 2;\n}\n```",
+        '```js\nif (from && typeof from === "object" || typeof from === "function") {\n  return {{c1::value}} ** 2;\n}\n```',
         settings,
     );
 
@@ -225,7 +225,9 @@ describe.skip("Nested standard clozes", () => {
     test("distinct nested ranges still generate separate cards", () => {
         const settings = createStandardSettings();
 
-        expect(CardFrontBackUtil.expand(CardType.Cloze, "==澶栧眰 **鍐呭眰** 鏂囨湰==", settings)).toEqual([
+        expect(
+            CardFrontBackUtil.expand(CardType.Cloze, "==澶栧眰 **鍐呭眰** 鏂囨湰==", settings),
+        ).toEqual([
             new CardFrontBack(
                 clozeFormatter.asking(),
                 clozeFormatter.showingAnswer("澶栧眰 **鍐呭眰** 鏂囨湰"),
@@ -329,7 +331,9 @@ describe("Nested standard clozes (ASCII coverage)", () => {
     test("distinct nested ranges still generate separate cards", () => {
         const settings = createStandardSettings();
 
-        expect(CardFrontBackUtil.expand(CardType.Cloze, "==outer **inner** text==", settings)).toEqual([
+        expect(
+            CardFrontBackUtil.expand(CardType.Cloze, "==outer **inner** text==", settings),
+        ).toEqual([
             new CardFrontBack(
                 clozeFormatter.asking(),
                 clozeFormatter.showingAnswer("outer inner text"),

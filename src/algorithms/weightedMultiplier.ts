@@ -214,8 +214,7 @@ export class WeightedMultiplierAlgorithm extends SrsAlgorithm {
             text: "Weighted multiplier scheduler",
         });
         introEl.createEl("p", {
-            text:
-                "Designed for incremental reading. It adjusts review intervals with priority weighting and interval inheritance.",
+            text: "Designed for incremental reading. It adjusts review intervals with priority weighting and interval inheritance.",
         });
         introEl.createEl("p").createEl("strong", {
             text: "Key behaviors:",
@@ -227,7 +226,7 @@ export class WeightedMultiplierAlgorithm extends SrsAlgorithm {
             text: "Logic separation:",
         });
         separationEl.appendText(
-            " Hard and Again do not use the importance multiplier, so \"Hard\" always shortens the interval.",
+            ' Hard and Again do not use the importance multiplier, so "Hard" always shortens the interval.',
         );
 
         const inheritanceEl = behaviorListEl.createEl("li");
@@ -307,8 +306,6 @@ export class WeightedMultiplierAlgorithm extends SrsAlgorithm {
         formulaEl.appendText("Easy: I_next = Round(I_current x 2.0 x F_importance)");
         formulaEl.createEl("br");
         formulaEl.createEl("br");
-        formulaEl.appendText(
-            "F_importance = impMin + (priority - 1) x (impMax - impMin) / 9",
-        );
+        formulaEl.appendText("F_importance = impMin + (priority - 1) x (impMax - impMin) / 9");
     }
 }

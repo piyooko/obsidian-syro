@@ -247,10 +247,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
         const newCount = deck.getDistinctCardCount(CardListType.NewCard, true);
         const dueCount = deck.getDistinctCardCount(CardListType.DueCard, true);
-        const learningCount = deck.getAvailableLearningCardCount(
-            true,
-            this.getLearnAheadMillis(),
-        );
+        const learningCount = deck.getAvailableLearningCardCount(true, this.getLearnAheadMillis());
 
         return new DeckStats(
             dueCount,
@@ -342,7 +339,9 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
     // 鏍稿績閫昏緫锛氬鐞嗗涔?
     // ============================================================
     async processReview(response: ReviewResponse): Promise<void> {
-        this.logRuntimeDebug(`[SR-DynSync] sequencer.processReview: 鍝嶅簲=${ReviewResponse[response]}`);
+        this.logRuntimeDebug(
+            `[SR-DynSync] sequencer.processReview: 鍝嶅簲=${ReviewResponse[response]}`,
+        );
         const card = this.currentCard;
         if (!card) {
             console.error("[SR] processReview called but currentCard is null");
@@ -369,12 +368,12 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             card: card,
             initialSchedule:
                 card.hasSchedule && card.scheduleInfo
-                      ? ({
+                    ? {
                           dueDate: card.scheduleInfo.dueDate?.valueOf() ?? null,
                           interval: card.scheduleInfo.interval,
                           ease: card.scheduleInfo.ease,
                           delayBeforeReviewTicks: card.scheduleInfo.delayBeforeReviewTicks,
-                      })
+                      }
                     : null,
             originalDeck: this.currentDeck,
             wasNew: card.isNew,
@@ -569,10 +568,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         this.logRuntimeDebug(
             `[SR-DynSync] processReview_ReviewMode: 鍑嗗涓虹墝缁?[${deckToRecalc?.deckName}] 閲嶆柊璁＄畻缁熻`,
         );
-        DeckStatsService.getInstance().recalculateDeck(
-            deckToRecalc,
-            this.getLearnAheadMillis(),
-        );
+        DeckStatsService.getInstance().recalculateDeck(deckToRecalc, this.getLearnAheadMillis());
 
         this.advanceToNextCard();
     }
@@ -652,7 +648,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             this.cardSequencer.moveCurrentCardToEndOfList();
             this.cardSequencer.nextCard();
         }
-        this.logRuntimeDebug(`[SR-DynSync] processReview_CramMode: 鍑嗗閲嶆柊璁＄畻缁熻`);
+        this.logRuntimeDebug("[SR-DynSync] processReview_CramMode: 鍑嗗閲嶆柊璁＄畻缁熻");
         DeckStatsService.getInstance().recalculateDeck(
             this.currentDeck,
             this.getLearnAheadMillis(),
@@ -766,7 +762,9 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         if (lastAction.initialSchedule) {
             const saved = lastAction.initialSchedule;
             // 妫€鏌?dueDate 鏄惁鏈夋晥
-            const dueMoment = saved.dueDate ? window.moment(new Date(saved.dueDate)) : window.moment();
+            const dueMoment = saved.dueDate
+                ? window.moment(new Date(saved.dueDate))
+                : window.moment();
             card.scheduleInfo = new CardScheduleInfo(
                 dueMoment,
                 saved.interval,
@@ -858,7 +856,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         if (settings.convertBoldTextToClozes) text = text.replace(/\*\*(.*?)\*\*/gm, "$1");
         if (settings.convertCurlyBracketsToClozes) text = text.replace(/{{(.*?)}}/gm, "$1");
 
-        let newText = text.trim();
+        const newText = text.trim();
         const noteFile = question.note.file;
         let fileText = await noteFile.read();
         const originalText = question.questionText.original;
@@ -897,4 +895,3 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         this.advanceToNextCard();
     }
 }
-

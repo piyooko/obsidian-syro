@@ -1,6 +1,6 @@
-**English** | [中文文档](./docs/README_ZH.md)  
+**English** | [中文文档](./docs/README_ZH.md)
 
-***Reshape Your Memory and Reading in Obsidian***
+**_Reshape Your Memory and Reading in Obsidian_**
 
 > **Seamlessly integrate the scientific principles of Spaced Repetition and Incremental Reading into your plain-text knowledge base.**
 
@@ -13,6 +13,7 @@ Many of us face a common dilemma: we meticulously collect a vast library of web 
 Syro aims to provide a solution. It is not designed to replace your existing note-taking habits, but to introduce the dimension of "time," transforming your static knowledge vault into a dynamic memory system that actively and intelligently helps you learn and remember.
 
 ## Who Is This For?
+
 Syro's core mechanics—Spaced Repetition and Incremental Reading—are especially suited for the following types of Obsidian users:
 
 -   **Digital Hoarders Battling the "Collector's Fallacy"**
@@ -65,14 +66,17 @@ If Syro is not yet available in the community store for your vault, install it v
 **Detailed Steps:**
 
 1.  **Install BRAT**
+
     -   If you don't have BRAT installed, go to `Settings` > `Community plugins` > `Browse`.
     -   Search for `BRAT`, find `Obsidian42 - BRAT`, and click `Install`, then `Enable`.
 
 2.  **Add Syro's Repository**
+
     -   Open the BRAT settings (`Settings` > `Community Plugins` > `BRAT`).
     -   Click the `Add Beta plugin` button.
 
 3.  **Paste the Repository URL**
+
     -   In the prompt, paste this repository's URL:
         ```
         piyooko/obsidian-syro
@@ -108,6 +112,7 @@ Syro's development is deeply indebted to the open-source community and inspired 
 -   **[Obsidian Smart Connections](https://github.com/brianpetro/obsidian-smart-connections)**: Its excellent engineering architecture and innovative ideas provided invaluable inspiration when exploring the integration of AI with local knowledge bases.
 
 ---
-**License**: [MIT License](./LICENSE) 
 
- *(Disclosure: Most of Syro’s core features are available for free. Certain supporter-exclusive experimental features require CDK verification. The current version does not enforce an account system; the plugin may perform automatic or user-initiated online CDK validation, but it does not transmit core review data, note content, or any information unrelated to CDK verification to the cloud.)*
+**License**: [MIT License](./LICENSE)
+
+_(Disclosure: Most of Syro’s core features are available for free. Certain supporter-exclusive experimental features require CDK verification. The current version does not enforce an account system; the plugin may perform automatic or user-initiated online CDK validation, but it does not transmit core review data, note content, or any information unrelated to CDK verification to the cloud.)_

@@ -161,7 +161,8 @@ export function addCardAlgorithmSpecificDisplaySetting(containerEl: HTMLElement,
     const update = (settings: unknown, refresh?: boolean): void => {
         runAsync(
             (async () => {
-                plugin.data.settings.algorithmSettings[plugin.data.settings.cardAlgorithm] = settings;
+                plugin.data.settings.algorithmSettings[plugin.data.settings.cardAlgorithm] =
+                    settings;
                 await plugin.savePluginData();
                 if (refresh) {
                     plugin.cardAlgorithm.displaySettings(containerEl, update);
@@ -180,7 +181,8 @@ export function addNoteAlgorithmSpecificDisplaySetting(containerEl: HTMLElement,
     const update = (settings: unknown, refresh?: boolean): void => {
         runAsync(
             (async () => {
-                plugin.data.settings.algorithmSettings[plugin.data.settings.noteAlgorithm] = settings;
+                plugin.data.settings.algorithmSettings[plugin.data.settings.noteAlgorithm] =
+                    settings;
                 await plugin.savePluginData();
                 if (refresh) {
                     plugin.noteAlgorithm.displaySettings(containerEl, update);
@@ -204,7 +206,9 @@ export function addCardResponseButtonTextSetting(containerEl: HTMLElement, plugi
 
     if (btnText[algo] == null) {
         btnText[algo] = [];
-        options.forEach((opt, ind) => (btnText[algo][ind] = t(opt.toUpperCase() as TranslationKey)));
+        options.forEach(
+            (opt, ind) => (btnText[algo][ind] = t(opt.toUpperCase() as TranslationKey)),
+        );
     }
 
     options.forEach((opt, ind) => {
@@ -245,7 +249,9 @@ export function addNoteResponseButtonTextSetting(containerEl: HTMLElement, plugi
 
     if (btnText[algo] == null) {
         btnText[algo] = [];
-        options.forEach((opt, ind) => (btnText[algo][ind] = t(opt.toUpperCase() as TranslationKey)));
+        options.forEach(
+            (opt, ind) => (btnText[algo][ind] = t(opt.toUpperCase() as TranslationKey)),
+        );
     }
 
     options.forEach((opt, ind) => {

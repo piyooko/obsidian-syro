@@ -32,9 +32,7 @@ export interface MomentValue {
 
 function momentFactory(...args: unknown[]): MomentValue {
     const runtimeMoment =
-        typeof window !== "undefined" &&
-        "moment" in window &&
-        typeof window.moment === "function"
+        typeof window !== "undefined" && "moment" in window && typeof window.moment === "function"
             ? (window.moment as (...momentArgs: unknown[]) => MomentValue)
             : null;
 

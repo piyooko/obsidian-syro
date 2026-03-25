@@ -369,8 +369,7 @@ export default normalizeSentenceCaseLocale({
     This change is irreversible. Changing algorithms only takes effect after a restart
     or a plugin reload. Are you sure you want to switch algorithms?
     `,
-    ALGORITHMS_DESC:
-        "The algorithm used for spaced repetition.",
+    ALGORITHMS_DESC: "The algorithm used for spaced repetition.",
     ALGORITHM_SWITCH_SUCCESS: "Switch successful",
     ALGORITHM_SWITCH_FAILED: "Switch failed, restored",
 
@@ -559,8 +558,7 @@ export default normalizeSentenceCaseLocale({
     EASY_INTERVAL_ERROR: "Interval must be a positive number.",
 
     // scheduling_default.ts
-    DEFAULT_ALGORITHM_DESC:
-        "The algorithm used for spaced repetition.",
+    DEFAULT_ALGORITHM_DESC: "The algorithm used for spaced repetition.",
 
     // supermemo.ts
     SM2_ALGORITHM_DESC:

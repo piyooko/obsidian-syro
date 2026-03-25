@@ -107,7 +107,13 @@ import { latexPopoverExtension, initializeLatexPopover } from "./editor/latex-po
 import { latexClozePreprocessorPlugin } from "./editor/latex-cloze-preprocessor";
 import { clozePostProcessor } from "./editor/cloze-postprocessor";
 import { LicenseManager } from "./services/LicenseManager";
-import { getArrayProp, getNumberProp, getStringProp, isRecord, parseJsonUnknown } from "./util/typeGuards";
+import {
+    getArrayProp,
+    getNumberProp,
+    getStringProp,
+    isRecord,
+    parseJsonUnknown,
+} from "./util/typeGuards";
 import { SyncProgressTip } from "src/ui/components/SyncProgressTip";
 import { Tags } from "./tags";
 import {
@@ -600,8 +606,8 @@ export default class SRPlugin extends Plugin {
                                     title = localizedOption;
                                 }
                                 item.setTitle(title)
-                                .setIcon("SpacedRepIcon")
-                                .onClick(() => {
+                                    .setIcon("SpacedRepIcon")
+                                    .onClick(() => {
                                         this.runAsync(
                                             this.saveReviewResponse(fileish, i),
                                             "save file menu review response",
@@ -1793,7 +1799,9 @@ export default class SRPlugin extends Plugin {
             this.lastSyncCompletedAt = Date.now();
             this.lastSyncReviewMode = reviewMode;
             this.lastSuccessfulCardCaptureSignature = this.getCardCaptureSignature(settings);
-            if (this.pendingCardCapturePromptSignature === this.lastSuccessfulCardCaptureSignature) {
+            if (
+                this.pendingCardCapturePromptSignature === this.lastSuccessfulCardCaptureSignature
+            ) {
                 this.pendingCardCapturePromptSignature = "";
             }
             this.syncEvents.emit("sync-complete");
@@ -2055,7 +2063,10 @@ export default class SRPlugin extends Plugin {
                     return;
                 }
             }
-            this.runAsync(this.reviewNextNote(this.lastSelectedReviewDeck), "open next review note");
+            this.runAsync(
+                this.reviewNextNote(this.lastSelectedReviewDeck),
+                "open next review note",
+            );
         }
     }
 
@@ -2255,7 +2266,9 @@ export default class SRPlugin extends Plugin {
             // 浣跨敤 setTimeout 閬垮厤闃诲鐣岄潰娓叉煋锛岀粰鐣岄潰涓€鐐瑰垵濮嬪寲鏃堕棿
             setTimeout(() => {
                 if (this.data.settings.showSchedulingDebugMessages) {
-                    console.debug("[SR-Init] 棣栨婵€娲诲涔犺鍥撅紝瑙﹀彂鍚庡彴鍏ㄥ眬鍨冨溇鍥炴敹 (GC)...");
+                    console.debug(
+                        "[SR-Init] 棣栨婵€娲诲涔犺鍥撅紝瑙﹀彂鍚庡彴鍏ㄥ眬鍨冨溇鍥炴敹 (GC)...",
+                    );
                 }
                 this.runAsync(
                     this.store.performGlobalGarbageCollection().then(() => {
@@ -2386,7 +2399,9 @@ export default class SRPlugin extends Plugin {
     }
 
     public registerSRFocusListener() {
-        this.registerEvent(this.app.workspace.on("active-leaf-change", this.activeLeafChangeHandler));
+        this.registerEvent(
+            this.app.workspace.on("active-leaf-change", this.activeLeafChangeHandler),
+        );
     }
 
     public removeSRFocusListener() {
@@ -2542,12 +2557,12 @@ export default class SRPlugin extends Plugin {
                     `[SR-Debug] collectLearningCardsFromStore: moved ${movedCount} misplaced learning cards.`,
                 );
             }
-            console.debug(`[SR-Debug] 褰撳墠鍏ㄥ眬瀛︿範闃熷垪闀垮害: ${this.learningQueue.length}`);
+            console.debug(
+                `[SR-Debug] 褰撳墠鍏ㄥ眬瀛︿範闃熷垪闀垮害: ${this.learningQueue.length}`,
+            );
         }
 
         // 鎸?dueTime 鎺掑簭瀛︿範闃熷垪
         this.learningQueue.sort((a, b) => a.dueTime - b.dueTime);
     }
 }
-
-

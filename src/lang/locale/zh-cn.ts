@@ -244,8 +244,7 @@ export default {
     REPEAT_ITEMS_DESC: "错误项是否要一直重复复习，直到回答正确?",
     ALGORITHMS_CONFIRM:
         "切换算法可能导致日期排程重置，这个修改不可撤销，当重启软件或重新加载插件切换算法才会生效。你确定要切换算法么?",
-    ALGORITHMS_DESC:
-        "用于间隔重复的算法。",
+    ALGORITHMS_DESC: "用于间隔重复的算法。",
     ALGORITHM_SWITCH_SUCCESS: "切换成功",
     ALGORITHM_SWITCH_FAILED: "切换失败，已恢复",
 

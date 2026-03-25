@@ -1,5 +1,13 @@
 /** @jsxImportSource react */
-import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, {
+    useCallback,
+    useEffect,
+    useId,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 import { X } from "lucide-react";
 import type SRPlugin from "src/main";
 import { t } from "src/lang/helpers";
@@ -99,8 +107,9 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
     );
     const presetUsageCounts = useMemo(() => {
         const deckPaths = collectDeckPaths(plugin.deckTree);
-        return draft.presets.map((_, index) =>
-            deckPaths.filter((path) => (draft.assignment[path] ?? 0) === index).length,
+        return draft.presets.map(
+            (_, index) =>
+                deckPaths.filter((path) => (draft.assignment[path] ?? 0) === index).length,
         );
     }, [draft.assignment, draft.currentPresetIndex, plugin.deckTree]);
 
@@ -212,7 +221,9 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
     }, []);
 
     const handleSave = useCallback(async () => {
-        plugin.data.settings.deckOptionsPresets = draft.presets.map((preset) => normalizePreset(preset));
+        plugin.data.settings.deckOptionsPresets = draft.presets.map((preset) =>
+            normalizePreset(preset),
+        );
         plugin.data.settings.deckOptionsPresets = plugin.data.settings.deckOptionsPresets.map(
             (preset, index) => ({
                 ...preset,
@@ -275,7 +286,9 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                             <div className="sr-deck-options-select-control">
                                 <select
                                     value={String(draft.currentPresetIndex)}
-                                    onChange={(event) => handlePresetIndexChange(event.target.value)}
+                                    onChange={(event) =>
+                                        handlePresetIndexChange(event.target.value)
+                                    }
                                     className="dropdown"
                                 >
                                     {draft.presets.map((preset, index) => (
@@ -308,7 +321,10 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                             desc={t("DECK_OPTIONS_LEARNING_STEPS_DESC")}
                             value={currentPreset.learningSteps}
                             onChange={(value) =>
-                                updateCurrentPreset((preset) => ({ ...preset, learningSteps: value }))
+                                updateCurrentPreset((preset) => ({
+                                    ...preset,
+                                    learningSteps: value,
+                                }))
                             }
                         />
                         <InputRow
@@ -395,7 +411,11 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                                 label={t("DECK_OPTIONS_DELETE_PRESET")}
                                 desc={t("DECK_OPTIONS_DELETE_PRESET_DESC")}
                             >
-                                <button type="button" className="mod-warning" onClick={handleDeletePreset}>
+                                <button
+                                    type="button"
+                                    className="mod-warning"
+                                    onClick={handleDeletePreset}
+                                >
                                     {t("DECK_OPTIONS_BTN_DELETE_PRESET")}
                                 </button>
                             </BaseComponent>

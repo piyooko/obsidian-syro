@@ -22,9 +22,13 @@ type RedrawableView = {
 };
 
 function isRedrawableView(view: unknown): view is RedrawableView {
-    return typeof view === "object" && view !== null && "redraw" in view && typeof view.redraw === "function";
+    return (
+        typeof view === "object" &&
+        view !== null &&
+        "redraw" in view &&
+        typeof view.redraw === "function"
+    );
 }
-
 
 // 闂傚啫寮舵慨鍫ュ礉閵娿儱姣愰柡浣稿簻缁辨壆娑甸鑽ょ闁活潿鍔嶉崺娑欐交閻愮數鏁鹃弶鍫熸尭閸欏棝寮張鐢电憹濞村吋宀搁。鍓佹崲娴ｅ彨鏇㈠矗閹存粎绠介悗娑櫳戦幖閿嬫媴?
 
@@ -93,25 +97,29 @@ export class SRSettingTab extends PluginSettingTab {
             }
 
             if (this.plugin.consumePendingCardCaptureRebuildPrompt()) {
-                new ConfirmModal(this.plugin, t("SETTINGS_CARD_CAPTURE_REBUILD_CONFIRM"), (confirmed) => {
-                    if (!confirmed) {
-                        return;
-                    }
+                new ConfirmModal(
+                    this.plugin,
+                    t("SETTINGS_CARD_CAPTURE_REBUILD_CONFIRM"),
+                    (confirmed) => {
+                        if (!confirmed) {
+                            return;
+                        }
 
-                    void this.plugin
-                        .requestSync({ trigger: "manual", mode: "full" })
-                        .then((result) => {
-                            if (result.status === "queued") {
-                                new Notice(t("SETTINGS_CARD_CAPTURE_REBUILD_QUEUED"));
-                            }
-                        })
-                        .catch((error) => {
-                            console.error(
-                                "[SR-Settings] Failed to rebuild after card capture setting change:",
-                                error,
-                            );
-                        });
-                }).open();
+                        void this.plugin
+                            .requestSync({ trigger: "manual", mode: "full" })
+                            .then((result) => {
+                                if (result.status === "queued") {
+                                    new Notice(t("SETTINGS_CARD_CAPTURE_REBUILD_QUEUED"));
+                                }
+                            })
+                            .catch((error) => {
+                                console.error(
+                                    "[SR-Settings] Failed to rebuild after card capture setting change:",
+                                    error,
+                                );
+                            });
+                    },
+                ).open();
             }
         });
     }

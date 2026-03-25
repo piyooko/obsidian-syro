@@ -114,7 +114,9 @@ export function validateCachedNoteBindings(
     const trackedReviewIds = new Set(
         (trackedFile.trackedItems ?? [])
             .map((item) => item?.reviewId)
-            .filter((reviewId): reviewId is number => typeof reviewId === "number" && reviewId >= 0),
+            .filter(
+                (reviewId): reviewId is number => typeof reviewId === "number" && reviewId >= 0,
+            ),
     );
 
     for (const question of note.questionList) {
@@ -270,7 +272,9 @@ export function serializeNote(note: Note): SerializedNote {
 export function deserializeNote(data: SerializedNote, file: ISRFile): Note {
     const questions = (data.questions ?? []).map((questionData): Question => {
         const parsedQuestionInfo = new ParsedQuestionInfo(
-            questionData.parsedQuestionInfo.cardType as ConstructorParameters<typeof ParsedQuestionInfo>[0],
+            questionData.parsedQuestionInfo.cardType as ConstructorParameters<
+                typeof ParsedQuestionInfo
+            >[0],
             questionData.parsedQuestionInfo.text,
             questionData.parsedQuestionInfo.firstLineNum,
             questionData.parsedQuestionInfo.lastLineNum,

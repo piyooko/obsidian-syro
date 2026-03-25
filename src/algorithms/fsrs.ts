@@ -654,5 +654,3 @@ export class FsrsAlgorithm extends SrsAlgorithm {
         return;
     }
 }
-
-

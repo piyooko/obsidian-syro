@@ -3,7 +3,7 @@
  */
 import { MarkdownPostProcessorContext } from "obsidian";
 
-export const clozePostProcessor = (el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
+export const clozePostProcessor = (el: HTMLElement, _ctx: MarkdownPostProcessorContext) => {
     // Only process text nodes, skip code blocks?
     // Actually, we should iterate text nodes.
 

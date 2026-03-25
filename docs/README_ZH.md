@@ -1,8 +1,7 @@
 [English](../README.md) | **中文文档**
-***Reshape Your Memory and Reading in Obsidian***
-> **将“间隔重复（Spaced Repetition）”与“渐进阅读（Incremental Reading）”的科学理念，无缝融入你的纯文本知识库。**
-<img width="2741" height="1082" alt="image" src="https://github.com/user-attachments/assets/e4171711-61c7-4465-a1d0-f518c6709839" />
+**_Reshape Your Memory and Reading in Obsidian_**
 
+> **将“间隔重复（Spaced Repetition）”与“渐进阅读（Incremental Reading）”的科学理念，无缝融入你的纯文本知识库。** > <img width="2741" height="1082" alt="image" src="https://github.com/user-attachments/assets/e4171711-61c7-4465-a1d0-f518c6709839" />
 
 ## 知识库沦为收藏库
 
@@ -11,6 +10,7 @@
 Syro 旨在为此提供一种解决方案。它并非意在取代你现有的笔记习惯，而是希望引入“时间”的维度，将你的静态知识库，转变为一个能够主动、智能地帮你学习与记忆的记忆系统。
 
 ## 为谁设计？
+
 Syro 的核心机制——间隔重复与渐进阅读，尤其适合以下类型的 Obsidian 用户：
 
 -   **对抗“数字收藏家”困境的知识囤积者**
@@ -61,14 +61,17 @@ Syro 的核心机制——间隔重复与渐进阅读，尤其适合以下类型
 **详细安装步骤：**
 
 1.  **安装 BRAT 插件**
+
     -   如果您的 Obsidian 中尚未安装 BRAT，请前往 `设置` > `第三方插件` > `社区插件市场` > `浏览`。
     -   在搜索框中输入 `BRAT`，找到 `Obsidian42 - BRAT` 并点击 `安装`，然后 `启用` 它。
 
 2.  **添加 Syro 仓库**
+
     -   打开 BRAT 插件的设置页面（`设置` > `第三方插件` > `BRAT`）。
     -   点击 `Add Beta plugin` (添加 Beta 插件) 按钮。
 
 3.  **粘贴仓库地址**
+
     -   在弹出的输入框中，粘贴本插件的 GitHub 仓库地址：
         ```
         https://github.com/piyooko/obsidian-syro/
@@ -104,5 +107,6 @@ Syro 的开发离不开开源社区的滋养与众多卓越项目的启发。我
 -   **[Obsidian Smart Connections](https://github.com/brianpetro/obsidian-smart-connections)**: 在探索本地知识库与 AI 技术的结合上，其优秀的工程架构与创新思路提供了宝贵的启发。
 
 ---
+
 **License**: [MIT License](./LICENSE)  
-*(披露：Syro 的大多核心功能可免费使用，部分支持者专属实验功能需要通过 CDK 验证。当前版本无强制账号体系；本插件会自动或用户手动进行 CDK 联网校验，但不会向云端发送核心复习数据、笔记内容或其他与 CDK 校验无关的内容。)*
+_(披露：Syro 的大多核心功能可免费使用，部分支持者专属实验功能需要通过 CDK 验证。当前版本无强制账号体系；本插件会自动或用户手动进行 CDK 联网校验，但不会向云端发送核心复习数据、笔记内容或其他与 CDK 校验无关的内容。)_

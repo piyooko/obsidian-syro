@@ -4,7 +4,6 @@
  * It rebuilds isolated deck branches for focused study and refreshes on sync updates.
  */
 
-
 import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { Component, MarkdownRenderer, Notice, Platform, TFile, type Editor } from "obsidian";
@@ -139,7 +138,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     sequencer,
     markdownOwner,
     initialView = "deck-list",
-    onClose,
+    onClose: _onClose,
 }) => {
     // View state
     const [view, setView] = useState<ViewType>(initialView);
@@ -162,7 +161,9 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
 
     // Refresh when sync or deck stats change underneath the current view.
     useEffect(() => {
-        logRuntimeDebug("[SR-DynSync] ReviewSession: subscribed to sync-complete & deck-stats-updated");
+        logRuntimeDebug(
+            "[SR-DynSync] ReviewSession: subscribed to sync-complete & deck-stats-updated",
+        );
 
         const onSyncComplete = () => {
             logRuntimeDebug("[SR-DynSync] ReviewSession: sync-complete received");
@@ -227,8 +228,9 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 sequencer.setDeckTree(latestFullTree, wrappedDeckTree, latestRemainingTree);
                 sequencer.setCurrentDeck(TopicPath.emptyPath);
 
-                logRuntimeDebug(`[V3-Scheduler] Clicked Deck: ${fullPath}, isolated new=${isolatedContextDeck.getCardCount(CardListType.NewCard, true)}, due=${isolatedContextDeck.getCardCount(CardListType.DueCard, true)}`);
-
+                logRuntimeDebug(
+                    `[V3-Scheduler] Clicked Deck: ${fullPath}, isolated new=${isolatedContextDeck.getCardCount(CardListType.NewCard, true)}, due=${isolatedContextDeck.getCardCount(CardListType.DueCard, true)}`,
+                );
 
                 if (sequencer.hasCurrentCard) {
                     setRecentDeckPath(fullPath);
@@ -282,7 +284,6 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         },
         [sequencer, forceUpdate, handleExitReview, logRuntimeDebug],
     );
-
 
     const handleUndo = useCallback(async () => {
         if (!sequencer.canUndo) {
@@ -423,13 +424,12 @@ interface OpenDeckOptionsState {
     deckPath: string;
 }
 
-
 const DeckListView: React.FC<DeckListViewProps> = ({
-    sequencer,
+    sequencer: _sequencer,
     plugin,
     onDeckClick,
     onCollapseChange,
-    tick,
+    tick: _tick,
     recentDeckPath,
     initialScrollTop,
     onScrollTopChange,
@@ -460,10 +460,12 @@ const DeckListView: React.FC<DeckListViewProps> = ({
 
         const result = remainingDeckTree.subdecks.map((deck: Deck) => deckToUIState(deck, plugin));
         if (plugin.data.settings.showRuntimeDebugMessages) {
-            console.debug(`[V3-Scheduler] DeckListView render: tick=${tick}, decks=${result.length}`);
+            console.debug(
+                `[V3-Scheduler] DeckListView render: tick=${_tick}, decks=${result.length}`,
+            );
         }
         return result;
-    }, [plugin.remainingDeckTree, plugin, tick]);
+    }, [plugin.remainingDeckTree, plugin, _tick]);
 
     useEffect(() => {
         const unsubStart = plugin.syncEvents.on("sync-start", () => setIsSyncing(true));
@@ -511,7 +513,8 @@ const DeckListView: React.FC<DeckListViewProps> = ({
             const minWidth = 320;
             const hostStyles = window.getComputedStyle(host);
             const hostPadding =
-                parseFloat(hostStyles.paddingLeft || "0") + parseFloat(hostStyles.paddingRight || "0");
+                parseFloat(hostStyles.paddingLeft || "0") +
+                parseFloat(hostStyles.paddingRight || "0");
             const maxWidth = Math.max(minWidth, host.clientWidth - hostPadding);
 
             let currentWidth: number = startWidth;
@@ -633,7 +636,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     onUndo,
     onDelete,
     onExit,
-    tick,
+    tick: _tick,
     uiResetToken,
 }) => {
     const card = sequencer.currentCard;
@@ -674,8 +677,8 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
         },
     );
     const cardIdx = card.cardIdx;
-    let front = expanded[cardIdx]?.front || "";
-    let back = expanded[cardIdx]?.back || "";
+    const front = expanded[cardIdx]?.front || "";
+    const back = expanded[cardIdx]?.back || "";
     const review = expanded[cardIdx]?.review;
 
     const cardState: CardState = useMemo(
@@ -853,4 +856,3 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
         </div>
     );
 };
-

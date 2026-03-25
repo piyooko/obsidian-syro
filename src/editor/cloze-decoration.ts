@@ -75,7 +75,10 @@ function isInsideLatexFormula(text: string, position: number): boolean {
 /**
  * 获取当前位置所在的"卡片上下文"（段落边界）
  */
-function getCardContext(doc: { toString(): string }, pos: number): { from: number; to: number; text: string } {
+function getCardContext(
+    doc: { toString(): string },
+    pos: number,
+): { from: number; to: number; text: string } {
     const docText = doc.toString();
     let from = pos;
     while (from > 0) {

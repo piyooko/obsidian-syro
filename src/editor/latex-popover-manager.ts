@@ -269,7 +269,7 @@ class LatexPopoverPlugin {
             }
         };
 
-        const onMouseUp = (e: MouseEvent) => {
+        const onMouseUp = (_e: MouseEvent) => {
             isDragging = false;
             document.removeEventListener("mousemove", onMouseMove);
             document.removeEventListener("mouseup", onMouseUp);

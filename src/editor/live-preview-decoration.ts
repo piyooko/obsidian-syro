@@ -2,13 +2,7 @@
  * [编辑器层：增强 Obsidian 编辑体验] [UI] 实时预览模式下的装饰器逻辑。
  */
 
-import {
-    Decoration,
-    DecorationSet,
-    EditorView,
-    ViewPlugin,
-    ViewUpdate,
-} from "@codemirror/view";
+import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
 
 // ==========================================

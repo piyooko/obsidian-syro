@@ -125,10 +125,13 @@ export class DeckOptionsModal extends Modal {
             .setName(t("DECK_OPTIONS_LEARNING_STEPS"))
             .setDesc(t("DECK_OPTIONS_LEARNING_STEPS_DESC"))
             .addText((text) =>
-                text.setPlaceholder("1m 10m").setValue(preset.learningSteps).onChange(async (value) => {
-                    preset.learningSteps = value;
-                    await this.saveSettings();
-                }),
+                text
+                    .setPlaceholder("1m 10m")
+                    .setValue(preset.learningSteps)
+                    .onChange(async (value) => {
+                        preset.learningSteps = value;
+                        await this.saveSettings();
+                    }),
             );
 
         new Setting(itemsEl)
@@ -152,10 +155,13 @@ export class DeckOptionsModal extends Modal {
             .setName(t("DECK_OPTIONS_RELEARNING_STEPS"))
             .setDesc(t("DECK_OPTIONS_RELEARNING_STEPS_DESC"))
             .addText((text) =>
-                text.setPlaceholder("10m").setValue(preset.lapseSteps).onChange(async (value) => {
-                    preset.lapseSteps = value;
-                    await this.saveSettings();
-                }),
+                text
+                    .setPlaceholder("10m")
+                    .setValue(preset.lapseSteps)
+                    .onChange(async (value) => {
+                        preset.lapseSteps = value;
+                        await this.saveSettings();
+                    }),
             );
     }
 

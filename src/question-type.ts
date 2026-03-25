@@ -225,7 +225,7 @@ function getLineNumberFromIndex(text: string, index: number): number {
 function stripStandardClozeSyntax(text: string): string {
     let current = text;
 
-    while (true) {
+    for (;;) {
         const matches = extractStandardClozeMatches(current);
         if (matches.length === 0) {
             return current;
@@ -271,7 +271,9 @@ function isEquivalentStandardWrapper(
     outer: Pick<RawStandardClozeRange, "start" | "end" | "innerText">,
     inner: Pick<RawStandardClozeRange, "start" | "end" | "fullMatch">,
 ): boolean {
-    return outer.start < inner.start && outer.end > inner.end && outer.innerText === inner.fullMatch;
+    return (
+        outer.start < inner.start && outer.end > inner.end && outer.innerText === inner.fullMatch
+    );
 }
 
 function rangesCross(
@@ -314,7 +316,9 @@ function buildStandardClozeTree(ranges: RawStandardClozeRange[]): RawStandardClo
     return roots;
 }
 
-function getEquivalentStandardChild(range: RawStandardClozeRange): RawStandardClozeRange | undefined {
+function getEquivalentStandardChild(
+    range: RawStandardClozeRange,
+): RawStandardClozeRange | undefined {
     return range.children.find((child) => isEquivalentStandardWrapper(range, child));
 }
 
@@ -339,10 +343,8 @@ function normalizeStandardClozeSubtree(range: RawStandardClozeRange): StandardCl
     }
 
     const outerRange = equivalentChain[0];
-    const visualMode: StandardClozeVisualMode =
-        equivalentChain.length > 1 ? "plain" : "wrapped";
-    const contentStart =
-        semanticRange.start + getStandardClozeDelimiter(semanticRange.type).length;
+    const visualMode: StandardClozeVisualMode = equivalentChain.length > 1 ? "plain" : "wrapped";
+    const contentStart = semanticRange.start + getStandardClozeDelimiter(semanticRange.type).length;
     const contentEnd = semanticRange.end - getStandardClozeDelimiter(semanticRange.type).length;
 
     return [
@@ -474,9 +476,33 @@ function createStandardClozeCardFrontBack(
     settings: SRSettings,
 ): CardFrontBack {
     return new CardFrontBack(
-        renderStandardClozeSegment(text, model.roots, activeRange, settings, "front", 0, text.length),
-        renderStandardClozeSegment(text, model.roots, activeRange, settings, "back", 0, text.length),
-        renderStandardClozeSegment(text, model.roots, activeRange, settings, "review", 0, text.length),
+        renderStandardClozeSegment(
+            text,
+            model.roots,
+            activeRange,
+            settings,
+            "front",
+            0,
+            text.length,
+        ),
+        renderStandardClozeSegment(
+            text,
+            model.roots,
+            activeRange,
+            settings,
+            "back",
+            0,
+            text.length,
+        ),
+        renderStandardClozeSegment(
+            text,
+            model.roots,
+            activeRange,
+            settings,
+            "review",
+            0,
+            text.length,
+        ),
     );
 }
 
@@ -553,7 +579,10 @@ function findStandardClozeRangeInContext(
 class QuestionTypeCloze implements IQuestionTypeHandler {
     expand(questionText: string, settings: SRSettings): CardFrontBack[] {
         const standardModel = createStandardClozeModel(questionText, settings);
-        if (standardModel.ranges.length > 0 && !hasNonStandardClozePatterns(questionText, settings)) {
+        if (
+            standardModel.ranges.length > 0 &&
+            !hasNonStandardClozePatterns(questionText, settings)
+        ) {
             return standardModel.ranges.map((range) =>
                 createStandardClozeCardFrontBack(questionText, standardModel, range, settings),
             );
@@ -570,9 +599,18 @@ class QuestionTypeCloze implements IQuestionTypeHandler {
         let front: string, back: string, review: string;
         const result: CardFrontBack[] = [];
         for (let i = 0; i < codeAwareNote.note.numCards; i++) {
-            front = restoreCodeContextMask(codeAwareNote.note.getCardFront(i, clozeFormatter), codeAwareNote.mask);
-            back = restoreCodeContextMask(codeAwareNote.note.getCardBack(i, clozeFormatter), codeAwareNote.mask);
-            review = restoreCodeContextMask(codeAwareNote.note.getCardFront(i, reviewFormatter), codeAwareNote.mask);
+            front = restoreCodeContextMask(
+                codeAwareNote.note.getCardFront(i, clozeFormatter),
+                codeAwareNote.mask,
+            );
+            back = restoreCodeContextMask(
+                codeAwareNote.note.getCardBack(i, clozeFormatter),
+                codeAwareNote.mask,
+            );
+            review = restoreCodeContextMask(
+                codeAwareNote.note.getCardFront(i, reviewFormatter),
+                codeAwareNote.mask,
+            );
             result.push(new CardFrontBack(front, back, review));
         }
 
@@ -735,7 +773,10 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                     context,
                 );
                 const contextModel = createStandardClozeModel(contextText, settings);
-                const occurrenceIndex = getStandardClozeOccurrenceIndex(standardModel.ranges, range);
+                const occurrenceIndex = getStandardClozeOccurrenceIndex(
+                    standardModel.ranges,
+                    range,
+                );
                 const activeRange = findStandardClozeRangeInContext(
                     contextModel,
                     questionText,
@@ -768,9 +809,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
 
         return result;
 
-
         // 涓烘瘡涓櫘閫氭寲绌虹敓鎴愬崱鐗?
-
     }
 
     /**
@@ -1012,7 +1051,6 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         let result = text;
 
         if (!this.shouldKeepOtherAnkiClozeVisual(settings)) {
-
             result = result.replace(/\{\{c(\d+)(?:::|锛氾細)(.*?)(?:::|锛氾細)?\}\}/gi, "$2");
         }
 

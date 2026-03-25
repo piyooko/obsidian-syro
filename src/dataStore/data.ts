@@ -155,7 +155,9 @@ export class DataStore {
 
     private getAlgorithmForItemType(itemType: RPITEMTYPE): SrsAlgorithm {
         try {
-            return SRPlugin.getInstance()?.getAlgorithmForItem(itemType) ?? SrsAlgorithm.getInstance();
+            return (
+                SRPlugin.getInstance()?.getAlgorithmForItem(itemType) ?? SrsAlgorithm.getInstance()
+            );
         } catch {
             return SrsAlgorithm.getInstance();
         }
@@ -359,7 +361,9 @@ export class DataStore {
         this.markReviewOverlayDirty();
     }
 
-    private async flushReviewOverlayOnce(path = this.dataPath): Promise<"success" | "stale" | "failed"> {
+    private async flushReviewOverlayOnce(
+        path = this.dataPath,
+    ): Promise<"success" | "stale" | "failed"> {
         const versionToPersist = this.reviewItemOverlayVersion;
         const snapshot = Array.from(this.reviewItemOverlayById.values());
 
@@ -474,17 +478,21 @@ export class DataStore {
                 if (item == null) continue;
                 const legacyItem = item as LegacyFileIndexItem;
                 const oldIndex = legacyItem.fileIndex;
-                const normalizedOldIndex = typeof oldIndex === "number" ? oldIndex : Number(oldIndex);
+                const normalizedOldIndex =
+                    typeof oldIndex === "number" ? oldIndex : Number(oldIndex);
                 if (oldIndex !== undefined) {
-                    legacyItem.fileID =
-                        Number.isNaN(normalizedOldIndex) ? "" : indexToID.get(normalizedOldIndex) || "";
+                    legacyItem.fileID = Number.isNaN(normalizedOldIndex)
+                        ? ""
+                        : indexToID.get(normalizedOldIndex) || "";
                     delete legacyItem.fileIndex;
                 }
             }
 
             this.data.trackedFiles = newFiles;
             this.data.fileOrder = fileOrder;
-            this.logInfo(`[SR] Data migration completed: ${oldFiles.length} -> ${fileOrder.length} files`);
+            this.logInfo(
+                `[SR] Data migration completed: ${oldFiles.length} -> ${fileOrder.length} files`,
+            );
         } else {
             // 鏂版牸寮忥細灏?TrackedFile 瀵硅薄杞负瀹炰緥
             for (const fileID in this.data.trackedFiles) {
@@ -834,7 +842,7 @@ export class DataStore {
     /**
      * 鍏煎鏂规硶锛氫繚鐣欐棫鎺ュ彛锛屽唴閮ㄤ笉鍐嶄娇鐢ㄣ€?
      */
-    getFileByIndex(idx: number): TrackedFile {
+    getFileByIndex(_idx: number): TrackedFile {
         // 鍏煎鎬т繚鐣欙紝瀹為檯涓嶅簲鍐嶈璋冪敤
         console.warn("[SR] getFileByIndex is deprecated, use getFileByID instead");
         return null;
@@ -1251,7 +1259,7 @@ export class DataStore {
         const fileID = this.getFileID(trackedFile.path);
 
         let added = 0;
-        let removed = 0;
+        const removed = 0;
 
         if (trackedItem.reviewId === -1) {
             // 鏂板崱锛堝唴瀹瑰彉浜嗭紝鎴栬€呮柊澧炵殑锛夛細鍒嗛厤鏂?ID
@@ -1388,7 +1396,7 @@ export class DataStore {
     /**
      * pruneData: delete unused storedata, fsrs's optimizer/writeRevlog() will be affected if using this func.
      * NulltFiles/NullItems
-    * @returns
+     * @returns
      */
     async pruneData() {
         this.data = MiscUtils.assignOnly(DEFAULT_SRS_DATA, this.data);
@@ -1516,5 +1524,3 @@ export class DataStore {
         }
     }
 }
-
-

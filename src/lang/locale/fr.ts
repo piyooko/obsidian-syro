@@ -231,8 +231,7 @@ export default {
     This change is irreversible. Changing algorithms only takes effect after a restart
     or a plugin reload. Are you sure you want to switch algorithms?
     `,
-    ALGORITHMS_DESC:
-        "The algorithm used for spaced repetition.",
+    ALGORITHMS_DESC: "The algorithm used for spaced repetition.",
     CONVERT_TRACKED_TO_DECK: "Convert Tracked Notes to decks?",
     REVIEW_FLOATBAR: "Review Response FloatBar",
     REVIEW_FLOATBAR_DESC:

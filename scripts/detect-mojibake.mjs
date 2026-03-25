@@ -7,8 +7,7 @@ import path from "node:path";
 const DEFAULT_BASE = "51db186";
 const DEFAULT_HEAD = "HEAD";
 const SELF_SCRIPT_PATH = "scripts/detect-mojibake.mjs";
-const TEXT_FILE_PATTERN =
-    /\.(?:ts|tsx|js|jsx|mjs|cjs|json|css|scss|md|txt|yml|yaml)$/i;
+const TEXT_FILE_PATTERN = /\.(?:ts|tsx|js|jsx|mjs|cjs|json|css|scss|md|txt|yml|yaml)$/i;
 const PRIORITY_FILE_PATTERN =
     /^(src\/.*\.(?:ts|tsx|css)|scripts\/.*\.(?:mjs|js|ts)|package\.json|manifest\.json|versions\.json|eslint.*|\.eslintrc.*)$/i;
 const MOJIBAKE_FRAGMENTS = [
@@ -43,7 +42,8 @@ process.chdir(repoRoot);
 
 const trackedFiles = new Set(splitLines(git(["ls-files"])).filter(isTextFile));
 const candidateFiles = collectCandidateFiles(base, head, trackedFiles);
-const filesToScan = candidateFiles.length > 0 ? candidateFiles : [...trackedFiles].filter(isPriorityFile);
+const filesToScan =
+    candidateFiles.length > 0 ? candidateFiles : [...trackedFiles].filter(isPriorityFile);
 const findings = [];
 
 for (const file of filesToScan) {

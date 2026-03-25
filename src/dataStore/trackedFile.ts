@@ -137,7 +137,7 @@ export class TrackedFile implements ITrackedFile {
     }
 
     static create(data: ITrackedFile): TrackedFile {
-        let tf = new TrackedFile(data.path);
+        const tf = new TrackedFile(data.path);
         const type = (data.tags?.[0] as RPITEMTYPE) || RPITEMTYPE.NOTE;
         const dname = data.tags?.[1];
         tf.setTracked(type, dname);
@@ -574,7 +574,7 @@ function extractHolesWithOffsets(
 /**
  * 閸楃姳缍呭Ο鈩冨珯閹绘劕褰囬梻顔剧摕閸楋紕娈戠粵鏃€顢嶉崘鍛啇
  */
-function extractQAAnswer(cleanText: string, settings: SRSettings, type: CardType): string {
+function extractQAAnswer(cleanText: string, settings: SRSettings, _type: CardType): string {
     // 闂傤喚鐡熼崡陇顫︾€电懓绨查惃鍕瀻闂呮梻顑侀崚鍡樺灇閸撳秴鎮楁稉銈夊劥閸掑棎鈧倸浜ｇ拋?parser.ts 閻ㄥ嫰鈧槒绶敍灞惧灉娴狀剙褰叉禒銉х暆閸栨牔璐熼敍?
     // 婵″倹鐏夐弰?QA閿涘瞼鐡熷鍫濇躬閸掑棝娈х粭锕€鎮楅棃顫偓鍌濈箹闁劌鍨庨棁鈧笟婵婄閸忚渹缍嬮崚鍡涙缁楋箑鐤勯悳甯礉鏉╂瑩鍣烽崑姘悏娴狅絿鐖滃鏃傘仛閿?
     const parts = cleanText.split(settings.singleLineCardSeparator);
@@ -630,4 +630,3 @@ function calculateLineScores(
     }
     return scores;
 }
-

@@ -18,12 +18,7 @@
 /** @jsxImportSource react */
 import { Notice } from "obsidian";
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import {
-    FileText,
-    Layout,
-    Shield,
-    Cpu,
-} from "lucide-react";
+import { FileText, Layout, Shield, Cpu } from "lucide-react";
 import { t } from "src/lang/helpers";
 import { UISettingsState } from "../types/settingsTypes";
 import {
@@ -315,12 +310,7 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
                 />
                 <ToggleRow
                     label={
-                        (
-                            <LabelWithSupporter
-                                label={t("SETTINGS_ANKI_CLOZE")}
-                                isLocked={isFree}
-                            />
-                        )
+                        <LabelWithSupporter label={t("SETTINGS_ANKI_CLOZE")} isLocked={isFree} />
                     }
                     desc={t("SETTINGS_ANKI_CLOZE_DESC")}
                     value={settings.convertAnkiClozesToClozes}
@@ -330,12 +320,7 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
                 />
                 <ToggleRow
                     label={
-                        (
-                            <LabelWithSupporter
-                                label={t("SETTINGS_CODE_CLOZE")}
-                                isLocked={isFree}
-                            />
-                        )
+                        <LabelWithSupporter label={t("SETTINGS_CODE_CLOZE")} isLocked={isFree} />
                     }
                     desc={t("SETTINGS_CODE_CLOZE_DESC")}
                     value={settings.parseClozesInCodeBlocks}
@@ -1137,7 +1122,12 @@ const SyncTab: React.FC<TabProps> = ({ settings, onChange }) => (
                     },
                     { label: t("SETTINGS_SYNC_PROGRESS_DISPLAY_NEVER"), value: "never" },
                 ]}
-                onChange={(v) => onChange("syncProgressDisplayMode", v as UISettingsState["syncProgressDisplayMode"])}
+                onChange={(v) =>
+                    onChange(
+                        "syncProgressDisplayMode",
+                        v as UISettingsState["syncProgressDisplayMode"],
+                    )
+                }
             />
         </Section>
     </div>
@@ -1203,7 +1193,12 @@ const UITab: React.FC<TabProps> = ({ settings, onChange }) => (
                     { label: t("SETTINGS_OPT_NO_ANIM"), value: "None" },
                     { label: t("SETTINGS_OPT_BREATHING"), value: "Breathing" },
                 ]}
-                onChange={(v) => onChange("flashcardStatusBarAnimation", v as UISettingsState["flashcardStatusBarAnimation"])}
+                onChange={(v) =>
+                    onChange(
+                        "flashcardStatusBarAnimation",
+                        v as UISettingsState["flashcardStatusBarAnimation"],
+                    )
+                }
             />
             <SliderRow
                 label={t("SETTINGS_CARD_PERIOD")}
@@ -1426,7 +1421,7 @@ const LicenseTab: React.FC<LicenseTabProps> = ({ settings, onChange }) => {
 export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
     settings: initialSettings,
     onSettingsChange,
-    version = "0.0.1",
+    version: _version = "0.0.1",
 }) => {
     const [activeTab, setActiveTab] = useState("flashcards");
     const [settings, setSettings] = useState<UISettingsState>(initialSettings);

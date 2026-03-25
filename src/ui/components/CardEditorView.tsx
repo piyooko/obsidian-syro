@@ -79,7 +79,9 @@ const insertCloze = (view: EditorView, type: "same" | "new"): void => {
         selection: { anchor: selection.from + replacement.length },
     });
 
-    new Notice(`闂佽娴烽幊鎾诲箟闄囬妵鎰板礃椤旂厧鐎梺鍛婎殘閸庢劙宕甸崼銉︾厽闁瑰浼濋鍫晪鐟滃繒妲?c${nextId}`);
+    new Notice(
+        `闂佽娴烽幊鎾诲箟闄囬妵鎰板礃椤旂厧鐎梺鍛婎殘閸庢劙宕甸崼銉︾厽闁瑰浼濋鍫晪鐟滃繒妲?c${nextId}`,
+    );
 };
 
 // ==========================================
@@ -272,4 +274,3 @@ export const CardEditorView: FC<CardEditorViewProps> = ({ value, onChange, onExi
         </div>
     );
 };
-

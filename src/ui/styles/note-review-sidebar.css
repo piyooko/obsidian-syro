@@ -129,8 +129,7 @@
 .sr-tag-pill {
     font-size: 11px;
     font-weight: 500;
-    padding:
-        var(--syro-sidebar-tag-pill-padding-y, 4px)
+    padding: var(--syro-sidebar-tag-pill-padding-y, 4px)
         var(--syro-sidebar-tag-pill-padding-x, 10px);
     border-radius: var(--syro-sidebar-tag-pill-radius, 6px);
     background: var(--background-secondary);
@@ -549,8 +548,7 @@
 }
 
 .is-mobile .sr-tag-pill {
-    padding:
-        calc(var(--syro-sidebar-tag-pill-padding-y, 4px) + 4px)
+    padding: calc(var(--syro-sidebar-tag-pill-padding-y, 4px) + 4px)
         calc(var(--syro-sidebar-tag-pill-padding-x, 10px) + 4px);
     font-size: 13px;
 }

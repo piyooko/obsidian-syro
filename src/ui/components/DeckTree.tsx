@@ -140,7 +140,7 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
 // 辅助函数：计算总计统计数据
 // ==========================================
 function calculateTotalStats(decks: DeckState[]): { new: number; learn: number; due: number } {
-    let stats = { new: 0, learn: 0, due: 0 };
+    const stats = { new: 0, learn: 0, due: 0 };
     for (const deck of decks) {
         stats.new += deck.newCount;
         stats.learn += deck.learningCount;

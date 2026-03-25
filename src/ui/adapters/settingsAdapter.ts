@@ -2,11 +2,6 @@
  * Converts between persisted plugin settings and the UI-facing settings state.
  */
 
-
-
-
-
-
 import {
     SRSettings,
     DEFAULT_PROGRESS_BAR_STYLE,
@@ -28,7 +23,11 @@ type WeightedMultiplierUiSettings = {
 };
 
 function getWeightedMultiplierSettings(settings: SRSettings): WeightedMultiplierUiSettings {
-    return (settings.algorithmSettings?.WeightedMultiplier as WeightedMultiplierUiSettings | undefined) ?? {};
+    return (
+        (settings.algorithmSettings?.WeightedMultiplier as
+            | WeightedMultiplierUiSettings
+            | undefined) ?? {}
+    );
 }
 
 /**
@@ -139,7 +138,9 @@ export function mergeUIStateToSettings(
 ): SRSettings {
     const merged = { ...originalSettings };
     const weightedMultiplierSettings =
-        (merged.algorithmSettings?.WeightedMultiplier as WeightedMultiplierUiSettings | undefined) ?? {};
+        (merged.algorithmSettings?.WeightedMultiplier as
+            | WeightedMultiplierUiSettings
+            | undefined) ?? {};
 
     // Flashcards
     if (uiChanges.flashcardTags !== undefined) merged.flashcardTags = uiChanges.flashcardTags;
@@ -174,7 +175,8 @@ export function mergeUIStateToSettings(
     if (uiChanges.clozeContextMode !== undefined)
         merged.clozeContextMode = uiChanges.clozeContextMode as SRSettings["clozeContextMode"];
     if (uiChanges.clozeContextPerformanceMode !== undefined)
-        merged.clozeContextPerformanceMode = uiChanges.clozeContextPerformanceMode as SRSettings["clozeContextPerformanceMode"];
+        merged.clozeContextPerformanceMode =
+            uiChanges.clozeContextPerformanceMode as SRSettings["clozeContextPerformanceMode"];
     if (uiChanges.clozeContextSoftLimitLines !== undefined)
         merged.clozeContextSoftLimitLines = uiChanges.clozeContextSoftLimitLines;
     if (uiChanges.showOtherAnkiClozeVisual !== undefined)
@@ -264,7 +266,8 @@ export function mergeUIStateToSettings(
     if (uiChanges.noteStatusBarColor !== undefined)
         merged.noteStatusBarColor = uiChanges.noteStatusBarColor;
     if (uiChanges.noteStatusBarAnimation !== undefined)
-        merged.noteStatusBarAnimation = uiChanges.noteStatusBarAnimation as SRSettings["noteStatusBarAnimation"];
+        merged.noteStatusBarAnimation =
+            uiChanges.noteStatusBarAnimation as SRSettings["noteStatusBarAnimation"];
     if (uiChanges.noteStatusBarPeriod !== undefined)
         merged.noteStatusBarPeriod = uiChanges.noteStatusBarPeriod;
     if (uiChanges.flashcardStatusBarColor !== undefined)

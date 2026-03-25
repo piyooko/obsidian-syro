@@ -93,8 +93,9 @@ export function parseTimelineDurationPrefixRaw(rawPrefix: string): TimelineDurat
     return {
         raw: rawPrefix.replace(/\s+/g, ""),
         normalized: parts
-            .map((part) =>
-                `${part.value}${part.unit === "year" ? "y" : part.unit === "month" ? "mo" : "d"}`,
+            .map(
+                (part) =>
+                    `${part.value}${part.unit === "year" ? "y" : part.unit === "month" ? "mo" : "d"}`,
             )
             .join(""),
         totalDays,
@@ -235,12 +236,7 @@ export function findTimelineLivePreviewSegments(
     const body = raw.slice(bodyOffset);
     segments.push(
         ...collectTimelineRegexSegments(body, bodyOffset, /\*\*(.+?)\*\*/g, "bold"),
-        ...collectTimelineRegexSegments(
-            body,
-            bodyOffset,
-            /(?<!\*)\*([^*\n]+?)\*(?!\*)/g,
-            "italic",
-        ),
+        ...collectTimelineRegexSegments(body, bodyOffset, /(?<!\*)\*([^*\n]+?)\*(?!\*)/g, "italic"),
         ...collectTimelineRegexSegments(body, bodyOffset, /~~(.+?)~~/g, "strikethrough"),
         ...collectTimelineRegexSegments(body, bodyOffset, /==(.+?)==/g, "highlight"),
         ...collectTimelineRegexSegments(body, bodyOffset, /`([^`\n]+?)`/g, "inline-code"),

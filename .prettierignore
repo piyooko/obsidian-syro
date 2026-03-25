@@ -6,3 +6,5 @@ node_modules
 .pnp.loader.mjs
 pnpm-lock.yaml
 tests/vaults/
+syro-0.0.6-package
+syro-0.0.6.zip

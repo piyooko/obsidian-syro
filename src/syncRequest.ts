@@ -25,9 +25,7 @@ export interface SyncRequestResult extends NormalizedSyncRequest {
     reason?: SyncSkipReason | "busy";
 }
 
-export function normalizeSyncRequest(
-    options: SyncRequestOptions = {},
-): NormalizedSyncRequest {
+export function normalizeSyncRequest(options: SyncRequestOptions = {}): NormalizedSyncRequest {
     return {
         reviewMode: options.reviewMode ?? FlashcardReviewMode.Review,
         mode: options.mode ?? "incremental",
@@ -60,7 +58,5 @@ export function mergeQueuedSyncRequest(
         return incoming;
     }
 
-    return getSyncRequestPriority(incoming) >= getSyncRequestPriority(current)
-        ? incoming
-        : current;
+    return getSyncRequestPriority(incoming) >= getSyncRequestPriority(current) ? incoming : current;
 }

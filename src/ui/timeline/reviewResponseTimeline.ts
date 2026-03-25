@@ -17,12 +17,7 @@ import { captureTimelineContext } from "./timelineContext";
 
 export type TimelineReviewResponse = "Reset" | "Hard" | "Good" | "Easy";
 
-const TIMELINE_REVIEW_RESPONSE_VALUES: TimelineReviewResponse[] = [
-    "Reset",
-    "Hard",
-    "Good",
-    "Easy",
-];
+const TIMELINE_REVIEW_RESPONSE_VALUES: TimelineReviewResponse[] = ["Reset", "Hard", "Good", "Easy"];
 
 const REVIEW_RESPONSE_EDIT_CAPTURE =
     /^\s*([^:\n]+):\s*((?:\d+\s*(?:days|day|d|months|month|mo|years|year|y)\s*)+)::\s*/i;
@@ -184,17 +179,11 @@ export async function autoCommitReviewResponseToTimeline(opts: {
     const displayDuration = normalizeTimelineDisplayDuration(intervalDays);
 
     const context = captureTimelineContext(app, notePath);
-    await commitStore.addCommit(
-        notePath,
-        "",
-        context.contextAnchor,
-        context.scrollPercentage,
-        {
-            entryType: "review-response",
-            reviewResponse,
-            displayDuration,
-        },
-    );
+    await commitStore.addCommit(notePath, "", context.contextAnchor, context.scrollPercentage, {
+        entryType: "review-response",
+        reviewResponse,
+        displayDuration,
+    });
 
     return true;
 }

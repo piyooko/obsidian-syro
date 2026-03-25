@@ -301,7 +301,9 @@ async function checkReviewResponse_ReviewMode(
     // Schedule for the reviewed card has been updated
     expect(card.scheduleInfo.ease).toEqual(info.cardQ2_PostReviewEase);
     expect(card.scheduleInfo.interval).toEqual(info.cardQ2_PostReviewInterval);
-    expect(card.scheduleInfo.dueDate.unix).toEqual(window.moment(info.cardQ2_PostReviewDueDate).unix);
+    expect(card.scheduleInfo.dueDate.unix).toEqual(
+        window.moment(info.cardQ2_PostReviewDueDate).unix,
+    );
 
     // Review metadata is kept in runtime/store state; the note text remains unchanged.
     expect(await c.file.read()).toEqual(c.originalText);

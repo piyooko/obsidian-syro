@@ -8,14 +8,15 @@ Syro was created to introduce a "time dimension" into Obsidian's otherwise stati
 
 ## Spaced Repetition: The Scientific Basis for Fighting Forgetting
 
-**Spaced repetition** is not a new technology. It grows out of the *Testing Effect* and the *Spacing Effect* in cognitive psychology. By prompting active retrieval near the edge of the forgetting curve, it strengthens long-term memory with remarkable efficiency.
+**Spaced repetition** is not a new technology. It grows out of the _Testing Effect_ and the _Spacing Effect_ in cognitive psychology. By prompting active retrieval near the edge of the forgetting curve, it strengthens long-term memory with remarkable efficiency.
 
 In this field, **Anki** is undoubtedly one of the most widely used and successful landmark tools. Through extremely atomic card design, it has helped countless learners - especially medical students and language learners - tackle huge bodies of hard knowledge.
 
 ### Why introduce spaced repetition into Obsidian?
 
 Even though standalone spaced-repetition software such as Anki is extraordinarily efficient at memory retrieval, some users run into an "island effect" when working with highly structured personal notes:
-- To optimize test efficiency, traditional flashcards usually strip knowledge points down to their smallest form and remove them from context. During review, that can sometimes break the internal logic between ideas. If you have forgotten the original background, an isolated card can feel confusing.
+
+-   To optimize test efficiency, traditional flashcards usually strip knowledge points down to their smallest form and remove them from context. During review, that can sometimes break the internal logic between ideas. If you have forgotten the original background, an isolated card can feel confusing.
 
 Syro takes a complementary path: **it preserves structure and context in place**.
 In Syro's workflow, your flashcards - whether Q/A or cloze - are embedded directly inside long-form Markdown notes. When you struggle with a card, you do not need to switch tools. You can reopen the surrounding text at any time, read the full paragraph above or below the card, and even jump through backlinks to related topics. This review experience, grounded in the source text itself, helps you avoid rote memorization while rebuilding the deeper connections behind the knowledge.
@@ -48,8 +49,9 @@ Syro is not meant to replace Anki or SuperMemo outright. Those outstanding tools
 Syro's vision is this: **inside Obsidian's open, free, plain-text ecosystem, provide knowledge workers with a built-in engine that makes reading, thinking, and remembering flow together naturally.**
 
 By combining underlying scheduling algorithms such as FSRS with your everyday writing flow, Syro aims to help you:
-- eliminate the decision fatigue of "what should I read today?" and "what should I review today?"
-- keep high-value notes and ideas resurfacing instead of fading into silence
-- consolidate memory with as little friction as possible while preserving full knowledge context
+
+-   eliminate the decision fatigue of "what should I read today?" and "what should I review today?"
+-   keep high-value notes and ideas resurfacing instead of fading into silence
+-   consolidate memory with as little friction as possible while preserving full knowledge context
 
 If you are ready to experience a learning workflow that combines active retrieval with incremental scheduling, continue to the [5-Minute Quick Start](./quick-start.md).

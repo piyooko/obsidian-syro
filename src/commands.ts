@@ -37,7 +37,10 @@ type SyncTrackedFile = {
     items: Record<string, number>;
     itemIDs: number[];
     trackedItems?: Array<{ reviewId: number }>;
-    syncNoteCardsIndex: (fileText: string, settings: ObsidianSrsPlugin["data"]["settings"]) => unknown;
+    syncNoteCardsIndex: (
+        fileText: string,
+        settings: ObsidianSrsPlugin["data"]["settings"],
+    ) => unknown;
 };
 
 export default class Commands {
@@ -122,8 +125,13 @@ export default class Commands {
                                         new Notice(t("CMD_NOTE_POSTPONED", { days: days }));
                                         plugin.updateAndSortDueNotes();
                                         plugin.syncEvents.emit("note-review-updated");
-                                        if (settings.autoNextNote && plugin.lastSelectedReviewDeck) {
-                                            await plugin.reviewNextNote(plugin.lastSelectedReviewDeck);
+                                        if (
+                                            settings.autoNextNote &&
+                                            plugin.lastSelectedReviewDeck
+                                        ) {
+                                            await plugin.reviewNextNote(
+                                                plugin.lastSelectedReviewDeck,
+                                            );
                                         }
                                     })(),
                                     "Failed to postpone note manually.",
@@ -216,7 +224,10 @@ export default class Commands {
             callback: async () => {
                 const store = plugin.store;
                 const settings = plugin.data.settings;
-                const trackedFiles = store.data.trackedFiles as Record<string, SyncTrackedFile | null>;
+                const trackedFiles = store.data.trackedFiles as Record<
+                    string,
+                    SyncTrackedFile | null
+                >;
 
                 let totalCardFiles = 0;
                 let syncedFiles = 0;
@@ -224,13 +235,13 @@ export default class Commands {
                 let cleanedGhostFiles = 0;
 
                 const progressTip = plugin.shouldShowSyncProgressTip("incremental")
-                    ? new SyncProgressTip(
-                          t("SYNC_PROGRESS_PREPARE_DATA"),
-                          t("SYNC_PROGRESS_DONE"),
-                      )
+                    ? new SyncProgressTip(t("SYNC_PROGRESS_PREPARE_DATA"), t("SYNC_PROGRESS_DONE"))
                     : null;
                 progressTip?.show();
-                console.debug("[GlobalSync] Start. Tracked files:", Object.keys(trackedFiles).length);
+                console.debug(
+                    "[GlobalSync] Start. Tracked files:",
+                    Object.keys(trackedFiles).length,
+                );
 
                 // Step 0: deduplicate entries that point to the same path.
                 progressTip?.update(0, 100, t("SYNC_PROGRESS_DEDUP_FILES"));
@@ -517,4 +528,3 @@ export default class Commands {
         });
     }
 }
-

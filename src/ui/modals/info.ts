@@ -269,4 +269,3 @@ export class ItemInfoModal extends Modal {
         contentEl.empty();
     }
 }
-

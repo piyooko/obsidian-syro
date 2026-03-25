@@ -62,7 +62,7 @@ export function schedule(
     ease: number,
     delayBeforeReview: number,
     settingsObj: DefaultAlgoSettings,
-    dueDates?: Record<number, number>,
+    _dueDates?: Record<number, number>,
 ): Record<string, number> {
     delayBeforeReview = Math.max(0, Math.floor(delayBeforeReview / (24 * 3600 * 1000)));
 
@@ -388,5 +388,3 @@ export class DefaultAlgorithm extends SrsAlgorithm {
         return;
     }
 }
-
-

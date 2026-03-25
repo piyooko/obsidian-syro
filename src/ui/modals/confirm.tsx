@@ -35,7 +35,13 @@ export default class ConfirmModal {
         const { contentEl } = this.modal;
 
         // 使用 MarkdownRenderer 渲染消息内容，这样可以在确认框里显示加粗、链接等格式
-        void MarkdownRenderer.render(this.plugin.app, this.message, contentEl, "", this.markdownOwner);
+        void MarkdownRenderer.render(
+            this.plugin.app,
+            this.message,
+            contentEl,
+            "",
+            this.markdownOwner,
+        );
 
         // 创建按钮容器
         const buttonDiv = contentEl.createDiv("srs-flex-row");

@@ -21,9 +21,9 @@ describe("reviewResponseTimeline", () => {
         }) as unknown as App;
 
     it("does nothing when auto logging is disabled", async () => {
-        const commitStore = ({
+        const commitStore = {
             addCommit: jest.fn(),
-        } as CommitStoreLike) as unknown as ReviewCommitStore;
+        } as CommitStoreLike as unknown as ReviewCommitStore;
 
         const committed = await autoCommitReviewResponseToTimeline({
             app: makeApp(),
@@ -38,9 +38,9 @@ describe("reviewResponseTimeline", () => {
     });
 
     it("writes review-response entries with metadata when enabled", async () => {
-        const commitStore = ({
+        const commitStore = {
             addCommit: jest.fn(async () => undefined),
-        } as CommitStoreLike) as unknown as ReviewCommitStore;
+        } as CommitStoreLike as unknown as ReviewCommitStore;
 
         const committed = await autoCommitReviewResponseToTimeline({
             app: makeApp(),
@@ -52,17 +52,11 @@ describe("reviewResponseTimeline", () => {
         });
 
         expect(committed).toBe(true);
-        expect(commitStore.addCommit).toHaveBeenCalledWith(
-            "note.md",
-            "",
-            undefined,
-            undefined,
-            {
-                entryType: "review-response",
-                reviewResponse: "Hard",
-                displayDuration: { raw: "9d", totalDays: 9 },
-            },
-        );
+        expect(commitStore.addCommit).toHaveBeenCalledWith("note.md", "", undefined, undefined, {
+            entryType: "review-response",
+            reviewResponse: "Hard",
+            displayDuration: { raw: "9d", totalDays: 9 },
+        });
     });
 
     it("materializes review-response edits into atomic token text", () => {

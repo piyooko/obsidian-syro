@@ -55,14 +55,19 @@ function getAlgorithmDebugData(value: unknown): AlgorithmDebugData | null {
             valueToDisplay(candidate.due) === "N/A"
                 ? undefined
                 : (candidate.due as string | number | Date),
-        stability: valueToDisplay(candidate.stability) === "N/A" ? undefined : toDebugValue(candidate.stability),
+        stability:
+            valueToDisplay(candidate.stability) === "N/A"
+                ? undefined
+                : toDebugValue(candidate.stability),
         difficulty:
             valueToDisplay(candidate.difficulty) === "N/A"
                 ? undefined
                 : toDebugValue(candidate.difficulty),
         reps: valueToDisplay(candidate.reps) === "N/A" ? undefined : toDebugValue(candidate.reps),
-        lapses: valueToDisplay(candidate.lapses) === "N/A" ? undefined : toDebugValue(candidate.lapses),
-        state: valueToDisplay(candidate.state) === "N/A" ? undefined : toDebugValue(candidate.state),
+        lapses:
+            valueToDisplay(candidate.lapses) === "N/A" ? undefined : toDebugValue(candidate.lapses),
+        state:
+            valueToDisplay(candidate.state) === "N/A" ? undefined : toDebugValue(candidate.state),
         elapsed_days:
             valueToDisplay(candidate.elapsed_days) === "N/A"
                 ? undefined

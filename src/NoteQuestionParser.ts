@@ -3,19 +3,6 @@
  * It also applies feature gating for paid-only parsing options.
  */
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { TagCache } from "obsidian";
 import { Card } from "./Card";
 import { CardScheduleInfo, NoteCardScheduleParser } from "./CardSchedule";

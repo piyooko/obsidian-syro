@@ -5,8 +5,9 @@ import { CardFrontBackUtil } from "src/question-type";
 import { DEFAULT_SETTINGS, SRSettings } from "src/settings";
 import { LinearCard, CardState } from "src/ui/components/LinearCard";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    true;
+(
+    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 jest.mock("framer-motion", () => {
     const React = require("react");
@@ -279,9 +280,11 @@ function createSplitMarkerFormulaRenderMarkdown() {
     });
 }
 
-function createReviewerSettings(
-    source: ReviewerClozeSource,
-): { questionType: CardType; settings: SRSettings; sourceText: string } {
+function createReviewerSettings(source: ReviewerClozeSource): {
+    questionType: CardType;
+    settings: SRSettings;
+    sourceText: string;
+} {
     switch (source) {
         case "bold":
             return {
@@ -350,7 +353,10 @@ describe("LinearCard math cloze rendering", () => {
 
     beforeAll(() => {
         window.requestAnimationFrame = ((cb: FrameRequestCallback) =>
-            window.setTimeout(() => cb(performance.now()), 0)) as typeof window.requestAnimationFrame;
+            window.setTimeout(
+                () => cb(performance.now()),
+                0,
+            )) as typeof window.requestAnimationFrame;
         window.cancelAnimationFrame = ((id: number) => {
             window.clearTimeout(id);
         }) as typeof window.cancelAnimationFrame;
@@ -458,15 +464,15 @@ describe("LinearCard math cloze rendering", () => {
         }
     });
 
-    test.each([
-        ["highlight" as const],
-        ["bold" as const],
-        ["anki" as const],
-    ])(
+    test.each([["highlight" as const], ["bold" as const], ["anki" as const]])(
         "pre-tokenizes reviewer formula clozes for %s sources before markdown splits marker text",
         async (source) => {
             const renderMarkdown = createSplitMarkerFormulaRenderMarkdown();
-            const { container, root } = mountCard(buildReviewerCard(source), renderMarkdown, "cloze");
+            const { container, root } = mountCard(
+                buildReviewerCard(source),
+                renderMarkdown,
+                "cloze",
+            );
 
             try {
                 await flushEffects();

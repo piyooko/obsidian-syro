@@ -335,8 +335,7 @@ export class LocationSwitch {
 
         await store.pruneData();
 
-         
-        let tracked_files = Object.values(store.data.trackedFiles);
+        const tracked_files = Object.values(store.data.trackedFiles);
         const dueIds: number[] = [];
         await Promise.all(
             tracked_files
@@ -344,9 +343,7 @@ export class LocationSwitch {
                 .filter((tkfile) => !isIgnoredPath(this.settings.noteFoldersToIgnore, tkfile.path))
                 .map(async (tkfile) => {
                     const item = store.getItembyID(tkfile.items.file);
-                    const noteEntry = Iadapter.instance.vault.getAbstractFileByPath(
-                        tkfile.path,
-                    );
+                    const noteEntry = Iadapter.instance.vault.getAbstractFileByPath(tkfile.path);
                     if (!(noteEntry instanceof TFile)) {
                         return;
                     }
@@ -365,7 +362,7 @@ export class LocationSwitch {
                             }
                             const itemMap = normalizedCardInfo.itemMap;
                             const scheduling: RegExpMatchArray[] = [];
-                            (Object.values(itemMap))
+                            Object.values(itemMap)
                                 .filter((id): id is number => typeof id === "number" && id >= 0)
                                 .map((id) => store.getItembyID(id))
                                 .filter((citem) => citem?.isTracked)
@@ -548,7 +545,9 @@ function getReviewNoteHeaderData(frontmatter: FrontMatterCache): number[] {
         hasOwn(frontmatterRecord, "sr-due") &&
         hasOwn(frontmatterRecord, "sr-interval") &&
         hasOwn(frontmatterRecord, "sr-ease") &&
-        (typeof dueValue === "string" || typeof dueValue === "number" || dueValue instanceof Date) &&
+        (typeof dueValue === "string" ||
+            typeof dueValue === "number" ||
+            dueValue instanceof Date) &&
         interval !== undefined &&
         ease !== undefined
     ) {

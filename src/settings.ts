@@ -3,17 +3,6 @@
  * This file defines the persisted settings shape, default values, and migration helpers.
  */
 
-
-
-
-
-
-
-
-
-
-
-
 import { Platform } from "obsidian";
 import { t } from "src/lang/helpers";
 
@@ -671,4 +660,3 @@ export class SettingsUtil {
         return false;
     }
 }
-

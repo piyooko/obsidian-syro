@@ -77,9 +77,21 @@ export class ReleaseNotes extends Modal {
         intro = this.version ? intro : firstRun;
         message = this.version && message ? `## What's New:\n---\n${message}` : message;
 
-        void MarkdownRenderer.render(this.plugin.app, intro, this.contentEl, "", this.markdownOwner);
+        void MarkdownRenderer.render(
+            this.plugin.app,
+            intro,
+            this.contentEl,
+            "",
+            this.markdownOwner,
+        );
         if (message) {
-            void MarkdownRenderer.render(this.plugin.app, message, this.contentEl, "", this.markdownOwner);
+            void MarkdownRenderer.render(
+                this.plugin.app,
+                message,
+                this.contentEl,
+                "",
+                this.markdownOwner,
+            );
         }
 
         this.contentEl.createEl("p", { text: "" }, (el) => {

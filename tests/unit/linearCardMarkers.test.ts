@@ -34,8 +34,7 @@ describe("linearCardMarkers", () => {
 
     test("renders markdown inside unified answer markers", async () => {
         const container = document.createElement("div");
-        const payload =
-            `${encodeURIComponent("[...]")}:${encodeURIComponent("**bold** [link](https://example.com)")}`;
+        const payload = `${encodeURIComponent("[...]")}:${encodeURIComponent("**bold** [link](https://example.com)")}`;
         container.textContent = `Front: \u00ab\u00abSR_C:${payload}\u00bb\u00bb`;
 
         await postProcessMarkers(container, mockRenderMarkdown);
@@ -76,8 +75,7 @@ describe("linearCardMarkers", () => {
     });
 
     test("pre-tokenizes unified markers outside math and code before markdown render", () => {
-        const payload =
-            `${encodeURIComponent("[...]")}:${encodeURIComponent("$x^2$ and **bold**")}`;
+        const payload = `${encodeURIComponent("[...]")}:${encodeURIComponent("$x^2$ and **bold**")}`;
         const tokenized = preTokenizeSrMarkers(`Lead \u00ab\u00abSR_C:${payload}\u00bb\u00bb tail`);
 
         expect(tokenized).toContain('class="sr-cloze-wrapper"');

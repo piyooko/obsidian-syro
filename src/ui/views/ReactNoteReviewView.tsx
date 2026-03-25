@@ -3,21 +3,6 @@
  * It renders the note review queue and timeline interactions inside an Obsidian item view.
  */
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { ItemView, WorkspaceLeaf, Menu, TFile, Notice, Scope, type Modifier } from "obsidian";
 import { createRoot, Root } from "react-dom/client";
 import React from "react";
@@ -42,7 +27,6 @@ export const REACT_REVIEW_QUEUE_VIEW_TYPE = "react-review-queue-list-view";
 /**
  * React item view for the note review queue.
  */
-
 
 export class ReactNoteReviewView extends ItemView {
     private plugin: SRPlugin;
@@ -143,7 +127,6 @@ export class ReactNoteReviewView extends ItemView {
 
         // Obsidian intercepts Ctrl+Enter before the DOM sees it, so bridge it via Scope.
 
-
         this.registerTimelineScopeHotkeys();
 
         // Refresh automatically after sync completes.
@@ -199,10 +182,7 @@ export class ReactNoteReviewView extends ItemView {
                     this.runAsync(this.handleTagDrop(item, tag), "drop tag");
                 },
                 onPriorityChange: (item, newPriority) => {
-                    this.runAsync(
-                        this.handlePriorityChange(item, newPriority),
-                        "change priority",
-                    );
+                    this.runAsync(this.handlePriorityChange(item, newPriority), "change priority");
                 },
                 ignoredTags: this.plugin.data.settings.sidebarIgnoredTags || [],
                 sortMode: this.plugin.data.settings.sidebarTagSortMode || "frequency",
@@ -231,10 +211,7 @@ export class ReactNoteReviewView extends ItemView {
                 onCommitContextMenu: (e, commitId) => this.handleCommitContextMenu(e, commitId),
                 editingId: this.editingId,
                 onEditCommit: (commitId, payload) => {
-                    this.runAsync(
-                        this.handleEditCommit(commitId, payload),
-                        "edit timeline commit",
-                    );
+                    this.runAsync(this.handleEditCommit(commitId, payload), "edit timeline commit");
                 },
                 onStartEdit: (commitId) => this.handleStartEdit(commitId),
                 onCancelEdit: () => this.handleCancelEdit(),
@@ -259,7 +236,9 @@ export class ReactNoteReviewView extends ItemView {
                 const timelineTarget = this.getTimelineEventTarget(activeEl);
                 if (timelineTarget) {
                     evt.preventDefault();
-                    timelineTarget.dispatchEvent(new CustomEvent("sr-ctrl-enter", { bubbles: false }));
+                    timelineTarget.dispatchEvent(
+                        new CustomEvent("sr-ctrl-enter", { bubbles: false }),
+                    );
                     return false;
                 }
                 return true;
@@ -310,21 +289,27 @@ export class ReactNoteReviewView extends ItemView {
             );
             for (const hotkey of hotkeys) {
                 this.timelineScopeHandlers.push(
-                    this.scope.register(hotkey.modifiers as Modifier[], hotkey.key, (evt: KeyboardEvent) => {
-                        const timelineTarget = this.getTimelineEventTarget(document.activeElement);
-                        if (!timelineTarget) {
-                            return true;
-                        }
+                    this.scope.register(
+                        hotkey.modifiers as Modifier[],
+                        hotkey.key,
+                        (evt: KeyboardEvent) => {
+                            const timelineTarget = this.getTimelineEventTarget(
+                                document.activeElement,
+                            );
+                            if (!timelineTarget) {
+                                return true;
+                            }
 
-                        evt.preventDefault();
-                        timelineTarget.dispatchEvent(
-                            new CustomEvent("sr-timeline-format", {
-                                bubbles: false,
-                                detail: { action: hotkeyAction.action },
-                            }),
-                        );
-                        return false;
-                    }),
+                            evt.preventDefault();
+                            timelineTarget.dispatchEvent(
+                                new CustomEvent("sr-timeline-format", {
+                                    bubbles: false,
+                                    detail: { action: hotkeyAction.action },
+                                }),
+                            );
+                            return false;
+                        },
+                    ),
                 );
             }
         }
@@ -344,7 +329,10 @@ export class ReactNoteReviewView extends ItemView {
     ): Array<{ modifiers: string[]; key: string }> {
         const appWithCommands = this.app as typeof this.app & {
             commands?: {
-                commands?: Record<string, { hotkeys?: Array<{ modifiers: string[]; key: string }> }>;
+                commands?: Record<
+                    string,
+                    { hotkeys?: Array<{ modifiers: string[]; key: string }> }
+                >;
             };
             hotkeyManager?: {
                 customKeys?: Record<string, Array<{ modifiers: string[]; key: string }>>;
@@ -399,11 +387,9 @@ export class ReactNoteReviewView extends ItemView {
             return editorHost;
         }
 
-        return (
-            activeEl instanceof HTMLTextAreaElement &&
+        return activeEl instanceof HTMLTextAreaElement &&
             (activeEl.classList.contains("sr-timeline-textarea") ||
                 activeEl.classList.contains("sr-timeline-edit-textarea"))
-        )
             ? activeEl
             : null;
     }
@@ -444,7 +430,10 @@ export class ReactNoteReviewView extends ItemView {
                 .setTitle(t("OPEN_IN_TAB"))
                 .setIcon("file-plus")
                 .onClick(() => {
-                    this.runAsync(this.app.workspace.getLeaf("tab").openFile(item.noteFile), "open in tab");
+                    this.runAsync(
+                        this.app.workspace.getLeaf("tab").openFile(item.noteFile),
+                        "open in tab",
+                    );
                 });
         });
 
@@ -886,4 +875,3 @@ export class ReactNoteReviewView extends ItemView {
         this.redraw();
     }
 }
-

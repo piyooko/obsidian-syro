@@ -81,7 +81,7 @@ const PreviewCard: React.FC<{
                 if (seg.clozeId === activeClozeId) {
                     return showAnswer
                         ? `<span class="sr-cloze-active-answer">${seg.text}</span>`
-                        : `<span class="sr-cloze-active-blank">[ ... ]</span>`;
+                        : '<span class="sr-cloze-active-blank">[ ... ]</span>';
                 } else if (seg.clozeId) {
                     return `<span class="sr-cloze-inactive">${seg.text}</span>`;
                 }
@@ -291,11 +291,11 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
             isResizing.current = false;
             document.removeEventListener("mousemove", handleMouseMove);
             document.removeEventListener("mouseup", handleMouseUp);
-            void Promise.resolve(storage.save(SIZE_STORAGE_KEY, JSON.stringify(sizeRef.current))).catch(
-                () => {
-                    return;
-                },
-            );
+            void Promise.resolve(
+                storage.save(SIZE_STORAGE_KEY, JSON.stringify(sizeRef.current)),
+            ).catch(() => {
+                return;
+            });
         };
 
         document.addEventListener("mousemove", handleMouseMove);
@@ -303,10 +303,7 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
     };
 
     // 缂佸顕ф慨鈺冪博椤栨侗姊炬繛?
-    const isMobile =
-        window.innerWidth <= 480 ||
-        Platform.isPhone ||
-        Platform.isTablet;
+    const isMobile = window.innerWidth <= 480 || Platform.isPhone || Platform.isTablet;
 
     if (isMobile) {
         return (

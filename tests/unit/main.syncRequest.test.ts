@@ -49,9 +49,9 @@ describe("SRPlugin sync request orchestration", () => {
             runAsync: jest.fn(),
         };
 
-        (SRPlugin.prototype as unknown as { replayQueuedSyncRequest: Function }).replayQueuedSyncRequest.call(
-            plugin,
-        );
+        (
+            SRPlugin.prototype as unknown as { replayQueuedSyncRequest: Function }
+        ).replayQueuedSyncRequest.call(plugin);
 
         expect(plugin.requestSync).toHaveBeenCalledWith({
             ...pendingRequest,

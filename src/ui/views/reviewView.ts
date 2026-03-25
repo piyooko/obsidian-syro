@@ -19,7 +19,7 @@ export class ReviewView {
         return ReviewView._instance;
     }
 
-    constructor(plugin: SRPlugin, settings: SRSettings) {
+    constructor(plugin: SRPlugin, _settings: SRSettings) {
         this.plugin = plugin;
         ReviewView._instance = this;
     }

@@ -56,7 +56,7 @@ export function transformLatex(
 
             if (mode === "mask") {
                 if (activeId === null || id === activeId) {
-                    result += `{\\color{#3b82f6}[\\ldots]}`;
+                    result += "{\\color{#3b82f6}[\\ldots]}";
                 } else {
                     result += processedContent;
                 }

@@ -25,9 +25,7 @@ export abstract class IReviewNote {
     // public reviewDecks: Decks = {};
     // public easeByPath: NoteEaseList;
 
-    static create(
-        settings: SRSettings,
-    ) {
+    static create(settings: SRSettings) {
         return new RNonTrackfiles(settings);
     }
 

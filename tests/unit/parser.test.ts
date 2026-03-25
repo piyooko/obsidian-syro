@@ -734,14 +734,14 @@ test("Test parsing cards with codeblocks", () => {
 
     expect(
         parseT(
-            "```js\nif (from && typeof from === \"object\" || typeof from === \"function\") {\n  return value ** 2;\n}\n```",
+            '```js\nif (from && typeof from === "object" || typeof from === "function") {\n  return value ** 2;\n}\n```',
             parserOptions,
         ),
     ).toEqual([]);
 
     expect(
         parseT(
-            "```js\nif (from && typeof from === \"object\" || typeof from === \"function\") {\n  return {{c1::value}} ** 2;\n}\n```",
+            '```js\nif (from && typeof from === "object" || typeof from === "function") {\n  return {{c1::value}} ** 2;\n}\n```',
             {
                 ...parserOptions,
                 convertAnkiClozesToClozes: true,
@@ -751,7 +751,7 @@ test("Test parsing cards with codeblocks", () => {
     ).toEqual([
         [
             CardType.AnkiCloze,
-            "```js\nif (from && typeof from === \"object\" || typeof from === \"function\") {\n  return {{c1::value}} ** 2;\n}\n```",
+            '```js\nif (from && typeof from === "object" || typeof from === "function") {\n  return {{c1::value}} ** 2;\n}\n```',
             0,
             4,
         ],

@@ -184,8 +184,7 @@ export function createCodeContextMask(text: string): CodeContextMask {
         const original = text.slice(segment.start, segment.end);
         const masked = buildMaskReplacement(original, getMaskCharacter(index));
 
-        maskedText =
-            maskedText.slice(0, segment.start) + masked + maskedText.slice(segment.end);
+        maskedText = maskedText.slice(0, segment.start) + masked + maskedText.slice(segment.end);
         entries.unshift({ masked, original });
     }
 
@@ -236,9 +235,7 @@ export function hasStandardClozeOutsideCode(text: string, patterns: string[]): b
     const standardMatches = extractStandardClozeMatches(text);
     return standardMatches.some((match) =>
         patterns.includes(
-            match.type === "highlight"
-                ? "==[123;;]answer[;;hint]=="
-                : "**[123;;]answer[;;hint]**",
+            match.type === "highlight" ? "==[123;;]answer[;;hint]==" : "**[123;;]answer[;;hint]**",
         ),
     );
 }

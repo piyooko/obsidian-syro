@@ -178,11 +178,7 @@ function createTimelineSegmentDecoration(
             });
         case "inline-code":
             return Decoration.replace({
-                widget: new TimelineInlineTextWidget(
-                    "sr-timeline-live-code",
-                    segment.text,
-                    "code",
-                ),
+                widget: new TimelineInlineTextWidget("sr-timeline-live-code", segment.text, "code"),
             });
         case "math":
             return Decoration.replace({
@@ -346,9 +342,7 @@ export function createTimelineLivePreviewExtensions(opts: {
 
     return [
         plugin,
-        EditorView.atomicRanges.of(
-            (view) => view.plugin(plugin)?.atomicRanges ?? Decoration.none,
-        ),
+        EditorView.atomicRanges.of((view) => view.plugin(plugin)?.atomicRanges ?? Decoration.none),
         keymap.of([
             {
                 key: "Backspace",

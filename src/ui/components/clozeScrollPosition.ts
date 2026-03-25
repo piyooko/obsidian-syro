@@ -97,8 +97,7 @@ export function getMixedCenterScrollTop(input: ScrollPositionInput): number {
     const contextThreshold = availableViewportHeight / 3;
     const contextAbove = input.targetTop;
     const contextBelow = Math.max(0, input.scrollHeight - (input.targetTop + input.targetHeight));
-    const hasEnoughContext =
-        contextAbove >= contextThreshold && contextBelow >= contextThreshold;
+    const hasEnoughContext = contextAbove >= contextThreshold && contextBelow >= contextThreshold;
 
     if (!hasEnoughContext) {
         return ensuredScrollTop;

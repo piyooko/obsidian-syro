@@ -14,19 +14,13 @@
 
 .syro-status-note.is-due {
     color: var(--syro-note-status-color, var(--text-normal));
-    animation:
-        var(--syro-note-status-animation, none)
-        var(--syro-note-status-period, 2s)
-        infinite
+    animation: var(--syro-note-status-animation, none) var(--syro-note-status-period, 2s) infinite
         ease-in-out;
 }
 
 .syro-status-card.is-due {
     color: var(--syro-card-status-color, var(--text-normal));
-    animation:
-        var(--syro-card-status-animation, none)
-        var(--syro-card-status-period, 2s)
-        infinite
+    animation: var(--syro-card-status-animation, none) var(--syro-card-status-period, 2s) infinite
         ease-in-out;
 }
 

@@ -53,13 +53,11 @@ export class ReviewPersistenceCoordinator {
             return;
         }
 
-        const bucket =
-            this.pendingNoteWrites.get(notePath) ??
-            {
-                notePath,
-                writes: new Map<string, PendingQuestionWrite>(),
-                attempts: 0,
-            };
+        const bucket = this.pendingNoteWrites.get(notePath) ?? {
+            notePath,
+            writes: new Map<string, PendingQuestionWrite>(),
+            attempts: 0,
+        };
         bucket.writes.set(this.getQuestionWriteKey(question), { question, settings });
         bucket.attempts = 0;
         this.pendingNoteWrites.set(notePath, bucket);
@@ -82,7 +80,9 @@ export class ReviewPersistenceCoordinator {
 
     private async writeNoteBucket(
         bucket: PendingNoteWriteBucket,
-    ): Promise<Array<{ key: string; question: Question; replacementText: string; settings: SRSettings }>> {
+    ): Promise<
+        Array<{ key: string; question: Question; replacementText: string; settings: SRSettings }>
+    > {
         const writesSnapshot = Array.from(bucket.writes.entries());
         const firstWrite = writesSnapshot[0]?.[1];
         if (!firstWrite) {
@@ -102,7 +102,9 @@ export class ReviewPersistenceCoordinator {
         for (const [key, { question, settings }] of writesSnapshot) {
             const prepared = question.prepareQuestionTextUpdate(nextFileText, settings);
             if (!prepared.didReplace) {
-                throw new Error(`Question text no longer matches note contents: ${bucket.notePath}`);
+                throw new Error(
+                    `Question text no longer matches note contents: ${bucket.notePath}`,
+                );
             }
 
             nextFileText = prepared.newText;

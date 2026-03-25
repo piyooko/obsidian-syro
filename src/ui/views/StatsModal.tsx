@@ -1,5 +1,5 @@
 import { Modal, App, Platform } from "obsidian";
- 
+
 // 寮曞叆 Chart.js 鐩稿叧缁勪欢銆侰hart.js 鏄竴涓潪甯告祦琛岀殑 JS 鍥捐〃搴撱€?
 import {
     Chart,

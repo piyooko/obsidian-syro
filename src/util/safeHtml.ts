@@ -9,11 +9,7 @@ const DEFAULT_ALLOWED_ATTRIBUTES: HtmlAttributeAllowlist = {
     a: ["href"],
 };
 
-function appendSanitizedNode(
-    parent: Node,
-    node: ChildNode,
-    options: SanitizedHtmlOptions,
-): void {
+function appendSanitizedNode(parent: Node, node: ChildNode, options: SanitizedHtmlOptions): void {
     if (node.nodeType === Node.TEXT_NODE) {
         parent.appendChild(document.createTextNode(node.textContent ?? ""));
         return;

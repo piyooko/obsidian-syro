@@ -83,7 +83,8 @@ export class ItemTrans {
                 // update single note deck data, only tagged reviewnote
                 let noteItem = store.getNoteItem(note.path);
                 if (
-                    String(store.getTrackedFile(note.path)?.tags?.[0]) !== String(RPITEMTYPE.NOTE) ||
+                    String(store.getTrackedFile(note.path)?.tags?.[0]) !==
+                        String(RPITEMTYPE.NOTE) ||
                     noteItem == null
                 ) {
                     store.trackFile(note.path, deckname, false);
@@ -115,7 +116,7 @@ export class ItemTrans {
      * @param rdeck
      * @returns
      */
-    private static _toRevDeck(rdeck: ReviewDeck, note: TFile, now?: number) {
+    private static _toRevDeck(rdeck: ReviewDeck, note: TFile, _now?: number) {
         // const plugin = plugin;
         const store = DataStore.getInstance();
         const trackedFile = store.getTrackedFile(note.path);

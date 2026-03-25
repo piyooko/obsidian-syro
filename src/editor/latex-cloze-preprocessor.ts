@@ -125,9 +125,7 @@ class LatexClozeDOMPlugin {
 
         // 2. 查找 Obsidian 生成的所有数学公式容器
         //    Obsidian 用 span.math 包裹 mjx-container
-        const mathElements = Array.from(
-            this.view.dom.querySelectorAll(".cm-content .math"),
-        );
+        const mathElements = Array.from(this.view.dom.querySelectorAll(".cm-content .math"));
 
         for (const mathSpan of mathElements) {
             // 如果里面的 mjx-container 已经被我们处理过，直接跳过

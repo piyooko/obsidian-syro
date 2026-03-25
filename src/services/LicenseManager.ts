@@ -137,8 +137,7 @@ function createLicenseState(
 ): LicenseState {
     const timestamp = Date.now();
     const plan = payload.plan === "supporter" ? "supporter" : "supporter";
-    const features =
-        payload.features && payload.features.length > 0 ? payload.features : [plan];
+    const features = payload.features && payload.features.length > 0 ? payload.features : [plan];
 
     return {
         licenseKey,
@@ -170,14 +169,18 @@ export class LicenseManager {
     static getInstance(plugin?: Plugin): LicenseManager {
         if (!LicenseManager.instance) {
             if (!plugin) {
-                throw new Error("[LicenseManager] First initialization requires the plugin instance.");
+                throw new Error(
+                    "[LicenseManager] First initialization requires the plugin instance.",
+                );
             }
             LicenseManager.instance = new LicenseManager(plugin);
         }
         return LicenseManager.instance;
     }
 
-    private ensureInstallationId(settings: Pick<LicenseSettingsLike, "licenseInstallationId">): string {
+    private ensureInstallationId(
+        settings: Pick<LicenseSettingsLike, "licenseInstallationId">,
+    ): string {
         if (settings.licenseInstallationId) {
             return settings.licenseInstallationId;
         }
@@ -212,7 +215,12 @@ export class LicenseManager {
         const normalizedKey = normalizeLicenseKey(licenseKey);
         settings.licenseKey = normalizedKey;
         settings.licenseInstallationId = deviceId;
-        settings.licenseState = createLicenseState(normalizedKey, deviceId, payload, settings.licenseState);
+        settings.licenseState = createLicenseState(
+            normalizedKey,
+            deviceId,
+            payload,
+            settings.licenseState,
+        );
         settings.isPro = hasSupporterLicenseState(settings.licenseState);
     }
 
@@ -233,8 +241,7 @@ export class LicenseManager {
             return true;
         }
 
-        const daysSince =
-            (Date.now() - state.lastVerifiedAt) / (1000 * 60 * 60 * 24);
+        const daysSince = (Date.now() - state.lastVerifiedAt) / (1000 * 60 * 60 * 24);
         return daysSince >= this.VERIFICATION_INTERVAL_DAYS;
     }
 
@@ -255,8 +262,7 @@ export class LicenseManager {
             body: JSON.stringify({
                 licenseKey,
                 deviceId,
-                isDeviceChanged:
-                    licenseState != null ? licenseState.deviceId !== deviceId : false,
+                isDeviceChanged: licenseState != null ? licenseState.deviceId !== deviceId : false,
                 clientPlatform: diagnostics.clientPlatform,
                 clientVaultName: diagnostics.clientVaultName,
                 clientVaultPathHash: diagnostics.clientVaultPathHash,
@@ -290,7 +296,9 @@ export class LicenseManager {
 
     private async verifyWithServer(settings: LicenseSettingsLike): Promise<boolean> {
         const licenseState = settings.licenseState;
-        const licenseKey = normalizeLicenseKey(licenseState?.licenseKey || settings.licenseKey || "");
+        const licenseKey = normalizeLicenseKey(
+            licenseState?.licenseKey || settings.licenseKey || "",
+        );
 
         if (!licenseState?.token || !licenseKey) {
             return false;
@@ -309,7 +317,10 @@ export class LicenseManager {
             this.applyVerifiedLicense(settings, licenseKey, deviceId, payload);
             return true;
         } catch (error) {
-            console.warn("[LicenseManager] License verification is offline, keeping cached access.", error);
+            console.warn(
+                "[LicenseManager] License verification is offline, keeping cached access.",
+                error,
+            );
             return hasSupporterLicenseState(settings.licenseState);
         }
     }
