@@ -79,7 +79,7 @@ If Syro is not yet available in the community store for your vault, install it v
 
     -   In the prompt, paste this repository's URL:
         ```
-        piyooko/obsidian-syro
+        https://github.com/piyooko/obsidian-syro
         ```
     -   Then click `Add Plugin`. BRAT will automatically download the latest version of Syro.
 
