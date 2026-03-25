@@ -39,6 +39,11 @@ const clozeQuestion1Card1: RegExp = /This single .*SR_H:.* turns into 3 separate
 const clozeQuestion1Card2: RegExp = /This single question turns into .*SR_H:.* cards/;
 const clozeQuestion1Card3: RegExp = /This single question turns into 3 separate .*SR_H:.*/;
 
+interface RuntimePluginMock {
+    incrementDailyCounts: jest.Mock<void, [string, boolean]>;
+    decrementDailyCounts: jest.Mock<void, [string, boolean]>;
+}
+
 class TestContext {
     settings: SRSettings;
     reviewMode: FlashcardReviewMode;
@@ -51,6 +56,7 @@ class TestContext {
     file: UnitTestSRFile;
     originalText: string;
     fakeFilePath: string;
+    pluginMock: RuntimePluginMock;
 
     constructor(init?: Partial<TestContext>) {
         Object.assign(this, init);
@@ -83,7 +89,7 @@ class TestContext {
             this.file,
             new TopicPath(["Root"]),
         );
-        setupTestRuntime(deckTree, this.settings, this.cardScheduleCalculator);
+        this.pluginMock = setupTestRuntime(deckTree, this.settings, this.cardScheduleCalculator);
         const remainingDeckTree = DeckTreeFilter.filterForRemainingCards(
             this.questionPostponementList,
             deckTree,
@@ -140,6 +146,10 @@ class TestContext {
             file,
             originalText: text,
             fakeFilePath,
+            pluginMock: {
+                incrementDailyCounts: jest.fn(),
+                decrementDailyCounts: jest.fn(),
+            },
         });
         return result;
     }
@@ -149,8 +159,12 @@ function setupTestRuntime(
     deckTree: Deck,
     settings: SRSettings,
     cardScheduleCalculator: CardScheduleCalculator,
-): void {
+): RuntimePluginMock {
     const algorithmOptions = ["Reset", "Hard", "Good", "Easy"];
+    const pluginMock: RuntimePluginMock = {
+        incrementDailyCounts: jest.fn(),
+        decrementDailyCounts: jest.fn(),
+    };
     const getScheduleForItem = (item: RepetitionItem): CardScheduleInfo => {
         if (item.isNew) {
             return CardScheduleInfo.getDummyScheduleForNewCard(settings.baseEase);
@@ -193,9 +207,9 @@ function setupTestRuntime(
     (SRPlugin as any)._instance = {
         cardAlgorithm,
         data: { settings },
-        decrementDailyCounts: async (): Promise<void> => undefined,
+        decrementDailyCounts: pluginMock.decrementDailyCounts,
         getAlgorithmForItem: () => cardAlgorithm,
-        incrementDailyCounts: async (): Promise<void> => undefined,
+        incrementDailyCounts: pluginMock.incrementDailyCounts,
     };
 
     const items = new Map<number, RepetitionItem>();
@@ -257,6 +271,8 @@ function setupTestRuntime(
         settings,
         updateReviewedCounts: (): void => undefined,
     };
+
+    return pluginMock;
 }
 
 interface Info1 {
@@ -398,6 +414,27 @@ async function setupSample2(reviewMode: FlashcardReviewMode): Promise<TestContex
     );
     await c.setSequencerDeckTreeFromOriginalText();
     return c;
+}
+
+function wrapDeckWithRootForTest(fullPath: string, isolatedDeck: Deck): Deck {
+    const root = new Deck("Root", null);
+    if (!fullPath || fullPath === "root") {
+        return isolatedDeck;
+    }
+
+    const parts = fullPath.split("/").filter(Boolean);
+    let current = root;
+
+    for (let i = 0; i < parts.length - 1; i++) {
+        const node = new Deck(parts[i], current);
+        current.subdecks.push(node);
+        current = node;
+    }
+
+    isolatedDeck.parent = current;
+    current.subdecks.push(isolatedDeck);
+
+    return root;
 }
 
 async function checkEmptyPostponementList(
@@ -1166,6 +1203,92 @@ Q4::A4 <!--SR:!2023-01-21,15,290-->
                 [new DeckStats(0, 2, 2), "Q2", ReviewResponse.Easy],
             ]);
         });
+    });
+});
+
+describe("session counter deck stats", () => {
+    test("parent deck session stats stay pinned to the clicked parent deck", async () => {
+        const text: string = `
+#flashcards/biology QB::AB <!--SR:!2023-09-02,4,270-->
+#flashcards/chemistry QC::AC`;
+        const c: TestContext = TestContext.Create(
+            order_DueFirst_Sequential,
+            FlashcardReviewMode.Review,
+            DEFAULT_SETTINGS,
+            text,
+        );
+        const deckTree = await c.setSequencerDeckTreeFromOriginalText();
+        const remainingDeckTree = DeckTreeFilter.filterForRemainingCards(
+            c.questionPostponementList,
+            deckTree,
+            FlashcardReviewMode.Review,
+        );
+        const clickedParentDeck = remainingDeckTree.getDeckByTopicTag("#flashcards");
+        const wrappedDeckTree = wrapDeckWithRootForTest("flashcards", clickedParentDeck.clone());
+
+        c.reviewSequencer.setDeckTree(deckTree, wrappedDeckTree, remainingDeckTree.clone(), "flashcards");
+        c.reviewSequencer.setCurrentDeck(TopicPath.emptyPath);
+
+        expect(c.reviewSequencer.currentDeck.getTopicPath().path.join("/")).toEqual(
+            "flashcards/biology",
+        );
+        expect(c.reviewSequencer.getSessionDeckStats()).toEqual(new DeckStats(1, 1, 2));
+        expect(c.reviewSequencer.getDeckStats(c.reviewSequencer.currentDeck.getTopicPath())).toEqual(
+            new DeckStats(1, 0, 1),
+        );
+    });
+
+    test("processReview and undo use the clicked parent deck path for daily counts", async () => {
+        const text: string = `
+#flashcards/biology QB::AB <!--SR:!2023-09-02,4,270-->
+#flashcards/chemistry QC::AC`;
+        const c: TestContext = TestContext.Create(
+            order_DueFirst_Sequential,
+            FlashcardReviewMode.Review,
+            DEFAULT_SETTINGS,
+            text,
+        );
+        const deckTree = await c.setSequencerDeckTreeFromOriginalText();
+        const remainingDeckTree = DeckTreeFilter.filterForRemainingCards(
+            c.questionPostponementList,
+            deckTree,
+            FlashcardReviewMode.Review,
+        );
+        const clickedParentDeck = remainingDeckTree.getDeckByTopicTag("#flashcards");
+        const wrappedDeckTree = wrapDeckWithRootForTest("flashcards", clickedParentDeck.clone());
+
+        c.reviewSequencer.setDeckTree(deckTree, wrappedDeckTree, remainingDeckTree.clone(), "flashcards");
+        c.reviewSequencer.setCurrentDeck(TopicPath.emptyPath);
+
+        c.reviewSequencer.processReview(ReviewResponse.Easy);
+        expect(c.pluginMock.incrementDailyCounts).toHaveBeenCalledWith("flashcards", false);
+
+        c.reviewSequencer.undoReview();
+        expect(c.pluginMock.decrementDailyCounts).toHaveBeenCalledWith("flashcards", false);
+    });
+
+    test("daily count paths fall back to the current card deck when no session deck path is set", async () => {
+        const text: string = `#flashcards/biology QB::AB <!--SR:!2023-09-02,4,270-->`;
+        const c: TestContext = TestContext.Create(
+            order_DueFirst_Sequential,
+            FlashcardReviewMode.Review,
+            DEFAULT_SETTINGS,
+            text,
+        );
+
+        await c.setSequencerDeckTreeFromOriginalText();
+
+        c.reviewSequencer.processReview(ReviewResponse.Easy);
+        expect(c.pluginMock.incrementDailyCounts).toHaveBeenCalledWith(
+            "flashcards/biology",
+            false,
+        );
+
+        c.reviewSequencer.undoReview();
+        expect(c.pluginMock.decrementDailyCounts).toHaveBeenCalledWith(
+            "flashcards/biology",
+            false,
+        );
     });
 });
 

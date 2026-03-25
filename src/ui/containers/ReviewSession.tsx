@@ -225,7 +225,12 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 const wrappedDeckTree = wrapDeckWithRoot(fullPath, isolatedContextDeck);
 
                 // Swap the sequencer to the wrapped deck tree.
-                sequencer.setDeckTree(latestFullTree, wrappedDeckTree, latestRemainingTree);
+                sequencer.setDeckTree(
+                    latestFullTree,
+                    wrappedDeckTree,
+                    latestRemainingTree,
+                    fullPath,
+                );
                 sequencer.setCurrentDeck(TopicPath.emptyPath);
 
                 logRuntimeDebug(
@@ -691,9 +696,8 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
         [front, back, review, btnLabels],
     );
 
-    // Pull deck stats for the current topic path.
-    const topicPath = deck.getTopicPath();
-    const stats = sequencer.getDeckStats(topicPath);
+    // Pull counters from the deck session the user entered from.
+    const stats = sequencer.getSessionDeckStats();
     if (settings.showRuntimeDebugMessages) {
         console.debug(
             `[DEBUG_REVIEW_UI] Card Review UI counters for deck '${deck.deckName}' -> New: ${stats.newCount}, Learning: ${stats.learningCount}, Due: ${stats.dueCount}`,

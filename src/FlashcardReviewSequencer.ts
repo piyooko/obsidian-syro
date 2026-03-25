@@ -54,6 +54,7 @@ interface ReviewHistoryItem {
     wasNew: boolean;
     previousListType: CardListType;
     fromLearningQueue: boolean;
+    counterDeckPath: string;
     itemSnapshot?: Pick<
         RepetitionItem,
         "timesReviewed" | "timesCorrect" | "errorStreak" | "nextReview" | "queue" | "data"
@@ -93,9 +94,11 @@ export interface IFlashcardReviewSequencer {
         originalDeckTree: Deck,
         isolatedContextDeck: Deck,
         globalRemainingDeckTree?: Deck,
+        sessionCounterDeckPath?: string | null,
     ): void;
     setCurrentDeck(topicPath: TopicPath): void;
     getDeckStats(topicPath: TopicPath): DeckStats;
+    getSessionDeckStats(): DeckStats;
     skipCurrentCard(): void;
     determineCardSchedule(response: ReviewResponse, card: Card): CardScheduleInfo;
     processReview(response: ReviewResponse): void;
@@ -114,6 +117,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
     private cardScheduleCalculator: ICardScheduleCalculator;
     private questionPostponementList: IQuestionPostponementList;
     private history: ReviewHistoryItem[] = [];
+    private sessionCounterDeckPath: string | null = null;
 
     private _currentCard: Card | null = null;
     private _isLearning: boolean = false;
@@ -211,15 +215,78 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         return this.remainingDeckTree;
     }
 
+    private getDeckPath(deck: Deck | null | undefined): string | null {
+        if (!deck) {
+            return null;
+        }
+
+        const topicPath = deck.getTopicPath().path.join("/");
+        if (topicPath.length > 0) {
+            return topicPath;
+        }
+
+        return deck.isRootDeck ? "" : deck.deckName;
+    }
+
+    private findRemainingDeckByPath(deckPath: string | null | undefined): Deck | null {
+        if (!this.remainingDeckTree || deckPath == null) {
+            return null;
+        }
+
+        const normalizedDeckPath = deckPath === "root" ? "" : deckPath;
+        if (normalizedDeckPath === "") {
+            return this.remainingDeckTree;
+        }
+
+        return (
+            this.remainingDeckTree
+                .toDeckArray()
+                .find((deck) => this.getDeckPath(deck) === normalizedDeckPath) ?? null
+        );
+    }
+
+    private createDeckStats(deck: Deck | null | undefined): DeckStats {
+        if (!deck) {
+            return new DeckStats(0, 0, 0, 0);
+        }
+
+        const newCount = deck.getDistinctCardCount(CardListType.NewCard, true);
+        const dueCount = deck.getDistinctCardCount(CardListType.DueCard, true);
+        const learningCount = deck.getAvailableLearningCardCount(true, this.getLearnAheadMillis());
+
+        return new DeckStats(
+            dueCount,
+            newCount,
+            newCount + dueCount + learningCount,
+            learningCount,
+        );
+    }
+
+    private resolveReviewCounterDeckPath(card: Card | null, fallbackDeck: Deck | null): string {
+        if (this.sessionCounterDeckPath != null) {
+            return this.sessionCounterDeckPath;
+        }
+
+        const cardDeckPath = card?.question?.topicPathList?.list[0]?.path.join("/");
+        if (cardDeckPath && cardDeckPath.length > 0) {
+            return cardDeckPath;
+        }
+
+        const fallbackDeckPath = this.getDeckPath(fallbackDeck);
+        return fallbackDeckPath ?? "default";
+    }
+
     setDeckTree(
         originalDeckTree: Deck,
         isolatedContextDeck: Deck,
         globalRemainingDeckTree?: Deck,
+        sessionCounterDeckPath?: string | null,
     ): void {
         this.cardSequencer.setBaseDeck(isolatedContextDeck);
         this._originalDeckTree = originalDeckTree;
         this.remainingDeckTree = isolatedContextDeck;
         this.globalRemainingDeckTree = globalRemainingDeckTree;
+        this.sessionCounterDeckPath = sessionCounterDeckPath ?? null;
         this.setCurrentDeck(TopicPath.emptyPath);
     }
 
@@ -242,20 +309,12 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             ? this.remainingDeckTree
             : this.remainingDeckTree.getDeck(topicPath);
 
-        if (!deck) {
-            return new DeckStats(0, 0, 0, 0);
-        }
+        return this.createDeckStats(deck);
+    }
 
-        const newCount = deck.getDistinctCardCount(CardListType.NewCard, true);
-        const dueCount = deck.getDistinctCardCount(CardListType.DueCard, true);
-        const learningCount = deck.getAvailableLearningCardCount(true, this.getLearnAheadMillis());
-
-        return new DeckStats(
-            dueCount,
-            newCount,
-            newCount + dueCount + learningCount,
-            learningCount,
-        );
+    getSessionDeckStats(): DeckStats {
+        const sessionDeck = this.findRemainingDeckByPath(this.sessionCounterDeckPath);
+        return this.createDeckStats(sessionDeck ?? this.currentDeck);
     }
 
     skipCurrentCard(): void {
@@ -363,6 +422,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         this.logRuntimeDebug(
             `[SR-Debug] processReview: ID=${card.Id}, isLearning=${String(this._isLearning)}, response=${ReviewResponse[response]}, currentStep=${item?.learningStep}`,
         );
+        const counterDeckPath = this.resolveReviewCounterDeckPath(card, this.currentDeck);
 
         // 璁板綍鍘嗗彶
         const historyItem: ReviewHistoryItem = {
@@ -380,6 +440,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             wasNew: card.isNew,
             previousListType: this._isLearning ? CardListType.LearningCard : card.cardListType,
             fromLearningQueue: this._isLearning,
+            counterDeckPath,
             learningStepSnapshot: item?.learningStep,
         };
         if (item) {
@@ -396,9 +457,10 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
         // 璁℃暟
         if (this.reviewMode === FlashcardReviewMode.Review && !this._isLearning) {
+        if (this.reviewMode === FlashcardReviewMode.Review && !this._isLearning) {
             const plugin = SRPlugin.getInstance();
-            const deckName = card.question.topicPathList?.list[0]?.path.join("/") || "default";
-            plugin.incrementDailyCounts(deckName, historyItem.wasNew);
+            plugin.incrementDailyCounts(historyItem.counterDeckPath, historyItem.wasNew);
+        }
         }
 
         if (this.reviewMode === FlashcardReviewMode.Review) {
@@ -789,11 +851,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         if (this.reviewMode === FlashcardReviewMode.Review && !lastAction.fromLearningQueue) {
             const plugin = SRPlugin.getInstance();
             // 蹇呴』浣跨敤涓?incrementDailyCounts 鐩稿悓鐨勬牸寮?(鏃?# 璺緞)
-            const deckName =
-                card.question.topicPathList?.list[0]?.path.join("/") ||
-                deck.getTopicPath().path.join("/") ||
-                "default";
-            plugin.decrementDailyCounts(deckName, lastAction.wasNew);
+            plugin.decrementDailyCounts(lastAction.counterDeckPath, lastAction.wasNew);
         }
 
         // 3. Restore to Queues
