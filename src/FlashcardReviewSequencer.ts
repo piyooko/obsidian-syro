@@ -341,7 +341,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
     // ============================================================
     // 鏍稿績閫昏緫锛氬鐞嗗涔?
     // ============================================================
-    processReview(response: ReviewResponse): void {
+    async processReview(response: ReviewResponse): Promise<void> {
         this.logRuntimeDebug(`[SR-DynSync] sequencer.processReview: 鍝嶅簲=${ReviewResponse[response]}`);
         const card = this.currentCard;
         if (!card) {
@@ -402,17 +402,17 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         }
 
         if (this.reviewMode === FlashcardReviewMode.Review) {
-            this.processReview_ReviewMode(response, item);
+            await this.processReview_ReviewMode(response, item);
         } else {
             this.processReview_CramMode(response);
         }
         this.logRuntimeDebug("[SR-DynSync] sequencer.processReview: completed");
     }
 
-    processReview_ReviewMode(
+    async processReview_ReviewMode(
         response: ReviewResponse,
         item: RepetitionItem | null,
-    ): void {
+    ): Promise<void> {
         const card = this.currentCard;
         const currentStep = item?.learningStep ?? 0;
 
@@ -753,7 +753,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         await this.currentQuestion.writeQuestion(this.settings);
     }
 
-    undoReview(): void {
+    async undoReview(): Promise<void> {
         if (this.history.length === 0) {
             new Notice("No review action to undo.");
             return;

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.0.6] - 2026-03-25
+
+- Restored the async review sequencer contract so review actions no longer break the TypeScript test pipeline after the review-flow refactor.
+- Released version `0.0.6` with aligned manifest, package, and compatibility metadata for distribution.
+
 ## [0.0.5] - 2026-03-22
 
 - Fixed the sync progress toast so runtime status text uses locale keys instead of corrupted hard-coded strings.
