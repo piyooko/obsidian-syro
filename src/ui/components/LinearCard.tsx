@@ -51,6 +51,7 @@ import { CardEditorView } from "./CardEditorView";
 import type SRPlugin from "src/main";
 import "../styles/linear-card.css";
 import { t } from "src/lang/helpers";
+import { DEFAULT_PROGRESS_BAR_STYLE, type ProgressBarStyle } from "src/settings";
 import { transformLatex } from "../../utils/latexTransformer";
 import { createSanitizedHtmlFragment } from "src/util/safeHtml";
 import {
@@ -85,6 +86,7 @@ interface LinearCardProps {
     filename?: string;
     autoAdvanceSeconds?: number;
     showProgressBar?: boolean;
+    progressBarStyle?: ProgressBarStyle;
     onAnswer?: (rating: number) => void;
     onShowAnswer?: () => void;
     onUndo?: () => void;
@@ -122,6 +124,7 @@ export const LinearCard: FC<LinearCardProps> = ({
     filename = "Card.md",
     autoAdvanceSeconds = 10,
     showProgressBar = true,
+    progressBarStyle = DEFAULT_PROGRESS_BAR_STYLE,
     onAnswer,
     onShowAnswer,
     onUndo,
@@ -718,12 +721,16 @@ export const LinearCard: FC<LinearCardProps> = ({
                         </div>
 
                         {/* 璁℃椂鍣ㄨ繘搴︽潯 */}
-                        <div className="sr-timer-bar-container">
+                        <div
+                            className="sr-timer-bar-container"
+                            style={{ height: `${Math.max(progressBarStyle.height, 0)}px` }}
+                        >
                             <AnimatePresence initial={false}>
                                 {!renderIsFlipped && autoAdvanceSeconds > 0 && showProgressBar && (
                                     <TimerBar
                                         duration={autoAdvanceSeconds}
                                         timeExpired={timeExpired}
+                                        progressBarStyle={progressBarStyle}
                                     />
                                 )}
                             </AnimatePresence>
@@ -897,15 +904,21 @@ export const LinearCard: FC<LinearCardProps> = ({
 const TimerBar = ({
     duration,
     timeExpired,
+    progressBarStyle,
 }: {
     duration: number;
     timeExpired: boolean;
+    progressBarStyle: ProgressBarStyle;
 }) => (
     <motion.div
         initial={{ width: "0%", opacity: 1 }}
         animate={{
             width: "100%",
-            backgroundColor: ["#3b82f6", "#3b82f6", "#ef4444"],
+            backgroundColor: [
+                "var(--sr-progress-bar-color)",
+                "var(--sr-progress-bar-color)",
+                "var(--sr-progress-bar-warning-color)",
+            ],
         }}
         exit={
             timeExpired
@@ -917,6 +930,14 @@ const TimerBar = ({
             backgroundColor: { times: [0, 0.7, 1], duration: duration, ease: "linear" },
         }}
         className="sr-timer-bar"
+        style={{
+            backgroundColor: progressBarStyle.color,
+            left: progressBarStyle.rightToLeft ? "auto" : "0",
+            right: progressBarStyle.rightToLeft ? "0" : "auto",
+            transformOrigin: progressBarStyle.rightToLeft ? "right center" : "left center",
+            ["--sr-progress-bar-color" as string]: progressBarStyle.color,
+            ["--sr-progress-bar-warning-color" as string]: progressBarStyle.warningColor,
+        }}
     />
 );
 

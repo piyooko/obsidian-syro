@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.7] - 2026-03-26
+
+-   Kept progress bar styling in settings while making deck options the only visibility toggle for review countdown bars.
+-   Wired the review countdown bar to respect the configured color, warning color, height, and fill direction.
+-   Released version `0.0.7` with aligned manifest, package, compatibility metadata, and release notes.
+
 ## [0.0.6] - 2026-03-25
 
 -   Restored the async review sequencer contract so review actions no longer break the TypeScript test pipeline after the review-flow refactor.

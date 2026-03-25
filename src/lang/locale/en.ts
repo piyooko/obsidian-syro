@@ -891,13 +891,16 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_CARD_ANIM_DESC: "Animation effect when cards are due.",
     SETTINGS_CARD_PERIOD: "Card Period",
     SETTINGS_CARD_PERIOD_DESC: "Card animation period (seconds).",
-    SETTINGS_SECTION_PROGRESS_BAR: "Progress Bar",
+    SETTINGS_SECTION_PROGRESS_BAR: "Progress Bar Style",
     SETTINGS_PROGRESS_BAR_COLOR: "Bar Color",
-    SETTINGS_PROGRESS_BAR_COLOR_DESC: "Select progress bar color.",
+    SETTINGS_PROGRESS_BAR_COLOR_DESC:
+        "Applied to review countdown bars. Toggle bar visibility in deck options.",
     SETTINGS_PROGRESS_WARNING_COLOR: "Warning Color",
-    SETTINGS_PROGRESS_WARNING_COLOR_DESC: "Color when less than 30% time remains.",
+    SETTINGS_PROGRESS_WARNING_COLOR_DESC:
+        "Used when less than 30% time remains on a visible review countdown bar.",
     SETTINGS_PROGRESS_RTL: "Right to Left Animation",
-    SETTINGS_PROGRESS_RTL_DESC: "Progress bar fills from right to left.",
+    SETTINGS_PROGRESS_RTL_DESC:
+        "Changes the fill direction for visible review countdown bars. Visibility is controlled in deck options.",
 
     // Debug & Advanced
     SETTINGS_SECTION_DEBUG: "Advanced & Debug",

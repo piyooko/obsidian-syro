@@ -4,7 +4,7 @@ import {
     SRSettings,
     upgradeSettings,
 } from "src/settings";
-import { settingsToUIState } from "src/ui/adapters/settingsAdapter";
+import { mergeUIStateToSettings, settingsToUIState } from "src/ui/adapters/settingsAdapter";
 
 describe("sync progress display defaults", () => {
     test("new installs default to full-only progress tips", () => {
@@ -36,6 +36,40 @@ describe("sync progress display defaults", () => {
 
         expect(settingsToUIState(settings).syncProgressDisplayMode).toBe(
             DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
+        );
+    });
+
+    test("settings UI keeps progress bar style values when persisted data exists", () => {
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            progressBarStyle: {
+                color: "#101010",
+                warningColor: "#202020",
+                height: 9,
+                rightToLeft: true,
+            },
+        } as SRSettings;
+
+        expect(settingsToUIState(settings).progressBarStyle).toEqual(settings.progressBarStyle);
+    });
+
+    test("settings UI merges progress bar style changes without dropping untouched fields", () => {
+        const merged = mergeUIStateToSettings(DEFAULT_SETTINGS, {
+            progressBarStyle: {
+                color: "#abcdef",
+                warningColor: DEFAULT_SETTINGS.progressBarStyle.warningColor,
+                height: DEFAULT_SETTINGS.progressBarStyle.height,
+                rightToLeft: DEFAULT_SETTINGS.progressBarStyle.rightToLeft,
+            },
+        });
+
+        expect(merged.progressBarStyle.color).toBe("#abcdef");
+        expect(merged.progressBarStyle.warningColor).toBe(
+            DEFAULT_SETTINGS.progressBarStyle.warningColor,
+        );
+        expect(merged.progressBarStyle.height).toBe(DEFAULT_SETTINGS.progressBarStyle.height);
+        expect(merged.progressBarStyle.rightToLeft).toBe(
+            DEFAULT_SETTINGS.progressBarStyle.rightToLeft,
         );
     });
 });

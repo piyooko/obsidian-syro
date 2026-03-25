@@ -725,6 +725,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     const preset = settings.deckOptionsPresets[presetIndex] || settings.deckOptionsPresets[0];
     const autoAdvanceSeconds = preset?.autoAdvance ? preset.autoAdvanceSeconds || 10 : 0;
     const showAutoAdvanceProgressBar = preset?.showProgressBar ?? true;
+    const progressBarStyle = settings.progressBarStyle;
 
     // Collect extra debug data for the review UI when needed.
     const debugInfo = useMemo(() => {
@@ -837,6 +838,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
                 breadcrumbs={breadcrumbs}
                 autoAdvanceSeconds={autoAdvanceSeconds}
                 showProgressBar={showAutoAdvanceProgressBar}
+                progressBarStyle={progressBarStyle}
                 onAnswer={onAnswer}
                 onShowAnswer={() => {}}
                 onUndo={onUndo}

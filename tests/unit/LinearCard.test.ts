@@ -2,7 +2,7 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { CardType } from "src/Question";
 import { CardFrontBackUtil } from "src/question-type";
-import { DEFAULT_SETTINGS, SRSettings } from "src/settings";
+import { DEFAULT_PROGRESS_BAR_STYLE, DEFAULT_SETTINGS, SRSettings } from "src/settings";
 import { LinearCard, CardState } from "src/ui/components/LinearCard";
 
 (
@@ -409,6 +409,51 @@ describe("LinearCard math cloze rendering", () => {
         } finally {
             act(() => root.unmount());
             jest.useRealTimers();
+        }
+    });
+
+    test("applies progress bar style props to the visible timer bar", () => {
+        const container = document.createElement("div");
+        document.body.appendChild(container);
+        const root = createRoot(container);
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    autoAdvanceSeconds: 10,
+                    showProgressBar: true,
+                    progressBarStyle: {
+                        ...DEFAULT_PROGRESS_BAR_STYLE,
+                        color: "#112233",
+                        warningColor: "#445566",
+                        height: 7,
+                        rightToLeft: true,
+                    },
+                    card: {
+                        front: "Question",
+                        back: "Answer",
+                    },
+                    type: "basic",
+                }),
+            );
+        });
+
+        try {
+            const containerEl = container.querySelector<HTMLElement>(".sr-timer-bar-container");
+            const timerBar = container.querySelector<HTMLElement>(".sr-timer-bar");
+
+            expect(containerEl).not.toBeNull();
+            expect(containerEl?.style.height).toBe("7px");
+            expect(timerBar).not.toBeNull();
+            expect(timerBar?.style.backgroundColor).toBe("rgb(17, 34, 51)");
+            expect(timerBar?.style.right).toBe("0px");
+            expect(timerBar?.style.transformOrigin).toBe("right center");
+            expect(timerBar?.style.getPropertyValue("--sr-progress-bar-color")).toBe("#112233");
+            expect(timerBar?.style.getPropertyValue("--sr-progress-bar-warning-color")).toBe(
+                "#445566",
+            );
+        } finally {
+            act(() => root.unmount());
         }
     });
 

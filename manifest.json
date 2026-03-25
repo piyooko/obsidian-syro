@@ -1,7 +1,7 @@
 {
     "id": "syro",
     "name": "Syro",
-    "version": "0.0.6",
+    "version": "0.0.7",
     "minAppVersion": "1.4.0",
     "description": "Seamless spaced repetition, flashcards, and incremental reading workflows. A stylized, modern interface alternative to Anki for your plain-text knowledge base.",
     "author": "piyooko",

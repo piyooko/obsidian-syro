@@ -5,7 +5,6 @@ import type { UISettingsState } from "src/ui/types/settingsTypes";
 
 jest.mock("obsidian", () => ({
     Notice: class Notice {
-        // No-op test double for settings interactions.
         constructor(_message?: string) {}
     },
     moment: {
@@ -91,9 +90,10 @@ function createSettings(overrides: Partial<UISettingsState> = {}): UISettingsSta
 function findSettingItemByName(container: HTMLElement, names: string[]): HTMLElement | null {
     return (
         Array.from(container.querySelectorAll<HTMLElement>(".setting-item")).find((item) =>
-            names.some((name) =>
-                item.querySelector(".setting-item-name")?.textContent?.includes(name),
-            ),
+            names.some((name) => {
+                const itemName = item.querySelector(".setting-item-name")?.textContent?.toLowerCase();
+                return itemName?.includes(name.toLowerCase());
+            }),
         ) ?? null
     );
 }
@@ -108,7 +108,7 @@ function renderPanel(settings: UISettingsState) {
             React.createElement(EmbeddedSettingsPanel, {
                 settings,
                 onSettingsChange: jest.fn(),
-                version: "0.0.6",
+                version: "0.0.7",
             }),
         );
     });
@@ -123,21 +123,48 @@ function renderPanel(settings: UISettingsState) {
     };
 }
 
+function openTab(container: HTMLElement, label: string) {
+    const tab = Array.from(container.querySelectorAll<HTMLElement>(".sr-style-tab")).find((item) =>
+        item.textContent?.includes(label),
+    );
+
+    if (!tab) {
+        throw new Error(`Unable to find tab: ${label}`);
+    }
+
+    act(() => {
+        tab.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+}
+
 describe("EmbeddedSettingsPanel", () => {
     afterEach(() => {
         document.body.innerHTML = "";
+    });
+
+    it("keeps the progress bar settings as style-only controls on the UI tab", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            openTab(view.container, "Interface");
+
+            const colorItem = findSettingItemByName(view.container, ["Bar color"]);
+            expect(colorItem).not.toBeNull();
+            expect(
+                colorItem?.querySelector(".setting-item-description")?.textContent ?? "",
+            ).toContain("deck options");
+            expect(findSettingItemByName(view.container, ["Show progress bar"])).toBeNull();
+        } finally {
+            view.cleanup();
+        }
     });
 
     it("hides code context lines when code block cloze is disabled", () => {
         const view = renderPanel(createSettings({ parseClozesInCodeBlocks: false }));
 
         try {
-            expect(
-                findSettingItemByName(view.container, ["Code block cloze", "代码块填空"]),
-            ).not.toBeNull();
-            expect(
-                findSettingItemByName(view.container, ["Code context lines", "代码上下文行数"]),
-            ).toBeNull();
+            expect(findSettingItemByName(view.container, ["Code block cloze"])).not.toBeNull();
+            expect(findSettingItemByName(view.container, ["Code context lines"])).toBeNull();
         } finally {
             view.cleanup();
         }
@@ -147,18 +174,9 @@ describe("EmbeddedSettingsPanel", () => {
         const view = renderPanel(createSettings({ parseClozesInCodeBlocks: true }));
 
         try {
-            const codeBlockItem = findSettingItemByName(view.container, [
-                "Code block cloze",
-                "代码块填空",
-            ]);
-            const codeContextItem = findSettingItemByName(view.container, [
-                "Code context lines",
-                "代码上下文行数",
-            ]);
-            const clozeContextItem = findSettingItemByName(view.container, [
-                "Cloze context range",
-                "Cloze 上下文范围",
-            ]);
+            const codeBlockItem = findSettingItemByName(view.container, ["Code block cloze"]);
+            const codeContextItem = findSettingItemByName(view.container, ["Code context lines"]);
+            const clozeContextItem = findSettingItemByName(view.container, ["Cloze context range"]);
 
             expect(codeBlockItem).not.toBeNull();
             expect(codeContextItem).not.toBeNull();
