@@ -1,10 +1,10 @@
-# Syro: 在 Obsidian 中重塑你的记忆与阅读
-
-> **将“间隔重复（Spaced Repetition）”与“渐进阅读（Incremental Reading）”的科学理念，无缝融入你的纯文本知识库。**
-
 [English](../README.md) | **中文文档**
+***Reshape Your Memory and Reading in Obsidian***
+> **将“间隔重复（Spaced Repetition）”与“渐进阅读（Incremental Reading）”的科学理念，无缝融入你的纯文本知识库。**
+<img width="2741" height="1082" alt="image" src="https://github.com/user-attachments/assets/e4171711-61c7-4465-a1d0-f518c6709839" />
 
-## 当知识库沦为收藏库
+
+## 知识库沦为收藏库
 
 我们在 Obsidian 中精心收集了海量的网页、文献与笔记，但这些宝贵的资料却往往在保存后便石沉大海。传统的笔记方法，如被动的重读和划线，往往难以形成长久记忆，最终使我们的知识库陷入“记录后即遗忘”的循环。
 
