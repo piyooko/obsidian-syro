@@ -1,112 +1,106 @@
 [English](../README.md) | **中文文档**
+
 **_Reshape Your Memory and Reading in Obsidian_**
 
-> **将“间隔重复（Spaced Repetition）”与“渐进阅读（Incremental Reading）”的科学理念，无缝融入你的纯文本知识库。** > <img width="2741" height="1082" alt="image" src="https://github.com/user-attachments/assets/e4171711-61c7-4465-a1d0-f518c6709839" />
+> **将间隔重复（Spaced Repetition）与渐进阅读（Incremental Reading）的科学原理，无缝融入你的纯文本知识库。**
 
-## 知识库沦为收藏库
+<img width="2494" height="1036" alt="image" src="https://github.com/user-attachments/assets/08e782b0-3bad-4cbc-ab57-2f80e08af323" />
 
-我们在 Obsidian 中精心收集了海量的网页、文献与笔记，但这些宝贵的资料却往往在保存后便石沉大海。传统的笔记方法，如被动的重读和划线，往往难以形成长久记忆，最终使我们的知识库陷入“记录后即遗忘”的循环。
+## 核心特性
 
-Syro 旨在为此提供一种解决方案。它并非意在取代你现有的笔记习惯，而是希望引入“时间”的维度，将你的静态知识库，转变为一个能够主动、智能地帮你学习与记忆的记忆系统。
+-   **情境化闪卡（告别“信息孤岛”）**
+    直接使用原生 Markdown 语法（如 `==高亮==` 或 `::`）在笔记中创建闪卡。复习时如果忘记答案，一键就能跳回原笔记中的准确段落。记忆不再脱离上下文，而是在完整语境中形成。
 
-## 为谁设计？
+-   **渐进阅读队列**
+    将厚书、长网页剪藏或高密度文章批量放入右侧边栏队列。你可以按标签筛选，再交给 FSRS 算法决定今天该读什么，把庞大的待读积压拆成无压力的每日微任务。
 
-Syro 的核心机制——间隔重复与渐进阅读，尤其适合以下类型的 Obsidian 用户：
+-   **Timeline 时间线（像给阅读打 Git Commit）**
+    读到一半累了，直接关掉即可。Syro 会自动保存你的精确滚动进度。几天后文章再次浮现时，点开 Timeline 就能回到上次中断的位置。你甚至可以留下一条“commit message”，提醒未来的自己当时在想什么。
 
--   **对抗“数字收藏家”困境的知识囤积者**
-    对于那些剪藏了大量内容却无力阅读的用户，Syro 的“渐进阅读”功能可将庞大的待读列表分解为每日可消化的微任务，通过算法定期推送，帮助你将静态的“信息仓库”转变为动态吸收的知识流。
+-   **现代化界面与先进 FSRS 算法**
+    界面简洁现代，尽量保持 Obsidian 原生观感（Style Settings 支持即将到来）。底层则由前沿的 **FSRS** 算法驱动，在尽可能减少复习时间的同时争取更高的记忆保留率。
 
--   **Zettelkasten 与常青笔记的践行者**
-    Syro 允许知识在时间的沉淀下自我生长。算法会定期将你的灵感卡片、不成熟的草稿笔记重新带回你的视野，鼓励你在多次的接触中不断打磨、补充细节、建立新的连接，实现“渐进式思考”与“渐进式写作”。
+## 当你的知识库沦为收藏坟场
 
--   **渴望跨学科碰撞的创意工作者**
-    通过在不同主题的笔记与摘录之间进行交错学习（Interleaved Learning），系统能为你创造出意想不到的语义联系，激发“神经创造力”，为复杂问题的解决和深刻洞见的产生提供温床。
+很多人都会遇到同一个困境：我们在 Obsidian 里认真收集了大量网页、文章和笔记，但这些宝贵资料在保存后却逐渐沉入遗忘。传统的被动重读和高亮，往往难以支撑长期记忆，最后让知识库陷入“记下就忘”的循环。
 
--   **攻克复杂硬核知识的专业人士与学生**
-    面对艰深概念，Syro 允许你将必须掌握的术语、公式和核心定义制作为闪卡，训练至“自动化”提取的程度，从而释放宝贵的认知资源，去进行更高阶的逻辑推理与概念整合。
+Syro 想解决的正是这个问题。它不是要替代你原有的笔记习惯，而是为你的知识系统引入“时间”这一维度，把静态知识库转变成一个能够主动、智能地帮助你学习与记忆的动态系统。
 
--   **需要“可编程注意力”的执行者**
-    系统接管了繁琐的复习规划工作，消除了“今天该学什么”的决策疲劳。它就像大脑的“定时任务系统”，每天为你生成一组科学的微任务，帮助你仅需跟随引导，就能高效地对抗遗忘。
+## 适合谁？
 
-## 🌟 核心能力
+-   *数字收藏家*：把“稍后再读”坟场变成每天都能消化的内容流。
 
--   **附带上下文语境的闪卡 (Contextual Flashcards)**
-    使用自然的 Markdown 语法（如 `==高亮==` 或 `::`）在笔记中直接创建卡片。复习时若遇遗忘，可一键回溯原文，**帮助你**在理解完整语境的基础上进行记忆，而非孤立地死记硬背。
+-   *学生与专业人士*：在原始上下文中记住复杂术语，而不是把知识切碎成孤立的 Anki 卡片。
 
--   **渐进阅读 (Incremental Reading)**
-    将长篇文献或待读笔记纳入调度队列。算法会智能地将其打散到未来的碎片时间中，并利用 Timeline 机制记录你每次的阅读位置，**为你**实现轻松、无压力的长线学习。
+-   *Zettelkasten 用户*：让零散想法随时间自然重现，并逐步建立更深的连接。
 
--   **先进调度算法 (Advanced Scheduling)**
-    内置前沿的 **FSRS** (Free Spaced Repetition Scheduler) 算法。相较于传统算法，它能更精准地预测你的遗忘曲线，**旨在**以更少的复习次数达到更高的记忆保留率。
+## 探索文档
 
--   **坚守本地与数据安全 (Local & Private)**
-    深度贯彻 Obsidian 的本地化哲学。所有复习数据均以纯文本 JSON 格式安全地保存在你的本地设备中，你的知识永远属于你自己。
+想更深入地了解 Syro 的能力，可以从下面的文档入口开始。现在中英文文档树已经保持镜像对齐。
 
-## 📖 探索官方文档
+-   **[Syro 中文文档总览](./docs/zh/index.md)**
+-   **[核心理念](./docs/zh/getting-started/introduction.md)**
+-   **[5 分钟快速上手](./docs/zh/getting-started/quick-start.md)**
+-   **[闪卡复习总览](./docs/zh/flashcards/index.md)**
+-   **[笔记复习总览](./docs/zh/note-review/index.md)**
+-   **[数据、同步与备份机制](./docs/zh/advanced-and-faq/data-and-sync.md)**
 
-想要深入了解 Syro 的潜力，请查阅我们的中文使用指南。
-
--   🏠 **[Syro 中文文档总览](./docs/zh/index.md)**
--   🚀 **[5 分钟快速上手指南](./docs/zh/getting-started/quick-start.md)**
--   🧠 **[闪卡复习工作流：从制卡到记忆](./docs/zh/flashcards/index.md)**
--   📚 **[笔记复习工作流：掌控你的阅读队列](./docs/zh/note-review/index.md)**
--   🛠️ **[数据、同步与排障指南](./docs/zh/advanced-and-faq/faq-troubleshooting.md)**
-
-## ⬇️ 安装指南
+## 安装指南
 
 ### 通过 BRAT 安装
 
-如果您的 Obsidian 当前还无法在社区插件市场中直接找到 Syro，可先通过 `BRAT` 安装，以便及时获取最新发布版本。
+如果 Syro 还没有出现在你的 Obsidian 社区插件商店中，可以先通过 `BRAT` 安装，以尽快获取最新发布版本。
 
-**详细安装步骤：**
+**详细步骤：**
 
-1.  **安装 BRAT 插件**
+1.  **安装 BRAT**
 
-    -   如果您的 Obsidian 中尚未安装 BRAT，请前往 `设置` > `第三方插件` > `社区插件市场` > `浏览`。
-    -   在搜索框中输入 `BRAT`，找到 `Obsidian42 - BRAT` 并点击 `安装`，然后 `启用` 它。
+    -   如果你还没有安装 BRAT，请前往 `设置` > `社区插件` > `浏览`。
+    -   搜索 `BRAT`，找到 `Obsidian42 - BRAT`，点击 `安装`，然后再点击 `启用`。
 
 2.  **添加 Syro 仓库**
 
-    -   打开 BRAT 插件的设置页面（`设置` > `第三方插件` > `BRAT`）。
-    -   点击 `Add Beta plugin` (添加 Beta 插件) 按钮。
+    -   打开 BRAT 的设置页（`设置` > `社区插件` > `BRAT`）。
+    -   点击 `Add Beta plugin` 按钮。
 
 3.  **粘贴仓库地址**
 
-    -   在弹出的输入框中，粘贴本插件的 GitHub 仓库地址：
+    -   在弹出的输入框中粘贴本仓库的地址：
         ```
-        https://github.com/piyooko/obsidian-syro/
+        https://github.com/piyooko/obsidian-syro
         ```
-    -   然后点击 `Add Plugin` (添加插件)。BRAT 将会自动为您下载最新版本的 Syro。
+    -   然后点击 `Add Plugin`。BRAT 会自动下载 Syro 的最新版本。
 
-4.  **启用 Syro 插件**
-    -   下载完成后，返回到 `设置` > `第三方插件` 列表。
-    -   找到 `Syro`，并点击右侧的开关以启用它。
+4.  **启用插件**
 
-现在，Syro 已经成功安装并准备就绪了！
+    -   BRAT 下载完成后，回到 `设置` > `社区插件` 列表。
+    -   找到 `Syro` 并将其打开。
 
-### 社区插件市场
+现在 Syro 就已经安装完成，可以开始使用了。
 
-如果 Syro 已经出现在 Obsidian 官方社区插件市场中，您可以直接在市场中搜索 `Syro` 并完成安装。
+### 社区插件商店
 
-### 手动安装 (备用方案)
+如果 Syro 已经上架 Obsidian 官方社区插件商店，你也可以直接搜索 `Syro` 并完成安装。
 
-1.  前往本仓库的 [Releases](https://github.com/piyooko/obsidian-syro/releases) 页面，下载最新版本的 `main.js`、`manifest.json`、`styles.css`。
-2.  在你的 Obsidian 库中创建目录 `.obsidian/plugins/syro`。
-3.  将上述文件放入该目录。
-4.  重启 Obsidian，在设置的“第三方插件”中启用 `Syro`。
+### 手动安装（备选方案）
 
-## 诚挚致谢 (Acknowledgements)
+1.  前往本仓库的 [Releases](https://github.com/piyooko/obsidian-syro/releases) 页面，下载最新版本中的 `main.js`、`manifest.json` 和 `styles.css`。
+2.  在你的库中创建 `.obsidian/plugins/syro/` 文件夹。
+3.  将下载的文件复制到这个新文件夹中。
+4.  重启 Obsidian，并在 `设置` > `社区插件` 中启用 `Syro`。
 
-Syro 的开发离不开开源社区的滋养与众多卓越项目的启发。我们在此向以下项目及其贡献者致以最诚挚的敬意与感谢：
+## 致谢
 
--   **[Obsidian](https://obsidian.md/)**: 感谢其创造了这片自由、开放、注重隐私的纯文本生态，让一切成为可能。
--   **[Anki](https://apps.ankiweb.net/)**: 间隔重复领域的伟大先驱，向其对主动回忆机制的普及致敬。
--   **[FSRS](https://github.com/open-spaced-repetition/fsrs4anki)**: 感谢其开源的出色算法，极大地推动了记忆调度的科学性。
--   并特别向 **[叶峻峣 (L-M-Sherlock)](https://github.com/L-M-Sherlock)** 致以敬意。不仅作为 FSRS 算法的核心贡献者，更作为一名热忱的布道者，为间隔重复与先进教育理念在中文社区的普及所做出的杰出贡献。
--   **[Obsidian Spaced Repetitions](https://github.com/st3v3nmw/obsidian-spaced-repetition)**: 本插件最初的灵感源泉，感谢其为 Obsidian 社区带来了间隔重复的火种。
--   **[Obsidian Smart Connections](https://github.com/brianpetro/obsidian-smart-connections)**: 在探索本地知识库与 AI 技术的结合上，其优秀的工程架构与创新思路提供了宝贵的启发。
+Syro 的开发深受开源社区滋养，也受到了许多优秀项目的启发。我们向以下项目及其贡献者致以诚挚的感谢与敬意：
+
+-   **[Obsidian](https://obsidian.md/)**：感谢你们打造了这个自由、开放、注重隐私的纯文本生态，让这一切成为可能。
+-   **[Anki](https://apps.ankiweb.net/)**：作为间隔重复领域的里程碑式工具，它让主动回忆这一学习方法得以被更多人真正实践。
+-   **[FSRS](https://github.com/open-spaced-repetition/fsrs4anki)**：感谢这一优秀的开源算法，显著推进了复习调度的科学性。
+-   **[叶峻峣 (L-M-Sherlock)](https://github.com/L-M-Sherlock)**：感谢你在 FSRS 算法开发中的关键贡献，以及在推广间隔重复与先进教育实践上的不懈投入。
+-   **[Obsidian Spaced Repetitions](https://github.com/st3v3nmw/obsidian-spaced-repetition)**：这是本插件最初的灵感来源，感谢你把间隔重复的火种带进 Obsidian 社区。
 
 ---
 
-**License**: [MIT License](./LICENSE)  
-_(披露：Syro 的大多核心功能可免费使用，部分支持者专属实验功能需要通过 CDK 验证。当前版本无强制账号体系；本插件会自动或用户手动进行 CDK 联网校验，但不会向云端发送核心复习数据、笔记内容或其他与 CDK 校验无关的内容。)_
+**License**: [MIT License](../LICENSE)
+
+_(披露：Syro 的大部分核心功能都可免费使用。部分支持者专属的实验性功能需要进行 CDK 验证。当前版本不强制要求账号系统；插件可能会自动或由用户手动发起联网 CDK 校验，但不会向云端传输核心复习数据、笔记内容或任何与 CDK 验证无关的信息。)_
