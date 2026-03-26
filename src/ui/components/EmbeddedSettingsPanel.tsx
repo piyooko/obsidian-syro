@@ -1091,6 +1091,68 @@ const NotesTab: React.FC<TabProps> = ({ settings, onChange }) => (
                 value={settings.hideNoteReviewSidebarFilters}
                 onChange={(v) => onChange("hideNoteReviewSidebarFilters", v)}
             />
+            <ToggleRow
+                label={t("SETTINGS_SHOW_SIDEBAR_PROGRESS_INDICATOR")}
+                desc={t("SETTINGS_SHOW_SIDEBAR_PROGRESS_INDICATOR_DESC")}
+                value={settings.showSidebarProgressIndicator}
+                onChange={(v) => onChange("showSidebarProgressIndicator", v)}
+            />
+            <SelectRow
+                label={t("SETTINGS_SIDEBAR_PROGRESS_INDICATOR")}
+                desc={t("SETTINGS_SIDEBAR_PROGRESS_INDICATOR_DESC")}
+                value={settings.sidebarProgressIndicatorMode}
+                options={[
+                    {
+                        label: t("SETTINGS_SIDEBAR_PROGRESS_INDICATOR_RING"),
+                        value: "ring",
+                    },
+                    {
+                        label: t("SETTINGS_SIDEBAR_PROGRESS_INDICATOR_PERCENTAGE"),
+                        value: "percentage",
+                    },
+                ]}
+                onChange={(v) =>
+                    onChange(
+                        "sidebarProgressIndicatorMode",
+                        v as UISettingsState["sidebarProgressIndicatorMode"],
+                    )
+                }
+            />
+            {settings.showSidebarProgressIndicator && (
+                <>
+                    <ColorPickerRow
+                        label={t("SETTINGS_SIDEBAR_PROGRESS_RING_COLOR")}
+                        desc={t("SETTINGS_SIDEBAR_PROGRESS_RING_COLOR_DESC")}
+                        value={settings.sidebarProgressRingColor}
+                        onChange={(v) => onChange("sidebarProgressRingColor", v)}
+                    />
+                    {settings.sidebarProgressIndicatorMode === "ring" && (
+                        <SelectRow
+                            label={t("SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION")}
+                            desc={t("SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION_DESC")}
+                            value={settings.sidebarProgressRingDirection}
+                            options={[
+                                {
+                                    label: t("SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION_CLOCKWISE"),
+                                    value: "clockwise",
+                                },
+                                {
+                                    label: t(
+                                        "SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION_COUNTERCLOCKWISE",
+                                    ),
+                                    value: "counterclockwise",
+                                },
+                            ]}
+                            onChange={(v) =>
+                                onChange(
+                                    "sidebarProgressRingDirection",
+                                    v as UISettingsState["sidebarProgressRingDirection"],
+                                )
+                            }
+                        />
+                    )}
+                </>
+            )}
         </Section>
         <Section title={t("SETTINGS_SECTION_TIMELINE")}>
             <ToggleRow
@@ -1172,7 +1234,6 @@ const UITab: React.FC<TabProps> = ({ settings, onChange }) => (
                 onChange={(v) => onChange("showStatusBar", v)}
             />
         </Section>
-
         <Section title={t("SETTINGS_SECTION_STATUS_BAR_ANIM")}>
             <ToggleRow
                 label={t("SETTINGS_SHOW_DUE_NOTIF")}

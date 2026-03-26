@@ -860,6 +860,22 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_HIDE_FILTER_BAR: "Hide Filter Bar Header",
     SETTINGS_HIDE_FILTER_BAR_DESC:
         "Hide header (search, sort). Forces custom tag sort when hidden.",
+    SETTINGS_SHOW_SIDEBAR_PROGRESS_INDICATOR: "Show Sidebar Progress Indicator",
+    SETTINGS_SHOW_SIDEBAR_PROGRESS_INDICATOR_DESC:
+        "Show or hide the progress indicator on review queue sidebar note items.",
+    SETTINGS_SIDEBAR_PROGRESS_INDICATOR: "Sidebar Progress Indicator",
+    SETTINGS_SIDEBAR_PROGRESS_INDICATOR_DESC:
+        "Choose whether visible review queue note items use a progress ring or a percentage label.",
+    SETTINGS_SIDEBAR_PROGRESS_INDICATOR_RING: "Ring",
+    SETTINGS_SIDEBAR_PROGRESS_INDICATOR_PERCENTAGE: "Percentage",
+    SETTINGS_SIDEBAR_PROGRESS_RING_COLOR: "Sidebar Progress Indicator Color",
+    SETTINGS_SIDEBAR_PROGRESS_RING_COLOR_DESC:
+        "Color used for the saved reading progress indicator in the review queue sidebar, including the ring and percentage text. 0% in ring mode stays hollow.",
+    SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION: "Sidebar Progress Ring Direction",
+    SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION_DESC:
+        "Choose whether the progress ring grows clockwise from the top toward the right or counterclockwise toward the left.",
+    SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION_CLOCKWISE: "Clockwise (Right)",
+    SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION_COUNTERCLOCKWISE: "Counterclockwise (Left)",
     SETTINGS_SECTION_TIMELINE: "Timeline",
     SETTINGS_TIMELINE_SCROLL: "Show Scroll Percentage",
     SETTINGS_TIMELINE_SCROLL_DESC: "Show reading progress percentage in timeline items.",

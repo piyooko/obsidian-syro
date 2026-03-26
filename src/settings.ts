@@ -24,6 +24,8 @@ export type StatusBarAnimationStyle = "None" | "Breathing";
 export type ClozeContextMode = "single" | "double-break" | "expanded" | "full";
 export type ClozeContextPerformanceMode = "off" | "safe-trim";
 export type SyncProgressDisplayMode = "always" | "full-only" | "never";
+export type SidebarProgressIndicatorMode = "ring" | "percentage";
+export type SidebarProgressRingDirection = "clockwise" | "counterclockwise";
 export const DEFAULT_SYNC_PROGRESS_DISPLAY_MODE: SyncProgressDisplayMode = "full-only";
 // ============ Deck Option Presets ===========
 // Per-preset configuration.
@@ -202,6 +204,10 @@ export interface SRSettings {
     sidebarCustomTagOrder: string[]; // User-defined tag order
     sidebarFilterBarHeight: number; // Filter bar height in px
     hideNoteReviewSidebarFilters: boolean; // Whether to hide the sidebar filter header
+    showSidebarProgressIndicator: boolean; // Whether to show the sidebar progress indicator
+    sidebarProgressRingColor: string; // Review queue progress ring color
+    sidebarProgressIndicatorMode: SidebarProgressIndicatorMode; // Review queue progress indicator mode
+    sidebarProgressRingDirection: SidebarProgressRingDirection; // Review queue progress ring direction
 
     // Status bar styling
     noteStatusBarColor: string; // Note due status bar color
@@ -352,6 +358,10 @@ export const DEFAULT_SETTINGS: SRSettings = {
     sidebarCustomTagOrder: [], // Custom order starts empty
     sidebarFilterBarHeight: 80, // Default filter bar height
     hideNoteReviewSidebarFilters: false, // Show the filter header by default
+    showSidebarProgressIndicator: true,
+    sidebarProgressRingColor: "#a0b0a9", // Default progress ring color
+    sidebarProgressIndicatorMode: "ring",
+    sidebarProgressRingDirection: "counterclockwise",
 
     // Status bar defaults
     noteStatusBarColor: "#ff9900", // Default note color
@@ -501,6 +511,37 @@ export function upgradeSettings(settings: SRSettings) {
 
     if (settings.autoIncrementalSync === undefined) {
         settings.autoIncrementalSync = true;
+    }
+
+    if (
+        settings.sidebarProgressRingColor === undefined ||
+        settings.sidebarProgressRingColor === "#22c55e"
+    ) {
+        settings.sidebarProgressRingColor = "#a0b0a9";
+    }
+
+    const legacySidebarProgressIndicatorMode = (settings as {
+        sidebarProgressIndicatorMode?: string;
+    }).sidebarProgressIndicatorMode;
+    const legacyHiddenSidebarProgressIndicator =
+        legacySidebarProgressIndicatorMode === "hidden";
+
+    if (settings.showSidebarProgressIndicator === undefined) {
+        settings.showSidebarProgressIndicator = !legacyHiddenSidebarProgressIndicator;
+    }
+
+    if (
+        settings.sidebarProgressIndicatorMode !== "ring" &&
+        settings.sidebarProgressIndicatorMode !== "percentage"
+    ) {
+        settings.sidebarProgressIndicatorMode = "ring";
+    }
+
+    if (
+        settings.sidebarProgressRingDirection !== "clockwise" &&
+        settings.sidebarProgressRingDirection !== "counterclockwise"
+    ) {
+        settings.sidebarProgressRingDirection = "counterclockwise";
     }
 
     if (settings.syncProgressDisplayMode === undefined) {

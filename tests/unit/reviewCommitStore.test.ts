@@ -62,4 +62,35 @@ describe("reviewCommitStore", () => {
         expect(entry.displayDuration).toEqual({ raw: "9d", totalDays: 9 });
         expect(store.getCommits("note.md")[0].reviewResponse).toBe("Good");
     });
+
+    it("returns the latest saved scroll percentage and preserves zero", async () => {
+        const store = new ReviewCommitStore(DEFAULT_SETTINGS, ".obsidian/plugins/syro");
+        await store.load();
+
+        await store.addCommit("note.md", "older", undefined, 0.42);
+        await store.addCommit("note.md", "latest", undefined, 0);
+
+        expect(store.getLatestScrollPercentage("note.md")).toBe(0);
+    });
+
+    it("falls back to an earlier saved scroll percentage when the latest entry has none", async () => {
+        const store = new ReviewCommitStore(DEFAULT_SETTINGS, ".obsidian/plugins/syro");
+        await store.load();
+
+        await store.addCommit("note.md", "older", undefined, 0.42);
+        await store.addCommit("note.md", "latest");
+
+        expect(store.getLatestScrollPercentage("note.md")).toBe(0.42);
+    });
+
+    it("clamps saved scroll percentages into the supported 0-1 range", async () => {
+        const store = new ReviewCommitStore(DEFAULT_SETTINGS, ".obsidian/plugins/syro");
+        await store.load();
+
+        await store.addCommit("note.md", "too far", undefined, 1.7);
+        expect(store.getLatestScrollPercentage("note.md")).toBe(1);
+
+        await store.addCommit("note.md", "before start", undefined, -0.25);
+        expect(store.getLatestScrollPercentage("note.md")).toBe(0);
+    });
 });

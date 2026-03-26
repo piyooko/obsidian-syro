@@ -24,6 +24,8 @@ export interface NoteReviewItem {
     dueUnix?: number;
     /** 是否为新笔记 */
     isNew?: boolean;
+    /** Last saved reading progress from timeline (0-1). */
+    lastScrollPercentage?: number;
     /** 标签列表 (支持层级如 "数学/微积分") */
     tags?: string[];
 }

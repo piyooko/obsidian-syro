@@ -6,6 +6,8 @@ import {
     SRSettings,
     DEFAULT_PROGRESS_BAR_STYLE,
     DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
+    SidebarProgressIndicatorMode,
+    SidebarProgressRingDirection,
     hasSupporterLicenseState,
     syncDefaultClozePatterns,
 } from "../../settings";
@@ -40,6 +42,31 @@ function getWeightedMultiplierSettings(settings: SRSettings): WeightedMultiplier
             | WeightedMultiplierUiSettings
             | undefined) ?? {}
     );
+}
+
+function normalizeSidebarProgressIndicatorMode(
+    mode: SRSettings["sidebarProgressIndicatorMode"] | undefined,
+): SidebarProgressIndicatorMode {
+    return mode === "percentage" ? mode : "ring";
+}
+
+function normalizeSidebarProgressRingDirection(
+    direction: SRSettings["sidebarProgressRingDirection"] | undefined,
+): SidebarProgressRingDirection {
+    return direction === "clockwise" ? direction : "counterclockwise";
+}
+
+function normalizeShowSidebarProgressIndicator(
+    settings: SRSettings,
+): UISettingsState["showSidebarProgressIndicator"] {
+    const legacyMode = (settings as { sidebarProgressIndicatorMode?: string })
+        .sidebarProgressIndicatorMode;
+
+    if (typeof settings.showSidebarProgressIndicator === "boolean") {
+        return settings.showSidebarProgressIndicator;
+    }
+
+    return legacyMode !== "hidden";
 }
 
 /**
@@ -87,6 +114,14 @@ export function settingsToUIState(settings: SRSettings): UISettingsState {
         enableNoteReviewPaneOnStartup: settings.enableNoteReviewPaneOnStartup ?? true,
         sidebarIgnoredTags: settings.sidebarIgnoredTags || [],
         hideNoteReviewSidebarFilters: settings.hideNoteReviewSidebarFilters ?? false,
+        showSidebarProgressIndicator: normalizeShowSidebarProgressIndicator(settings),
+        sidebarProgressRingColor: settings.sidebarProgressRingColor ?? "#a0b0a9",
+        sidebarProgressIndicatorMode: normalizeSidebarProgressIndicatorMode(
+            settings.sidebarProgressIndicatorMode,
+        ),
+        sidebarProgressRingDirection: normalizeSidebarProgressRingDirection(
+            settings.sidebarProgressRingDirection,
+        ),
         showScrollPercentage: settings.showScrollPercentage ?? true,
         autoExpandTimeline: settings.autoExpandTimeline ?? true,
         timelineAutoCommitReviewSelection: settings.timelineAutoCommitReviewSelection ?? true,
@@ -214,6 +249,14 @@ export function mergeUIStateToSettings(
         merged.sidebarIgnoredTags = uiChanges.sidebarIgnoredTags;
     if (uiChanges.hideNoteReviewSidebarFilters !== undefined)
         merged.hideNoteReviewSidebarFilters = uiChanges.hideNoteReviewSidebarFilters;
+    if (uiChanges.showSidebarProgressIndicator !== undefined)
+        merged.showSidebarProgressIndicator = uiChanges.showSidebarProgressIndicator;
+    if (uiChanges.sidebarProgressRingColor !== undefined)
+        merged.sidebarProgressRingColor = uiChanges.sidebarProgressRingColor;
+    if (uiChanges.sidebarProgressIndicatorMode !== undefined)
+        merged.sidebarProgressIndicatorMode = uiChanges.sidebarProgressIndicatorMode;
+    if (uiChanges.sidebarProgressRingDirection !== undefined)
+        merged.sidebarProgressRingDirection = uiChanges.sidebarProgressRingDirection;
     if (uiChanges.showScrollPercentage !== undefined)
         merged.showScrollPercentage = uiChanges.showScrollPercentage;
     if (uiChanges.autoExpandTimeline !== undefined)

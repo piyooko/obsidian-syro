@@ -38,6 +38,10 @@ import {
     getTimelineReviewResponsePrefixText,
     materializeTimelineReviewResponseEditMessage,
 } from "src/ui/timeline/reviewResponseTimeline";
+import type {
+    SidebarProgressIndicatorMode,
+    SidebarProgressRingDirection,
+} from "src/settings";
 
 type DocumentWithViewTransition = Document & {
     startViewTransition?: (callback: () => void) => void;
@@ -1123,6 +1127,9 @@ interface SectionGroupModernProps {
     section: NoteReviewSection;
     activeFilePath?: string;
     ignoredTags: string[];
+    showSidebarProgressIndicator: boolean;
+    progressIndicatorMode: SidebarProgressIndicatorMode;
+    progressRingDirection: SidebarProgressRingDirection;
     onNoteClick: (item: NoteReviewItem) => void;
     onNoteDoubleClick?: (item: NoteReviewItem) => void;
     onNoteContextMenu: (item: NoteReviewItem, event: MouseEvent) => void;
@@ -1134,6 +1141,9 @@ const SectionGroupModern: React.FC<SectionGroupModernProps> = ({
     section,
     activeFilePath,
     ignoredTags,
+    showSidebarProgressIndicator,
+    progressIndicatorMode,
+    progressRingDirection,
     onNoteClick,
     onNoteDoubleClick: _onNoteDoubleClick,
     onNoteContextMenu,
@@ -1182,6 +1192,9 @@ const SectionGroupModern: React.FC<SectionGroupModernProps> = ({
                         item={item}
                         isActive={activeFilePath === item.path}
                         ignoredTags={ignoredTags}
+                        showSidebarProgressIndicator={showSidebarProgressIndicator}
+                        progressIndicatorMode={progressIndicatorMode}
+                        progressRingDirection={progressRingDirection}
                         onClick={() => onNoteClick(item)}
                         onDoubleClick={() => _onNoteDoubleClick && _onNoteDoubleClick(item)}
                         onContextMenu={(e) => onNoteContextMenu(item, e)}
@@ -1201,6 +1214,9 @@ interface NoteItemModernProps {
     item: NoteReviewItem;
     isActive: boolean;
     ignoredTags: string[];
+    showSidebarProgressIndicator: boolean;
+    progressIndicatorMode: SidebarProgressIndicatorMode;
+    progressRingDirection: SidebarProgressRingDirection;
     onClick: () => void;
     onDoubleClick?: () => void;
     onContextMenu: (event: MouseEvent) => void;
@@ -1208,10 +1224,115 @@ interface NoteItemModernProps {
     onPriorityChange?: (item: NoteReviewItem, newPriority: number) => void;
 }
 
+const SIDEBAR_PROGRESS_RING_SIZE = 14;
+const SIDEBAR_PROGRESS_RING_STROKE_WIDTH = 2;
+const SIDEBAR_PROGRESS_RING_RADIUS =
+    (SIDEBAR_PROGRESS_RING_SIZE - SIDEBAR_PROGRESS_RING_STROKE_WIDTH) / 2;
+const SIDEBAR_PROGRESS_RING_CENTER = SIDEBAR_PROGRESS_RING_SIZE / 2;
+
+function normalizeSidebarProgressPercentage(percentage?: number): number {
+    return typeof percentage === "number" && Number.isFinite(percentage)
+        ? Math.min(1, Math.max(0, percentage))
+        : 0;
+}
+
+function formatSidebarProgressPercentage(percentage?: number): string {
+    return `${Math.round(normalizeSidebarProgressPercentage(percentage) * 100)}%`;
+}
+
+function buildSidebarProgressRingPath(direction: SidebarProgressRingDirection): string {
+    const startY = SIDEBAR_PROGRESS_RING_CENTER - SIDEBAR_PROGRESS_RING_RADIUS;
+    const endY = SIDEBAR_PROGRESS_RING_CENTER + SIDEBAR_PROGRESS_RING_RADIUS;
+    const sweepFlag = direction === "clockwise" ? 1 : 0;
+
+    return [
+        `M ${SIDEBAR_PROGRESS_RING_CENTER} ${startY}`,
+        `A ${SIDEBAR_PROGRESS_RING_RADIUS} ${SIDEBAR_PROGRESS_RING_RADIUS} 0 0 ${sweepFlag} ${SIDEBAR_PROGRESS_RING_CENTER} ${endY}`,
+        `A ${SIDEBAR_PROGRESS_RING_RADIUS} ${SIDEBAR_PROGRESS_RING_RADIUS} 0 0 ${sweepFlag} ${SIDEBAR_PROGRESS_RING_CENTER} ${startY}`,
+    ].join(" ");
+}
+
+const SidebarProgressRing: React.FC<{
+    percentage?: number;
+    direction: SidebarProgressRingDirection;
+}> = ({ percentage, direction }) => {
+    const normalizedPercentage = normalizeSidebarProgressPercentage(percentage);
+    const roundedPercentage = formatSidebarProgressPercentage(percentage);
+    const hasProgress = normalizedPercentage > 0;
+    const progressPath = buildSidebarProgressRingPath(direction);
+
+    return (
+        <span
+            className="sr-new-item-progress-ring"
+            title={roundedPercentage}
+            data-progress-state={hasProgress ? "value" : "empty"}
+        >
+            <svg
+                viewBox={`0 0 ${SIDEBAR_PROGRESS_RING_SIZE} ${SIDEBAR_PROGRESS_RING_SIZE}`}
+                aria-hidden="true"
+            >
+                <circle
+                    className="sr-new-item-progress-ring__track"
+                    cx={SIDEBAR_PROGRESS_RING_CENTER}
+                    cy={SIDEBAR_PROGRESS_RING_CENTER}
+                    r={SIDEBAR_PROGRESS_RING_RADIUS}
+                    strokeWidth={SIDEBAR_PROGRESS_RING_STROKE_WIDTH}
+                />
+                {hasProgress && (
+                    <path
+                        className="sr-new-item-progress-ring__value"
+                        d={progressPath}
+                        pathLength={100}
+                        strokeWidth={SIDEBAR_PROGRESS_RING_STROKE_WIDTH}
+                        strokeDasharray={`${normalizedPercentage * 100} 100`}
+                    />
+                )}
+            </svg>
+        </span>
+    );
+};
+
+const SidebarProgressPercentage: React.FC<{
+    percentage?: number;
+}> = ({ percentage }) => {
+    const normalizedPercentage = normalizeSidebarProgressPercentage(percentage);
+    const label = formatSidebarProgressPercentage(percentage);
+
+    return (
+        <span
+            className="sr-new-item-progress-percentage"
+            title={label}
+            data-progress-state={normalizedPercentage > 0 ? "value" : "empty"}
+        >
+            {label}
+        </span>
+    );
+};
+
+const SidebarProgressIndicator: React.FC<{
+    visible: boolean;
+    mode: SidebarProgressIndicatorMode;
+    percentage?: number;
+    direction: SidebarProgressRingDirection;
+}> = ({ visible, mode, percentage, direction }) => {
+    if (!visible) {
+        return null;
+    }
+
+    return mode === "percentage" ? (
+        <SidebarProgressPercentage percentage={percentage} />
+    ) : (
+        <SidebarProgressRing percentage={percentage} direction={direction} />
+    );
+};
+
 const NoteItemModern: React.FC<NoteItemModernProps> = ({
     item,
     isActive,
     ignoredTags,
+    showSidebarProgressIndicator,
+    progressIndicatorMode,
+    progressRingDirection,
     onClick,
     onDoubleClick,
     onContextMenu,
@@ -1339,7 +1460,13 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
                 </div>
 
                 <div className="sr-new-item-meta-row">
-                    <span className="sr-new-item-tag" title={item.path}>
+                    <SidebarProgressIndicator
+                        visible={showSidebarProgressIndicator}
+                        mode={progressIndicatorMode}
+                        percentage={item.lastScrollPercentage}
+                        direction={progressRingDirection}
+                    />
+                    <span className="sr-new-item-tag" title={displayTag || ""}>
                         {displayTag || <span style={{ opacity: 0.3 }}>{t("SIDEBAR_NO_TAG")}</span>}
                     </span>
                 </div>
@@ -1389,6 +1516,10 @@ interface NoteReviewSidebarProps {
     isLoading?: boolean;
     showScrollPercentage?: boolean;
     enableDurationPrefixSyntax?: boolean;
+    showSidebarProgressIndicator?: boolean;
+    progressRingColor?: string;
+    progressIndicatorMode?: SidebarProgressIndicatorMode;
+    progressRingDirection?: SidebarProgressRingDirection;
 }
 
 export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
@@ -1428,6 +1559,10 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     isLoading: _isLoading = false,
     showScrollPercentage = true,
     enableDurationPrefixSyntax = false,
+    showSidebarProgressIndicator = true,
+    progressRingColor = "#a0b0a9",
+    progressIndicatorMode = "ring",
+    progressRingDirection = "counterclockwise",
 }) => {
     const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
     const [currentHeight, setCurrentHeight] = useState(filterBarHeight);
@@ -1621,7 +1756,14 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     );
 
     return (
-        <div className="sr-note-sidebar" ref={sidebarRef}>
+        <div
+            className="sr-note-sidebar"
+            ref={sidebarRef}
+            style={{
+                ["--sr-sidebar-progress-ring-color" as string]: progressRingColor,
+            }}
+            data-progress-ring-direction={progressRingDirection}
+        >
             {hasTagFilters && (
                 <>
                     {/* Tag Filter Bar */}
@@ -1675,6 +1817,9 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                                 section={section}
                                 activeFilePath={activeFilePath}
                                 ignoredTags={ignoredTags}
+                                showSidebarProgressIndicator={showSidebarProgressIndicator}
+                                progressIndicatorMode={progressIndicatorMode}
+                                progressRingDirection={progressRingDirection}
                                 onNoteClick={handleNoteSingleClick}
                                 onNoteDoubleClick={handleNoteDoubleClick}
                                 onNoteContextMenu={onNoteContextMenu}

@@ -2,7 +2,11 @@
  * UI-specific settings types used by the settings screens.
  */
 
-import type { StatusBarAnimationStyle } from "../../settings";
+import type {
+    SidebarProgressIndicatorMode,
+    SidebarProgressRingDirection,
+    StatusBarAnimationStyle,
+} from "../../settings";
 
 // Re-export full plugin settings types for adapter code.
 export type {
@@ -11,6 +15,8 @@ export type {
     ProgressBarStyle,
     StatusBarAnimationStyle,
     LicenseState,
+    SidebarProgressIndicatorMode,
+    SidebarProgressRingDirection,
 } from "../../settings";
 
 /**
@@ -47,6 +53,10 @@ export interface UISettingsState {
     enableNoteReviewPaneOnStartup: boolean;
     sidebarIgnoredTags: string[]; // Ignored tags
     hideNoteReviewSidebarFilters: boolean; // Hide the sidebar filter header
+    showSidebarProgressIndicator: boolean; // Show or hide the sidebar progress indicator
+    sidebarProgressRingColor: string; // Review queue progress ring color
+    sidebarProgressIndicatorMode: SidebarProgressIndicatorMode; // Sidebar progress indicator mode
+    sidebarProgressRingDirection: SidebarProgressRingDirection; // Sidebar progress ring direction
     showScrollPercentage: boolean; // Show saved scroll percentage in timeline items
     autoExpandTimeline: boolean; // Auto-expand the timeline when opening a reviewed note
     timelineAutoCommitReviewSelection: boolean; // Auto-write note review selections to timeline

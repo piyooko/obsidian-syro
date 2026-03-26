@@ -126,6 +126,22 @@ export class ReviewCommitStore {
         return commits;
     }
 
+    getLatestScrollPercentage(filePath: string): number | undefined {
+        const commits = this.getCommits(filePath);
+        for (const commit of commits) {
+            if (
+                typeof commit.scrollPercentage !== "number" ||
+                !Number.isFinite(commit.scrollPercentage)
+            ) {
+                continue;
+            }
+
+            return Math.min(1, Math.max(0, commit.scrollPercentage));
+        }
+
+        return undefined;
+    }
+
     /**
      * 涓烘寚瀹氭枃浠舵坊鍔犱竴鏉℃柊鐨勬彁浜よ褰?
      */

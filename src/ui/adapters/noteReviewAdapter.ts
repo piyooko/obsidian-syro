@@ -55,6 +55,7 @@ function schedNoteToItem(sNote: SchedNote, index: number, plugin: SRPlugin): Not
         noteFile: sNote.note,
         dueUnix: sNote.dueUnix,
         isNew: false,
+        lastScrollPercentage: plugin.reviewCommitStore?.getLatestScrollPercentage(sNote.note.path),
         tags: extractTags(fileCache),
     };
 }
@@ -71,6 +72,7 @@ function newNoteToItem(sNote: SchedNote, index: number, plugin: SRPlugin): NoteR
         path: sNote.note.path,
         noteFile: sNote.note,
         isNew: true,
+        lastScrollPercentage: plugin.reviewCommitStore?.getLatestScrollPercentage(sNote.note.path),
         tags: extractTags(fileCache),
     };
 }

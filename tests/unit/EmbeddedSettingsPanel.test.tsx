@@ -45,6 +45,10 @@ function createSettings(overrides: Partial<UISettingsState> = {}): UISettingsSta
         enableNoteReviewPaneOnStartup: true,
         sidebarIgnoredTags: [],
         hideNoteReviewSidebarFilters: false,
+        showSidebarProgressIndicator: true,
+        sidebarProgressRingColor: "#a0b0a9",
+        sidebarProgressIndicatorMode: "ring",
+        sidebarProgressRingDirection: "counterclockwise",
         showScrollPercentage: true,
         autoExpandTimeline: true,
         timelineAutoCommitReviewSelection: true,
@@ -155,6 +159,78 @@ describe("EmbeddedSettingsPanel", () => {
                 colorItem?.querySelector(".setting-item-description")?.textContent ?? "",
             ).toContain("deck options");
             expect(findSettingItemByName(view.container, ["Show progress bar"])).toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("shows the sidebar progress controls on the Incremental Reading tab", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            openTab(view.container, "Incremental");
+
+            expect(
+                findSettingItemByName(view.container, ["Show Sidebar Progress Indicator"]),
+            ).not.toBeNull();
+            expect(
+                findSettingItemByName(view.container, ["Sidebar Progress Indicator"]),
+            ).not.toBeNull();
+            expect(
+                findSettingItemByName(view.container, ["Sidebar Progress Indicator Color"]),
+            ).not.toBeNull();
+            expect(
+                findSettingItemByName(view.container, ["Sidebar Progress Ring Direction"]),
+            ).not.toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("keeps the sidebar progress color control for percentage mode but hides the ring direction control", () => {
+        const view = renderPanel(
+            createSettings({
+                sidebarProgressIndicatorMode: "percentage",
+            }),
+        );
+
+        try {
+            openTab(view.container, "Incremental");
+
+            expect(
+                findSettingItemByName(view.container, ["Sidebar Progress Indicator"]),
+            ).not.toBeNull();
+            expect(
+                findSettingItemByName(view.container, ["Sidebar Progress Indicator Color"]),
+            ).not.toBeNull();
+            expect(
+                findSettingItemByName(view.container, ["Sidebar Progress Ring Direction"]),
+            ).toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("hides color and direction controls when the sidebar indicator is hidden", () => {
+        const view = renderPanel(
+            createSettings({
+                showSidebarProgressIndicator: false,
+                sidebarProgressIndicatorMode: "percentage",
+            }),
+        );
+
+        try {
+            openTab(view.container, "Incremental");
+
+            expect(
+                findSettingItemByName(view.container, ["Sidebar Progress Indicator"]),
+            ).not.toBeNull();
+            expect(
+                findSettingItemByName(view.container, ["Sidebar Progress Indicator Color"]),
+            ).toBeNull();
+            expect(
+                findSettingItemByName(view.container, ["Sidebar Progress Ring Direction"]),
+            ).toBeNull();
         } finally {
             view.cleanup();
         }

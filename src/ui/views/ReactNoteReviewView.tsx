@@ -222,6 +222,11 @@ export class ReactNoteReviewView extends ItemView {
                 showScrollPercentage: this.plugin.data.settings.showScrollPercentage,
                 enableDurationPrefixSyntax:
                     this.plugin.data.settings.timelineEnableDurationPrefixSyntax,
+                showSidebarProgressIndicator:
+                    this.plugin.data.settings.showSidebarProgressIndicator,
+                progressRingColor: this.plugin.data.settings.sidebarProgressRingColor,
+                progressIndicatorMode: this.plugin.data.settings.sidebarProgressIndicatorMode,
+                progressRingDirection: this.plugin.data.settings.sidebarProgressRingDirection,
             }),
         );
     }
