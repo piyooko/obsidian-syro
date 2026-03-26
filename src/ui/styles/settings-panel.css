@@ -517,13 +517,38 @@
 }
 
 .sr-folder-tracking-body .setting-item {
-    border-top: 1px solid var(--background-modifier-border);
+    border-top: none;
     border-bottom: none;
     padding: var(--size-4-4) 0;
 }
 
 .sr-folder-tracking-body .setting-item:first-child {
     border-top: none;
+}
+
+.sr-folder-tracking-body
+    .sr-setting-section
+    .setting-items
+    .setting-item:not(:first-child)::before {
+    content: none;
+}
+
+.sr-folder-tracking-body .sr-setting-section .setting-items .sr-folder-tracking-tags-setting {
+    position: relative;
+}
+
+.sr-folder-tracking-body
+    .sr-setting-section
+    .setting-items
+    .sr-folder-tracking-tags-setting::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 20px;
+    right: 20px;
+    height: 1px;
+    background-color: var(--background-modifier-border);
+    display: block;
 }
 
 .sr-folder-tracking-body .setting-item-name {

@@ -70,35 +70,39 @@ export class FolderTrackingSettingsModal extends Modal {
             .addToggle((toggle) =>
                 toggle.setValue(this.trackFolder).onChange((value) => {
                     this.trackFolder = value;
-                }),
-            );
-
-        const tagSection = this.createSection(bodyEl, t("FOLDER_TRACKING_SECTION_TAGS"));
-        new Setting(tagSection)
-            .setName(t("FOLDER_TRACKING_AUTO_TAGS"))
-            .setDesc(t("FOLDER_TRACKING_AUTO_TAGS_DESC"))
-            .addToggle((toggle) =>
-                toggle.setValue(this.autoTag).onChange((value) => {
-                    this.autoTag = value;
                     this.render();
                 }),
             );
 
-        if (this.autoTag) {
-            const tagsSetting = new Setting(tagSection)
-                .setName(t("FOLDER_TRACKING_TAGS"))
-                .setDesc(t("FOLDER_TRACKING_TAGS_DESC"));
-            tagsSetting.controlEl.empty();
+        if (this.trackFolder) {
+            const tagSection = this.createSection(bodyEl, t("FOLDER_TRACKING_SECTION_TAGS"));
+            new Setting(tagSection)
+                .setName(t("FOLDER_TRACKING_AUTO_TAGS"))
+                .setDesc(t("FOLDER_TRACKING_AUTO_TAGS_DESC"))
+                .addToggle((toggle) =>
+                    toggle.setValue(this.autoTag).onChange((value) => {
+                        this.autoTag = value;
+                        this.render();
+                    }),
+                );
 
-            const textareaEl = tagsSetting.controlEl.createEl("textarea", {
-                cls: "sr-folder-tracking-textarea",
-            });
-            textareaEl.placeholder = t("FOLDER_TRACKING_TAGS_PLACEHOLDER");
-            textareaEl.rows = 4;
-            textareaEl.value = this.tagsInput;
-            textareaEl.addEventListener("input", () => {
-                this.tagsInput = textareaEl.value;
-            });
+            if (this.autoTag) {
+                const tagsSetting = new Setting(tagSection)
+                    .setName(t("FOLDER_TRACKING_TAGS"))
+                    .setDesc(t("FOLDER_TRACKING_TAGS_DESC"));
+                tagsSetting.settingEl.addClass("sr-folder-tracking-tags-setting");
+                tagsSetting.controlEl.empty();
+
+                const textareaEl = tagsSetting.controlEl.createEl("textarea", {
+                    cls: "sr-folder-tracking-textarea",
+                });
+                textareaEl.placeholder = t("FOLDER_TRACKING_TAGS_PLACEHOLDER");
+                textareaEl.rows = 4;
+                textareaEl.value = this.tagsInput;
+                textareaEl.addEventListener("input", () => {
+                    this.tagsInput = textareaEl.value;
+                });
+            }
         }
 
         const footerEl = contentEl.createDiv({ cls: "sr-folder-tracking-footer" });
@@ -130,7 +134,7 @@ export class FolderTrackingSettingsModal extends Modal {
                 void (async () => {
                     await this.plugin.saveFolderTrackingRuleConfig(this.folderPath, {
                         track: this.trackFolder,
-                        autoTag: this.autoTag,
+                        autoTag: this.trackFolder ? this.autoTag : false,
                         tags: parseFolderTrackingTagInput(this.tagsInput),
                     });
                     new Notice(t("FOLDER_TRACKING_SAVE_SUCCESS"));
