@@ -115,7 +115,6 @@ import {
     parseJsonUnknown,
 } from "./util/typeGuards";
 import { SyncProgressTip } from "src/ui/components/SyncProgressTip";
-import { Tags } from "./tags";
 import {
     cloneFolderTrackingRule,
     DEFAULT_FOLDER_TRACKING_RULE,
@@ -156,6 +155,30 @@ interface DailyDeckStats {
     date: string; // 璁板綍鏃ユ湡锛屼緥濡?"2023-12-01"
     // 鐗岀粍鍚?-> 璁℃暟
     counts: Record<string, { new: number; review: number }>;
+}
+
+function readFolderTrackingFrontmatterTags(frontmatter: unknown): string[] {
+    if (!isRecord(frontmatter)) {
+        return [];
+    }
+
+    return normalizeFrontmatterTags(frontmatter["tags"]);
+}
+
+function writeFolderTrackingFrontmatterTags(frontmatter: unknown, tags: string[]): void {
+    if (!isRecord(frontmatter)) {
+        return;
+    }
+
+    frontmatter["tags"] = tags.map(toFrontmatterTagValue);
+}
+
+function clearFolderTrackingFrontmatterTags(frontmatter: unknown): void {
+    if (!isRecord(frontmatter)) {
+        return;
+    }
+
+    delete frontmatter["tags"];
 }
 
 // 杩愯鏃跺涔犻槦鍒楅」锛堜笉鍐嶉渶瑕佹寔涔呭寲鍒?plugin.data锛岀姸鎬佸瓨鍦?RepetitionItem.learningStep锛?
@@ -1496,13 +1519,13 @@ export default class SRPlugin extends Plugin {
 
         let addedTags: string[] = [];
         await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
-            const currentTags = normalizeFrontmatterTags(frontmatter.tags);
+            const currentTags = readFolderTrackingFrontmatterTags(frontmatter);
             addedTags = normalizedDesiredTags.filter((tag) => !currentTags.includes(tag));
             if (addedTags.length === 0) {
                 return;
             }
 
-            frontmatter.tags = [...currentTags, ...addedTags].map(toFrontmatterTagValue);
+            writeFolderTrackingFrontmatterTags(frontmatter, [...currentTags, ...addedTags]);
         });
 
         return addedTags;
@@ -1519,7 +1542,7 @@ export default class SRPlugin extends Plugin {
 
         let removedTags: string[] = [];
         await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
-            const currentTags = normalizeFrontmatterTags(frontmatter.tags);
+            const currentTags = readFolderTrackingFrontmatterTags(frontmatter);
             removedTags = currentTags.filter((tag) => normalizedTagsToRemove.includes(tag));
             if (removedTags.length === 0) {
                 return;
@@ -1527,9 +1550,9 @@ export default class SRPlugin extends Plugin {
 
             const nextTags = currentTags.filter((tag) => !normalizedTagsToRemove.includes(tag));
             if (nextTags.length > 0) {
-                frontmatter.tags = nextTags.map(toFrontmatterTagValue);
+                writeFolderTrackingFrontmatterTags(frontmatter, nextTags);
             } else {
-                delete frontmatter.tags;
+                clearFolderTrackingFrontmatterTags(frontmatter);
             }
         });
 

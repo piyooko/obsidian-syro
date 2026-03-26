@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.0.8] - 2026-03-27
+
+### New Features
+
+-   Folder Tracking & Dynamic Tags: You can now set up auto-tracking for specific folders. You also have the option to set up rules that automatically bulk-apply specific tags to both existing and newly created markdown notes within those folders.
+-   Sidebar Progress Toggle: Added a new switch in the settings so you can independently show or hide the reading progress indicator in the review sidebar.
+-   File Path Tooltips: Hovering over a note in the sidebar can now display its relative path within your vault. You can toggle this feature on or off and customize the hover delay in your settings.
+
+### Improvements
+
+-   Smoother Folder Tracking UI: Polished the folder tracking menu with better text, improved spacing, and a more intuitive workflow for setting up auto-tags.
+-   Refined "Safe Truncation" Settings: The settings panel for handling long-context truncation is now much clearer and more reliable to configure.
+-   Cleaner Settings Menu: Removed the overly technical object-level debug tracking. This removes unnecessary clutter from your settings panel and keeps the plugin running lean.
+-   Better Documentation: Updated and reorganized both the English and Chinese README files so the plugin's structure and instructions are much easier to follow.
+
+### Bug Fixes
+
+-   Tracking Logic Priority: Fixed an issue with note tracking resolution. Manual tracking will now reliably override folder-based rules, and legacy tag data will no longer interfere with your tracking results.
+-   Tooltip Behavior: Fixed the sidebar file path tooltips so they correctly respect your custom hover delay settings before appearing.
+-   Folder Tracking UI Tweaks: Squashed several minor visual bugs in the folder tracking menu, including incorrect button text, weird spacing, and minor interaction glitches.
+-   Text & Display Consistency: Fixed various text inconsistencies between the sidebar and timeline, including keeping timeline titles in English and removing leftover internal placeholder text from the auto-tag button.
+
 ## [0.0.7] - 2026-03-26
 
 -   Kept progress bar styling in settings while making deck options the only visibility toggle for review countdown bars.
