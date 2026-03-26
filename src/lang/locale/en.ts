@@ -976,15 +976,15 @@ export default normalizeSentenceCaseLocale({
     FOLDER_TRACKING_AUTO_TAGS: "Automatically add tags",
     FOLDER_TRACKING_AUTO_TAGS_DESC:
         "Apply the configured tags to current notes and future new notes in this folder.",
-    FOLDER_TRACKING_TAGS: "Managed tags",
+    FOLDER_TRACKING_TAGS: "Auto tag list",
     FOLDER_TRACKING_TAGS_DESC:
         "Enter any tags, separated by spaces, commas, or new lines. Only tags added by this rule will be removed later.",
-    FOLDER_TRACKING_TAGS_PLACEHOLDER: "#review\nproject/alpha",
+    FOLDER_TRACKING_TAGS_PLACEHOLDER: "Math\nAuthors/Borges",
     FOLDER_TRACKING_FOOTER_NOTE:
-        "Child folders can override this folder. Existing notes are updated on save.",
+        "Existing notes are updated on save.",
     FOLDER_TRACKING_SAVE_SUCCESS: "Folder tracking settings saved",
-    FOLDER_TRACKING_RESET: "Reset to inherit",
-    FOLDER_TRACKING_RESET_SUCCESS: "Folder tracking override cleared",
+    FOLDER_TRACKING_RESET: "Remove auto tags added by Syro",
+    FOLDER_TRACKING_RESET_SUCCESS: "Auto tags added by Syro removed",
     // algorithmSetting.ts
     ALGO_CARD_SELECT: "Card Algorithm",
     ALGO_CARD_SELECT_DESC: "Select algorithm for card reviews",

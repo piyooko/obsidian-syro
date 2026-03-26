@@ -11,7 +11,6 @@ import SRPlugin from "src/main";
 export class FolderTrackingSettingsModal extends Modal {
     private readonly plugin: SRPlugin;
     private readonly folderPath: string;
-    private readonly hasExistingRule: boolean;
     private trackFolder: boolean;
     private autoTag: boolean;
     private tagsInput: string;
@@ -22,7 +21,6 @@ export class FolderTrackingSettingsModal extends Modal {
         this.folderPath = folderPath;
 
         const existingRule = plugin.getFolderTrackingRule(folderPath);
-        this.hasExistingRule = existingRule !== null;
         const initialRule = existingRule ?? {
             ...cloneFolderTrackingRule(DEFAULT_FOLDER_TRACKING_RULE),
             track: true,
@@ -62,6 +60,8 @@ export class FolderTrackingSettingsModal extends Modal {
         });
 
         const bodyEl = contentEl.createDiv({ cls: "sr-folder-tracking-body" });
+        const configuredTags = parseFolderTrackingTagInput(this.tagsInput);
+        const hasConfiguredTags = configuredTags.length > 0;
 
         const trackingSection = this.createSection(bodyEl, t("FOLDER_TRACKING_SECTION_TRACKING"));
         new Setting(trackingSection)
@@ -113,15 +113,24 @@ export class FolderTrackingSettingsModal extends Modal {
 
         const actionsEl = footerEl.createDiv({ cls: "sr-folder-tracking-actions" });
 
-        if (this.hasExistingRule) {
-            new ButtonComponent(actionsEl).setButtonText(t("FOLDER_TRACKING_RESET")).onClick(() => {
+        new ButtonComponent(actionsEl)
+            .setButtonText(t("FOLDER_TRACKING_RESET"))
+            .setDisabled(!hasConfiguredTags)
+            .onClick(() => {
+                if (!hasConfiguredTags) {
+                    return;
+                }
+
                 void (async () => {
-                    await this.plugin.resetFolderTrackingRuleConfig(this.folderPath);
+                    await this.plugin.saveFolderTrackingRuleConfig(this.folderPath, {
+                        track: this.trackFolder,
+                        autoTag: false,
+                        tags: [],
+                    });
                     new Notice(t("FOLDER_TRACKING_RESET_SUCCESS"));
                     this.close();
                 })();
             });
-        }
 
         new ButtonComponent(actionsEl).setButtonText(t("CANCEL")).onClick(() => {
             this.close();
