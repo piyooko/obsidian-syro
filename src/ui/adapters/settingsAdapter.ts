@@ -128,7 +128,6 @@ export function settingsToUIState(settings: SRSettings): UISettingsState {
 
         // Advanced & Debug
         showRuntimeDebugMessages: settings.showRuntimeDebugMessages ?? false,
-        enableCardLevelTrace: settings.enableCardLevelTrace ?? false,
 
         // Storage
         dataLocation: settings.dataLocation || DataLocation.PluginFolder,
@@ -150,11 +149,15 @@ export function mergeUIStateToSettings(
     originalSettings: SRSettings,
     uiChanges: Partial<UISettingsState>,
 ): SRSettings {
-    const merged = { ...originalSettings };
+    const merged = {
+        ...originalSettings,
+    } as SRSettings & { enableCardLevelTrace?: boolean };
     const weightedMultiplierSettings =
         (merged.algorithmSettings?.WeightedMultiplier as
             | WeightedMultiplierUiSettings
             | undefined) ?? {};
+
+    delete merged.enableCardLevelTrace;
 
     // Flashcards
     if (uiChanges.flashcardTags !== undefined) merged.flashcardTags = uiChanges.flashcardTags;
@@ -275,8 +278,6 @@ export function mergeUIStateToSettings(
     // Advanced & Debug
     if (uiChanges.showRuntimeDebugMessages !== undefined)
         merged.showRuntimeDebugMessages = uiChanges.showRuntimeDebugMessages;
-    if (uiChanges.enableCardLevelTrace !== undefined)
-        merged.enableCardLevelTrace = uiChanges.enableCardLevelTrace;
 
     // Status bar styling
     if (uiChanges.noteStatusBarColor !== undefined)

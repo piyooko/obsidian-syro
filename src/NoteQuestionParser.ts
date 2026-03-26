@@ -206,20 +206,6 @@ export class NoteQuestionParser {
             cardObj.scheduleInfo =
                 hasScheduleInfo && !schedule.isDummyScheduleForNewCard() ? schedule : null;
 
-            if (this.settings.enableCardLevelTrace) {
-                cardObj.addDebugLog("Parser", "create card object", {
-                    cardIdx: i,
-                    hasScheduleInfo,
-                    isDummy: hasScheduleInfo ? schedule.isDummyScheduleForNewCard() : null,
-                    scheduleData: cardObj.scheduleInfo
-                        ? {
-                              interval: cardObj.scheduleInfo.interval,
-                              ease: cardObj.scheduleInfo.ease,
-                          }
-                        : null,
-                });
-            }
-
             siblings.push(cardObj);
         }
         return siblings;

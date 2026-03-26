@@ -20,17 +20,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { AlertCircle, Save } from "lucide-react";
 import { t } from "src/lang/helpers";
 
-interface DebugTraceEntry {
-    phase?: string;
-    timestamp?: string | number | Date;
-    action?: string;
-    details?: unknown;
-}
-
 export interface CardDebugData {
     basic?: Record<string, string | number | boolean | null | undefined>;
     data?: unknown;
-    trace?: DebugTraceEntry[];
 }
 
 interface AlgorithmDebugData {
@@ -244,108 +236,6 @@ export const CardDebugModal: FC<CardDebugModalProps> = ({ isOpen, onClose, data 
                                                     readOnly
                                                 />
                                             </div>
-                                        </div>
-                                    </Section>
-                                </>
-                            )}
-
-                            {/* Section 4: Object Lifecycle Trace (Debug logs) */}
-                            {data.trace && data.trace.length > 0 && (
-                                <>
-                                    <div className="sr-debug-divider" />
-                                    <Section title="生命周期追踪 (Object Trace)">
-                                        <div className="sr-debug-trace-timeline">
-                                            {data.trace.map((entry: DebugTraceEntry, i: number) => (
-                                                <div key={i} className="sr-debug-trace-item">
-                                                    <div className="sr-trace-point"></div>
-                                                    <div className="sr-trace-content">
-                                                        <div className="sr-trace-header">
-                                                            <span className="sr-trace-phase">
-                                                                {entry.phase}
-                                                            </span>
-                                                            <span className="sr-trace-time">
-                                                                {new Date(entry.timestamp)
-                                                                    .toISOString()
-                                                                    .split("T")[1]
-                                                                    .slice(0, 12)}
-                                                            </span>
-                                                        </div>
-                                                        <div className="sr-trace-action">
-                                                            {entry.action}
-                                                        </div>
-                                                        <div className="sr-trace-details">
-                                                            <pre>
-                                                                {JSON.stringify(
-                                                                    entry.details,
-                                                                    null,
-                                                                    2,
-                                                                )}
-                                                            </pre>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                            <style>{`
-                                            .sr-debug-trace-timeline {
-                                                display: flex;
-                                                flex-direction: column;
-                                                gap: 12px;
-                                                margin-top: 8px;
-                                                position: relative;
-                                            }
-                                            .sr-debug-trace-timeline::before {
-                                                content: '';
-                                                position: absolute;
-                                                top: 6px;
-                                                bottom: 6px;
-                                                left: 5px;
-                                                width: 2px;
-                                                background: var(--background-modifier-border);
-                                                border-radius: 2px;
-                                            }
-                                            .sr-debug-trace-item {
-                                                position: relative;
-                                                padding-left: 20px;
-                                            }
-                                            .sr-trace-point {
-                                                position: absolute;
-                                                left: 1px;
-                                                top: 4px;
-                                                width: 10px;
-                                                height: 10px;
-                                                border-radius: 50%;
-                                                background: var(--text-accent);
-                                                border: 2px solid var(--background-primary-alt);
-                                            }
-                                            .sr-trace-header {
-                                                display: flex;
-                                                justify-content: space-between;
-                                                align-items: center;
-                                                font-size: 0.8em;
-                                                color: var(--text-muted);
-                                            }
-                                            .sr-trace-phase {
-                                                font-weight: 600;
-                                            }
-                                            .sr-trace-action {
-                                                font-size: 0.9em;
-                                                color: var(--text-normal);
-                                                margin: 2px 0 4px;
-                                            }
-                                            .sr-trace-details pre {
-                                                margin: 0;
-                                                padding: 6px;
-                                                background: var(--background-primary);
-                                                border: 1px solid var(--background-modifier-border);
-                                                border-radius: 4px;
-                                                font-size: 0.75em;
-                                                color: var(--text-muted);
-                                                white-space: pre-wrap;
-                                                word-break: break-all;
-                                                max-height: 120px;
-                                                overflow-y: auto;
-                                            }
-                                            `}</style>
                                         </div>
                                     </Section>
                                 </>

@@ -1271,12 +1271,6 @@ const UITab: React.FC<TabProps> = ({ settings, onChange }) => (
                 value={settings.showRuntimeDebugMessages}
                 onChange={(v) => onChange("showRuntimeDebugMessages", v)}
             />
-            <ToggleRow
-                label={t("SETTINGS_ENABLE_CARD_TRACE")}
-                desc={t("SETTINGS_ENABLE_CARD_TRACE_DESC")}
-                value={settings.enableCardLevelTrace}
-                onChange={(v) => onChange("enableCardLevelTrace", v)}
-            />
         </Section>
     </div>
 );

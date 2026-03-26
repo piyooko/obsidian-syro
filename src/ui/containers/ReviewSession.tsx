@@ -743,9 +743,8 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
                 priority: item.priority || 0,
             },
             data: item.data || {},
-            trace: card.debugTrace || [],
         };
-    }, [plugin.store, card.Id, card.debugTrace, deck.deckName]);
+    }, [plugin.store, card.Id, deck.deckName]);
 
     // Open the source note and focus the reviewed line in the editor.
     const handleOpenNote = async () => {

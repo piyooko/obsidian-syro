@@ -409,16 +409,6 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         }
         const store = DataStore.getInstance();
         const item = store.getItembyID(card.Id);
-
-        if (this.settings.enableCardLevelTrace) {
-            card.addDebugLog("Scheduler", "鏀跺埌璇勭骇鍝嶅簲", {
-                response: ReviewResponse[response],
-                wasNew: card.isNew,
-                isLearning: this._isLearning,
-                itemId: item?.ID,
-                currentStep: item?.learningStep,
-            });
-        }
         this.logRuntimeDebug(
             `[SR-Debug] processReview: ID=${card.Id}, isLearning=${String(this._isLearning)}, response=${ReviewResponse[response]}, currentStep=${item?.learningStep}`,
         );

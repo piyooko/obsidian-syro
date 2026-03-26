@@ -30,12 +30,6 @@ import { RepetitionItem, CardQueue } from "./dataStore/repetitionItem";
 import { Queue } from "./dataStore/queue";
 
 // 鍗＄墖鐢熷懡鍛ㄦ湡鐨勮皟璇曟棩蹇楄褰曢」
-export interface DebugLogEntry {
-    timestamp: number;
-    phase: "Parser" | "Generator" | "Scheduler" | "Render" | "Database";
-    action: string;
-    details?: unknown;
-}
 
 export class Card {
     question: Question;
@@ -47,7 +41,6 @@ export class Card {
     multiCloze?: number[];
     scheduleInfo: CardScheduleInfo;
     repetitionItem?: RepetitionItem;
-    debugTrace?: DebugLogEntry[];
 
     constructor(init?: Partial<Card>) {
         if (init) {
@@ -133,17 +126,5 @@ export class Card {
         if (this.hasSchedule) result = this.scheduleInfo.formatSchedule();
         else result = "New";
         return result;
-    }
-
-    addDebugLog(phase: DebugLogEntry["phase"], action: string, details?: unknown): void {
-        if (!this.debugTrace) {
-            this.debugTrace = [];
-        }
-        this.debugTrace.push({
-            timestamp: Date.now(),
-            phase,
-            action,
-            details,
-        });
     }
 }

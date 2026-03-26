@@ -75,7 +75,6 @@ function createSettings(overrides: Partial<UISettingsState> = {}): UISettingsSta
         flashcardStatusBarPeriod: 2,
         showStatusBarDueNotification: true,
         showRuntimeDebugMessages: false,
-        enableCardLevelTrace: false,
         dataLocation: "PluginFolder",
         trackedNoteToDecks: false,
         disableFileMenuReviewOptions: false,

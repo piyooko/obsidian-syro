@@ -86,7 +86,6 @@ export interface UISettingsState {
 
     // Advanced & Debug
     showRuntimeDebugMessages: boolean;
-    enableCardLevelTrace: boolean;
 
     // Storage
     dataLocation: string; // DataLocation enum value

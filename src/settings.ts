@@ -225,9 +225,6 @@ export interface SRSettings {
     licenseState: LicenseState | null; // Persisted license cache
 
     previousRelease: string;
-
-    // Debugging Options
-    enableCardLevelTrace: boolean; // Whether to enable per-card trace logging
 }
 
 export const DEFAULT_SETTINGS: SRSettings = {
@@ -378,8 +375,6 @@ export const DEFAULT_SETTINGS: SRSettings = {
     licenseState: null,
 
     previousRelease: "0.0.0",
-
-    enableCardLevelTrace: false,
 };
 
 const DEFAULT_HIGHLIGHT_CLOZE_PATTERN = "==[123;;]answer[;;hint]==";
@@ -473,6 +468,7 @@ export function upgradeSettings(settings: SRSettings) {
         vaultId?: string;
         licenseToken?: string;
         lastVerification?: number;
+        enableCardLevelTrace?: boolean;
     };
 
     if (
@@ -514,6 +510,8 @@ export function upgradeSettings(settings: SRSettings) {
     if (settings.showRuntimeDebugMessages === undefined) {
         settings.showRuntimeDebugMessages = false;
     }
+
+    delete legacySettings.enableCardLevelTrace;
 
     settings.openViewInNewTab = true;
     if (settings.clozeContextMode === undefined) {
