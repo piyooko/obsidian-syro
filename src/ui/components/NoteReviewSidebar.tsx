@@ -1302,6 +1302,7 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
         <div
             className={`sr-new-item ${isActive ? "sr-new-item--active" : ""} ${isDragOver ? "sr-new-item--drag-over" : ""}`}
             data-note-path={item.path}
+            title={item.path}
             onClick={onClick}
             onDoubleClick={onDoubleClick}
             onContextMenu={handleContextMenu}
@@ -1338,7 +1339,7 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
                 </div>
 
                 <div className="sr-new-item-meta-row">
-                    <span className="sr-new-item-tag" title={displayTag || ""}>
+                    <span className="sr-new-item-tag" title={item.path}>
                         {displayTag || <span style={{ opacity: 0.3 }}>{t("SIDEBAR_NO_TAG")}</span>}
                     </span>
                 </div>
