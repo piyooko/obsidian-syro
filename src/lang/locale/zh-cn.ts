@@ -702,7 +702,7 @@ export default {
     "DATA_REVIEW_SAVE_PENDING": "Syro：复习变更仍在等待保存，系统会继续重试。",
     "DATA_NOTE_SAVE_PENDING": "Syro：笔记复习变更仍在等待保存，系统会继续重试。",
     "TIMELINE_COMMIT_BUTTON": "提交（Ctrl+Enter）",
-    "TIMELINE_TITLE": "时间线",
+    "TIMELINE_TITLE": "TIMELINE",
     "SIDEBAR_NO_TAG": "无标签",
     "SIDEBAR_NO_NOTES_WITH_SELECTED_TAGS": "所选标签下没有笔记",
     "SETTINGS_SUPPORTER_BADGE": "支持者功能",
