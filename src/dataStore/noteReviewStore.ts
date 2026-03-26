@@ -9,10 +9,11 @@ import { RPITEMTYPE, RepetitionItem } from "src/dataStore/repetitionItem";
 import { TrackedFile } from "src/dataStore/trackedFile";
 import { ReviewDeck } from "src/ReviewDeck";
 import { SRSettings } from "src/settings";
+import { isPathInsideFolder, renamePathPrefix } from "src/folderTracking";
 import { Tags } from "src/tags";
 import { parseJsonUnknown } from "src/util/typeGuards";
 
-export type NoteReviewSource = "manual" | "tag";
+export type NoteReviewSource = "manual" | "tag" | "folder";
 
 interface PersistedNoteReviewEntry {
     source: NoteReviewSource;
@@ -85,7 +86,12 @@ export class NoteReviewStore {
                 item.setTracked(path);
                 item.updateDeckName(entry.deckName ?? DEFAULT_DECKNAME, false);
                 this.data[path] = {
-                    source: entry.source === "tag" ? "tag" : "manual",
+                    source:
+                        entry.source === "tag"
+                            ? "tag"
+                            : entry.source === "folder"
+                              ? "folder"
+                              : "manual",
                     deckName: entry.deckName ?? item.deckName ?? DEFAULT_DECKNAME,
                     item,
                 };
@@ -191,6 +197,41 @@ export class NoteReviewStore {
         entry.item.setTracked(newPath);
         this.data[newPath] = entry;
         return true;
+    }
+
+    renamePathPrefix(oldPath: string, newPath: string): boolean {
+        let changed = false;
+        const nextData: Record<string, NoteReviewEntry> = {};
+
+        for (const [path, entry] of Object.entries(this.data)) {
+            const nextPath = renamePathPrefix(path, oldPath, newPath);
+            if (nextPath !== path) {
+                entry.item.setTracked(nextPath);
+                changed = true;
+            }
+            nextData[nextPath] = entry;
+        }
+
+        if (changed) {
+            this.data = nextData;
+        }
+
+        return changed;
+    }
+
+    removePathPrefix(path: string): boolean {
+        let changed = false;
+
+        for (const entryPath of this.listPaths()) {
+            if (!isPathInsideFolder(path, entryPath)) {
+                continue;
+            }
+
+            delete this.data[entryPath];
+            changed = true;
+        }
+
+        return changed;
     }
 
     cleanupMissingFiles(vault: Vault): boolean {

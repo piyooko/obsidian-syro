@@ -1,8 +1,8 @@
 import { Menu, TAbstractFile, TFile, TFolder, debounce } from "obsidian";
-import { DEFAULT_DECKNAME } from "src/constants";
 import { t } from "src/lang/helpers";
 import SRPlugin from "src/main";
 import { Tags } from "src/tags";
+import { FolderTrackingSettingsModal } from "src/ui/modals/FolderTrackingSettingsModal";
 
 export function registerTrackFileEvents(plugin: SRPlugin) {
     const logRuntimeDebug = (...args: unknown[]) => {
@@ -34,9 +34,28 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
     plugin.registerEvent(
         plugin.app.vault.on("rename", async (file, oldPath) => {
             let noteChanged = false;
+
             if (plugin.noteReviewStore.rename(oldPath, file.path)) {
                 await plugin.noteReviewStore.save();
                 noteChanged = true;
+            }
+
+            if (plugin.noteReviewStore.renamePathPrefix(oldPath, file.path)) {
+                await plugin.noteReviewStore.save();
+                noteChanged = true;
+            }
+
+            if (plugin.renameFolderTrackingPaths(oldPath, file.path)) {
+                noteChanged = true;
+            }
+
+            if (file instanceof TFile && file.extension === "md") {
+                const folderRuleChanged = await plugin.ensureFolderTrackingForFile(file);
+                const shouldTrackByFolder =
+                    plugin.getResolvedFolderTrackingRule(file.path)?.rule.track === true;
+                if (folderRuleChanged || shouldTrackByFolder) {
+                    noteChanged = true;
+                }
             }
 
             const trackedFile = plugin.store.getTrackedFile(oldPath);
@@ -54,10 +73,39 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
     );
 
     plugin.registerEvent(
+        plugin.app.vault.on("create", async (file) => {
+            if (!(file instanceof TFile) || file.extension !== "md") {
+                return;
+            }
+
+            const folderRuleChanged = await plugin.ensureFolderTrackingForFile(file);
+            const noteDeckName = Tags.getNoteDeckName(file, plugin.data.settings);
+            const shouldRefreshNote =
+                folderRuleChanged ||
+                plugin.noteReviewStore.isTracked(file.path) ||
+                noteDeckName !== null ||
+                plugin.getResolvedFolderTrackingRule(file.path)?.rule.track === true;
+
+            if (shouldRefreshNote) {
+                debouncedNoteRefresh();
+            }
+        }),
+    );
+
+    plugin.registerEvent(
         plugin.app.vault.on("delete", async (file) => {
             let noteChanged = false;
             if (plugin.noteReviewStore.remove(file.path)) {
                 await plugin.noteReviewStore.save();
+                noteChanged = true;
+            }
+
+            if (plugin.noteReviewStore.removePathPrefix(file.path)) {
+                await plugin.noteReviewStore.save();
+                noteChanged = true;
+            }
+
+            if (plugin.removeFolderTrackingPaths(file.path)) {
                 noteChanged = true;
             }
 
@@ -81,7 +129,9 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
             const trackedFile = plugin.store.getTrackedFile(file.path);
             const noteDeckName = Tags.getNoteDeckName(file, plugin.data.settings);
             const shouldRefreshNote =
-                plugin.noteReviewStore.isTracked(file.path) || noteDeckName !== null;
+                plugin.noteReviewStore.isTracked(file.path) ||
+                noteDeckName !== null ||
+                plugin.getResolvedFolderTrackingRule(file.path)?.rule.track === true;
 
             if (plugin.store.isTrackedCardfile(file.path) && trackedFile) {
                 const fileText = await plugin.app.vault.read(file);
@@ -141,39 +191,11 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
 
 export function addFileMenuEvt(plugin: SRPlugin, menu: Menu, fileish: TAbstractFile) {
     if (fileish instanceof TFolder) {
-        const folderPrefix = fileish.path ? `${fileish.path}/` : "";
-        const getFolderNotes = () =>
-            plugin.app.vault
-                .getMarkdownFiles()
-                .filter((file) => file.path === fileish.path || file.path.startsWith(folderPrefix));
-
         menu.addItem((item) => {
             item.setIcon("SpacedRepIcon");
-            item.setTitle(t("MENU_TRACK_ALL_NOTES"));
-            item.onClick(async () => {
-                for (const file of getFolderNotes()) {
-                    const deckName = Tags.getNoteDeckName(file, plugin.data.settings);
-                    plugin.noteReviewStore.ensureTracked(
-                        file.path,
-                        deckName ?? DEFAULT_DECKNAME,
-                        deckName ? "tag" : "manual",
-                        plugin.noteAlgorithm,
-                    );
-                }
-                await plugin.noteReviewStore.save();
-                await plugin.refreshNoteReview({ trigger: "manual" });
-            });
-        });
-
-        menu.addItem((item) => {
-            item.setIcon("SpacedRepIcon");
-            item.setTitle(t("MENU_UNTRACK_ALL_NOTES"));
-            item.onClick(async () => {
-                for (const file of getFolderNotes()) {
-                    plugin.noteReviewStore.remove(file.path);
-                }
-                await plugin.noteReviewStore.save();
-                await plugin.refreshNoteReview({ trigger: "manual" });
+            item.setTitle(t("MENU_FOLDER_TRACKING_SETTINGS"));
+            item.onClick(() => {
+                new FolderTrackingSettingsModal(plugin.app, plugin, fileish.path).open();
             });
         });
         return;
@@ -189,12 +211,7 @@ export function addFileMenuEvt(plugin: SRPlugin, menu: Menu, fileish: TAbstractF
             item.setTitle(t("MENU_UNTRACK_NOTE"));
             item.onClick(() => {
                 void (async () => {
-                    plugin.noteReviewStore.remove(fileish.path);
-                    await plugin.noteReviewStore.save();
-                    if (plugin.reviewFloatBar.isDisplay() && plugin.data.settings.autoNextNote) {
-                        await plugin.reviewNextNote(plugin.lastSelectedReviewDeck);
-                    }
-                    await plugin.refreshNoteReview({ trigger: "manual" });
+                    await plugin.untrackNoteFromMenu(fileish);
                 })();
             });
         });
@@ -205,15 +222,7 @@ export function addFileMenuEvt(plugin: SRPlugin, menu: Menu, fileish: TAbstractF
         item.setIcon("SpacedRepIcon");
         item.setTitle(t("MENU_TRACK_NOTE"));
         item.onClick(async () => {
-            const deckName = Tags.getNoteDeckName(fileish, plugin.data.settings);
-            plugin.noteReviewStore.ensureTracked(
-                fileish.path,
-                deckName ?? DEFAULT_DECKNAME,
-                deckName ? "tag" : "manual",
-                plugin.noteAlgorithm,
-            );
-            await plugin.noteReviewStore.save();
-            await plugin.refreshNoteReview({ trigger: "manual" });
+            await plugin.trackNoteFromMenu(fileish);
         });
     });
 }

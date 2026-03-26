@@ -37,6 +37,10 @@ class ItemView {
             },
             fileManager: {
                 promptForFileRename: jest.fn(),
+                processFrontMatter: jest.fn(async (_file, fn) => {
+                    const frontmatter = {};
+                    fn(frontmatter);
+                }),
             },
         };
         this.containerEl = {
@@ -92,6 +96,8 @@ class TAbstractFile {}
 
 class TFile extends TAbstractFile {}
 
+class TFolder extends TAbstractFile {}
+
 class Notice {
     constructor(message) {
         this.message = message;
@@ -137,6 +143,7 @@ module.exports = new Proxy(
         Scope,
         TAbstractFile,
         TFile,
+        TFolder,
         WorkspaceLeaf,
         getAllTags: jest.fn(() => []),
         moment,

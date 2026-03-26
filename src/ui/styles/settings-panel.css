@@ -435,3 +435,137 @@
 .is-mobile .sr-deck-options-scroll {
     padding: 0 6px 4px;
 }
+
+.modal.sr-folder-tracking-modal-shell {
+    padding: 0;
+    width: 760px;
+    max-width: 90vw;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 18px;
+}
+
+.modal.sr-folder-tracking-modal-shell > .modal-header {
+    display: none;
+}
+
+.modal.sr-folder-tracking-modal-shell .modal-close-button {
+    position: absolute;
+    top: var(--size-4-4);
+    right: var(--size-4-4);
+    z-index: 10;
+}
+
+.sr-folder-tracking-panel {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    max-height: 80vh;
+}
+
+.sr-folder-tracking-panel .sr-style-setting-header {
+    padding: var(--size-4-6) var(--size-4-6) var(--size-4-2);
+    margin-bottom: 0;
+}
+
+.sr-folder-tracking-panel .sr-style-setting-tab-group {
+    gap: 0;
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.sr-folder-tracking-title {
+    font-size: var(--font-ui-large);
+    font-weight: var(--font-bold);
+    color: var(--text-normal);
+    padding: 0;
+}
+
+.sr-folder-tracking-path {
+    padding: 0 var(--size-4-6) var(--size-4-4);
+    font-size: var(--font-ui-small);
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--background-modifier-border);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.sr-folder-tracking-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: var(--size-4-6);
+}
+
+.sr-folder-tracking-body .sr-setting-section {
+    margin-bottom: var(--size-4-6);
+}
+
+.sr-folder-tracking-body .setting-item-heading {
+    font-size: var(--setting-group-heading-size);
+    font-weight: var(--setting-group-heading-weight);
+    color: var(--setting-group-heading-color);
+    margin-bottom: var(--size-4-2);
+    padding: 0;
+}
+
+.sr-folder-tracking-body .setting-items {
+    background-color: var(--setting-items-background);
+    border-radius: var(--setting-items-radius);
+    padding: var(--size-4-2) var(--size-4-5);
+}
+
+.sr-folder-tracking-body .setting-item {
+    border-top: 1px solid var(--background-modifier-border);
+    border-bottom: none;
+    padding: var(--size-4-4) 0;
+}
+
+.sr-folder-tracking-body .setting-item:first-child {
+    border-top: none;
+}
+
+.sr-folder-tracking-body .setting-item-name {
+    font-weight: var(--font-medium);
+}
+
+.sr-folder-tracking-body .setting-item-description {
+    margin-top: var(--size-2-1);
+    line-height: 1.55;
+}
+
+.sr-folder-tracking-textarea {
+    width: 100%;
+    min-width: 240px;
+    min-height: 104px;
+    resize: vertical;
+}
+
+.sr-folder-tracking-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--size-4-3);
+    padding: var(--size-4-3) var(--size-4-6);
+    border-top: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    flex-shrink: 0;
+}
+
+.sr-folder-tracking-footer-note {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    max-width: 60%;
+}
+
+.sr-folder-tracking-actions {
+    display: flex;
+    gap: var(--size-4-2);
+    margin-left: auto;
+}
+
+.is-mobile .modal.sr-folder-tracking-modal-shell {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+}

@@ -625,6 +625,7 @@ export default normalizeSentenceCaseLocale({
     // trackFileEvents.ts
     MENU_TRACK_ALL_NOTES: "Track All Notes",
     MENU_UNTRACK_ALL_NOTES: "Untrack All Notes",
+    MENU_FOLDER_TRACKING_SETTINGS: "Folder Tracking Settings",
     MENU_TRACK_NOTE: "Track Note",
     MENU_UNTRACK_NOTE: "Untrack Note",
 
@@ -966,6 +967,24 @@ export default normalizeSentenceCaseLocale({
     DECK_OPTIONS_BTN_DELETE_PRESET: "Delete Preset",
     DECK_OPTIONS_BTN_SAVE: "Save",
     DECK_OPTIONS_DEFAULT_PRESET_NAME: "Custom Preset",
+    FOLDER_TRACKING_TITLE: "Folder Tracking Settings",
+    FOLDER_TRACKING_SECTION_TRACKING: "Tracking",
+    FOLDER_TRACKING_SECTION_TAGS: "Automatic Tags",
+    FOLDER_TRACKING_TRACK_FOLDER: "Track this folder",
+    FOLDER_TRACKING_TRACK_FOLDER_DESC:
+        "Track current and future markdown notes in this folder unless a child folder overrides it.",
+    FOLDER_TRACKING_AUTO_TAGS: "Automatically add tags",
+    FOLDER_TRACKING_AUTO_TAGS_DESC:
+        "Apply the configured tags to current notes and future new notes in this folder.",
+    FOLDER_TRACKING_TAGS: "Managed tags",
+    FOLDER_TRACKING_TAGS_DESC:
+        "Enter any tags, separated by spaces, commas, or new lines. Only tags added by this rule will be removed later.",
+    FOLDER_TRACKING_TAGS_PLACEHOLDER: "#review\nproject/alpha",
+    FOLDER_TRACKING_FOOTER_NOTE:
+        "Child folders can override this folder. Existing notes are updated on save.",
+    FOLDER_TRACKING_SAVE_SUCCESS: "Folder tracking settings saved",
+    FOLDER_TRACKING_RESET: "Reset to inherit",
+    FOLDER_TRACKING_RESET_SUCCESS: "Folder tracking override cleared",
     // algorithmSetting.ts
     ALGO_CARD_SELECT: "Card Algorithm",
     ALGO_CARD_SELECT_DESC: "Select algorithm for card reviews",

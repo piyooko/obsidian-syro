@@ -117,6 +117,17 @@ import {
 import { SyncProgressTip } from "src/ui/components/SyncProgressTip";
 import { Tags } from "./tags";
 import {
+    cloneFolderTrackingRule,
+    DEFAULT_FOLDER_TRACKING_RULE,
+    type FolderTrackingRule,
+    isPathInsideFolder,
+    normalizeFolderTrackingTags,
+    normalizeFrontmatterTags,
+    renamePathPrefix,
+    resolveFolderTrackingRule,
+    toFrontmatterTagValue,
+} from "src/folderTracking";
+import {
     deserializeNote,
     NOTE_CACHE_VERSION,
     PersistedNoteCacheFile,
@@ -164,6 +175,7 @@ interface PluginData {
     historyDeck: string | null;
     // 鎸佷箙鍖栧瓨鍌ㄦ瘡鏃ョ粺璁?
     dailyDeckStats: DailyDeckStats;
+    folderTrackingRules: Record<string, FolderTrackingRule>;
     // 娉ㄦ剰锛歭earningQueue 涓嶅啀瀛樺偍鍦ㄨ繖閲岋紝鐘舵€佸凡绉昏嚦 RepetitionItem.learningStep
 }
 
@@ -178,6 +190,7 @@ const DEFAULT_DATA: PluginData = {
         date: "",
         counts: {},
     },
+    folderTrackingRules: {},
 };
 
 // export interface SchedNote {
@@ -1318,6 +1331,337 @@ export default class SRPlugin extends Plugin {
         return notes;
     }
 
+    private getMarkdownFilesInFolder(folderPath: string): TFile[] {
+        return this.app.vault
+            .getMarkdownFiles()
+            .filter((file) => isPathInsideFolder(folderPath, file.path));
+    }
+
+    public getFolderTrackingRule(folderPath: string): FolderTrackingRule | null {
+        const rule = this.data.folderTrackingRules?.[folderPath];
+        return rule ? cloneFolderTrackingRule(rule) : null;
+    }
+
+    public getResolvedFolderTrackingRule(notePath: string) {
+        return resolveFolderTrackingRule(this.data.folderTrackingRules ?? {}, notePath);
+    }
+
+    public async saveFolderTrackingRuleConfig(
+        folderPath: string,
+        updates: Pick<FolderTrackingRule, "track" | "autoTag" | "tags">,
+    ): Promise<void> {
+        const previousRule = this.getFolderTrackingRule(folderPath) ?? {
+            ...cloneFolderTrackingRule(DEFAULT_FOLDER_TRACKING_RULE),
+            track: true,
+        };
+        const nextRule = cloneFolderTrackingRule({
+            ...previousRule,
+            ...updates,
+            tags: normalizeFolderTrackingTags(updates.tags ?? []),
+        });
+
+        await this.syncFolderTrackingRuleFiles(folderPath, previousRule, nextRule);
+        this.data.folderTrackingRules[folderPath] = nextRule;
+        this.requestPluginDataSave(0);
+        await this.refreshNoteReview({ trigger: "manual" });
+    }
+
+    public async resetFolderTrackingRuleConfig(folderPath: string): Promise<void> {
+        const existingRule = this.getFolderTrackingRule(folderPath);
+        if (!existingRule) {
+            return;
+        }
+
+        await this.syncFolderTrackingRuleFiles(
+            folderPath,
+            existingRule,
+            cloneFolderTrackingRule(DEFAULT_FOLDER_TRACKING_RULE),
+        );
+        delete this.data.folderTrackingRules[folderPath];
+        this.requestPluginDataSave(0);
+        await this.refreshNoteReview({ trigger: "manual" });
+    }
+
+    public async ensureFolderTrackingForFile(file: TFile): Promise<boolean> {
+        if (file.extension !== "md") {
+            return false;
+        }
+
+        const resolvedRule = this.getResolvedFolderTrackingRule(file.path);
+        if (!resolvedRule) {
+            return false;
+        }
+
+        let changed = false;
+        const nextRule = cloneFolderTrackingRule(resolvedRule.rule);
+        const previousOwnedTags = nextRule.ownedTagsByPath[file.path] ?? [];
+        const desiredTags = nextRule.autoTag ? nextRule.tags : [];
+        const retainedOwnedTags = normalizeFolderTrackingTags(
+            previousOwnedTags.filter((tag) => desiredTags.includes(tag)),
+        );
+        const removedTags = normalizeFolderTrackingTags(
+            previousOwnedTags.filter((tag) => !desiredTags.includes(tag)),
+        );
+
+        if (removedTags.length > 0) {
+            const removed = await this.removeFolderTrackingTagsFromFile(file, removedTags);
+            if (removed.length > 0) {
+                changed = true;
+            }
+        }
+
+        let addedTags: string[] = [];
+        if (nextRule.autoTag && nextRule.tags.length > 0) {
+            addedTags = await this.addFolderTrackingTagsToFile(file, nextRule.tags);
+            if (addedTags.length > 0) {
+                changed = true;
+            }
+        }
+
+        const finalOwnedTags = normalizeFolderTrackingTags([...retainedOwnedTags, ...addedTags]);
+        if (finalOwnedTags.length > 0) {
+            nextRule.ownedTagsByPath[file.path] = finalOwnedTags;
+        } else {
+            delete nextRule.ownedTagsByPath[file.path];
+        }
+
+        if (!nextRule.track && nextRule.excludedPaths.length > 0) {
+            nextRule.excludedPaths = [];
+            changed = true;
+        }
+
+        if (JSON.stringify(nextRule) !== JSON.stringify(resolvedRule.rule)) {
+            this.data.folderTrackingRules[resolvedRule.folderPath] = nextRule;
+            changed = true;
+        }
+
+        if (changed) {
+            this.requestPluginDataSave(0);
+        }
+
+        return changed;
+    }
+
+    private async syncFolderTrackingRuleFiles(
+        folderPath: string,
+        previousRule: FolderTrackingRule | null,
+        nextRule: FolderTrackingRule,
+    ): Promise<void> {
+        const files = this.getMarkdownFilesInFolder(folderPath);
+        const previousOwnedTagsByPath = previousRule?.ownedTagsByPath ?? {};
+        const nextOwnedTagsByPath: Record<string, string[]> = {};
+        const desiredTags = nextRule.autoTag ? normalizeFolderTrackingTags(nextRule.tags) : [];
+
+        for (const file of files) {
+            const previousOwnedTags = previousOwnedTagsByPath[file.path] ?? [];
+            const retainedOwnedTags = normalizeFolderTrackingTags(
+                previousOwnedTags.filter((tag) => desiredTags.includes(tag)),
+            );
+            const removedTags = normalizeFolderTrackingTags(
+                previousOwnedTags.filter((tag) => !desiredTags.includes(tag)),
+            );
+
+            if (removedTags.length > 0) {
+                await this.removeFolderTrackingTagsFromFile(file, removedTags);
+            }
+
+            let addedTags: string[] = [];
+            if (nextRule.autoTag && desiredTags.length > 0) {
+                addedTags = await this.addFolderTrackingTagsToFile(file, desiredTags);
+            }
+
+            const finalOwnedTags = normalizeFolderTrackingTags([
+                ...retainedOwnedTags,
+                ...addedTags,
+            ]);
+            if (finalOwnedTags.length > 0) {
+                nextOwnedTagsByPath[file.path] = finalOwnedTags;
+            }
+        }
+
+        nextRule.ownedTagsByPath = nextOwnedTagsByPath;
+        if (!nextRule.track) {
+            nextRule.excludedPaths = [];
+        }
+    }
+
+    private async addFolderTrackingTagsToFile(
+        file: TFile,
+        desiredTags: string[],
+    ): Promise<string[]> {
+        const normalizedDesiredTags = normalizeFolderTrackingTags(desiredTags);
+        if (normalizedDesiredTags.length === 0) {
+            return [];
+        }
+
+        let addedTags: string[] = [];
+        await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+            const currentTags = normalizeFrontmatterTags(frontmatter.tags);
+            addedTags = normalizedDesiredTags.filter((tag) => !currentTags.includes(tag));
+            if (addedTags.length === 0) {
+                return;
+            }
+
+            frontmatter.tags = [...currentTags, ...addedTags].map(toFrontmatterTagValue);
+        });
+
+        return addedTags;
+    }
+
+    private async removeFolderTrackingTagsFromFile(
+        file: TFile,
+        tagsToRemove: string[],
+    ): Promise<string[]> {
+        const normalizedTagsToRemove = normalizeFolderTrackingTags(tagsToRemove);
+        if (normalizedTagsToRemove.length === 0) {
+            return [];
+        }
+
+        let removedTags: string[] = [];
+        await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+            const currentTags = normalizeFrontmatterTags(frontmatter.tags);
+            removedTags = currentTags.filter((tag) => normalizedTagsToRemove.includes(tag));
+            if (removedTags.length === 0) {
+                return;
+            }
+
+            const nextTags = currentTags.filter((tag) => !normalizedTagsToRemove.includes(tag));
+            if (nextTags.length > 0) {
+                frontmatter.tags = nextTags.map(toFrontmatterTagValue);
+            } else {
+                delete frontmatter.tags;
+            }
+        });
+
+        return removedTags;
+    }
+
+    public excludeNoteFromFolderTracking(notePath: string): boolean {
+        const resolvedRule = this.getResolvedFolderTrackingRule(notePath);
+        if (!resolvedRule || !resolvedRule.rule.track) {
+            return false;
+        }
+
+        if (resolvedRule.rule.excludedPaths.includes(notePath)) {
+            return false;
+        }
+
+        resolvedRule.rule.excludedPaths = [...resolvedRule.rule.excludedPaths, notePath];
+        this.data.folderTrackingRules[resolvedRule.folderPath] = resolvedRule.rule;
+        this.requestPluginDataSave(0);
+        return true;
+    }
+
+    public clearFolderTrackingExclusion(notePath: string): boolean {
+        let changed = false;
+
+        for (const [folderPath, rule] of Object.entries(this.data.folderTrackingRules ?? {})) {
+            if (!rule.excludedPaths.includes(notePath)) {
+                continue;
+            }
+
+            const nextRule = cloneFolderTrackingRule(rule);
+            nextRule.excludedPaths = nextRule.excludedPaths.filter((path) => path !== notePath);
+            this.data.folderTrackingRules[folderPath] = nextRule;
+            changed = true;
+        }
+
+        if (changed) {
+            this.requestPluginDataSave(0);
+        }
+
+        return changed;
+    }
+
+    public renameFolderTrackingPaths(oldPath: string, newPath: string): boolean {
+        let changed = false;
+        const nextRules: Record<string, FolderTrackingRule> = {};
+
+        for (const [folderPath, rule] of Object.entries(this.data.folderTrackingRules ?? {})) {
+            const nextFolderPath = renamePathPrefix(folderPath, oldPath, newPath);
+            const nextRule = cloneFolderTrackingRule(rule);
+            const nextOwnedTagsByPath: Record<string, string[]> = {};
+
+            for (const [path, tags] of Object.entries(nextRule.ownedTagsByPath)) {
+                const nextPath = renamePathPrefix(path, oldPath, newPath);
+                if (!isPathInsideFolder(nextFolderPath, nextPath)) {
+                    changed = true;
+                    continue;
+                }
+
+                nextOwnedTagsByPath[nextPath] = tags;
+                if (nextPath !== path) {
+                    changed = true;
+                }
+            }
+
+            nextRule.ownedTagsByPath = nextOwnedTagsByPath;
+            nextRule.excludedPaths = nextRule.excludedPaths
+                .map((path) => renamePathPrefix(path, oldPath, newPath))
+                .filter((path) => {
+                    const shouldKeep = isPathInsideFolder(nextFolderPath, path);
+                    if (!shouldKeep) {
+                        changed = true;
+                    }
+                    return shouldKeep;
+                });
+
+            if (nextFolderPath !== folderPath) {
+                changed = true;
+            }
+
+            nextRules[nextFolderPath] = nextRule;
+        }
+
+        if (changed) {
+            this.data.folderTrackingRules = nextRules;
+            this.requestPluginDataSave(0);
+        }
+
+        return changed;
+    }
+
+    public removeFolderTrackingPaths(deletedPath: string): boolean {
+        let changed = false;
+        const nextRules: Record<string, FolderTrackingRule> = {};
+
+        for (const [folderPath, rule] of Object.entries(this.data.folderTrackingRules ?? {})) {
+            if (isPathInsideFolder(deletedPath, folderPath)) {
+                changed = true;
+                continue;
+            }
+
+            const nextRule = cloneFolderTrackingRule(rule);
+            const nextOwnedTagsByPath = Object.fromEntries(
+                Object.entries(nextRule.ownedTagsByPath).filter(([path]) => {
+                    const shouldKeep = !isPathInsideFolder(deletedPath, path);
+                    if (!shouldKeep) {
+                        changed = true;
+                    }
+                    return shouldKeep;
+                }),
+            );
+            const nextExcludedPaths = nextRule.excludedPaths.filter((path) => {
+                const shouldKeep = !isPathInsideFolder(deletedPath, path);
+                if (!shouldKeep) {
+                    changed = true;
+                }
+                return shouldKeep;
+            });
+
+            nextRule.ownedTagsByPath = nextOwnedTagsByPath;
+            nextRule.excludedPaths = nextExcludedPaths;
+            nextRules[folderPath] = nextRule;
+        }
+
+        if (changed) {
+            this.data.folderTrackingRules = nextRules;
+            this.requestPluginDataSave(0);
+        }
+
+        return changed;
+    }
+
     private resolveNoteReviewTracking(
         note: TFile,
     ): { deckName: string; source: NoteReviewSource } | null {
@@ -1327,22 +1671,61 @@ export default class SRPlugin extends Plugin {
         }
 
         const existing = this.noteReviewStore.getEntry(note.path);
-        if (!existing) {
-            return null;
-        }
-
-        if (existing.source === "manual") {
+        if (existing?.source === "manual") {
             return { deckName: existing.deckName ?? DEFAULT_DECKNAME, source: "manual" };
         }
 
-        if (this.data.settings.untrackWithReviewTag === false) {
+        const resolvedRule = this.getResolvedFolderTrackingRule(note.path);
+        if (
+            resolvedRule &&
+            resolvedRule.rule.track &&
+            !resolvedRule.rule.excludedPaths.includes(note.path)
+        ) {
             return {
-                deckName: existing.deckName ?? DEFAULT_DECKNAME,
-                source: existing.source,
+                deckName:
+                    existing?.source === "folder"
+                        ? (existing.deckName ?? DEFAULT_DECKNAME)
+                        : DEFAULT_DECKNAME,
+                source: "folder",
             };
         }
 
+        if (existing?.source === "tag" && this.data.settings.untrackWithReviewTag === false) {
+            return { deckName: existing.deckName ?? DEFAULT_DECKNAME, source: "tag" };
+        }
+
         return null;
+    }
+
+    public async trackNoteFromMenu(file: TFile): Promise<void> {
+        this.clearFolderTrackingExclusion(file.path);
+
+        const deckName = Tags.getNoteDeckName(file, this.data.settings);
+        this.noteReviewStore.ensureTracked(
+            file.path,
+            deckName ?? DEFAULT_DECKNAME,
+            deckName ? "tag" : "manual",
+            this.noteAlgorithm,
+        );
+        await this.noteReviewStore.save();
+        await this.refreshNoteReview({ trigger: "manual" });
+    }
+
+    public async untrackNoteFromMenu(file: TFile): Promise<void> {
+        const tagDeckName = Tags.getNoteDeckName(file, this.data.settings);
+        const resolvedRule = this.getResolvedFolderTrackingRule(file.path);
+        if (tagDeckName === null && resolvedRule?.rule.track === true) {
+            this.excludeNoteFromFolderTracking(file.path);
+        }
+
+        this.noteReviewStore.remove(file.path);
+        await this.noteReviewStore.save();
+
+        if (this.reviewFloatBar.isDisplay() && this.data.settings.autoNextNote) {
+            await this.reviewNextNote(this.lastSelectedReviewDeck);
+        }
+
+        await this.refreshNoteReview({ trigger: "manual" });
     }
 
     private async initializeFirstRunTutorialNote(): Promise<void> {
@@ -2200,6 +2583,12 @@ export default class SRPlugin extends Plugin {
         if (loadedData?.settings) upgradeSettings(loadedData.settings);
         this.data = Object.assign({}, DEFAULT_DATA, loadedData);
         this.data.settings = Object.assign({}, DEFAULT_SETTINGS, this.data.settings);
+        this.data.folderTrackingRules = Object.fromEntries(
+            Object.entries(this.data.folderTrackingRules ?? {}).map(([folderPath, rule]) => [
+                folderPath,
+                cloneFolderTrackingRule(rule),
+            ]),
+        );
         this.store = new DataStore(this.data.settings, this.manifest.dir);
         await this.store.load();
         this.noteReviewStore = new NoteReviewStore(this.data.settings, this.manifest.dir);
