@@ -983,8 +983,8 @@ export default normalizeSentenceCaseLocale({
     FOLDER_TRACKING_FOOTER_NOTE:
         "Existing notes are updated on save.",
     FOLDER_TRACKING_SAVE_SUCCESS: "Folder tracking settings saved",
-    FOLDER_TRACKING_RESET: "Remove auto tags added by Syro",
-    FOLDER_TRACKING_RESET_SUCCESS: "Auto tags added by Syro removed",
+    FOLDER_TRACKING_RESET: "Remove auto-added tags",
+    FOLDER_TRACKING_RESET_SUCCESS: "Auto-added tags removed",
     // algorithmSetting.ts
     ALGO_CARD_SELECT: "Card Algorithm",
     ALGO_CARD_SELECT_DESC: "Select algorithm for card reviews",
