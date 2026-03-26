@@ -20,6 +20,10 @@ import { Notice } from "obsidian";
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { FileText, Layout, Shield, Cpu } from "lucide-react";
 import { t } from "src/lang/helpers";
+import {
+    MAX_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+    MIN_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+} from "src/settings/clozeContext";
 import { UISettingsState } from "../types/settingsTypes";
 import {
     Section,
@@ -371,17 +375,32 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
                     ]}
                     onChange={(v) => onChange("clozeContextPerformanceMode", v)}
                 />
-                <SliderRow
-                    label={t("SETTINGS_CLOZE_CONTEXT_SOFT_LIMIT")}
-                    desc={t("SETTINGS_CLOZE_CONTEXT_SOFT_LIMIT_DESC")}
-                    value={settings.clozeContextSoftLimitLines}
-                    min={1}
-                    max={1000}
-                    step={1}
-                    onChange={(v) =>
-                        onChange("clozeContextSoftLimitLines", Math.max(1, Math.min(1000, v)))
-                    }
-                />
+                {settings.clozeContextPerformanceMode === "safe-trim" && (
+                    <div
+                        style={{
+                            paddingLeft: "20px",
+                            borderLeft: "2px solid var(--background-modifier-border)",
+                        }}
+                    >
+                        <SliderRow
+                            label={t("SETTINGS_CLOZE_CONTEXT_SOFT_LIMIT")}
+                            desc={t("SETTINGS_CLOZE_CONTEXT_SOFT_LIMIT_DESC")}
+                            value={settings.clozeContextSoftLimitLines}
+                            min={MIN_CLOZE_CONTEXT_SOFT_LIMIT_LINES}
+                            max={MAX_CLOZE_CONTEXT_SOFT_LIMIT_LINES}
+                            step={1}
+                            onChange={(v) =>
+                                onChange(
+                                    "clozeContextSoftLimitLines",
+                                    Math.max(
+                                        MIN_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+                                        Math.min(MAX_CLOZE_CONTEXT_SOFT_LIMIT_LINES, v),
+                                    ),
+                                )
+                            }
+                        />
+                    </div>
+                )}
                 {settings.convertAnkiClozesToClozes && (
                     <ToggleRow
                         label={t("SETTINGS_SHOW_OTHER_ANKI_CLOZES")}

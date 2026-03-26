@@ -91,7 +91,9 @@ function findSettingItemByName(container: HTMLElement, names: string[]): HTMLEle
     return (
         Array.from(container.querySelectorAll<HTMLElement>(".setting-item")).find((item) =>
             names.some((name) => {
-                const itemName = item.querySelector(".setting-item-name")?.textContent?.toLowerCase();
+                const itemName = item
+                    .querySelector(".setting-item-name")
+                    ?.textContent?.toLowerCase();
                 return itemName?.includes(name.toLowerCase());
             }),
         ) ?? null
@@ -188,6 +190,46 @@ describe("EmbeddedSettingsPanel", () => {
             expect(codeBlockItem?.nextElementSibling).toBe(codeContextWrapper);
             expect(codeContextWrapper?.nextElementSibling).toBe(clozeContextItem);
             expect(codeContextWrapper?.getAttribute("style")).toContain("padding-left: 20px");
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("hides trim lines when long context optimization is off", () => {
+        const view = renderPanel(createSettings({ clozeContextPerformanceMode: "off" }));
+
+        try {
+            expect(
+                findSettingItemByName(view.container, ["Long Context Optimization"]),
+            ).not.toBeNull();
+            expect(findSettingItemByName(view.container, ["Trim Lines"])).toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("renders trim lines as a separate indented block directly below long context optimization", () => {
+        const view = renderPanel(createSettings({ clozeContextPerformanceMode: "safe-trim" }));
+
+        try {
+            const performanceItem = findSettingItemByName(view.container, [
+                "Long Context Optimization",
+            ]);
+            const trimLinesItem = findSettingItemByName(view.container, ["Trim Lines"]);
+            const showOtherHighlightItem = findSettingItemByName(view.container, [
+                "Show other highlight clozes",
+            ]);
+
+            expect(performanceItem).not.toBeNull();
+            expect(trimLinesItem).not.toBeNull();
+            expect(showOtherHighlightItem).not.toBeNull();
+            expect(performanceItem?.contains(trimLinesItem as Node)).toBe(false);
+
+            const trimLinesWrapper = trimLinesItem?.parentElement as HTMLElement | null;
+            expect(trimLinesWrapper).not.toBeNull();
+            expect(performanceItem?.nextElementSibling).toBe(trimLinesWrapper);
+            expect(trimLinesWrapper?.nextElementSibling).toBe(showOtherHighlightItem);
+            expect(trimLinesWrapper?.getAttribute("style")).toContain("padding-left: 20px");
         } finally {
             view.cleanup();
         }

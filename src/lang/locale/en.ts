@@ -836,7 +836,7 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_CLOZE_CONTEXT_SOFT_LIMIT: "Trim Lines",
     SETTINGS_CLOZE_CONTEXT_SOFT_LIMIT_TOOLTIP: "Base lines kept above and below the cloze.",
     SETTINGS_CLOZE_CONTEXT_SOFT_LIMIT_DESC:
-        "How many lines to keep above and below the cloze when safe trim is enabled. Range: 1-1000.",
+        "How many lines to keep above and below the cloze when safe trim is enabled. Range: 1-100.",
     SETTINGS_SHOW_OTHER_CLOZES: "Show Other Clozes",
     SETTINGS_SHOW_OTHER_CLOZES_DESC: "Show other clozes visually during review.",
     SETTINGS_SHOW_OTHER_ANKI_CLOZES: "Show Other Anki Clozes",

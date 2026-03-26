@@ -1,4 +1,9 @@
 import { ClozeContextMode, ClozeContextPerformanceMode } from "src/settings";
+import {
+    DEFAULT_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+    MAX_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+    MIN_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+} from "src/settings/clozeContext";
 
 const TRIMMED_TOP_MARKER = "... 上文已折叠 ...";
 const TRIMMED_BOTTOM_MARKER = "... 下文已折叠 ...";
@@ -33,7 +38,13 @@ interface ExtractedContext {
 export function resolveClozeReviewContext(input: ClozeReviewContextInput): string {
     const mode = input.settings.clozeContextMode ?? "single";
     const performanceMode = input.settings.clozeContextPerformanceMode ?? "off";
-    const softLimitLines = Math.max(1, input.settings.clozeContextSoftLimitLines ?? 15);
+    const softLimitLines = Math.max(
+        MIN_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+        Math.min(
+            MAX_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+            input.settings.clozeContextSoftLimitLines ?? DEFAULT_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+        ),
+    );
 
     const extracted = extractContextByMode(input, mode);
     if (performanceMode === "off") {

@@ -575,7 +575,7 @@ export default {
     "SETTINGS_CLOZE_CONTEXT_PERFORMANCE_SAFE_TRIM": "自动安全截断",
     "SETTINGS_CLOZE_CONTEXT_SOFT_LIMIT": "性能优化截断行数",
     "SETTINGS_CLOZE_CONTEXT_SOFT_LIMIT_TOOLTIP": "从挖空位置向上下保留的基础行数。",
-    "SETTINGS_CLOZE_CONTEXT_SOFT_LIMIT_DESC": "开启自动安全截断后，在挖空上下各保留多少行。范围：1-1000。",
+    "SETTINGS_CLOZE_CONTEXT_SOFT_LIMIT_DESC": "开启自动安全截断后，在挖空上下各保留多少行。范围：1-100。",
     "SETTINGS_SHOW_OTHER_CLOZES": "显示其他填空",
     "SETTINGS_SHOW_OTHER_CLOZES_DESC": "复习时是否显示非当前卡片的填空样式。",
     "SETTINGS_SHOW_OTHER_ANKI_CLOZES": "显示其他 Anki 填空样式",

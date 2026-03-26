@@ -11,6 +11,11 @@ import { t } from "src/lang/helpers";
 import { algorithms } from "./algorithms/algorithms_switch";
 import { DataLocation } from "./dataStore/dataLocation";
 import { DEFAULT_responseOptionBtnsText } from "./settings/algorithmSetting";
+import {
+    DEFAULT_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+    MAX_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+    MIN_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+} from "./settings/clozeContext";
 import { getArrayProp, getNumberProp, getStringProp, isRecord } from "./util/typeGuards";
 import { pathMatchesPattern } from "src/utils/fs";
 
@@ -257,7 +262,7 @@ export const DEFAULT_SETTINGS: SRSettings = {
     codeContextLines: 15, // default code context lines
     clozeContextMode: "single",
     clozeContextPerformanceMode: "off",
-    clozeContextSoftLimitLines: 15,
+    clozeContextSoftLimitLines: DEFAULT_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
     editLaterTag: "#edit-later",
     intervalShowHide: true,
     showOtherClozesVisual: false,
@@ -519,9 +524,16 @@ export function upgradeSettings(settings: SRSettings) {
         settings.clozeContextPerformanceMode = "off";
     }
 
-    if (settings.clozeContextSoftLimitLines === undefined) {
-        settings.clozeContextSoftLimitLines = 15;
+    if (
+        typeof settings.clozeContextSoftLimitLines !== "number" ||
+        !Number.isFinite(settings.clozeContextSoftLimitLines)
+    ) {
+        settings.clozeContextSoftLimitLines = DEFAULT_CLOZE_CONTEXT_SOFT_LIMIT_LINES;
     }
+    settings.clozeContextSoftLimitLines = Math.max(
+        MIN_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+        Math.min(MAX_CLOZE_CONTEXT_SOFT_LIMIT_LINES, settings.clozeContextSoftLimitLines),
+    );
     if (settings.showOtherAnkiClozeVisual === undefined) {
         settings.showOtherAnkiClozeVisual = settings.showOtherClozesVisual ?? false;
     }

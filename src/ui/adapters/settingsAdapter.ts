@@ -9,6 +9,11 @@ import {
     hasSupporterLicenseState,
     syncDefaultClozePatterns,
 } from "../../settings";
+import {
+    DEFAULT_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+    MAX_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+    MIN_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+} from "../../settings/clozeContext";
 import { DataLocation } from "../../dataStore/dataLocation";
 import { UISettingsState } from "../types/settingsTypes";
 
@@ -21,6 +26,13 @@ type WeightedMultiplierUiSettings = {
     easyFactor?: number;
     baseEase?: number;
 };
+
+function clampClozeContextSoftLimitLines(value: number): number {
+    return Math.max(
+        MIN_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+        Math.min(MAX_CLOZE_CONTEXT_SOFT_LIMIT_LINES, value),
+    );
+}
 
 function getWeightedMultiplierSettings(settings: SRSettings): WeightedMultiplierUiSettings {
     return (
@@ -59,7 +71,9 @@ export function settingsToUIState(settings: SRSettings): UISettingsState {
         codeContextLines: settings.codeContextLines ?? 15,
         clozeContextMode: settings.clozeContextMode ?? "single",
         clozeContextPerformanceMode: settings.clozeContextPerformanceMode ?? "off",
-        clozeContextSoftLimitLines: settings.clozeContextSoftLimitLines ?? 15,
+        clozeContextSoftLimitLines: clampClozeContextSoftLimitLines(
+            settings.clozeContextSoftLimitLines ?? DEFAULT_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
+        ),
         showOtherAnkiClozeVisual:
             settings.showOtherAnkiClozeVisual ?? settings.showOtherClozesVisual ?? false,
         showOtherHighlightClozeVisual:
@@ -178,7 +192,9 @@ export function mergeUIStateToSettings(
         merged.clozeContextPerformanceMode =
             uiChanges.clozeContextPerformanceMode as SRSettings["clozeContextPerformanceMode"];
     if (uiChanges.clozeContextSoftLimitLines !== undefined)
-        merged.clozeContextSoftLimitLines = uiChanges.clozeContextSoftLimitLines;
+        merged.clozeContextSoftLimitLines = clampClozeContextSoftLimitLines(
+            uiChanges.clozeContextSoftLimitLines,
+        );
     if (uiChanges.showOtherAnkiClozeVisual !== undefined)
         merged.showOtherAnkiClozeVisual = uiChanges.showOtherAnkiClozeVisual;
     if (uiChanges.showOtherHighlightClozeVisual !== undefined)
