@@ -49,6 +49,8 @@ function createSettings(overrides: Partial<UISettingsState> = {}): UISettingsSta
         sidebarProgressRingColor: "#a0b0a9",
         sidebarProgressIndicatorMode: "ring",
         sidebarProgressRingDirection: "counterclockwise",
+        sidebarFilePathTooltipEnabled: true,
+        sidebarFilePathTooltipDelayMs: 1000,
         showScrollPercentage: true,
         autoExpandTimeline: true,
         timelineAutoCommitReviewSelection: true,
@@ -181,6 +183,10 @@ describe("EmbeddedSettingsPanel", () => {
             ).not.toBeNull();
             expect(
                 findSettingItemByName(view.container, ["Sidebar Progress Ring Direction"]),
+            ).not.toBeNull();
+            expect(findSettingItemByName(view.container, ["Show File Path Tooltip"])).not.toBeNull();
+            expect(
+                findSettingItemByName(view.container, ["File Path Tooltip Delay"]),
             ).not.toBeNull();
         } finally {
             view.cleanup();

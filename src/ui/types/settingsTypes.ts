@@ -57,6 +57,8 @@ export interface UISettingsState {
     sidebarProgressRingColor: string; // Review queue progress ring color
     sidebarProgressIndicatorMode: SidebarProgressIndicatorMode; // Sidebar progress indicator mode
     sidebarProgressRingDirection: SidebarProgressRingDirection; // Sidebar progress ring direction
+    sidebarFilePathTooltipEnabled: boolean; // Show or hide file path tooltips for sidebar note items
+    sidebarFilePathTooltipDelayMs: number; // Hover delay before showing sidebar file path tooltips
     showScrollPercentage: boolean; // Show saved scroll percentage in timeline items
     autoExpandTimeline: boolean; // Auto-expand the timeline when opening a reviewed note
     timelineAutoCommitReviewSelection: boolean; // Auto-write note review selections to timeline

@@ -44,6 +44,13 @@ beforeAll(() => {
             this.style.setProperty(key, value);
         }
     };
+
+    const immediateRaf = ((callback: FrameRequestCallback) => {
+        callback(0);
+        return 0;
+    }) as typeof window.requestAnimationFrame;
+    window.requestAnimationFrame = immediateRaf;
+    window.cancelAnimationFrame = jest.fn();
 });
 
 function createItem(overrides: Partial<NoteReviewItem> = {}): NoteReviewItem {
@@ -67,6 +74,8 @@ function renderSidebar(
         progressRingColor?: string;
         progressIndicatorMode?: SidebarProgressIndicatorMode;
         progressRingDirection?: SidebarProgressRingDirection;
+        filePathTooltipEnabled?: boolean;
+        filePathTooltipDelayMs?: number;
     } = {},
 ) {
     const container = document.createElement("div");
@@ -96,6 +105,8 @@ function renderSidebar(
                 progressRingColor: options.progressRingColor,
                 progressIndicatorMode: options.progressIndicatorMode,
                 progressRingDirection: options.progressRingDirection,
+                filePathTooltipEnabled: options.filePathTooltipEnabled,
+                filePathTooltipDelayMs: options.filePathTooltipDelayMs,
             }),
         );
     });
@@ -245,6 +256,64 @@ describe("NoteReviewSidebar", () => {
             expect(firstChild?.classList.contains("sr-new-item-tag")).toBe(true);
         } finally {
             view.cleanup();
+        }
+    });
+
+    it("shows the file path tooltip after the configured hover delay", () => {
+        jest.useFakeTimers();
+        const item = createItem({ path: "folder/example.md" });
+        const view = renderSidebar([item], {
+            filePathTooltipEnabled: true,
+            filePathTooltipDelayMs: 1000,
+        });
+
+        try {
+            const noteItem = view.container.querySelector(".sr-new-item") as HTMLElement | null;
+            expect(noteItem).not.toBeNull();
+
+            act(() => {
+                noteItem?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+            });
+
+            expect(document.body.querySelector(".sr-note-path-tooltip")).toBeNull();
+
+            act(() => {
+                jest.advanceTimersByTime(999);
+            });
+            expect(document.body.querySelector(".sr-note-path-tooltip")).toBeNull();
+
+            act(() => {
+                jest.advanceTimersByTime(1);
+            });
+
+            const tooltip = document.body.querySelector(".sr-note-path-tooltip") as HTMLElement | null;
+            expect(tooltip).not.toBeNull();
+            expect(tooltip?.textContent).toContain(item.path);
+        } finally {
+            view.cleanup();
+            jest.useRealTimers();
+        }
+    });
+
+    it("does not show the file path tooltip when the setting is disabled", () => {
+        jest.useFakeTimers();
+        const view = renderSidebar([createItem({ path: "folder/hidden.md" })], {
+            filePathTooltipEnabled: false,
+            filePathTooltipDelayMs: 1000,
+        });
+
+        try {
+            const noteItem = view.container.querySelector(".sr-new-item") as HTMLElement | null;
+
+            act(() => {
+                noteItem?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+                jest.advanceTimersByTime(1000);
+            });
+
+            expect(document.body.querySelector(".sr-note-path-tooltip")).toBeNull();
+        } finally {
+            view.cleanup();
+            jest.useRealTimers();
         }
     });
 });

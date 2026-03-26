@@ -69,6 +69,16 @@ function normalizeShowSidebarProgressIndicator(
     return legacyMode !== "hidden";
 }
 
+function normalizeSidebarFilePathTooltipDelayMs(
+    delayMs: SRSettings["sidebarFilePathTooltipDelayMs"] | undefined,
+): UISettingsState["sidebarFilePathTooltipDelayMs"] {
+    if (typeof delayMs !== "number" || !Number.isFinite(delayMs)) {
+        return 1000;
+    }
+
+    return Math.max(0, Math.round(delayMs));
+}
+
 /**
  * Extract the subset of settings needed by the UI.
  */
@@ -121,6 +131,10 @@ export function settingsToUIState(settings: SRSettings): UISettingsState {
         ),
         sidebarProgressRingDirection: normalizeSidebarProgressRingDirection(
             settings.sidebarProgressRingDirection,
+        ),
+        sidebarFilePathTooltipEnabled: settings.sidebarFilePathTooltipEnabled ?? true,
+        sidebarFilePathTooltipDelayMs: normalizeSidebarFilePathTooltipDelayMs(
+            settings.sidebarFilePathTooltipDelayMs,
         ),
         showScrollPercentage: settings.showScrollPercentage ?? true,
         autoExpandTimeline: settings.autoExpandTimeline ?? true,
@@ -257,6 +271,12 @@ export function mergeUIStateToSettings(
         merged.sidebarProgressIndicatorMode = uiChanges.sidebarProgressIndicatorMode;
     if (uiChanges.sidebarProgressRingDirection !== undefined)
         merged.sidebarProgressRingDirection = uiChanges.sidebarProgressRingDirection;
+    if (uiChanges.sidebarFilePathTooltipEnabled !== undefined)
+        merged.sidebarFilePathTooltipEnabled = uiChanges.sidebarFilePathTooltipEnabled;
+    if (uiChanges.sidebarFilePathTooltipDelayMs !== undefined)
+        merged.sidebarFilePathTooltipDelayMs = normalizeSidebarFilePathTooltipDelayMs(
+            uiChanges.sidebarFilePathTooltipDelayMs,
+        );
     if (uiChanges.showScrollPercentage !== undefined)
         merged.showScrollPercentage = uiChanges.showScrollPercentage;
     if (uiChanges.autoExpandTimeline !== undefined)

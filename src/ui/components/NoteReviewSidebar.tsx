@@ -17,8 +17,8 @@
  * 1. src/ui/views/ReactNoteReviewView.tsx
  */
 
-import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { flushSync } from "react-dom";
+import React, { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from "react";
+import { createPortal, flushSync } from "react-dom";
 import { App, Component, MarkdownRenderer } from "obsidian";
 import { NoteReviewSection, NoteReviewItem, NoteReviewSidebarState } from "../types/noteReview";
 import { ReviewCommitLog, type ReviewCommitEditPayload } from "src/dataStore/reviewCommitStore";
@@ -1130,6 +1130,8 @@ interface SectionGroupModernProps {
     showSidebarProgressIndicator: boolean;
     progressIndicatorMode: SidebarProgressIndicatorMode;
     progressRingDirection: SidebarProgressRingDirection;
+    filePathTooltipEnabled: boolean;
+    filePathTooltipDelayMs: number;
     onNoteClick: (item: NoteReviewItem) => void;
     onNoteDoubleClick?: (item: NoteReviewItem) => void;
     onNoteContextMenu: (item: NoteReviewItem, event: MouseEvent) => void;
@@ -1144,6 +1146,8 @@ const SectionGroupModern: React.FC<SectionGroupModernProps> = ({
     showSidebarProgressIndicator,
     progressIndicatorMode,
     progressRingDirection,
+    filePathTooltipEnabled,
+    filePathTooltipDelayMs,
     onNoteClick,
     onNoteDoubleClick: _onNoteDoubleClick,
     onNoteContextMenu,
@@ -1195,6 +1199,8 @@ const SectionGroupModern: React.FC<SectionGroupModernProps> = ({
                         showSidebarProgressIndicator={showSidebarProgressIndicator}
                         progressIndicatorMode={progressIndicatorMode}
                         progressRingDirection={progressRingDirection}
+                        filePathTooltipEnabled={filePathTooltipEnabled}
+                        filePathTooltipDelayMs={filePathTooltipDelayMs}
                         onClick={() => onNoteClick(item)}
                         onDoubleClick={() => _onNoteDoubleClick && _onNoteDoubleClick(item)}
                         onContextMenu={(e) => onNoteContextMenu(item, e)}
@@ -1217,6 +1223,8 @@ interface NoteItemModernProps {
     showSidebarProgressIndicator: boolean;
     progressIndicatorMode: SidebarProgressIndicatorMode;
     progressRingDirection: SidebarProgressRingDirection;
+    filePathTooltipEnabled: boolean;
+    filePathTooltipDelayMs: number;
     onClick: () => void;
     onDoubleClick?: () => void;
     onContextMenu: (event: MouseEvent) => void;
@@ -1229,6 +1237,8 @@ const SIDEBAR_PROGRESS_RING_STROKE_WIDTH = 2;
 const SIDEBAR_PROGRESS_RING_RADIUS =
     (SIDEBAR_PROGRESS_RING_SIZE - SIDEBAR_PROGRESS_RING_STROKE_WIDTH) / 2;
 const SIDEBAR_PROGRESS_RING_CENTER = SIDEBAR_PROGRESS_RING_SIZE / 2;
+const NOTE_PATH_TOOLTIP_ARROW_SIZE = 8;
+const NOTE_PATH_TOOLTIP_ARROW_PADDING = 12;
 
 function normalizeSidebarProgressPercentage(percentage?: number): number {
     return typeof percentage === "number" && Number.isFinite(percentage)
@@ -1326,6 +1336,113 @@ const SidebarProgressIndicator: React.FC<{
     );
 };
 
+interface NotePathTooltipPosition {
+    top: number;
+    left: number;
+    maxWidth: number;
+    arrowLeft: number;
+    placement: "above" | "below";
+}
+
+const NotePathTooltip: React.FC<{
+    anchorEl: HTMLElement | null;
+    path: string;
+    visible: boolean;
+}> = ({ anchorEl, path, visible }) => {
+    const tooltipRef = useRef<HTMLDivElement>(null);
+    const [position, setPosition] = useState<NotePathTooltipPosition | null>(null);
+
+    const updatePosition = useCallback(() => {
+        if (!anchorEl || !tooltipRef.current) {
+            return;
+        }
+
+        const rect = anchorEl.getBoundingClientRect();
+        const tooltipEl = tooltipRef.current;
+        const viewportPadding = 12;
+        const gap = 10;
+        const maxWidth = Math.max(220, Math.min(520, window.innerWidth - viewportPadding * 2));
+        const tooltipHeight = tooltipEl.offsetHeight;
+        const tooltipWidth = Math.min(tooltipEl.offsetWidth || maxWidth, maxWidth);
+        const anchorCenterX = rect.left + rect.width / 2;
+        const left = Math.min(
+            Math.max(rect.left + 12, viewportPadding),
+            window.innerWidth - viewportPadding - tooltipWidth,
+        );
+        const minArrowLeft = NOTE_PATH_TOOLTIP_ARROW_PADDING;
+        const maxArrowLeft = Math.max(
+            minArrowLeft,
+            tooltipWidth - NOTE_PATH_TOOLTIP_ARROW_PADDING - NOTE_PATH_TOOLTIP_ARROW_SIZE,
+        );
+        const arrowLeft = Math.min(
+            Math.max(
+                anchorCenterX - left - NOTE_PATH_TOOLTIP_ARROW_SIZE / 2,
+                minArrowLeft,
+            ),
+            maxArrowLeft,
+        );
+        const aboveTop = rect.top - tooltipHeight - gap;
+        const belowTop = rect.bottom + gap;
+        const placeAbove =
+            aboveTop >= viewportPadding || belowTop + tooltipHeight > window.innerHeight - viewportPadding;
+        const top = placeAbove
+            ? Math.max(viewportPadding, aboveTop)
+            : Math.min(window.innerHeight - viewportPadding - tooltipHeight, belowTop);
+
+        setPosition({
+            top,
+            left,
+            maxWidth,
+            arrowLeft,
+            placement: placeAbove ? "above" : "below",
+        });
+    }, [anchorEl]);
+
+    useLayoutEffect(() => {
+        if (!visible || !anchorEl) {
+            setPosition(null);
+            return;
+        }
+
+        const syncPosition = () => {
+            window.requestAnimationFrame(updatePosition);
+        };
+
+        syncPosition();
+        window.addEventListener("resize", syncPosition);
+        window.addEventListener("scroll", syncPosition, true);
+
+        return () => {
+            window.removeEventListener("resize", syncPosition);
+            window.removeEventListener("scroll", syncPosition, true);
+        };
+    }, [anchorEl, updatePosition, visible]);
+
+    if (!visible || !anchorEl || !path) {
+        return null;
+    }
+
+    return createPortal(
+        <div
+            ref={tooltipRef}
+            className={`sr-note-path-tooltip ${position?.placement === "below" ? "is-below" : "is-above"}`}
+            role="tooltip"
+            style={{
+                top: position ? `${position.top}px` : "0px",
+                left: position ? `${position.left}px` : "0px",
+                maxWidth: position ? `${position.maxWidth}px` : undefined,
+                opacity: position ? 1 : 0,
+                ["--sr-note-path-tooltip-arrow-left" as string]: position
+                    ? `${position.arrowLeft}px`
+                    : undefined,
+            }}
+        >
+            {path}
+        </div>,
+        document.body,
+    );
+};
+
 const NoteItemModern: React.FC<NoteItemModernProps> = ({
     item,
     isActive,
@@ -1333,6 +1450,8 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
     showSidebarProgressIndicator,
     progressIndicatorMode,
     progressRingDirection,
+    filePathTooltipEnabled,
+    filePathTooltipDelayMs,
     onClick,
     onDoubleClick,
     onContextMenu,
@@ -1341,8 +1460,11 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
 }) => {
     const [isDragOver, setIsDragOver] = useState(false);
     const [isEditingPriority, setIsEditingPriority] = useState(false);
+    const [isPathTooltipVisible, setIsPathTooltipVisible] = useState(false);
     const [editValue, setEditValue] = useState(String(item.priority));
+    const itemRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const pathTooltipTimerRef = useRef<number | null>(null);
 
     // 过滤掉忽略的标签
     const visibleTags = useMemo(() => {
@@ -1419,59 +1541,147 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
         [savePriority],
     );
 
+    const clearPathTooltipTimer = useCallback(() => {
+        if (pathTooltipTimerRef.current !== null) {
+            window.clearTimeout(pathTooltipTimerRef.current);
+            pathTooltipTimerRef.current = null;
+        }
+    }, []);
+
+    const showPathTooltip = useCallback(() => {
+        if (!filePathTooltipEnabled || !item.path) {
+            return;
+        }
+
+        clearPathTooltipTimer();
+        setIsPathTooltipVisible(true);
+    }, [clearPathTooltipTimer, filePathTooltipEnabled, item.path]);
+
+    const hidePathTooltip = useCallback(() => {
+        clearPathTooltipTimer();
+        setIsPathTooltipVisible(false);
+    }, [clearPathTooltipTimer]);
+
+    const queuePathTooltip = useCallback(() => {
+        if (!filePathTooltipEnabled || !item.path) {
+            return;
+        }
+
+        clearPathTooltipTimer();
+        const delayMs = Math.max(0, filePathTooltipDelayMs);
+
+        if (delayMs === 0) {
+            setIsPathTooltipVisible(true);
+            return;
+        }
+
+        pathTooltipTimerRef.current = window.setTimeout(() => {
+            pathTooltipTimerRef.current = null;
+            setIsPathTooltipVisible(true);
+        }, delayMs);
+    }, [clearPathTooltipTimer, filePathTooltipDelayMs, filePathTooltipEnabled, item.path]);
+
+    const handleFocus = useCallback(
+        (e: React.FocusEvent<HTMLDivElement>) => {
+            if (e.target instanceof HTMLInputElement) {
+                return;
+            }
+
+            showPathTooltip();
+        },
+        [showPathTooltip],
+    );
+
+    const handleBlur = useCallback(
+        (e: React.FocusEvent<HTMLDivElement>) => {
+            const nextTarget = e.relatedTarget;
+            if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) {
+                return;
+            }
+
+            hidePathTooltip();
+        },
+        [hidePathTooltip],
+    );
+
+    useEffect(() => {
+        if (!filePathTooltipEnabled || !item.path) {
+            hidePathTooltip();
+        }
+    }, [filePathTooltipEnabled, hidePathTooltip, item.path]);
+
+    useEffect(() => {
+        return () => {
+            clearPathTooltipTimer();
+        };
+    }, [clearPathTooltipTimer]);
+
     return (
-        <div
-            className={`sr-new-item ${isActive ? "sr-new-item--active" : ""} ${isDragOver ? "sr-new-item--drag-over" : ""}`}
-            data-note-path={item.path}
-            title={item.path}
-            onClick={onClick}
-            onDoubleClick={onDoubleClick}
-            onContextMenu={handleContextMenu}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            tabIndex={0}
-        >
-            {/* Left: Priority Badge (可编辑) */}
+        <>
             <div
-                className={`sr-new-item-priority-box ${isEditingPriority ? "editing" : ""}`}
-                onClick={handlePriorityClick}
+                ref={itemRef}
+                className={`sr-new-item ${isActive ? "sr-new-item--active" : ""} ${isDragOver ? "sr-new-item--drag-over" : ""}`}
+                data-note-path={item.path}
+                onClick={onClick}
+                onDoubleClick={onDoubleClick}
+                onContextMenu={handleContextMenu}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onMouseEnter={queuePathTooltip}
+                onMouseLeave={hidePathTooltip}
+                onFocus={handleFocus}
+                onBlur={handleBlur}
+                tabIndex={0}
             >
-                {isEditingPriority ? (
-                    <input
-                        ref={inputRef}
-                        type="number"
-                        className="sr-priority-input"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={savePriority}
-                        onKeyDown={handlePriorityKeyDown}
-                        onClick={(e) => e.stopPropagation()}
-                    />
-                ) : (
-                    <span className="sr-new-item-priority-text">{item.priority}</span>
-                )}
-            </div>
-
-            {/* Right: Content */}
-            <div className="sr-new-item-content">
-                <div className="sr-new-item-title-row">
-                    <span className="sr-new-item-title">{item.title}</span>
+                {/* Left: Priority Badge (可编辑) */}
+                <div
+                    className={`sr-new-item-priority-box ${isEditingPriority ? "editing" : ""}`}
+                    onClick={handlePriorityClick}
+                >
+                    {isEditingPriority ? (
+                        <input
+                            ref={inputRef}
+                            type="number"
+                            className="sr-priority-input"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={savePriority}
+                            onKeyDown={handlePriorityKeyDown}
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    ) : (
+                        <span className="sr-new-item-priority-text">{item.priority}</span>
+                    )}
                 </div>
 
-                <div className="sr-new-item-meta-row">
-                    <SidebarProgressIndicator
-                        visible={showSidebarProgressIndicator}
-                        mode={progressIndicatorMode}
-                        percentage={item.lastScrollPercentage}
-                        direction={progressRingDirection}
-                    />
-                    <span className="sr-new-item-tag" title={displayTag || ""}>
-                        {displayTag || <span style={{ opacity: 0.3 }}>{t("SIDEBAR_NO_TAG")}</span>}
-                    </span>
+                {/* Right: Content */}
+                <div className="sr-new-item-content">
+                    <div className="sr-new-item-title-row">
+                        <span className="sr-new-item-title">{item.title}</span>
+                    </div>
+
+                    <div className="sr-new-item-meta-row">
+                        <SidebarProgressIndicator
+                            visible={showSidebarProgressIndicator}
+                            mode={progressIndicatorMode}
+                            percentage={item.lastScrollPercentage}
+                            direction={progressRingDirection}
+                        />
+                        <span className="sr-new-item-tag">
+                            {displayTag || (
+                                <span style={{ opacity: 0.3 }}>{t("SIDEBAR_NO_TAG")}</span>
+                            )}
+                        </span>
+                    </div>
                 </div>
             </div>
-        </div>
+            <NotePathTooltip
+                anchorEl={itemRef.current}
+                path={item.path}
+                visible={filePathTooltipEnabled && isPathTooltipVisible}
+            />
+        </>
     );
 };
 
@@ -1520,6 +1730,8 @@ interface NoteReviewSidebarProps {
     progressRingColor?: string;
     progressIndicatorMode?: SidebarProgressIndicatorMode;
     progressRingDirection?: SidebarProgressRingDirection;
+    filePathTooltipEnabled?: boolean;
+    filePathTooltipDelayMs?: number;
 }
 
 export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
@@ -1563,6 +1775,8 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     progressRingColor = "#a0b0a9",
     progressIndicatorMode = "ring",
     progressRingDirection = "counterclockwise",
+    filePathTooltipEnabled = true,
+    filePathTooltipDelayMs = 1000,
 }) => {
     const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
     const [currentHeight, setCurrentHeight] = useState(filterBarHeight);
@@ -1820,6 +2034,8 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                                 showSidebarProgressIndicator={showSidebarProgressIndicator}
                                 progressIndicatorMode={progressIndicatorMode}
                                 progressRingDirection={progressRingDirection}
+                                filePathTooltipEnabled={filePathTooltipEnabled}
+                                filePathTooltipDelayMs={filePathTooltipDelayMs}
                                 onNoteClick={handleNoteSingleClick}
                                 onNoteDoubleClick={handleNoteDoubleClick}
                                 onNoteContextMenu={onNoteContextMenu}

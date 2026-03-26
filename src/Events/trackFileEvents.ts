@@ -1,7 +1,6 @@
 import { Menu, TAbstractFile, TFile, TFolder, debounce } from "obsidian";
 import { t } from "src/lang/helpers";
 import SRPlugin from "src/main";
-import { Tags } from "src/tags";
 import { FolderTrackingSettingsModal } from "src/ui/modals/FolderTrackingSettingsModal";
 
 export function registerTrackFileEvents(plugin: SRPlugin) {
@@ -79,11 +78,9 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
             }
 
             const folderRuleChanged = await plugin.ensureFolderTrackingForFile(file);
-            const noteDeckName = Tags.getNoteDeckName(file, plugin.data.settings);
             const shouldRefreshNote =
                 folderRuleChanged ||
                 plugin.noteReviewStore.isTracked(file.path) ||
-                noteDeckName !== null ||
                 plugin.getResolvedFolderTrackingRule(file.path)?.rule.track === true;
 
             if (shouldRefreshNote) {
@@ -127,10 +124,8 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
             if (file.extension !== "md") return;
 
             const trackedFile = plugin.store.getTrackedFile(file.path);
-            const noteDeckName = Tags.getNoteDeckName(file, plugin.data.settings);
             const shouldRefreshNote =
                 plugin.noteReviewStore.isTracked(file.path) ||
-                noteDeckName !== null ||
                 plugin.getResolvedFolderTrackingRule(file.path)?.rule.track === true;
 
             if (plugin.store.isTrackedCardfile(file.path) && trackedFile) {

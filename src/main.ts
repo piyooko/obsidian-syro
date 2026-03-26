@@ -1665,11 +1665,6 @@ export default class SRPlugin extends Plugin {
     private resolveNoteReviewTracking(
         note: TFile,
     ): { deckName: string; source: NoteReviewSource } | null {
-        const tagDeckName = Tags.getNoteDeckName(note, this.data.settings);
-        if (tagDeckName !== null) {
-            return { deckName: tagDeckName, source: "tag" };
-        }
-
         const existing = this.noteReviewStore.getEntry(note.path);
         if (existing?.source === "manual") {
             return { deckName: existing.deckName ?? DEFAULT_DECKNAME, source: "manual" };
@@ -1690,21 +1685,16 @@ export default class SRPlugin extends Plugin {
             };
         }
 
-        if (existing?.source === "tag" && this.data.settings.untrackWithReviewTag === false) {
-            return { deckName: existing.deckName ?? DEFAULT_DECKNAME, source: "tag" };
-        }
-
         return null;
     }
 
     public async trackNoteFromMenu(file: TFile): Promise<void> {
         this.clearFolderTrackingExclusion(file.path);
 
-        const deckName = Tags.getNoteDeckName(file, this.data.settings);
         this.noteReviewStore.ensureTracked(
             file.path,
-            deckName ?? DEFAULT_DECKNAME,
-            deckName ? "tag" : "manual",
+            DEFAULT_DECKNAME,
+            "manual",
             this.noteAlgorithm,
         );
         await this.noteReviewStore.save();
@@ -1712,9 +1702,8 @@ export default class SRPlugin extends Plugin {
     }
 
     public async untrackNoteFromMenu(file: TFile): Promise<void> {
-        const tagDeckName = Tags.getNoteDeckName(file, this.data.settings);
         const resolvedRule = this.getResolvedFolderTrackingRule(file.path);
-        if (tagDeckName === null && resolvedRule?.rule.track === true) {
+        if (resolvedRule?.rule.track === true) {
             this.excludeNoteFromFolderTracking(file.path);
         }
 

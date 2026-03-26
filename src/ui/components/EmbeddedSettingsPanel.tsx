@@ -1059,129 +1059,175 @@ const AlgoTab: React.FC<TabProps> = ({ settings, onChange }) => {
 // ==========================================
 // 子页面：Notes
 // ==========================================
-const NotesTab: React.FC<TabProps> = ({ settings, onChange }) => (
-    <div className="sr-settings-sections">
-        <Section title={t("NOTES")}>
-            <ToggleRow
-                label={t("REVIEW_PANE_ON_STARTUP")}
-                value={settings.enableNoteReviewPaneOnStartup}
-                onChange={(v) => onChange("enableNoteReviewPaneOnStartup", v)}
-            />
-        </Section>
-        <Section title={t("SETTINGS_SECTION_IGNORED_TAGS")}>
-            <TextAreaRow
-                label={t("SETTINGS_SECTION_IGNORED_TAGS")}
-                desc={t("SETTINGS_IGNORED_TAGS_DESC")}
-                value={settings.sidebarIgnoredTags.map((t) => `#${t}`).join("\n")}
-                onChange={(v) =>
-                    onChange(
-                        "sidebarIgnoredTags",
-                        v
-                            .split("\n")
-                            .map((t) => t.trim().replace(/^#/, ""))
-                            .filter(Boolean),
-                    )
-                }
-            />
-        </Section>
-        <Section title={t("SETTINGS_SECTION_SIDEBAR")}>
-            <ToggleRow
-                label={t("SETTINGS_HIDE_FILTER_BAR")}
-                desc={t("SETTINGS_HIDE_FILTER_BAR_DESC")}
-                value={settings.hideNoteReviewSidebarFilters}
-                onChange={(v) => onChange("hideNoteReviewSidebarFilters", v)}
-            />
-            <ToggleRow
-                label={t("SETTINGS_SHOW_SIDEBAR_PROGRESS_INDICATOR")}
-                desc={t("SETTINGS_SHOW_SIDEBAR_PROGRESS_INDICATOR_DESC")}
-                value={settings.showSidebarProgressIndicator}
-                onChange={(v) => onChange("showSidebarProgressIndicator", v)}
-            />
-            <SelectRow
-                label={t("SETTINGS_SIDEBAR_PROGRESS_INDICATOR")}
-                desc={t("SETTINGS_SIDEBAR_PROGRESS_INDICATOR_DESC")}
-                value={settings.sidebarProgressIndicatorMode}
-                options={[
-                    {
-                        label: t("SETTINGS_SIDEBAR_PROGRESS_INDICATOR_RING"),
-                        value: "ring",
-                    },
-                    {
-                        label: t("SETTINGS_SIDEBAR_PROGRESS_INDICATOR_PERCENTAGE"),
-                        value: "percentage",
-                    },
-                ]}
-                onChange={(v) =>
-                    onChange(
-                        "sidebarProgressIndicatorMode",
-                        v as UISettingsState["sidebarProgressIndicatorMode"],
-                    )
-                }
-            />
-            {settings.showSidebarProgressIndicator && (
-                <>
-                    <ColorPickerRow
-                        label={t("SETTINGS_SIDEBAR_PROGRESS_RING_COLOR")}
-                        desc={t("SETTINGS_SIDEBAR_PROGRESS_RING_COLOR_DESC")}
-                        value={settings.sidebarProgressRingColor}
-                        onChange={(v) => onChange("sidebarProgressRingColor", v)}
-                    />
-                    {settings.sidebarProgressIndicatorMode === "ring" && (
-                        <SelectRow
-                            label={t("SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION")}
-                            desc={t("SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION_DESC")}
-                            value={settings.sidebarProgressRingDirection}
-                            options={[
-                                {
-                                    label: t("SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION_CLOCKWISE"),
-                                    value: "clockwise",
-                                },
-                                {
-                                    label: t(
-                                        "SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION_COUNTERCLOCKWISE",
-                                    ),
-                                    value: "counterclockwise",
-                                },
-                            ]}
-                            onChange={(v) =>
-                                onChange(
-                                    "sidebarProgressRingDirection",
-                                    v as UISettingsState["sidebarProgressRingDirection"],
-                                )
-                            }
+function normalizeSidebarFilePathTooltipDelayDraft(value: string, fallback = 1000): number {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return fallback;
+    }
+
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+        return fallback;
+    }
+
+    return Math.max(0, Math.round(parsed));
+}
+
+const NotesTab: React.FC<TabProps> = ({ settings, onChange }) => {
+    const [tooltipDelayDraft, setTooltipDelayDraft] = useState(
+        String(settings.sidebarFilePathTooltipDelayMs),
+    );
+
+    useEffect(() => {
+        setTooltipDelayDraft(String(settings.sidebarFilePathTooltipDelayMs));
+    }, [settings.sidebarFilePathTooltipDelayMs]);
+
+    const commitTooltipDelay = useCallback(() => {
+        const normalizedValue = normalizeSidebarFilePathTooltipDelayDraft(tooltipDelayDraft, 1000);
+        setTooltipDelayDraft(String(normalizedValue));
+        onChange("sidebarFilePathTooltipDelayMs", normalizedValue);
+    }, [onChange, tooltipDelayDraft]);
+
+    return (
+        <div className="sr-settings-sections">
+            <Section title={t("NOTES")}>
+                <ToggleRow
+                    label={t("REVIEW_PANE_ON_STARTUP")}
+                    value={settings.enableNoteReviewPaneOnStartup}
+                    onChange={(v) => onChange("enableNoteReviewPaneOnStartup", v)}
+                />
+            </Section>
+            <Section title={t("SETTINGS_SECTION_IGNORED_TAGS")}>
+                <TextAreaRow
+                    label={t("SETTINGS_SECTION_IGNORED_TAGS")}
+                    desc={t("SETTINGS_IGNORED_TAGS_DESC")}
+                    value={settings.sidebarIgnoredTags.map((t) => `#${t}`).join("\n")}
+                    onChange={(v) =>
+                        onChange(
+                            "sidebarIgnoredTags",
+                            v
+                                .split("\n")
+                                .map((t) => t.trim().replace(/^#/, ""))
+                                .filter(Boolean),
+                        )
+                    }
+                />
+            </Section>
+            <Section title={t("SETTINGS_SECTION_SIDEBAR")}>
+                <ToggleRow
+                    label={t("SETTINGS_HIDE_FILTER_BAR")}
+                    desc={t("SETTINGS_HIDE_FILTER_BAR_DESC")}
+                    value={settings.hideNoteReviewSidebarFilters}
+                    onChange={(v) => onChange("hideNoteReviewSidebarFilters", v)}
+                />
+                <ToggleRow
+                    label={t("SETTINGS_SHOW_SIDEBAR_PROGRESS_INDICATOR")}
+                    desc={t("SETTINGS_SHOW_SIDEBAR_PROGRESS_INDICATOR_DESC")}
+                    value={settings.showSidebarProgressIndicator}
+                    onChange={(v) => onChange("showSidebarProgressIndicator", v)}
+                />
+                <SelectRow
+                    label={t("SETTINGS_SIDEBAR_PROGRESS_INDICATOR")}
+                    desc={t("SETTINGS_SIDEBAR_PROGRESS_INDICATOR_DESC")}
+                    value={settings.sidebarProgressIndicatorMode}
+                    options={[
+                        {
+                            label: t("SETTINGS_SIDEBAR_PROGRESS_INDICATOR_RING"),
+                            value: "ring",
+                        },
+                        {
+                            label: t("SETTINGS_SIDEBAR_PROGRESS_INDICATOR_PERCENTAGE"),
+                            value: "percentage",
+                        },
+                    ]}
+                    onChange={(v) =>
+                        onChange(
+                            "sidebarProgressIndicatorMode",
+                            v as UISettingsState["sidebarProgressIndicatorMode"],
+                        )
+                    }
+                />
+                {settings.showSidebarProgressIndicator && (
+                    <>
+                        <ColorPickerRow
+                            label={t("SETTINGS_SIDEBAR_PROGRESS_RING_COLOR")}
+                            desc={t("SETTINGS_SIDEBAR_PROGRESS_RING_COLOR_DESC")}
+                            value={settings.sidebarProgressRingColor}
+                            onChange={(v) => onChange("sidebarProgressRingColor", v)}
                         />
-                    )}
-                </>
-            )}
-        </Section>
-        <Section title={t("SETTINGS_SECTION_TIMELINE")}>
-            <ToggleRow
-                label={t("SETTINGS_TIMELINE_SCROLL")}
-                desc={t("SETTINGS_TIMELINE_SCROLL_DESC")}
-                value={settings.showScrollPercentage}
-                onChange={(v) => onChange("showScrollPercentage", v)}
-            />
-            <ToggleRow
-                label={t("SETTINGS_TIMELINE_AUTO_EXPAND")}
-                desc={t("SETTINGS_TIMELINE_AUTO_EXPAND_DESC")}
-                value={settings.autoExpandTimeline}
-                onChange={(v) => onChange("autoExpandTimeline", v)}
-            />
-            <ToggleRow
-                label={t("SETTINGS_TIMELINE_AUTO_COMMIT_REVIEW")}
-                desc={t("SETTINGS_TIMELINE_AUTO_COMMIT_REVIEW_DESC")}
-                value={settings.timelineAutoCommitReviewSelection}
-                onChange={(v) => onChange("timelineAutoCommitReviewSelection", v)}
-            />
-            <ToggleRow
-                label={t("SETTINGS_TIMELINE_ENABLE_DURATION_PREFIX")}
-                desc={t("SETTINGS_TIMELINE_ENABLE_DURATION_PREFIX_DESC")}
-                value={settings.timelineEnableDurationPrefixSyntax}
-                onChange={(v) => onChange("timelineEnableDurationPrefixSyntax", v)}
-            />
-        </Section>
-    </div>
-);
+                        {settings.sidebarProgressIndicatorMode === "ring" && (
+                            <SelectRow
+                                label={t("SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION")}
+                                desc={t("SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION_DESC")}
+                                value={settings.sidebarProgressRingDirection}
+                                options={[
+                                    {
+                                        label: t(
+                                            "SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION_CLOCKWISE",
+                                        ),
+                                        value: "clockwise",
+                                    },
+                                    {
+                                        label: t(
+                                            "SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION_COUNTERCLOCKWISE",
+                                        ),
+                                        value: "counterclockwise",
+                                    },
+                                ]}
+                                onChange={(v) =>
+                                    onChange(
+                                        "sidebarProgressRingDirection",
+                                        v as UISettingsState["sidebarProgressRingDirection"],
+                                    )
+                                }
+                            />
+                        )}
+                    </>
+                )}
+                <ToggleRow
+                    label={t("SETTINGS_SIDEBAR_FILE_PATH_TOOLTIP")}
+                    desc={t("SETTINGS_SIDEBAR_FILE_PATH_TOOLTIP_DESC")}
+                    value={settings.sidebarFilePathTooltipEnabled}
+                    onChange={(v) => onChange("sidebarFilePathTooltipEnabled", v)}
+                />
+                <InputRow
+                    label={t("SETTINGS_SIDEBAR_FILE_PATH_TOOLTIP_DELAY")}
+                    desc={t("SETTINGS_SIDEBAR_FILE_PATH_TOOLTIP_DELAY_DESC")}
+                    type="number"
+                    value={tooltipDelayDraft}
+                    onChange={(v) => setTooltipDelayDraft(v)}
+                    onBlur={() => commitTooltipDelay()}
+                />
+            </Section>
+            <Section title={t("SETTINGS_SECTION_TIMELINE")}>
+                <ToggleRow
+                    label={t("SETTINGS_TIMELINE_SCROLL")}
+                    desc={t("SETTINGS_TIMELINE_SCROLL_DESC")}
+                    value={settings.showScrollPercentage}
+                    onChange={(v) => onChange("showScrollPercentage", v)}
+                />
+                <ToggleRow
+                    label={t("SETTINGS_TIMELINE_AUTO_EXPAND")}
+                    desc={t("SETTINGS_TIMELINE_AUTO_EXPAND_DESC")}
+                    value={settings.autoExpandTimeline}
+                    onChange={(v) => onChange("autoExpandTimeline", v)}
+                />
+                <ToggleRow
+                    label={t("SETTINGS_TIMELINE_AUTO_COMMIT_REVIEW")}
+                    desc={t("SETTINGS_TIMELINE_AUTO_COMMIT_REVIEW_DESC")}
+                    value={settings.timelineAutoCommitReviewSelection}
+                    onChange={(v) => onChange("timelineAutoCommitReviewSelection", v)}
+                />
+                <ToggleRow
+                    label={t("SETTINGS_TIMELINE_ENABLE_DURATION_PREFIX")}
+                    desc={t("SETTINGS_TIMELINE_ENABLE_DURATION_PREFIX_DESC")}
+                    value={settings.timelineEnableDurationPrefixSyntax}
+                    onChange={(v) => onChange("timelineEnableDurationPrefixSyntax", v)}
+                />
+            </Section>
+        </div>
+    );
+};
 
 const SyncTab: React.FC<TabProps> = ({ settings, onChange }) => (
     <div className="sr-settings-sections">

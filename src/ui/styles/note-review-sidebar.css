@@ -546,6 +546,47 @@
     color: var(--text-normal);
 }
 
+.sr-note-path-tooltip {
+    position: fixed;
+    z-index: 10000;
+    pointer-events: none;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--background-primary-alt, var(--background-primary));
+    border: 1px solid var(--background-modifier-border);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.45;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    box-sizing: border-box;
+    transition: opacity 0.12s ease;
+}
+
+.sr-note-path-tooltip::after {
+    content: "";
+    position: absolute;
+    left: var(--sr-note-path-tooltip-arrow-left, 18px);
+    width: 8px;
+    height: 8px;
+    background: inherit;
+}
+
+.sr-note-path-tooltip.is-above::after {
+    bottom: -5px;
+    border-right: 1px solid var(--background-modifier-border);
+    border-bottom: 1px solid var(--background-modifier-border);
+    transform: rotate(45deg);
+}
+
+.sr-note-path-tooltip.is-below::after {
+    top: -5px;
+    border-left: 1px solid var(--background-modifier-border);
+    border-top: 1px solid var(--background-modifier-border);
+    transform: rotate(45deg);
+}
+
 /* ==========================================
    颜色变体
    ========================================== */
@@ -654,7 +695,7 @@
 }
 
 .sr-timeline-sash:hover {
-    background: var(--interactive-accent);
+    background: var(--sr-timeline-accent);
 }
 
 .sr-timeline-sash-handle {
@@ -675,6 +716,11 @@
 
 /* 抽屉容器 */
 .sr-timeline-container {
+    --sr-timeline-accent: var(--interactive-accent);
+    --sr-timeline-accent-hover: var(
+        --interactive-accent-hover,
+        var(--interactive-accent)
+    );
     flex-shrink: 0;
     border-top: 1px solid var(--background-modifier-border);
     background: var(--background-secondary);
@@ -770,7 +816,7 @@
 }
 
 .sr-timeline-textarea-wrap:focus-within {
-    border-color: var(--interactive-accent);
+    border-color: var(--sr-timeline-accent);
 }
 
 .sr-timeline-editor-host {
@@ -833,11 +879,11 @@
 }
 
 .sr-timeline-commit-btn.active {
-    background: var(--interactive-accent);
+    background: var(--sr-timeline-accent);
 }
 
 .sr-timeline-commit-btn.active:hover {
-    background: var(--interactive-accent-hover);
+    background: var(--sr-timeline-accent-hover);
 }
 
 .sr-timeline-commit-btn.disabled {
@@ -895,7 +941,7 @@
 }
 
 .sr-timeline-entry.is-review-response .sr-timeline-dot {
-    border-color: var(--color-green, var(--interactive-accent));
+    border-color: var(--sr-timeline-accent);
 }
 
 /* 时间线圆点 */
@@ -907,7 +953,7 @@
     height: 10px;
     border-radius: 50%;
     background: var(--background-secondary);
-    border: 2px solid var(--interactive-accent);
+    border: 2px solid var(--sr-timeline-accent);
 }
 
 .sr-timeline-message {
@@ -984,11 +1030,11 @@
     align-self: flex-start;
     padding: 2px 8px;
     border-radius: var(--syro-sidebar-tag-pill-radius, 6px);
-    background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+    background: color-mix(in srgb, var(--sr-timeline-accent) 14%, transparent);
     color: var(--text-muted);
     font-size: 11px;
     line-height: 1.2;
-    border: 1px solid color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--sr-timeline-accent) 18%, transparent);
 }
 
 .sr-timeline-time {
@@ -1007,7 +1053,7 @@
 .sr-timeline-edit-textarea {
     width: 100%;
     background: var(--background-primary);
-    border: 1px solid var(--interactive-accent);
+    border: 1px solid var(--sr-timeline-accent);
     border-radius: 2px;
     box-sizing: border-box;
 }

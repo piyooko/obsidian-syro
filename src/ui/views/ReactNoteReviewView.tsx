@@ -227,6 +227,10 @@ export class ReactNoteReviewView extends ItemView {
                 progressRingColor: this.plugin.data.settings.sidebarProgressRingColor,
                 progressIndicatorMode: this.plugin.data.settings.sidebarProgressIndicatorMode,
                 progressRingDirection: this.plugin.data.settings.sidebarProgressRingDirection,
+                filePathTooltipEnabled:
+                    this.plugin.data.settings.sidebarFilePathTooltipEnabled ?? true,
+                filePathTooltipDelayMs:
+                    this.plugin.data.settings.sidebarFilePathTooltipDelayMs ?? 1000,
             }),
         );
     }

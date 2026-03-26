@@ -208,6 +208,8 @@ export interface SRSettings {
     sidebarProgressRingColor: string; // Review queue progress ring color
     sidebarProgressIndicatorMode: SidebarProgressIndicatorMode; // Review queue progress indicator mode
     sidebarProgressRingDirection: SidebarProgressRingDirection; // Review queue progress ring direction
+    sidebarFilePathTooltipEnabled: boolean; // Whether to show file path tooltips in the review queue sidebar
+    sidebarFilePathTooltipDelayMs: number; // Hover delay before showing sidebar file path tooltips
 
     // Status bar styling
     noteStatusBarColor: string; // Note due status bar color
@@ -362,6 +364,8 @@ export const DEFAULT_SETTINGS: SRSettings = {
     sidebarProgressRingColor: "#a0b0a9", // Default progress ring color
     sidebarProgressIndicatorMode: "ring",
     sidebarProgressRingDirection: "counterclockwise",
+    sidebarFilePathTooltipEnabled: true,
+    sidebarFilePathTooltipDelayMs: 1000,
 
     // Status bar defaults
     noteStatusBarColor: "#ff9900", // Default note color
@@ -542,6 +546,22 @@ export function upgradeSettings(settings: SRSettings) {
         settings.sidebarProgressRingDirection !== "counterclockwise"
     ) {
         settings.sidebarProgressRingDirection = "counterclockwise";
+    }
+
+    if (settings.sidebarFilePathTooltipEnabled === undefined) {
+        settings.sidebarFilePathTooltipEnabled = true;
+    }
+
+    if (
+        typeof settings.sidebarFilePathTooltipDelayMs !== "number" ||
+        !Number.isFinite(settings.sidebarFilePathTooltipDelayMs)
+    ) {
+        settings.sidebarFilePathTooltipDelayMs = 1000;
+    } else {
+        settings.sidebarFilePathTooltipDelayMs = Math.max(
+            0,
+            Math.round(settings.sidebarFilePathTooltipDelayMs),
+        );
     }
 
     if (settings.syncProgressDisplayMode === undefined) {

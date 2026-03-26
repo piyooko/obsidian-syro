@@ -72,4 +72,23 @@ describe("sync progress display defaults", () => {
             DEFAULT_SETTINGS.progressBarStyle.rightToLeft,
         );
     });
+
+    test("new installs enable sidebar file path tooltips with a 1000ms delay by default", () => {
+        expect(DEFAULT_SETTINGS.sidebarFilePathTooltipEnabled).toBe(true);
+        expect(DEFAULT_SETTINGS.sidebarFilePathTooltipDelayMs).toBe(1000);
+    });
+
+    test("settings UI normalizes sidebar file path tooltip delay to a non-negative integer", () => {
+        const merged = mergeUIStateToSettings(DEFAULT_SETTINGS, {
+            sidebarFilePathTooltipDelayMs: -12.6,
+        });
+
+        expect(merged.sidebarFilePathTooltipDelayMs).toBe(0);
+
+        const uiState = settingsToUIState({
+            ...DEFAULT_SETTINGS,
+            sidebarFilePathTooltipDelayMs: 999.8,
+        });
+        expect(uiState.sidebarFilePathTooltipDelayMs).toBe(1000);
+    });
 });

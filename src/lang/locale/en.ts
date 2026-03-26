@@ -876,6 +876,12 @@ export default normalizeSentenceCaseLocale({
         "Choose whether the progress ring grows clockwise from the top toward the right or counterclockwise toward the left.",
     SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION_CLOCKWISE: "Clockwise (Right)",
     SETTINGS_SIDEBAR_PROGRESS_RING_DIRECTION_COUNTERCLOCKWISE: "Counterclockwise (Left)",
+    SETTINGS_SIDEBAR_FILE_PATH_TOOLTIP: "Show File Path Tooltip",
+    SETTINGS_SIDEBAR_FILE_PATH_TOOLTIP_DESC:
+        "Show the note's vault-relative file path in a tooltip above the sidebar item.",
+    SETTINGS_SIDEBAR_FILE_PATH_TOOLTIP_DELAY: "File Path Tooltip Delay (ms)",
+    SETTINGS_SIDEBAR_FILE_PATH_TOOLTIP_DELAY_DESC:
+        "How long to hover before showing the file path tooltip. 0 shows it immediately.",
     SETTINGS_SECTION_TIMELINE: "Timeline",
     SETTINGS_TIMELINE_SCROLL: "Show Scroll Percentage",
     SETTINGS_TIMELINE_SCROLL_DESC: "Show reading progress percentage in timeline items.",
@@ -924,9 +930,6 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_RUNTIME_DEBUG_MESSAGES: "Debug Console Output",
     SETTINGS_RUNTIME_DEBUG_MESSAGES_DESC:
         "Show runtime debug logs in the developer console for sync flow, deck tree refreshes, and review session state changes.",
-    SETTINGS_ENABLE_CARD_TRACE: "Card-level Debug Trace (Dev)",
-    SETTINGS_ENABLE_CARD_TRACE_DESC:
-        "When enabled, captures lifecycle data for each card (from parsing to scheduling) to help debug data flow issues. Viewable in the Debug & Stats panel during review. (Recommended only for debugging)",
 
     // Phase 3
     SETTINGS_SECTION_SUPPORTER: "Supporter",
