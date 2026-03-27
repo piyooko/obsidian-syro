@@ -17,7 +17,7 @@
  */
 /** @jsxImportSource react */
 import { Notice } from "obsidian";
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { FileText, Layout, Shield, Cpu } from "lucide-react";
 import { t } from "src/lang/helpers";
 import {
@@ -33,6 +33,7 @@ import {
     SelectRow,
     ColorPickerRow,
     SliderRow,
+    ActionRow,
 } from "./common/SettingsComponents";
 
 // ==========================================
@@ -181,6 +182,52 @@ const TABS = [
     { id: "license", label: t("SETTINGS_TAB_LICENSE"), icon: <Shield size={16} /> },
 ];
 
+type TabId = (typeof TABS)[number]["id"];
+
+const TAB_IDS: TabId[] = TABS.map((tab) => tab.id);
+const TAB_HEADER_DRAG_THRESHOLD = 10;
+const TAB_CLICK_SUPPRESS_MS = 250;
+const CONTENT_SWIPE_ACTIVATION_THRESHOLD = 24;
+const CONTENT_SWIPE_SWITCH_THRESHOLD = 56;
+const CONTENT_SWIPE_RATIO = 1.2;
+const CONTENT_SWIPE_ANIMATION_MS = 220;
+const CONTENT_SWIPE_EDGE_RESISTANCE = 0.18;
+const CONTENT_SWIPE_EXCLUDED_SELECTOR =
+    'button, .checkbox-container, input[type="checkbox"], input[type="text"], input[type="number"], textarea, select, input[type="range"], input[type="color"]';
+
+function getAdjacentTabId(currentTab: TabId, direction: -1 | 1): TabId {
+    const currentIndex = TAB_IDS.indexOf(currentTab);
+    if (currentIndex === -1) {
+        return currentTab;
+    }
+
+    const nextIndex = currentIndex + direction;
+    if (nextIndex < 0 || nextIndex >= TAB_IDS.length) {
+        return currentTab;
+    }
+
+    return TAB_IDS[nextIndex];
+}
+
+function isSwipeGestureExcludedTarget(target: EventTarget | null): boolean {
+    return (
+        target instanceof Element &&
+        (target.closest(CONTENT_SWIPE_EXCLUDED_SELECTOR) !== null ||
+            target.closest(".sr-style-setting-header") !== null)
+    );
+}
+
+function isMobileSettingsLayout(): boolean {
+    if (typeof document === "undefined") {
+        return false;
+    }
+
+    return (
+        document.body.classList.contains("is-mobile") ||
+        document.documentElement.classList.contains("is-mobile")
+    );
+}
+
 // ==========================================
 // Props 接口
 // ==========================================
@@ -214,12 +261,33 @@ const getClozeContextModeDesc = (mode: string) => {
 // ==========================================
 interface TabHeaderProps {
     tabs: typeof TABS;
-    activeTab: string;
-    setActiveTab: (id: string) => void;
+    activeTab: TabId;
+    onTabSelect: (id: TabId) => void;
 }
 
-const TabHeader: React.FC<TabHeaderProps> = ({ tabs, activeTab, setActiveTab }) => {
+const TabHeader: React.FC<TabHeaderProps> = ({ tabs, activeTab, onTabSelect }) => {
     const scrollContainer = useRef<HTMLDivElement>(null);
+    const tabRefs = useRef<Partial<Record<TabId, HTMLDivElement | null>>>({});
+    const dragStateRef = useRef({
+        startX: 0,
+        startY: 0,
+        scrollLeft: 0,
+        isDragging: false,
+    });
+    const suppressClickUntilRef = useRef(0);
+
+    useEffect(() => {
+        const activeTabEl = tabRefs.current[activeTab];
+        if (!activeTabEl || typeof activeTabEl.scrollIntoView !== "function") {
+            return;
+        }
+
+        activeTabEl.scrollIntoView({
+            behavior: "smooth",
+            block: "nearest",
+            inline: "center",
+        });
+    }, [activeTab]);
 
     const handleScroll = (e: React.WheelEvent) => {
         if (scrollContainer.current) {
@@ -227,8 +295,73 @@ const TabHeader: React.FC<TabHeaderProps> = ({ tabs, activeTab, setActiveTab }) 
         }
     };
 
+    const handleTouchStart = (e: React.TouchEvent<HTMLElement>) => {
+        if (e.touches.length !== 1 || !scrollContainer.current) {
+            return;
+        }
+
+        const touch = e.touches[0];
+        dragStateRef.current = {
+            startX: touch.clientX,
+            startY: touch.clientY,
+            scrollLeft: scrollContainer.current.scrollLeft,
+            isDragging: false,
+        };
+    };
+
+    const handleTouchMove = (e: React.TouchEvent<HTMLElement>) => {
+        if (e.touches.length !== 1 || !scrollContainer.current) {
+            return;
+        }
+
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - dragStateRef.current.startX;
+        const deltaY = touch.clientY - dragStateRef.current.startY;
+        const absDeltaX = Math.abs(deltaX);
+        const absDeltaY = Math.abs(deltaY);
+
+        if (
+            !dragStateRef.current.isDragging &&
+            absDeltaX > TAB_HEADER_DRAG_THRESHOLD &&
+            absDeltaX > absDeltaY
+        ) {
+            dragStateRef.current.isDragging = true;
+        }
+
+        if (!dragStateRef.current.isDragging) {
+            return;
+        }
+
+        scrollContainer.current.scrollLeft = dragStateRef.current.scrollLeft - deltaX;
+        e.preventDefault();
+    };
+
+    const finishTouchDrag = () => {
+        if (dragStateRef.current.isDragging) {
+            suppressClickUntilRef.current = Date.now() + TAB_CLICK_SUPPRESS_MS;
+        }
+
+        dragStateRef.current.isDragging = false;
+    };
+
+    const handleTabClick = (id: TabId) => {
+        if (Date.now() < suppressClickUntilRef.current) {
+            return;
+        }
+
+        onTabSelect(id);
+    };
+
     return (
-        <nav className="sr-style-setting-header" onWheel={handleScroll} ref={scrollContainer}>
+        <nav
+            className="sr-style-setting-header"
+            onWheel={handleScroll}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={finishTouchDrag}
+            onTouchCancel={finishTouchDrag}
+            ref={scrollContainer}
+        >
             <div className="sr-style-setting-tab-group">
                 {tabs.map((tab) => {
                     const isActive = activeTab === tab.id;
@@ -236,7 +369,10 @@ const TabHeader: React.FC<TabHeaderProps> = ({ tabs, activeTab, setActiveTab }) 
                         <div
                             key={tab.id}
                             className={`sr-style-tab ${isActive ? "sr-style-tab-active" : ""}`}
-                            onClick={() => setActiveTab(tab.id)}
+                            onClick={() => handleTabClick(tab.id)}
+                            ref={(element) => {
+                                tabRefs.current[tab.id] = element;
+                            }}
                         >
                             <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                                 {tab.icon}
@@ -333,12 +469,7 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
                     }
                 />
                 {settings.parseClozesInCodeBlocks && (
-                    <div
-                        style={{
-                            paddingLeft: "20px",
-                            borderLeft: "2px solid var(--background-modifier-border)",
-                        }}
-                    >
+                    <div className="sr-setting-subgroup">
                         <SliderRow
                             label={t("SETTINGS_CODE_CONTEXT_LINES")}
                             desc={t("SETTINGS_CODE_CONTEXT_LINES_DESC")}
@@ -376,12 +507,7 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
                     onChange={(v) => onChange("clozeContextPerformanceMode", v)}
                 />
                 {settings.clozeContextPerformanceMode === "safe-trim" && (
-                    <div
-                        style={{
-                            paddingLeft: "20px",
-                            borderLeft: "2px solid var(--background-modifier-border)",
-                        }}
-                    >
+                    <div className="sr-setting-subgroup">
                         <SliderRow
                             label={t("SETTINGS_CLOZE_CONTEXT_SOFT_LIMIT")}
                             desc={t("SETTINGS_CLOZE_CONTEXT_SOFT_LIMIT_DESC")}
@@ -450,6 +576,7 @@ const AlgoTab: React.FC<TabProps> = ({ settings, onChange }) => {
     // --- 模拟器状态 ---
     const [simInterval, setSimInterval] = useState(10); // 假设当前间隔 10 天
     const [simPriority, setSimPriority] = useState(3); // 假设优先级 3 (较重要)
+    const isMobileLayout = isMobileSettingsLayout();
     const [activeParam, setActiveParam] = useState<string | null>(null);
 
     // --- 实时计算逻辑 ---
@@ -506,154 +633,115 @@ const AlgoTab: React.FC<TabProps> = ({ settings, onChange }) => {
             <Section title={t("WMS_ALGORITHM")}>
                 <div style={{ padding: "0 4px" }}>
                     {/* --- 模拟器与公式容器 --- */}
-                    <div
-                        style={{
-                            backgroundColor: "var(--background-primary-alt)",
-                            border: "1px solid var(--background-modifier-border)",
-                            borderRadius: "8px",
-                            marginBottom: "24px",
-                            overflow: "hidden",
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-                        }}
-                    >
-                        {/* A. 模拟器控制栏 (Header) */}
-                        <div
-                            style={{
-                                backgroundColor: "var(--background-secondary)",
-                                borderBottom: "1px solid var(--background-modifier-border)",
-                                padding: "10px 16px",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "20px",
-                                fontSize: "0.85em",
-                                flexWrap: "wrap",
-                            }}
-                        >
-                            <div
-                                style={{
-                                    fontWeight: "bold",
-                                    color: "var(--text-normal)",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "6px",
-                                }}
-                            >
-                                {t("WMS_SIMULATOR_TITLE")}
-                            </div>
-
-                            {/* 分隔线 */}
-                            <div
-                                style={{
-                                    width: "1px",
-                                    height: "16px",
-                                    background: "var(--background-modifier-border)",
-                                }}
-                            ></div>
-
-                            {/* 控制输入容器：右对齐以便与下方数字对齐 */}
-                            <div
-                                style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "20px",
-                                    marginLeft: "auto",
-                                }}
-                            >
-                                {/* 控制输入: 假设当前间隔 */}
-                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                    <span style={{ color: "var(--text-muted)" }}>
-                                        {t("WMS_SIM_CURR_INTERVAL")}
-                                    </span>
-                                    <input
-                                        type="number"
-                                        value={simInterval}
-                                        onChange={(e) =>
-                                            setSimInterval(
-                                                Math.max(1, parseInt(e.target.value) || 1),
-                                            )
-                                        }
-                                        onFocus={() => setActiveParam("simInterval")}
-                                        onBlur={() => setActiveParam(null)}
-                                        style={{
-                                            width: "50px",
-                                            padding: "2px 4px",
-                                            textAlign: "center",
-                                            background: "var(--background-primary)",
-                                        }}
-                                    />
-                                    <span style={{ color: "var(--text-muted)" }}>d</span>
+                    {!isMobileLayout && (
+                        <div className="sr-wms-simulator">
+                            {/* A. 模拟器控制栏 (Header) */}
+                            <div className="sr-wms-simulator__toolbar">
+                                <div className="sr-wms-simulator__title">
+                                    {t("WMS_SIMULATOR_TITLE")}
                                 </div>
 
-                                {/* 控制输入: 假设优先级 */}
-                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                    <span style={{ color: "var(--text-muted)" }}>
-                                        {t("WMS_SIM_PRIORITY")}
-                                    </span>
-                                    <input
-                                        type="range"
-                                        min="1"
-                                        max="10"
-                                        value={simPriority}
-                                        onChange={(e) => setSimPriority(parseInt(e.target.value))}
-                                        onFocus={() => setActiveParam("simPriority")}
-                                        onBlur={() => setActiveParam(null)}
-                                        style={{ width: "80px", height: "4px" }}
-                                    />
-                                    <span style={{ minWidth: "1.2em" }}>{simPriority}</span>
+                                {/* 分隔线 */}
+                                <div className="sr-wms-simulator__divider" aria-hidden="true"></div>
+
+                                {/* 控制输入容器：右对齐以便与下方数字对齐 */}
+                                <div className="sr-wms-simulator__controls">
+                                    {/* 控制输入: 假设当前间隔 */}
+                                    <div className="sr-wms-simulator__control-group">
+                                        <span style={{ color: "var(--text-muted)" }}>
+                                            {t("WMS_SIM_CURR_INTERVAL")}
+                                        </span>
+                                        <input
+                                            type="number"
+                                            className="sr-input-compact"
+                                            value={simInterval}
+                                            onChange={(e) =>
+                                                setSimInterval(
+                                                    Math.max(1, parseInt(e.target.value) || 1),
+                                                )
+                                            }
+                                            onFocus={() => setActiveParam("simInterval")}
+                                            onBlur={() => setActiveParam(null)}
+                                        />
+                                        <span style={{ color: "var(--text-muted)" }}>d</span>
+                                    </div>
+
+                                    {/* 控制输入: 假设优先级 */}
+                                    <div className="sr-wms-simulator__control-group">
+                                        <span style={{ color: "var(--text-muted)" }}>
+                                            {t("WMS_SIM_PRIORITY")}
+                                        </span>
+                                        <input
+                                            type="range"
+                                            min="1"
+                                            max="10"
+                                            value={simPriority}
+                                            onChange={(e) =>
+                                                setSimPriority(parseInt(e.target.value) || 1)
+                                            }
+                                            onFocus={() => setActiveParam("simPriority")}
+                                            onBlur={() => setActiveParam(null)}
+                                            style={{ width: "80px", height: "4px" }}
+                                        />
+                                        <span style={{ minWidth: "1.2em" }}>{simPriority}</span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* B. 动态公式 + 结果展示区 */}
-                        <div style={{ padding: "20px", position: "relative" }}>
-                            <div
-                                style={{ display: "grid", gridTemplateColumns: "1fr", gap: "14px" }}
-                            >
-                                {/* Row: Again */}
+                            {/* B. 动态公式 + 结果展示区 */}
+                            <div style={{ padding: "20px", position: "relative" }}>
                                 <div
                                     style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "space-between",
+                                        display: "grid",
+                                        gridTemplateColumns: "1fr",
+                                        gap: "14px",
                                     }}
                                 >
+                                    {/* Row: Again */}
                                     <div
                                         style={{
                                             display: "flex",
                                             alignItems: "center",
-                                            gap: "12px",
+                                            justifyContent: "space-between",
                                         }}
                                     >
                                         <div
                                             style={{
-                                                color: "var(--text-muted)",
-                                                fontWeight: "600",
-                                                width: "50px",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: "12px",
                                             }}
                                         >
-                                            {t("AGAIN")}
+                                            <div
+                                                style={{
+                                                    color: "var(--text-muted)",
+                                                    fontWeight: "600",
+                                                    width: "50px",
+                                                }}
+                                            >
+                                                {t("AGAIN")}
+                                            </div>
+                                            <MathText>
+                                                <MVar>I</MVar>
+                                                <sub>next</sub> ={" "}
+                                                <MNum highlight={activeParam === "wmsAgainInterval"}>
+                                                    {settings.wmsAgainInterval || 1}
+                                                </MNum>{" "}
+                                                <MFunc>d</MFunc>
+                                            </MathText>
                                         </div>
-                                        <MathText>
-                                            <MVar>I</MVar>
-                                            <sub>next</sub> ={" "}
-                                            <MNum highlight={activeParam === "wmsAgainInterval"}>
-                                                {settings.wmsAgainInterval || 1}
-                                            </MNum>{" "}
-                                            <MFunc>d</MFunc>
-                                        </MathText>
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                opacity: 0.9,
+                                            }}
+                                        >
+                                            <span style={{ color: "var(--color-red)" }}>
+                                                {resAgain} d
+                                            </span>
+                                        </div>
                                     </div>
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            opacity: 0.9,
-                                        }}
-                                    >
-                                        <span style={{ color: "var(--color-red)" }}>
-                                            {resAgain} d
-                                        </span>
-                                    </div>
-                                </div>
 
                                 {/* Row: Hard */}
                                 <div
@@ -873,8 +961,9 @@ const AlgoTab: React.FC<TabProps> = ({ settings, onChange }) => {
                                     = {fImp.toFixed(2)}x
                                 </span>
                             </div>
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     <div style={{ padding: "0 20px" }}>
                         {/* 参数控制面板 (保持 Grid 布局不变) */}
@@ -1438,76 +1527,51 @@ const LicenseTab: React.FC<LicenseTabProps> = ({ settings, onChange }) => {
     return (
         <div className="sr-settings-sections">
             {/* 状态卡片 */}
-            <div className="sr-settings-support-card" style={{ textAlign: "center" }}>
-                <p style={{ opacity: 0.7, fontSize: "0.85em", whiteSpace: "pre-line" }}>
-                    {settings.isPro
-                        ? t("SETTINGS_SUPPORTER_DESC_PRO")
-                        : t("SETTINGS_SUPPORTER_DESC_FREE")}
-                </p>
-            </div>
+            <p className="sr-settings-license-note">
+                {settings.isPro ? t("SETTINGS_SUPPORTER_DESC_PRO") : t("SETTINGS_SUPPORTER_DESC_FREE")}
+            </p>
 
             <Section title={t("SETTINGS_SECTION_LICENSE")}>
                 {!settings.isPro ? (
                     <>
-                        <div className="setting-item">
-                            <div className="setting-item-info">
-                                <div className="setting-item-name">{t("SETTINGS_LICENSE_KEY")}</div>
-                                <div className="setting-item-description">
-                                    {t("SETTINGS_LICENSE_KEY_DESC")}
-                                </div>
-                            </div>
-                            <div className="setting-item-control">
-                                <input
-                                    type="text"
-                                    value={inputKey}
-                                    onChange={(e) => setInputKey(e.target.value)}
-                                    placeholder={t("SETTINGS_LICENSE_PLACEHOLDER")}
-                                    style={{ width: "220px" }}
-                                    disabled={loading}
-                                />
-                            </div>
-                        </div>
-                        <div className="setting-item">
-                            <div className="setting-item-info">
-                                <div className="setting-item-name">{t("SETTINGS_VERIFY")}</div>
-                                <div className="setting-item-description">
-                                    {t("SETTINGS_VERIFY_DESC")}
-                                </div>
-                            </div>
-                            <div className="setting-item-control">
-                                <button
-                                    onClick={() => {
-                                        void handleActivate();
-                                    }}
-                                    disabled={loading || !inputKey.trim()}
-                                >
-                                    {loading
-                                        ? t("SETTINGS_BTN_VERIFYING")
-                                        : t("SETTINGS_BTN_ACTIVATE")}
-                                </button>
-                            </div>
-                        </div>
-                    </>
-                ) : (
-                    <div className="setting-item">
-                        <div className="setting-item-info">
-                            <div className="setting-item-name">
-                                {t("SETTINGS_DEACTIVATE_LICENSE")}
-                            </div>
-                            <div className="setting-item-description">
-                                {t("SETTINGS_DEACTIVATE_LICENSE_DESC")}
-                            </div>
-                        </div>
-                        <div className="setting-item-control">
+                        <InputRow
+                            label={t("SETTINGS_LICENSE_KEY")}
+                            desc={t("SETTINGS_LICENSE_KEY_DESC")}
+                            value={inputKey}
+                            onChange={setInputKey}
+                            inputClassName="sr-license-key-input"
+                            placeholder={t("SETTINGS_LICENSE_PLACEHOLDER")}
+                            disabled={loading}
+                        />
+                        <ActionRow
+                            label={t("SETTINGS_VERIFY")}
+                            desc={t("SETTINGS_VERIFY_DESC")}
+                        >
                             <button
                                 onClick={() => {
-                                    void handleDeactivate();
+                                    void handleActivate();
                                 }}
+                                disabled={loading || !inputKey.trim()}
                             >
-                                {t("SETTINGS_BTN_DEACTIVATE")}
+                                {loading
+                                    ? t("SETTINGS_BTN_VERIFYING")
+                                    : t("SETTINGS_BTN_ACTIVATE")}
                             </button>
-                        </div>
-                    </div>
+                        </ActionRow>
+                    </>
+                ) : (
+                    <ActionRow
+                        label={t("SETTINGS_DEACTIVATE_LICENSE")}
+                        desc={t("SETTINGS_DEACTIVATE_LICENSE_DESC")}
+                    >
+                        <button
+                            onClick={() => {
+                                void handleDeactivate();
+                            }}
+                        >
+                            {t("SETTINGS_BTN_DEACTIVATE")}
+                        </button>
+                    </ActionRow>
                 )}
             </Section>
 
@@ -1538,13 +1602,29 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
     onSettingsChange,
     version: _version = "0.0.1",
 }) => {
-    const [activeTab, setActiveTab] = useState("flashcards");
+    const [activeTab, setActiveTab] = useState<TabId>("flashcards");
+    const [headerActiveTab, setHeaderActiveTab] = useState<TabId>("flashcards");
     const [settings, setSettings] = useState<UISettingsState>(initialSettings);
+    const [isSwipeAnimating, setIsSwipeAnimating] = useState(false);
+    const contentViewportRef = useRef<HTMLDivElement>(null);
+    const contentTrackRef = useRef<HTMLDivElement>(null);
+    const currentContentScrollRef = useRef<HTMLDivElement>(null);
+    const contentSwipeAnimationTimerRef = useRef<number | null>(null);
+    const contentSwipeStateRef = useRef({
+        startX: 0,
+        startY: 0,
+        excluded: false,
+        isSwiping: false,
+    });
 
     // 当设置变化时通知父组件
     useEffect(() => {
         onSettingsChange(settings);
     }, [settings, onSettingsChange]);
+
+    useEffect(() => {
+        setHeaderActiveTab(activeTab);
+    }, [activeTab]);
 
     const handleChange = useCallback(
         <K extends keyof UISettingsState>(key: K, value: UISettingsState[K]) => {
@@ -1553,23 +1633,310 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
         [],
     );
 
+    const clearContentSwipeAnimationTimer = useCallback(() => {
+        if (contentSwipeAnimationTimerRef.current !== null) {
+            window.clearTimeout(contentSwipeAnimationTimerRef.current);
+            contentSwipeAnimationTimerRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => clearContentSwipeAnimationTimer, [clearContentSwipeAnimationTimer]);
+
+    const setContentTrackOffset = useCallback((offset: number) => {
+        if (!contentTrackRef.current) {
+            return;
+        }
+
+        contentTrackRef.current.style.setProperty("--sr-swipe-offset", `${offset}px`);
+    }, []);
+
+    const getContentWidth = useCallback(
+        () => Math.max(contentViewportRef.current?.clientWidth ?? 0, 320),
+        [],
+    );
+
+    const previousTab = getAdjacentTabId(activeTab, -1);
+    const nextTab = getAdjacentTabId(activeTab, 1);
+    const previousTabId = previousTab === activeTab ? null : previousTab;
+    const nextTabId = nextTab === activeTab ? null : nextTab;
+
+    const resetSwipePresentation = useCallback(() => {
+        setIsSwipeAnimating(false);
+        setContentTrackOffset(0);
+    }, [setContentTrackOffset]);
+
+    const animateSwipeTrack = useCallback(
+        (offset: number, onComplete: () => void) => {
+            clearContentSwipeAnimationTimer();
+            setIsSwipeAnimating(true);
+            setContentTrackOffset(offset);
+            contentSwipeAnimationTimerRef.current = window.setTimeout(() => {
+                contentSwipeAnimationTimerRef.current = null;
+                onComplete();
+            }, CONTENT_SWIPE_ANIMATION_MS);
+        },
+        [clearContentSwipeAnimationTimer, setContentTrackOffset],
+    );
+
+    const renderTabContent = useCallback(
+        (tabId: TabId) => {
+            switch (tabId) {
+                case "flashcards":
+                    return <FlashcardsTab settings={settings} onChange={handleChange} />;
+                case "notes":
+                    return <NotesTab settings={settings} onChange={handleChange} />;
+                case "algo":
+                    return <AlgoTab settings={settings} onChange={handleChange} />;
+                case "ui":
+                    return <UITab settings={settings} onChange={handleChange} />;
+                case "sync":
+                    return <SyncTab settings={settings} onChange={handleChange} />;
+                case "license":
+                    return <LicenseTab settings={settings} onChange={handleChange} />;
+                default:
+                    return null;
+            }
+        },
+        [handleChange, settings],
+    );
+
+    useLayoutEffect(() => {
+        if (contentViewportRef.current) {
+            contentViewportRef.current.scrollTop = 0;
+            contentViewportRef.current.scrollLeft = 0;
+        }
+        currentContentScrollRef.current?.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
+        if (currentContentScrollRef.current) {
+            currentContentScrollRef.current.scrollTop = 0;
+            currentContentScrollRef.current.scrollLeft = 0;
+        }
+        resetSwipePresentation();
+    }, [activeTab, resetSwipePresentation]);
+
+    const resetContentSwipeState = useCallback(() => {
+        contentSwipeStateRef.current = {
+            startX: 0,
+            startY: 0,
+            excluded: false,
+            isSwiping: false,
+        };
+    }, []);
+
+    const handleTabSelect = useCallback(
+        (tabId: TabId) => {
+            clearContentSwipeAnimationTimer();
+            setHeaderActiveTab(tabId);
+            setActiveTab(tabId);
+            resetSwipePresentation();
+            resetContentSwipeState();
+        },
+        [
+            clearContentSwipeAnimationTimer,
+            resetContentSwipeState,
+            resetSwipePresentation,
+        ],
+    );
+
+    const handleContentTouchStart = useCallback(
+        (e: React.TouchEvent<HTMLDivElement>) => {
+            if (e.touches.length !== 1) {
+                resetContentSwipeState();
+                return;
+            }
+
+            clearContentSwipeAnimationTimer();
+            setIsSwipeAnimating(false);
+            setContentTrackOffset(0);
+            setHeaderActiveTab(activeTab);
+
+            const touch = e.touches[0];
+            contentSwipeStateRef.current = {
+                startX: touch.clientX,
+                startY: touch.clientY,
+                excluded: isSwipeGestureExcludedTarget(e.target),
+                isSwiping: false,
+            };
+        },
+        [
+            activeTab,
+            clearContentSwipeAnimationTimer,
+            resetContentSwipeState,
+            setContentTrackOffset,
+        ],
+    );
+
+    const handleContentTouchMove = useCallback(
+        (e: React.TouchEvent<HTMLDivElement>) => {
+            if (e.touches.length !== 1) {
+                return;
+            }
+
+            const swipeState = contentSwipeStateRef.current;
+            if (swipeState.excluded) {
+                return;
+            }
+
+            const touch = e.touches[0];
+            const deltaX = touch.clientX - swipeState.startX;
+            const deltaY = touch.clientY - swipeState.startY;
+            const absDeltaX = Math.abs(deltaX);
+            const absDeltaY = Math.abs(deltaY);
+
+            if (!swipeState.isSwiping) {
+                if (
+                    absDeltaX >= CONTENT_SWIPE_ACTIVATION_THRESHOLD &&
+                    absDeltaX > absDeltaY * CONTENT_SWIPE_RATIO
+                ) {
+                    swipeState.isSwiping = true;
+                } else if (absDeltaY > absDeltaX) {
+                    swipeState.excluded = true;
+                    return;
+                }
+            }
+
+            if (!swipeState.isSwiping) {
+                return;
+            }
+
+            const contentWidth = getContentWidth();
+            const hasTargetTab = deltaX < 0 ? nextTabId !== null : previousTabId !== null;
+            if (hasTargetTab) {
+                setContentTrackOffset(Math.max(-contentWidth, Math.min(contentWidth, deltaX)));
+            } else {
+                setContentTrackOffset(deltaX * CONTENT_SWIPE_EDGE_RESISTANCE);
+            }
+
+            e.preventDefault();
+        },
+        [getContentWidth, nextTabId, previousTabId, setContentTrackOffset],
+    );
+
+    const handleContentTouchEnd = useCallback(
+        (e: React.TouchEvent<HTMLDivElement>) => {
+            const swipeState = contentSwipeStateRef.current;
+            const touch = e.changedTouches[0];
+
+            if (!touch || swipeState.excluded) {
+                resetSwipePresentation();
+                resetContentSwipeState();
+                return;
+            }
+
+            const deltaX = touch.clientX - swipeState.startX;
+            const deltaY = touch.clientY - swipeState.startY;
+            const absDeltaX = Math.abs(deltaX);
+            const absDeltaY = Math.abs(deltaY);
+            const targetTabId = deltaX < 0 ? nextTabId : previousTabId;
+
+            if (
+                swipeState.isSwiping &&
+                targetTabId &&
+                absDeltaX >= CONTENT_SWIPE_SWITCH_THRESHOLD &&
+                absDeltaX > absDeltaY * CONTENT_SWIPE_RATIO
+            ) {
+                const finalOffset = deltaX < 0 ? -getContentWidth() : getContentWidth();
+                setHeaderActiveTab(targetTabId);
+                animateSwipeTrack(finalOffset, () => {
+                    setActiveTab(targetTabId);
+                });
+                e.preventDefault();
+            } else if (swipeState.isSwiping) {
+                animateSwipeTrack(0, resetSwipePresentation);
+            } else {
+                resetSwipePresentation();
+            }
+
+            resetContentSwipeState();
+        },
+        [
+            animateSwipeTrack,
+            getContentWidth,
+            nextTabId,
+            previousTabId,
+            resetContentSwipeState,
+            resetSwipePresentation,
+        ],
+    );
+
     return (
         <div className="sr-settings-panel">
             {/* Horizontal Header */}
-            <TabHeader tabs={TABS} activeTab={activeTab} setActiveTab={setActiveTab} />
+            <TabHeader tabs={TABS} activeTab={headerActiveTab} onTabSelect={handleTabSelect} />
 
             {/* Scrollable Content Area */}
-            <div className="sr-style-setting-content">
-                {activeTab === "flashcards" && (
-                    <FlashcardsTab settings={settings} onChange={handleChange} />
-                )}
-                {activeTab === "notes" && <NotesTab settings={settings} onChange={handleChange} />}
-                {activeTab === "algo" && <AlgoTab settings={settings} onChange={handleChange} />}
-                {activeTab === "ui" && <UITab settings={settings} onChange={handleChange} />}
-                {activeTab === "sync" && <SyncTab settings={settings} onChange={handleChange} />}
-                {activeTab === "license" && (
-                    <LicenseTab settings={settings} onChange={handleChange} />
-                )}
+            <div
+                className="sr-style-setting-content"
+                onTouchStart={handleContentTouchStart}
+                onTouchMove={handleContentTouchMove}
+                onTouchEnd={handleContentTouchEnd}
+                onTouchCancel={() => {
+                    resetSwipePresentation();
+                    resetContentSwipeState();
+                }}
+                ref={contentViewportRef}
+            >
+                <div
+                    className={`sr-style-setting-content-track ${
+                        isSwipeAnimating ? "is-swipe-transitioning" : ""
+                    }`}
+                    ref={contentTrackRef}
+                >
+                    <div
+                        className={`sr-style-setting-content-pane is-prev ${
+                            previousTabId ? "" : "is-placeholder"
+                        }`}
+                        data-pane-role="prev"
+                        data-tab-id={previousTabId ?? ""}
+                        aria-hidden="true"
+                    >
+                        <div className="sr-style-setting-content-pane-body">
+                            <div
+                                className="sr-style-setting-content-pane-scroll"
+                                key={`prev-${previousTabId ?? "placeholder"}`}
+                            >
+                                <div className="sr-style-setting-content-pane-inner">
+                                    {previousTabId ? renderTabContent(previousTabId) : null}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div
+                        className="sr-style-setting-content-pane is-current"
+                        data-pane-role="current"
+                        data-tab-id={activeTab}
+                    >
+                        <div className="sr-style-setting-content-pane-body">
+                            <div
+                                className="sr-style-setting-content-pane-scroll"
+                                key={`current-${activeTab}`}
+                                ref={currentContentScrollRef}
+                            >
+                                <div className="sr-style-setting-content-pane-inner">
+                                    {renderTabContent(activeTab)}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div
+                        className={`sr-style-setting-content-pane is-next ${
+                            nextTabId ? "" : "is-placeholder"
+                        }`}
+                        data-pane-role="next"
+                        data-tab-id={nextTabId ?? ""}
+                        aria-hidden="true"
+                    >
+                        <div className="sr-style-setting-content-pane-body">
+                            <div
+                                className="sr-style-setting-content-pane-scroll"
+                                key={`next-${nextTabId ?? "placeholder"}`}
+                            >
+                                <div className="sr-style-setting-content-pane-inner">
+                                    {nextTabId ? renderTabContent(nextTabId) : null}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     );

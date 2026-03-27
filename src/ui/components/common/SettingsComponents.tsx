@@ -11,6 +11,7 @@ interface BaseComponentProps {
     tooltip?: string;
     children: React.ReactNode;
     className?: string;
+    controlClassName?: string;
 }
 
 export const BaseComponent: React.FC<BaseComponentProps> = ({
@@ -19,13 +20,16 @@ export const BaseComponent: React.FC<BaseComponentProps> = ({
     tooltip,
     children,
     className = "",
+    controlClassName = "",
 }) => (
-    <div className={`setting-item ${className}`}>
+    <div className={["setting-item", className].filter(Boolean).join(" ")}>
         <div className="setting-item-info" title={tooltip}>
             <div className="setting-item-name">{label}</div>
             {desc && <div className="setting-item-description">{desc}</div>}
         </div>
-        <div className="setting-item-control">{children}</div>
+        <div className={["setting-item-control", controlClassName].filter(Boolean).join(" ")}>
+            {children}
+        </div>
     </div>
 );
 
@@ -39,8 +43,13 @@ interface SectionProps {
 
 // Keep layout styling in CSS so sections stay aligned with the Obsidian theme.
 export const Section: React.FC<SectionProps> = ({ title, children }) => (
-    <div className="sr-setting-section">
-        {title && <div className="setting-item-heading">{title}</div>}
+    <div className="setting-group sr-setting-section">
+        {title && (
+            <div className="setting-item setting-item-heading">
+                <div className="setting-item-name">{title}</div>
+                <div className="setting-item-control" />
+            </div>
+        )}
         <div className="setting-items">{children}</div>
     </div>
 );
@@ -58,12 +67,17 @@ interface ToggleRowProps {
 
 export const ToggleRow: React.FC<ToggleRowProps> = ({ label, desc, tooltip, value, onChange }) => (
     <BaseComponent label={label} desc={desc} tooltip={tooltip} className="mod-toggle">
-        <div
+        <label
             className={`checkbox-container ${value ? "is-enabled" : ""}`}
-            onClick={() => onChange(!value)}
+            tabIndex={0}
         >
-            <input type="checkbox" tabIndex={0} />
-        </div>
+            <input
+                type="checkbox"
+                tabIndex={0}
+                checked={value}
+                onChange={(e) => onChange(e.target.checked)}
+            />
+        </label>
     </BaseComponent>
 );
 
@@ -79,6 +93,10 @@ interface InputRowProps {
     onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
     onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
     type?: string;
+    className?: string;
+    inputClassName?: string;
+    placeholder?: string;
+    disabled?: boolean;
 }
 
 export const InputRow: React.FC<InputRowProps> = ({
@@ -90,14 +108,22 @@ export const InputRow: React.FC<InputRowProps> = ({
     onFocus,
     onBlur,
     type = "text",
+    className = "",
+    inputClassName = "",
+    placeholder,
+    disabled,
 }) => (
-    <BaseComponent label={label} desc={desc} tooltip={tooltip}>
+    <BaseComponent label={label} desc={desc} tooltip={tooltip} className={className}>
         <input
             type={type}
+            className={inputClassName}
+            spellCheck={type === "text" ? false : undefined}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onFocus={onFocus}
             onBlur={onBlur}
+            placeholder={placeholder}
+            disabled={disabled}
         />
     </BaseComponent>
 );
@@ -122,13 +148,8 @@ export const TextAreaRow: React.FC<TextAreaRowProps> = ({
     onChange,
     rows = 3,
 }) => (
-    <BaseComponent label={label} desc={desc} tooltip={tooltip}>
-        <textarea
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            rows={rows}
-            style={{ width: "100%", minWidth: "200px", resize: "vertical" }}
-        />
+    <BaseComponent label={label} desc={desc} tooltip={tooltip} className="setting-item--textarea">
+        <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={rows} spellCheck={false} />
     </BaseComponent>
 );
 
@@ -193,8 +214,13 @@ export const ColorPickerRow: React.FC<ColorPickerRowProps> = ({
     value,
     onChange,
 }) => (
-    <BaseComponent label={label} desc={desc} tooltip={tooltip}>
-        <input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
+    <BaseComponent label={label} desc={desc} tooltip={tooltip} className="setting-item--color">
+        <input
+            type="color"
+            className="sr-color-input"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+        />
     </BaseComponent>
 );
 
@@ -249,6 +275,34 @@ export const SliderRow: React.FC<SliderRowProps> = ({
 );
 
 // ==========================================
+// Action Row
+// ==========================================
+interface ActionRowProps {
+    label: React.ReactNode;
+    desc?: React.ReactNode;
+    tooltip?: string;
+    children: React.ReactNode;
+    className?: string;
+}
+
+export const ActionRow: React.FC<ActionRowProps> = ({
+    label,
+    desc,
+    tooltip,
+    children,
+    className = "",
+}) => (
+    <BaseComponent
+        label={label}
+        desc={desc}
+        tooltip={tooltip}
+        className={["setting-item--action", className].filter(Boolean).join(" ")}
+    >
+        {children}
+    </BaseComponent>
+);
+
+// ==========================================
 // Link Row
 // ==========================================
 interface LinkRowProps {
@@ -257,14 +311,9 @@ interface LinkRowProps {
 }
 
 export const LinkRow: React.FC<LinkRowProps> = ({ label, onClick }) => (
-    <div className="setting-item">
-        <div className="setting-item-info">
-            <div className="setting-item-name">{label}</div>
-        </div>
-        <div className="setting-item-control">
-            <button onClick={onClick} style={{ cursor: "pointer" }}>
-                {t("OPEN")}
-            </button>
-        </div>
-    </div>
+    <ActionRow label={label}>
+        <button onClick={onClick} style={{ cursor: "pointer" }}>
+            {t("OPEN")}
+        </button>
+    </ActionRow>
 );

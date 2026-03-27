@@ -55,12 +55,10 @@ function createSettings(overrides: Partial<UISettingsState> = {}): UISettingsSta
         autoExpandTimeline: true,
         timelineAutoCommitReviewSelection: true,
         timelineEnableDurationPrefixSyntax: true,
-        cardAlgorithm: "Fsrs",
-        noteAlgorithm: "WeightedMultiplier",
-        baseEase: 250,
-        easyBonus: 1.3,
+        fsrsEnableFuzz: true,
         wmsImpMin: "1",
         wmsImpMax: "2.5",
+        wmsBaseEase: 250,
         wmsAgainInterval: 1,
         wmsHardFactor: 0.7,
         wmsGoodFactor: 1.3,
@@ -94,7 +92,7 @@ function createSettings(overrides: Partial<UISettingsState> = {}): UISettingsSta
 
 function findSettingItemByName(container: HTMLElement, names: string[]): HTMLElement | null {
     return (
-        Array.from(container.querySelectorAll<HTMLElement>(".setting-item")).find((item) =>
+        Array.from(container.querySelectorAll<HTMLElement>(".setting-item:not(.setting-item-heading)")).find((item) =>
             names.some((name) => {
                 const itemName = item
                     .querySelector(".setting-item-name")
@@ -105,9 +103,15 @@ function findSettingItemByName(container: HTMLElement, names: string[]): HTMLEle
     );
 }
 
-function renderPanel(settings: UISettingsState) {
+function findFirstSettingGroup(container: HTMLElement): HTMLElement | null {
+    return container.querySelector<HTMLElement>(".setting-group");
+}
+
+function renderPanel(settings: UISettingsState, options: { mobile?: boolean } = {}) {
     const container = document.createElement("div");
+    container.classList.add("sr-settings-container");
     document.body.appendChild(container);
+    document.body.classList.toggle("is-mobile", options.mobile === true);
     const root = createRoot(container);
 
     act(() => {
@@ -125,6 +129,7 @@ function renderPanel(settings: UISettingsState) {
         root,
         cleanup: () => {
             act(() => root.unmount());
+            document.body.classList.remove("is-mobile");
             container.remove();
         },
     };
@@ -144,8 +149,39 @@ function openTab(container: HTMLElement, label: string) {
     });
 }
 
+function getActiveTabText(container: HTMLElement): string {
+    return container.querySelector<HTMLElement>(".sr-style-tab-active")?.textContent ?? "";
+}
+
+function dispatchTouchEvent(target: HTMLElement, type: "touchstart" | "touchmove" | "touchend", x: number, y: number) {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    const touch = { clientX: x, clientY: y, target };
+
+    Object.defineProperty(event, "touches", {
+        value: type === "touchend" ? [] : [touch],
+    });
+    Object.defineProperty(event, "changedTouches", {
+        value: [touch],
+    });
+
+    act(() => {
+        target.dispatchEvent(event);
+    });
+}
+
+function swipeElement(
+    target: HTMLElement,
+    start: { x: number; y: number },
+    end: { x: number; y: number },
+) {
+    dispatchTouchEvent(target, "touchstart", start.x, start.y);
+    dispatchTouchEvent(target, "touchmove", end.x, end.y);
+    dispatchTouchEvent(target, "touchend", end.x, end.y);
+}
+
 describe("EmbeddedSettingsPanel", () => {
     afterEach(() => {
+        document.body.classList.remove("is-mobile");
         document.body.innerHTML = "";
     });
 
@@ -270,7 +306,8 @@ describe("EmbeddedSettingsPanel", () => {
             expect(codeContextWrapper).not.toBeNull();
             expect(codeBlockItem?.nextElementSibling).toBe(codeContextWrapper);
             expect(codeContextWrapper?.nextElementSibling).toBe(clozeContextItem);
-            expect(codeContextWrapper?.getAttribute("style")).toContain("padding-left: 20px");
+            expect(codeContextWrapper?.classList.contains("sr-setting-subgroup")).toBe(true);
+            expect(codeContextWrapper?.getAttribute("style")).toBeNull();
         } finally {
             view.cleanup();
         }
@@ -310,7 +347,434 @@ describe("EmbeddedSettingsPanel", () => {
             expect(trimLinesWrapper).not.toBeNull();
             expect(performanceItem?.nextElementSibling).toBe(trimLinesWrapper);
             expect(trimLinesWrapper?.nextElementSibling).toBe(showOtherHighlightItem);
-            expect(trimLinesWrapper?.getAttribute("style")).toContain("padding-left: 20px");
+            expect(trimLinesWrapper?.classList.contains("sr-setting-subgroup")).toBe(true);
+            expect(trimLinesWrapper?.getAttribute("style")).toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("shows only the FSRS random due drift toggle on the algorithm tab", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            openTab(view.container, "Algorithm");
+
+            expect(
+                findSettingItemByName(view.container, ["Random due drift", "Fuzzing"]),
+            ).not.toBeNull();
+            expect(view.container.textContent ?? "").not.toContain(
+                "industry-leading memory scheduling algorithm",
+            );
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("hides the WMS simulator on mobile while keeping the base parameter inputs", () => {
+        const view = renderPanel(createSettings(), { mobile: true });
+
+        try {
+            openTab(view.container, "Algorithm");
+
+            expect(view.container.querySelector(".sr-wms-simulator")).toBeNull();
+            expect(findSettingItemByName(view.container, ["Random due drift", "Fuzzing"])).not.toBeNull();
+            expect(view.container.textContent ?? "").toContain("Base multiplier configuration");
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("keeps the compact WMS simulator input on desktop with its dedicated class", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            openTab(view.container, "Algorithm");
+
+            const compactInput = view.container.querySelector(
+                '.sr-wms-simulator input.sr-input-compact[type="number"]',
+            ) as HTMLInputElement | null;
+
+            expect(compactInput).not.toBeNull();
+            expect(compactInput?.value).toBe("10");
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("renders toggles as checkbox containers wrapping native checkbox inputs", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            const toggleContainer = view.container.querySelector(".mod-toggle .checkbox-container");
+            const toggleInput = toggleContainer?.querySelector('input[type="checkbox"]');
+
+            expect(toggleContainer).not.toBeNull();
+            expect(toggleContainer?.tagName).toBe("LABEL");
+            expect(toggleContainer?.getAttribute("tabindex")).toBe("0");
+            expect(toggleInput).not.toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("keeps mobile toggle rows on a dedicated control cell with the native checkbox container", () => {
+        const view = renderPanel(createSettings(), { mobile: true });
+
+        try {
+            const toggleItem = view.container.querySelector(".setting-item.mod-toggle") as HTMLElement | null;
+            const toggleControl = toggleItem?.querySelector(".setting-item-control");
+            const toggleContainer = toggleControl?.querySelector(".checkbox-container");
+
+            expect(toggleItem).not.toBeNull();
+            expect(toggleControl).not.toBeNull();
+            expect(toggleContainer).not.toBeNull();
+            expect(toggleContainer?.querySelector('input[type="checkbox"]')).not.toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("renders sections with Obsidian-style setting-group headings", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            const firstGroup = findFirstSettingGroup(view.container);
+            const heading = firstGroup?.querySelector(
+                ".setting-item.setting-item-heading",
+            ) as HTMLElement | null;
+            const headingName = heading?.querySelector(".setting-item-name");
+            const headingControl = heading?.querySelector(".setting-item-control");
+            const groupItems = firstGroup?.querySelector(".setting-items");
+
+            expect(firstGroup).not.toBeNull();
+            expect(heading).not.toBeNull();
+            expect(headingName?.textContent).toBeTruthy();
+            expect(headingControl).not.toBeNull();
+            expect(groupItems).not.toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("renders narrow input rows with official setting-item structure without JS-only stack marker classes", () => {
+        const previousInnerWidth = window.innerWidth;
+        Object.defineProperty(window, "innerWidth", {
+            configurable: true,
+            value: 320,
+        });
+
+        const view = renderPanel(createSettings(), { mobile: true });
+
+        try {
+            openTab(view.container, "Incremental");
+
+            const textareaItem = findSettingItemByName(view.container, ["Ignored tags"]);
+            const numberItem = findSettingItemByName(view.container, ["File Path Tooltip Delay"]);
+            const selectItem = findSettingItemByName(view.container, ["Sidebar Progress Ring Direction"]);
+            const numberInput = numberItem?.querySelector('input[type="number"]') as HTMLInputElement | null;
+            const selectInput = selectItem?.querySelector("select") as HTMLSelectElement | null;
+            const textarea = textareaItem?.querySelector("textarea") as HTMLTextAreaElement | null;
+
+            expect(textareaItem).not.toBeNull();
+            expect(numberItem).not.toBeNull();
+            expect(selectItem).not.toBeNull();
+            expect(numberInput).not.toBeNull();
+            expect(selectInput).not.toBeNull();
+            expect(textarea).not.toBeNull();
+            expect(textareaItem?.className).toContain("setting-item--textarea");
+            expect(textareaItem?.className).not.toContain("setting-item--textarea-input");
+            expect(textareaItem?.className).not.toContain("sr-mobile-stack");
+            expect(numberItem?.className).not.toContain("sr-mobile-stack");
+            expect(selectItem?.className).not.toContain("sr-mobile-stack");
+            expect(numberItem?.className).not.toContain("setting-item--number-input");
+            expect(selectItem?.className).not.toContain("setting-item--select-input");
+            expect(numberInput?.getAttribute("style")).toBeNull();
+            expect(selectInput?.getAttribute("style")).toBeNull();
+            expect(textarea?.getAttribute("style")).toBeNull();
+        } finally {
+            Object.defineProperty(window, "innerWidth", {
+                configurable: true,
+                value: previousInnerWidth,
+            });
+            view.cleanup();
+        }
+    });
+
+    it("renders the license intro as plain text without the custom support card", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            openTab(view.container, "License");
+
+            expect(view.container.querySelector(".sr-settings-support-card")).toBeNull();
+            expect(view.container.querySelector(".sr-settings-license-note")?.textContent).toBeTruthy();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("keeps the mobile license key input flexible without an inline fixed width", () => {
+        const view = renderPanel(createSettings({ isPro: false }), { mobile: true });
+
+        try {
+            openTab(view.container, "License");
+
+            const licenseRow = view.container.querySelector(
+                ".sr-license-key-input",
+            )?.closest(".setting-item") as HTMLElement | null;
+            const licenseInput = view.container.querySelector(
+                ".sr-license-key-input",
+            ) as HTMLInputElement | null;
+
+            expect(licenseRow).not.toBeNull();
+            expect(licenseRow?.className).not.toContain("setting-item--text-input");
+            expect(licenseInput).not.toBeNull();
+            expect(licenseInput?.getAttribute("style")).toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("keeps header dragging scroll-only and suppresses accidental tab changes", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            const header = view.container.querySelector(".sr-style-setting-header") as HTMLElement | null;
+            const incrementalTab = Array.from(
+                view.container.querySelectorAll<HTMLElement>(".sr-style-tab"),
+            ).find((tab) => tab.textContent?.includes("Incremental"));
+
+            expect(header).not.toBeNull();
+            expect(incrementalTab).not.toBeNull();
+
+            swipeElement(header as HTMLElement, { x: 220, y: 20 }, { x: 90, y: 26 });
+
+            act(() => {
+                incrementalTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            expect(getActiveTabText(view.container)).toContain("Flashcards");
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("switches tabs when the settings content area is swiped horizontally", () => {
+        jest.useFakeTimers();
+        const view = renderPanel(createSettings());
+
+        try {
+            const content = view.container.querySelector(".sr-style-setting-content") as HTMLElement | null;
+            expect(content).not.toBeNull();
+            expect(
+                view.container.querySelectorAll(".sr-style-setting-content-pane[data-pane-role]").length,
+            ).toBe(3);
+            expect(
+                view.container.querySelectorAll(".sr-style-setting-content-pane-body").length,
+            ).toBe(3);
+            expect(
+                view.container.querySelectorAll(".sr-style-setting-content-pane-scroll").length,
+            ).toBe(3);
+            expect(
+                view.container.querySelectorAll(".sr-style-setting-content-pane-inner").length,
+            ).toBe(3);
+            expect(
+                view.container.querySelector(
+                    '.sr-style-setting-content-pane[data-pane-role="next"][data-tab-id="notes"]',
+                ),
+            ).not.toBeNull();
+
+            dispatchTouchEvent(content as HTMLElement, "touchstart", 240, 180);
+            dispatchTouchEvent(content as HTMLElement, "touchmove", 160, 188);
+
+            expect(
+                view.container.querySelector(
+                    '.sr-style-setting-content-pane[data-pane-role="next"][data-tab-id="notes"]',
+                ),
+            ).not.toBeNull();
+            expect(
+                view.container
+                    .querySelector<HTMLElement>(".sr-style-setting-content-track")
+                    ?.style.getPropertyValue("--sr-swipe-offset"),
+            ).toContain("-80px");
+
+            dispatchTouchEvent(content as HTMLElement, "touchend", 110, 188);
+            expect(getActiveTabText(view.container)).toContain("Incremental");
+            expect(
+                view.container
+                    .querySelector<HTMLElement>(
+                        '.sr-style-setting-content-pane[data-pane-role="current"]',
+                    )
+                    ?.getAttribute("data-tab-id"),
+            ).toBe("flashcards");
+            act(() => {
+                jest.advanceTimersByTime(240);
+            });
+            expect(getActiveTabText(view.container)).toContain("Incremental");
+            expect(
+                view.container
+                    .querySelector<HTMLElement>(".sr-style-setting-content-track")
+                    ?.style.getPropertyValue("--sr-swipe-offset"),
+            ).toBe("0px");
+
+            swipeElement(content as HTMLElement, { x: 110, y: 180 }, { x: 250, y: 186 });
+            expect(getActiveTabText(view.container)).toContain("Flashcards");
+            act(() => {
+                jest.advanceTimersByTime(240);
+            });
+            expect(getActiveTabText(view.container)).toContain("Flashcards");
+            expect(
+                view.container
+                    .querySelector<HTMLElement>(".sr-style-setting-content-track")
+                    ?.style.getPropertyValue("--sr-swipe-offset"),
+            ).toBe("0px");
+        } finally {
+            jest.useRealTimers();
+            view.cleanup();
+        }
+    });
+
+    it("resets the newly active tab content to the top after switching tabs", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            const currentScroll = view.container.querySelector(
+                '.sr-style-setting-content-pane[data-pane-role="current"] .sr-style-setting-content-pane-scroll',
+            ) as HTMLDivElement | null;
+
+            expect(currentScroll).not.toBeNull();
+            if (currentScroll) {
+                currentScroll.scrollTop = 180;
+            }
+
+            openTab(view.container, "Incremental");
+
+            const nextCurrentScroll = view.container.querySelector(
+                '.sr-style-setting-content-pane[data-pane-role="current"] .sr-style-setting-content-pane-scroll',
+            ) as HTMLDivElement | null;
+
+            expect(nextCurrentScroll).not.toBeNull();
+            expect(nextCurrentScroll?.scrollTop).toBe(0);
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("resets the next current pane scroll position after a swipe-driven tab switch", () => {
+        jest.useFakeTimers();
+        const view = renderPanel(createSettings());
+
+        try {
+            const content = view.container.querySelector(".sr-style-setting-content") as HTMLElement | null;
+            const currentScroll = view.container.querySelector(
+                '.sr-style-setting-content-pane[data-pane-role="current"] .sr-style-setting-content-pane-scroll',
+            ) as HTMLDivElement | null;
+
+            expect(content).not.toBeNull();
+            expect(currentScroll).not.toBeNull();
+
+            if (currentScroll) {
+                currentScroll.scrollTop = 220;
+            }
+
+            dispatchTouchEvent(content as HTMLElement, "touchstart", 240, 180);
+            dispatchTouchEvent(content as HTMLElement, "touchmove", 160, 188);
+            dispatchTouchEvent(content as HTMLElement, "touchend", 110, 188);
+
+            act(() => {
+                jest.advanceTimersByTime(240);
+            });
+
+            const nextCurrentScroll = view.container.querySelector(
+                '.sr-style-setting-content-pane[data-pane-role="current"] .sr-style-setting-content-pane-scroll',
+            ) as HTMLDivElement | null;
+
+            expect(getActiveTabText(view.container)).toContain("Incremental");
+            expect(nextCurrentScroll?.scrollTop).toBe(0);
+        } finally {
+            jest.useRealTimers();
+            view.cleanup();
+        }
+    });
+
+    it("switches tabs when swiping from the empty bottom area on a short mobile page", () => {
+        jest.useFakeTimers();
+        const view = renderPanel(createSettings(), { mobile: true });
+
+        try {
+            openTab(view.container, "License");
+
+            const content = view.container.querySelector(".sr-style-setting-content") as HTMLElement | null;
+            expect(content).not.toBeNull();
+
+            dispatchTouchEvent(content as HTMLElement, "touchstart", 110, 620);
+            dispatchTouchEvent(content as HTMLElement, "touchmove", 250, 626);
+            dispatchTouchEvent(content as HTMLElement, "touchend", 250, 626);
+
+            act(() => {
+                jest.advanceTimersByTime(240);
+            });
+
+            expect(getActiveTabText(view.container)).toContain("Sync");
+        } finally {
+            jest.useRealTimers();
+            view.cleanup();
+        }
+    });
+
+    it("does not switch tabs when swiping from excluded interactive controls", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            const textInput = view.container.querySelector('input[type="text"]') as HTMLElement | null;
+            const select = view.container.querySelector("select") as HTMLElement | null;
+            const toggleInput = view.container.querySelector(
+                '.mod-toggle input[type="checkbox"]',
+            ) as HTMLElement | null;
+
+            expect(textInput).not.toBeNull();
+            expect(select).not.toBeNull();
+            expect(toggleInput).not.toBeNull();
+
+            swipeElement(textInput as HTMLElement, { x: 220, y: 120 }, { x: 70, y: 126 });
+            expect(getActiveTabText(view.container)).toContain("Flashcards");
+
+            swipeElement(select as HTMLElement, { x: 220, y: 120 }, { x: 70, y: 126 });
+            expect(getActiveTabText(view.container)).toContain("Flashcards");
+
+            swipeElement(toggleInput as HTMLElement, { x: 220, y: 120 }, { x: 70, y: 126 });
+            expect(getActiveTabText(view.container)).toContain("Flashcards");
+
+            openTab(view.container, "Incremental");
+            const textArea = view.container.querySelector("textarea") as HTMLElement | null;
+            expect(textArea).not.toBeNull();
+
+            swipeElement(textArea as HTMLElement, { x: 220, y: 220 }, { x: 70, y: 226 });
+            expect(getActiveTabText(view.container)).toContain("Incremental");
+
+            openTab(view.container, "Interface");
+            const rangeInput = view.container.querySelector('input[type="range"]') as HTMLElement | null;
+            const colorInput = view.container.querySelector('input[type="color"]') as HTMLElement | null;
+
+            expect(rangeInput).not.toBeNull();
+            expect(colorInput).not.toBeNull();
+
+            swipeElement(rangeInput as HTMLElement, { x: 220, y: 240 }, { x: 70, y: 246 });
+            expect(getActiveTabText(view.container)).toContain("Interface");
+
+            swipeElement(colorInput as HTMLElement, { x: 220, y: 240 }, { x: 70, y: 246 });
+            expect(getActiveTabText(view.container)).toContain("Interface");
+
+            openTab(view.container, "License");
+            const actionButton = view.container.querySelector(
+                '.setting-item--action button',
+            ) as HTMLElement | null;
+
+            expect(actionButton).not.toBeNull();
+
+            swipeElement(actionButton as HTMLElement, { x: 220, y: 180 }, { x: 70, y: 186 });
+            expect(getActiveTabText(view.container)).toContain("License");
         } finally {
             view.cleanup();
         }

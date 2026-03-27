@@ -3,28 +3,118 @@
    模仿官方设置的圆角分组风格
    ========================================== */
 
+.sr-settings-container {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+}
+
 .sr-settings-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    box-sizing: border-box;
     color: var(--text-normal);
     font-family: var(--font-interface);
     padding-bottom: 20px;
+    --sr-settings-color-radius: 10px;
+    --sr-settings-compact-input-radius: 10px;
 }
 
 .sr-style-setting-content {
-    height: calc(100% - 10rem);
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+    contain: paint;
+}
+
+.sr-style-setting-content-track {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(3, 100%);
+    align-items: stretch;
+    width: 100%;
+    min-height: 0;
+    height: 100%;
+    --sr-swipe-offset: 0px;
+    transform: translate3d(calc(-100% + var(--sr-swipe-offset)), 0, 0);
+    will-change: transform;
+}
+
+.sr-style-setting-content-pane {
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+}
+
+.sr-style-setting-content-pane-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+}
+
+.sr-style-setting-content-pane-scroll {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    overflow-x: hidden;
     overflow-y: auto;
-    padding: 0 10px;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    padding: 0;
+}
+
+.sr-style-setting-content-pane-inner {
+    box-sizing: border-box;
+    padding: 0 10px 14px;
+}
+
+.sr-style-setting-content-track.is-swipe-transitioning {
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sr-style-setting-content-pane.is-placeholder {
+    pointer-events: none;
 }
 
 .sr-style-setting-header {
+    flex: 0 0 auto;
     margin-bottom: 24px;
     overflow-y: hidden;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    touch-action: pan-x;
+}
+
+.sr-style-setting-header::-webkit-scrollbar {
+    display: none;
 }
 
 .sr-style-setting-tab-group {
     display: flex;
     align-items: center;
     gap: 20px;
+    width: max-content;
+    min-width: 100%;
     border-bottom: 1px solid var(--background-modifier-border);
     padding-bottom: 0;
 }
@@ -40,6 +130,8 @@
     transition: all 0.2s ease;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .sr-style-tab:hover {
@@ -57,34 +149,62 @@
 
 /* 1. 分组容器样式 */
 .sr-setting-section {
-    margin-bottom: 24px;
+    margin: 0;
+}
+
+.sr-settings-sections {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.sr-settings-sections > .sr-setting-section + .sr-setting-section {
+    margin-top: 24px;
+}
+
+.sr-setting-subgroup {
+    padding-left: 20px;
+    border-left: 2px solid var(--background-modifier-border);
 }
 
 /* 标题样式 */
-.sr-setting-section .setting-item-heading {
-    color: var(--text-muted);
-    font-size: 13px;
-    font-weight: 600;
-    margin-bottom: 8px;
+.sr-settings-panel .setting-group > .setting-item.setting-item-heading {
+    align-items: center;
+    gap: 0;
+    min-height: 0;
+    margin: 0 0 8px;
     padding: 0 4px;
-    /* 稍微缩进一点，对齐视觉 */
+    border: none;
+    background: transparent;
+}
+
+.sr-settings-panel .setting-group > .setting-item.setting-item-heading .setting-item-info {
+    padding-right: 0;
+}
+
+.sr-settings-panel .setting-group > .setting-item.setting-item-heading .setting-item-name {
+    color: var(--setting-group-heading-color, var(--text-muted));
+    font-size: var(--setting-group-heading-size, 13px);
+    font-weight: var(--setting-group-heading-weight, 600);
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+}
+
+.sr-settings-panel .setting-group > .setting-item.setting-item-heading .setting-item-control {
+    display: none;
 }
 
 /* 选项列表容器 (圆角卡片背景) */
-.sr-setting-section .setting-items {
-    background-color: var(--background-primary-alt);
-    /* 次级背景色 */
-
-    /* ↓↓↓ 修改这里：去掉边框 ↓↓↓ */
-    border: none;
-    /* 原来是: border: 1px solid var(--background-modifier-border); */
-
-    border-radius: var(--radius-m);
-    /* 官方圆角 */
-    overflow: hidden;
-    /* 确保子元素不溢出圆角 */
+.sr-settings-panel .setting-group > .setting-items {
     display: flex;
     flex-direction: column;
+    background-color: var(--setting-items-background, var(--background-secondary));
+    padding: var(--setting-items-padding, var(--size-4-5));
+    border: var(--setting-items-border-width, 0) solid
+        var(--setting-items-border-color, var(--background-modifier-border));
+    border-radius: var(--setting-items-radius, var(--radius-m));
+    corner-shape: var(--corner-shape);
+    overflow: hidden;
 }
 
 /* 2. 单个选项样式 (扁平化) */
@@ -125,6 +245,7 @@
 /* 修正：文字区域样式 */
 .sr-settings-panel .setting-item-info {
     flex: 1;
+    min-width: 0;
     margin-right: 12px;
 }
 
@@ -150,6 +271,7 @@
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
+    min-width: 0;
 }
 
 .sr-settings-panel .setting-item {
@@ -165,6 +287,7 @@
 .sr-settings-panel .setting-item-name {
     font-size: 15px;
     font-weight: 500;
+    overflow-wrap: break-word;
 }
 
 .sr-settings-panel .setting-item-description {
@@ -172,6 +295,120 @@
     font-size: 13px;
     margin-top: 4px;
     line-height: 1.5;
+    overflow-wrap: break-word;
+}
+
+.sr-settings-license-note {
+    margin: 0 4px 18px;
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-line;
+    text-align: center;
+}
+
+/* Official-style setting group overrides */
+.sr-settings-panel .setting-group > .setting-item.setting-item-heading {
+    align-items: center;
+    gap: 0;
+    min-height: 0;
+    margin: 0 0 8px;
+    padding: 0 4px;
+    border: none;
+    background: transparent;
+}
+
+.sr-settings-panel .setting-group > .setting-item.setting-item-heading .setting-item-info {
+    padding-right: 0;
+}
+
+.sr-settings-panel .setting-group > .setting-item.setting-item-heading .setting-item-name {
+    color: var(--setting-group-heading-color, var(--text-muted));
+    font-size: var(--setting-group-heading-size, 13px);
+    font-weight: var(--setting-group-heading-weight, 600);
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+}
+
+.sr-settings-panel .setting-group > .setting-item.setting-item-heading .setting-item-control {
+    display: none;
+}
+
+.sr-settings-panel .setting-group > .setting-items {
+    display: flex;
+    flex-direction: column;
+    background-color: var(--setting-items-background, var(--background-secondary));
+    padding: var(--setting-items-padding, var(--size-4-5));
+    border: var(--setting-items-border-width, 0) solid
+        var(--setting-items-border-color, var(--background-modifier-border));
+    border-radius: var(--setting-items-radius, var(--radius-m));
+    corner-shape: var(--corner-shape);
+    overflow: hidden;
+}
+
+.sr-settings-panel .setting-items > .setting-item {
+    position: relative;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 12px 16px;
+    min-height: 0;
+    margin: 0;
+    padding: 16px 0;
+    border: none;
+    background: transparent;
+}
+
+.sr-settings-panel .setting-items > .setting-item:first-child {
+    padding-top: 0;
+}
+
+.sr-settings-panel .setting-items > .setting-item:last-child {
+    padding-bottom: 0;
+}
+
+.sr-settings-panel .setting-items > .setting-item:not(:first-child)::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--border-width, 1px);
+    background-color: var(--background-modifier-border);
+}
+
+.sr-settings-panel .setting-item-info {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-right: 0;
+    padding-right: 12px;
+}
+
+.sr-settings-panel .setting-item-name {
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.sr-settings-panel .setting-item-description {
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.sr-settings-panel .setting-item-control {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.sr-settings-panel .setting-item-control > * {
+    min-width: 0;
+    max-width: 100%;
 }
 
 /* ==========================================
@@ -196,20 +433,137 @@
     border-color: var(--background-modifier-border-hover);
 }
 
-/* Toggle 开关背景修正 */
-.sr-settings-panel .mod-toggle .checkbox-container {
-    background-color: var(--background-primary);
-    /* 开关槽背景 */
+.sr-settings-panel .setting-item-control > textarea {
+    width: 100%;
+    min-height: 104px;
+    resize: vertical;
 }
 
-.sr-settings-panel .mod-toggle .checkbox-container.is-enabled {
-    background-color: var(--interactive-accent);
-    /* 激活色 */
+.sr-settings-panel .mod-toggle .checkbox-container {
+    display: inline-block;
+    position: relative;
+    flex-shrink: 0;
+    margin: 0;
+    line-height: 0;
+    min-width: var(--toggle-width);
+    min-height: calc(var(--toggle-thumb-height) + var(--toggle-border-width) * 2);
+}
+
+.sr-settings-panel .mod-toggle .checkbox-container input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    appearance: none;
+    -webkit-appearance: none;
 }
 
 /* 移除 React 组件可能自带的边框干扰 */
 .sr-settings-panel .setting-items .setting-item:first-child {
     border-top: none;
+}
+
+.sr-settings-panel .setting-items input[type="color"] {
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: none;
+    border-radius: var(--sr-settings-color-radius);
+    background: transparent;
+    box-shadow: none;
+    cursor: pointer;
+}
+
+.sr-settings-panel .setting-items input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+.sr-settings-panel .setting-items input[type="color"]::-webkit-color-swatch {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--sr-settings-color-radius);
+}
+
+.sr-settings-panel .setting-items input[type="color"]::-moz-color-swatch {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--sr-settings-color-radius);
+}
+
+.sr-settings-panel .sr-license-key-input {
+    width: 220px;
+    max-width: 100%;
+}
+
+.sr-settings-panel input.sr-input-compact {
+    width: 88px;
+    min-width: 88px;
+    max-width: 88px;
+    min-height: 32px;
+    padding: 4px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--sr-settings-compact-input-radius) !important;
+    background: var(--background-primary);
+    box-shadow: none;
+    text-align: center;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.sr-settings-panel input.sr-input-compact::-webkit-outer-spin-button,
+.sr-settings-panel input.sr-input-compact::-webkit-inner-spin-button {
+    margin: 0;
+}
+
+.sr-wms-simulator {
+    background-color: var(--background-primary-alt);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    margin-bottom: 24px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.sr-wms-simulator__toolbar {
+    background-color: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 20px;
+    font-size: 0.85em;
+}
+
+.sr-wms-simulator__title {
+    font-weight: 700;
+    color: var(--text-normal);
+    white-space: nowrap;
+}
+
+.sr-wms-simulator__divider {
+    width: 1px;
+    height: 16px;
+    background: var(--background-modifier-border);
+    flex: 0 0 auto;
+}
+
+.sr-wms-simulator__controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 20px;
+    margin-left: auto;
+}
+
+.sr-wms-simulator__control-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    flex: 0 0 auto;
 }
 
 /* ==========================================
@@ -274,6 +628,294 @@
 
 .is-mobile .sr-style-tab {
     padding: 12px;
+}
+
+/* Mobile official-layout overrides */
+.is-mobile .sr-settings-container {
+    overflow-x: hidden;
+    overflow-y: hidden;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel {
+    background: transparent;
+    padding-bottom: max(28px, env(safe-area-inset-bottom, 0px));
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+}
+
+.is-mobile .sr-settings-container .sr-style-setting-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    overflow: hidden;
+    overscroll-behavior-x: contain;
+    touch-action: pan-y;
+}
+
+.is-mobile .sr-settings-container .sr-style-setting-content-track,
+.is-mobile .sr-settings-container .sr-style-setting-content-pane,
+.is-mobile .sr-settings-container .sr-style-setting-content-pane-body,
+.is-mobile .sr-settings-container .sr-style-setting-content-pane-scroll {
+    min-height: 0;
+    height: 100%;
+}
+
+.is-mobile .sr-settings-container .sr-style-setting-content-pane {
+    overflow: hidden;
+}
+
+.is-mobile .sr-settings-container .sr-style-setting-content-pane-scroll {
+    overflow-y: auto;
+    padding: 0;
+}
+
+.is-mobile .sr-settings-container .sr-style-setting-content-pane-inner {
+    padding: 0 8px 14px;
+}
+
+.is-mobile .sr-settings-container .sr-settings-sections {
+    min-width: 0;
+}
+
+.is-mobile .sr-settings-container .sr-setting-section {
+    margin-bottom: 0;
+}
+
+.is-mobile .sr-settings-container .sr-settings-sections > .sr-setting-section + .sr-setting-section {
+    margin-top: 18px;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-group > .setting-item.setting-item-heading {
+    padding: 0 8px;
+    margin-bottom: 8px;
+}
+
+.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .setting-group
+    > .setting-item.setting-item-heading
+    .setting-item-name {
+    font-size: var(--setting-group-heading-size, 12px);
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-group > .setting-items {
+    background: var(--setting-items-background, var(--background-secondary));
+    border: var(--setting-items-border-width, 0) solid
+        var(--setting-items-border-color, var(--background-modifier-border));
+    border-radius: var(--setting-items-radius, var(--radius-m));
+    box-shadow: none;
+    padding: var(--setting-items-padding, var(--size-4-5));
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-items > .setting-item {
+    flex-wrap: nowrap;
+    gap: 12px 14px;
+    min-height: 0;
+    padding: 16px 0;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item-info {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-right: 12px;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item-name {
+    font-size: 16px;
+    line-height: 1.28;
+    font-weight: 600;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item-description {
+    margin-top: 7px;
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item-control {
+    flex: 0 1 auto;
+    width: auto;
+    margin-left: auto;
+    min-width: 0;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item-control input[type="text"]:not(.sr-license-key-input):not(.sr-input-compact),
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item-control input[type="number"]:not(.sr-input-compact) {
+    width: min(100%, 120px);
+    max-width: 120px;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item-control select.dropdown {
+    width: min(100%, 150px);
+    max-width: 150px;
+    text-overflow: ellipsis;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item-control > * {
+    max-width: 100%;
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item.mod-toggle,
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item.setting-item--color {
+    flex-wrap: nowrap;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .setting-item-control {
+    align-self: start;
+    margin-top: 2px;
+    margin-left: auto;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item.setting-item--textarea .setting-item-control,
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item.cmdr-slider .setting-item-control {
+    flex: 1 0 100%;
+    width: 100%;
+    margin-left: 0;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item-control > textarea {
+    width: 100%;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-items input[type="color"] {
+    width: 44px;
+    height: 44px;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-items input[type="color"]::-webkit-color-swatch,
+.is-mobile .sr-settings-container .sr-settings-panel .setting-items input[type="color"]::-moz-color-swatch {
+    border-width: 2px;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .sr-license-key-input {
+    width: min(100%, 18rem);
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel input.sr-input-compact {
+    width: min(100%, 4.75rem);
+    min-width: 4rem;
+    max-width: 4.75rem;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item-control > input[type="text"],
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item-control > input[type="number"],
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item-control > select,
+.is-mobile .sr-settings-container .sr-settings-panel .setting-item-control > button {
+    max-width: 100%;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .cmdr-slider .setting-item-control > div {
+    width: 100%;
+    min-width: 0;
+}
+
+.is-mobile .sr-settings-container .sr-supporter-badge {
+    border-color: var(--background-modifier-border);
+    background: var(--background-primary);
+}
+
+/* ======================================================
+   Mobile setting layout: stack non-toggle rows like Obsidian
+   ====================================================== */
+body.is-mobile .sr-settings-sections .setting-items > .setting-item:not(.mod-toggle) {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding-top: 18px;
+    padding-bottom: 18px;
+}
+
+body.is-mobile .sr-settings-sections .setting-items > .setting-item:not(.mod-toggle) .setting-item-info {
+    width: 100%;
+    min-width: 0;
+    margin-right: 0;
+    padding-right: 0;
+}
+
+body.is-mobile
+    .sr-settings-sections
+    .setting-items
+    > .setting-item:not(.mod-toggle)
+    .setting-item-control {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+}
+
+body.is-mobile .sr-settings-sections .setting-item-control input[type="text"],
+body.is-mobile .sr-settings-sections .setting-item-control input[type="number"],
+body.is-mobile .sr-settings-sections .setting-item-control select,
+body.is-mobile .sr-settings-sections .setting-item-control textarea,
+body.is-mobile .sr-settings-sections .setting-item-control .slider {
+    width: 100%;
+    max-width: 100%;
+}
+
+body.is-mobile .sr-settings-sections .cmdr-slider .setting-item-control > div {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 12px;
+}
+
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .sr-setting-subgroup {
+    padding-left: 12px;
+}
+
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .sr-setting-subgroup
+    > .setting-item:not(.mod-toggle):not(.setting-item-heading) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+}
+
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .sr-setting-subgroup
+    > .setting-item:not(.mod-toggle):not(.setting-item-heading)
+    .setting-item-info {
+    width: 100%;
+    min-width: 0;
+    padding-right: 0;
+}
+
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .sr-setting-subgroup
+    > .setting-item:not(.mod-toggle):not(.setting-item-heading)
+    .setting-item-control {
+    flex: 1 0 100%;
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+}
+
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .sr-setting-subgroup
+    > .setting-item.cmdr-slider
+    .setting-item-control
+    > div {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 12px;
 }
 
 /* ==========================================
