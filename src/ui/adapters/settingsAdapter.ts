@@ -3,12 +3,16 @@
  */
 
 import {
+    createDefaultFsrsSettings,
     SRSettings,
     DEFAULT_PROGRESS_BAR_STYLE,
     DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
     SidebarProgressIndicatorMode,
     SidebarProgressRingDirection,
+    WeightedMultiplierSettings,
     hasSupporterLicenseState,
+    normalizeFsrsSettings,
+    setFsrsFuzzForAllDeckOptionsPresets,
     syncDefaultClozePatterns,
 } from "../../settings";
 import {
@@ -37,11 +41,7 @@ function clampClozeContextSoftLimitLines(value: number): number {
 }
 
 function getWeightedMultiplierSettings(settings: SRSettings): WeightedMultiplierUiSettings {
-    return (
-        (settings.algorithmSettings?.WeightedMultiplier as
-            | WeightedMultiplierUiSettings
-            | undefined) ?? {}
-    );
+    return settings.weightedMultiplierSettings ?? {};
 }
 
 function normalizeSidebarProgressIndicatorMode(
@@ -84,6 +84,7 @@ function normalizeSidebarFilePathTooltipDelayMs(
  */
 export function settingsToUIState(settings: SRSettings): UISettingsState {
     const weightedMultiplierSettings = getWeightedMultiplierSettings(settings);
+    const fsrsSettings = normalizeFsrsSettings(settings.fsrsSettings);
     const licenseState = settings.licenseState ?? null;
     const isPro = hasSupporterLicenseState(licenseState) || settings.isPro === true;
     const licenseKey = licenseState?.licenseKey || settings.licenseKey || "";
@@ -141,15 +142,11 @@ export function settingsToUIState(settings: SRSettings): UISettingsState {
         timelineAutoCommitReviewSelection: settings.timelineAutoCommitReviewSelection ?? true,
         timelineEnableDurationPrefixSyntax: settings.timelineEnableDurationPrefixSyntax ?? true,
 
-        // Algorithm
-        cardAlgorithm: settings.cardAlgorithm || "Fsrs",
-        noteAlgorithm: settings.noteAlgorithm || "WeightedMultiplier",
-        baseEase: settings.baseEase ?? 250,
-        easyBonus: settings.easyBonus ?? 1.3,
-
         // Weighted Multiplier Algorithm defaults (convert number to string for UI)
+        fsrsEnableFuzz: fsrsSettings.enable_fuzz,
         wmsImpMin: (weightedMultiplierSettings.impMin ?? 1.0).toString(),
         wmsImpMax: (weightedMultiplierSettings.impMax ?? 2.5).toString(),
+        wmsBaseEase: weightedMultiplierSettings.baseEase ?? 250,
         wmsAgainInterval: weightedMultiplierSettings.againInterval ?? 1.0,
         wmsHardFactor: weightedMultiplierSettings.hardFactor ?? 0.7,
         wmsGoodFactor: weightedMultiplierSettings.goodFactor ?? 1.3,
@@ -201,10 +198,9 @@ export function mergeUIStateToSettings(
     const merged = {
         ...originalSettings,
     } as SRSettings & { enableCardLevelTrace?: boolean };
-    const weightedMultiplierSettings =
-        (merged.algorithmSettings?.WeightedMultiplier as
-            | WeightedMultiplierUiSettings
-            | undefined) ?? {};
+    const weightedMultiplierSettings: WeightedMultiplierUiSettings = {
+        ...(merged.weightedMultiplierSettings ?? {}),
+    };
 
     delete merged.enableCardLevelTrace;
 
@@ -286,24 +282,27 @@ export function mergeUIStateToSettings(
     if (uiChanges.timelineEnableDurationPrefixSyntax !== undefined)
         merged.timelineEnableDurationPrefixSyntax = uiChanges.timelineEnableDurationPrefixSyntax;
 
-    // Algorithm
-    if (uiChanges.cardAlgorithm !== undefined) merged.cardAlgorithm = uiChanges.cardAlgorithm;
-    if (uiChanges.noteAlgorithm !== undefined) merged.noteAlgorithm = uiChanges.noteAlgorithm;
-    if (uiChanges.baseEase !== undefined) merged.baseEase = uiChanges.baseEase;
-    if (uiChanges.easyBonus !== undefined) merged.easyBonus = uiChanges.easyBonus;
-
     // Update WeightedMultiplier settings if changed
+    if (uiChanges.fsrsEnableFuzz !== undefined) {
+        merged.fsrsSettings = normalizeFsrsSettings(
+            {
+                ...(merged.fsrsSettings ?? createDefaultFsrsSettings()),
+                enable_fuzz: uiChanges.fsrsEnableFuzz,
+            },
+            merged.fsrsSettings ?? createDefaultFsrsSettings(),
+        );
+        setFsrsFuzzForAllDeckOptionsPresets(merged, uiChanges.fsrsEnableFuzz);
+    }
+
     if (
         uiChanges.wmsImpMin !== undefined ||
         uiChanges.wmsImpMax !== undefined ||
+        uiChanges.wmsBaseEase !== undefined ||
         uiChanges.wmsAgainInterval !== undefined ||
         uiChanges.wmsHardFactor !== undefined ||
         uiChanges.wmsGoodFactor !== undefined ||
         uiChanges.wmsEasyFactor !== undefined
     ) {
-        if (!merged.algorithmSettings) merged.algorithmSettings = {};
-        merged.algorithmSettings.WeightedMultiplier = weightedMultiplierSettings;
-
         if (uiChanges.wmsImpMin !== undefined) {
             const val = parseFloat(uiChanges.wmsImpMin);
             if (!isNaN(val)) weightedMultiplierSettings.impMin = val;
@@ -311,6 +310,9 @@ export function mergeUIStateToSettings(
         if (uiChanges.wmsImpMax !== undefined) {
             const val = parseFloat(uiChanges.wmsImpMax);
             if (!isNaN(val)) weightedMultiplierSettings.impMax = val;
+        }
+        if (uiChanges.wmsBaseEase !== undefined) {
+            weightedMultiplierSettings.baseEase = uiChanges.wmsBaseEase;
         }
 
         if (uiChanges.wmsAgainInterval !== undefined)
@@ -322,11 +324,12 @@ export function mergeUIStateToSettings(
         if (uiChanges.wmsEasyFactor !== undefined)
             weightedMultiplierSettings.easyFactor = uiChanges.wmsEasyFactor;
 
-        // Ensure baseEase is preserved or copied if needed, though wmsBaseEase wasn't added yet
-        // If the implementation requires baseEase in WMS settings, ensure it exists
         if (weightedMultiplierSettings.baseEase === undefined) {
-            weightedMultiplierSettings.baseEase = merged.baseEase ?? 250;
+            weightedMultiplierSettings.baseEase = 250;
         }
+
+        merged.weightedMultiplierSettings =
+            weightedMultiplierSettings as WeightedMultiplierSettings;
     }
 
     // UI

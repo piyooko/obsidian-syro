@@ -211,8 +211,8 @@ export default {
     MAX_INTERVAL_MIN_WARNING: "最大间隔至少为1天",
     MAX_LINK_CONTRIB: "最大链接收益",
     MAX_LINK_CONTRIB_DESC: "链接笔记的加权掌握程度对原始掌握程度的最大贡献。",
-    FUZZING: "均衡",
-    FUZZING_DESC: "启用时, 会给新间隔添加个较小的随机延迟，以免卡片总被堆积在同一天复习。",
+    FUZZING: "随机漂移",
+    FUZZING_DESC: "给到期时间增加少量随机偏移，避免大量卡片堆在同一天。",
     SWITCH_SHORT_TERM: "短期排程",
     SWITCH_SHORT_TERM_DESC:
         "禁用时，可让用户跳过短期排程(如5分钟、10分钟)，直接切换到长期排程（如3天、5天）。",
@@ -232,11 +232,6 @@ export default {
     NEW_PER_DAY_NEG: "整数必须大于等于-1.",
     REPEAT_ITEMS: "重复错误",
     REPEAT_ITEMS_DESC: "错误项是否要一直重复复习，直到回答正确?",
-    ALGORITHMS_CONFIRM:
-        "切换算法可能导致日期排程重置，这个修改不可撤销，当重启软件或重新加载插件切换算法才会生效。你确定要切换算法么?",
-    ALGORITHMS_DESC: "用于间隔重复的算法。",
-    ALGORITHM_SWITCH_SUCCESS: "切换成功",
-    ALGORITHM_SWITCH_FAILED: "切换失败，已恢复",
     WMS_ALGORITHM: "加权乘数算法 (Incremental Reading)",
     WMS_ALGORITHM_DESC:
         "专为渐进阅读设计的调度算法，通过重要性权重和间隔继承机制提供灵活的复习节奏",
@@ -366,30 +361,6 @@ export default {
         'The algorithm used for spaced repetition. For more information see <a href="https://github.com/open-spaced-repetition/ts-fsrs">FSRS algorithm</a>.',
     FSRS_W_PARAM_DESC:
         'See <a href="https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm">FSRS V6 WIKI</a> and <a href="https://open-spaced-repetition.github.io/anki_fsrs_visualizer">FSRS w parameter visualization</a> to set various parameters.',
-    ANKI_ALGORITHM_DESC:
-        'The algorithm used for spaced repetition. For more information see <a href="https://faqs.ankiweb.net/what-spaced-repetition-algorithm.html">Anki algorithm</a>.',
-    STARTING_EASE: "Starting Ease",
-    STARTING_EASE_DESC: "The initial ease given to an item.",
-    STARTING_EASE_ERROR: "Starting ease must be a positive number.",
-    STARTING_EASE_WARNING: "Starting ease lower than 1.3 is not recommended.",
-    EASY_BONUS_ANKI: "Easy Bonus",
-    EASY_BONUS_ANKI_DESC: "A bonus multiplier for items reviewed as easy.",
-    EASY_BONUS_ANKI_ERROR: "Easy bonus must be a number greater than or equal to 1.",
-    LAPSE_INTERVAL_MODIFIER: "Lapse Interval Modifier",
-    LAPSE_INTERVAL_MODIFIER_DESC:
-        "A factor to modify the review interval with when an item is reviewed as wrong.",
-    LAPSE_INTERVAL_ERROR: "Lapse interval must be a positive number.",
-    GRADUATING_INTERVAL: "Graduating Interval",
-    GRADUATING_INTERVAL_DESC:
-        "The interval (in days) to the next review after reviewing a new item as 'Good'.",
-    GRADUATING_INTERVAL_ERROR: "Interval must be a positive number.",
-    EASY_INTERVAL: "Easy Interval",
-    EASY_INTERVAL_DESC:
-        "The interval (in days) to the next review after reviewing a new item as 'Easy'.",
-    EASY_INTERVAL_ERROR: "Interval must be a positive number.",
-    DEFAULT_ALGORITHM_DESC: "The algorithm used for spaced repetition.",
-    SM2_ALGORITHM_DESC:
-        'The algorithm used for spaced repetition. Currently shares the same parameters as the Anki algorithm (only the algorithm processing method is different). For more information see <a href="https://www.supermemo.com/en/archives1990-2015/english/ol/sm2">SM2 algorithm</a>.',
     ITEM_INFO_TITLE: "Item info of",
     CARDS_IN_NOTE: "Cards in this Note",
     SAVE_ITEM_INFO: "Save",
@@ -401,8 +372,6 @@ export default {
     ITEM_DATA_INFO: "Item.data info",
     DATA_LOCATION_WARNING_TO_NOTE:
         "BE CAREFUL!!!\n  if you confirm this, it will convert all your scheduling informations in `tracked_files.json` to note, which will change lots of your note file in the same time.\n Please make sure the setting tags of flashcards and notes is what you are using.",
-    DATA_LOCATION_WARNING_OTHER_ALGO:
-        "if you want to save data on notefile, you **have to** use Default Algorithm.",
     DATA_LOCATION_WARNING_TO_TRACKED:
         "BE CAREFUL!!! \n if you confirm this, it will converte all your scheduling informations on note(which will be deleted in the same time) TO `tracked_files.json`.",
     POST_ISSUE_MODIFIED_PLUGIN:
@@ -773,14 +742,6 @@ export default {
     FOLDER_TRACKING_SAVE_SUCCESS: "文件夹追踪设置已保存",
     FOLDER_TRACKING_RESET: "去除已添加的自动标签",
     FOLDER_TRACKING_RESET_SUCCESS: "已去除自动添加的标签",
-    ALGO_CARD_SELECT: "卡片复习算法",
-    ALGO_CARD_SELECT_DESC: "选择用于卡片复习的算法",
-    ALGO_SAVE_WARN_PREFIX: "如果您想使用 ",
-    ALGO_SAVE_WARN_SUFFIX: " 算法，您**不能**将数据保存在笔记文件中。",
-    ALGO_SWITCH_CONFIRM: "切换卡片算法需要重新加载插件。确定要切换吗？",
-    ALGO_NOTE_SELECT: "笔记复习算法",
-    ALGO_NOTE_SELECT_DESC: "选择用于笔记复习的算法",
-    ALGO_NOTE_SWITCH_CONFIRM: "切换笔记算法需要重新加载插件。确定要切换吗？",
     LOC_CONFIRM_NOTES: "### 笔记复习\n",
     LOC_CONFIRM_FLASHCARDS: "\n---\n### 闪卡\n",
     CONFIRM: "确认",
@@ -807,7 +768,4 @@ export default {
     WMS_IMP_ORDER_ERROR: "最大乘数必须大于或等于最小乘数。",
     NOTICE_REVIEW_UPDATE_ERROR:
         "复习更新异常：next=${nextReview}，last=${lastReview}，interval=${reviewInterval}，balanced=${balancedInterval}",
-    SM2_BLACKOUT: "遗忘",
-    SM2_INCORRECT: "错误",
-    SM2_INCORRECT_EASY: "错误（较易）",
 };

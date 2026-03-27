@@ -4,19 +4,22 @@
  */
 
 import { Platform } from "obsidian";
+import * as tsfsrs from "ts-fsrs";
 import { t } from "src/lang/helpers";
 
-// Legacy migration note retained from the pre-Syro codebase.
-
-import { algorithms } from "./algorithms/algorithms_switch";
 import { DataLocation } from "./dataStore/dataLocation";
-import { DEFAULT_responseOptionBtnsText } from "./settings/algorithmSetting";
 import {
     DEFAULT_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
     MAX_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
     MIN_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
 } from "./settings/clozeContext";
-import { getArrayProp, getNumberProp, getStringProp, isRecord } from "./util/typeGuards";
+import {
+    getArrayProp,
+    getBooleanProp,
+    getNumberProp,
+    getStringProp,
+    isRecord,
+} from "./util/typeGuards";
 import { pathMatchesPattern } from "src/utils/fs";
 
 // ============ Status Bar Animation ===========
@@ -38,6 +41,7 @@ export interface DeckOptionsPreset {
     maxReviews: number; // Daily review limit
     learningSteps: string; // Learning steps, e.g. "1m 10m"
     lapseSteps: string; // Relearning steps, e.g. "10m"
+    fsrs?: FsrsSettings; // Future runtime truth for preset-scoped FSRS parameters
 }
 
 // Shared progress bar style.
@@ -60,6 +64,206 @@ export interface LicenseState {
     activatedAt: number;
 }
 
+export interface ReviewResponseTexts {
+    again: string;
+    hard: string;
+    good: string;
+    easy: string;
+}
+
+export interface FsrsSettings
+    extends Omit<tsfsrs.FSRSParameters, "w" | "learning_steps" | "relearning_steps"> {
+    revlog_tags: string[];
+    w: number[];
+    learning_steps: tsfsrs.StepUnit[];
+    relearning_steps: tsfsrs.StepUnit[];
+}
+
+export interface WeightedMultiplierSettings {
+    baseEase: number;
+    impMin: number;
+    impMax: number;
+    againInterval: number;
+    hardFactor: number;
+    goodFactor: number;
+    easyFactor: number;
+}
+
+export const DEFAULT_FLASHCARD_RESPONSE_TEXTS: ReviewResponseTexts = {
+    again: t("RESET"),
+    hard: t("HARD"),
+    good: t("GOOD"),
+    easy: t("EASY"),
+};
+
+export const DEFAULT_NOTE_RESPONSE_TEXTS: ReviewResponseTexts = {
+    again: t("RESET"),
+    hard: t("HARD"),
+    good: t("GOOD"),
+    easy: t("EASY"),
+};
+
+const FSRS_STEP_PATTERN = /^\d+(?:\.\d+)?[mhd]$/i;
+
+function isFsrsStepUnit(value: unknown): value is tsfsrs.StepUnit {
+    return typeof value === "string" && FSRS_STEP_PATTERN.test(value.trim());
+}
+
+function normalizeFsrsStepList(
+    value: unknown,
+    fallback: readonly tsfsrs.StepUnit[],
+): tsfsrs.StepUnit[] {
+    if (!Array.isArray(value)) {
+        return [...fallback];
+    }
+
+    if (value.length === 0) {
+        return [];
+    }
+
+    const steps = value
+        .map((entry) => (typeof entry === "string" ? entry.trim() : entry))
+        .filter((entry): entry is tsfsrs.StepUnit => isFsrsStepUnit(entry));
+
+    return steps.length === value.length ? steps : [...fallback];
+}
+
+function normalizeFsrsWeights(value: unknown, fallback: readonly number[]): number[] {
+    if (!Array.isArray(value)) {
+        return [...fallback];
+    }
+
+    const weights = value.map((entry) => Number(entry));
+    if (weights.some((entry) => !Number.isFinite(entry)) || weights.length !== fallback.length) {
+        return [...fallback];
+    }
+
+    try {
+        return [...tsfsrs.checkParameters(weights)];
+    } catch {
+        return [...fallback];
+    }
+}
+
+function parseLegacyFsrsSteps(
+    value: string | undefined,
+    fallback: readonly tsfsrs.StepUnit[],
+): tsfsrs.StepUnit[] {
+    if (typeof value !== "string") {
+        return [...fallback];
+    }
+
+    const entries = value
+        .split(/\s+/)
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+
+    if (entries.length === 0) {
+        return [];
+    }
+
+    return entries.every((entry) => isFsrsStepUnit(entry))
+        ? (entries as tsfsrs.StepUnit[])
+        : [...fallback];
+}
+
+export function createDefaultFsrsSettings(
+    overrides: Partial<FsrsSettings> = {},
+): FsrsSettings {
+    const { revlog_tags, ...parameterOverrides } = overrides;
+    const params = tsfsrs.generatorParameters({
+        enable_fuzz: true,
+        ...parameterOverrides,
+    });
+
+    return {
+        revlog_tags: Array.isArray(revlog_tags)
+            ? revlog_tags.filter((tag): tag is string => typeof tag === "string")
+            : [],
+        request_retention: params.request_retention,
+        maximum_interval: params.maximum_interval,
+        w: [...params.w],
+        enable_fuzz: params.enable_fuzz,
+        enable_short_term: params.enable_short_term,
+        learning_steps: [...params.learning_steps],
+        relearning_steps: [...params.relearning_steps],
+    };
+}
+
+export function cloneFsrsSettings(settings: FsrsSettings): FsrsSettings {
+    return {
+        ...settings,
+        revlog_tags: [...settings.revlog_tags],
+        w: [...settings.w],
+        learning_steps: [...settings.learning_steps],
+        relearning_steps: [...settings.relearning_steps],
+    };
+}
+
+export function normalizeFsrsSettings(
+    value: unknown,
+    fallback?: FsrsSettings,
+): FsrsSettings {
+    const defaultSettings = fallback
+        ? cloneFsrsSettings(fallback)
+        : createDefaultFsrsSettings();
+
+    if (!isRecord(value)) {
+        return defaultSettings;
+    }
+
+    const requestRetention = getNumberProp(value, "request_retention");
+    const maximumInterval = getNumberProp(value, "maximum_interval");
+
+    const params = tsfsrs.generatorParameters({
+        request_retention:
+            requestRetention !== undefined && requestRetention > 0 && requestRetention <= 1
+                ? requestRetention
+                : defaultSettings.request_retention,
+        maximum_interval:
+            maximumInterval !== undefined
+                ? Math.max(1, Math.round(maximumInterval))
+                : defaultSettings.maximum_interval,
+        w: normalizeFsrsWeights(getArrayProp(value, "w"), defaultSettings.w),
+        enable_fuzz: getBooleanProp(value, "enable_fuzz") ?? defaultSettings.enable_fuzz,
+        enable_short_term:
+            getBooleanProp(value, "enable_short_term") ?? defaultSettings.enable_short_term,
+        learning_steps: normalizeFsrsStepList(
+            getArrayProp(value, "learning_steps"),
+            defaultSettings.learning_steps,
+        ),
+        relearning_steps: normalizeFsrsStepList(
+            getArrayProp(value, "relearning_steps"),
+            defaultSettings.relearning_steps,
+        ),
+    });
+
+    return {
+        revlog_tags: Array.isArray(value.revlog_tags)
+            ? value.revlog_tags.filter((tag): tag is string => typeof tag === "string")
+            : [...defaultSettings.revlog_tags],
+        request_retention: params.request_retention,
+        maximum_interval: params.maximum_interval,
+        w: [...params.w],
+        enable_fuzz: params.enable_fuzz,
+        enable_short_term: params.enable_short_term,
+        learning_steps: [...params.learning_steps],
+        relearning_steps: [...params.relearning_steps],
+    };
+}
+
+export const DEFAULT_FSRS_SETTINGS: FsrsSettings = createDefaultFsrsSettings();
+
+export const DEFAULT_WEIGHTED_MULTIPLIER_SETTINGS: WeightedMultiplierSettings = {
+    baseEase: 250,
+    impMin: 1.0,
+    impMax: 2.5,
+    againInterval: 1.0,
+    hardFactor: 0.7,
+    goodFactor: 1.3,
+    easyFactor: 2.0,
+};
+
 export const DEFAULT_DECK_OPTIONS_PRESET: DeckOptionsPreset = {
     name: "\u9ed8\u8ba4\u65b9\u6848",
     autoAdvance: true,
@@ -69,7 +273,205 @@ export const DEFAULT_DECK_OPTIONS_PRESET: DeckOptionsPreset = {
     maxReviews: 200, // Default daily review limit
     learningSteps: "1m 10m", // Default learning steps
     lapseSteps: "10m", // Default relearning steps
+    fsrs: createDefaultFsrsSettings(),
 };
+
+export function cloneDeckOptionsPreset(preset: DeckOptionsPreset): DeckOptionsPreset {
+    return {
+        ...preset,
+        fsrs: preset.fsrs ? cloneFsrsSettings(preset.fsrs) : undefined,
+    };
+}
+
+export function normalizeDeckOptionsPreset(
+    preset: unknown,
+    fallbackFsrs?: FsrsSettings,
+): DeckOptionsPreset {
+    const defaultFsrs = fallbackFsrs
+        ? cloneFsrsSettings(fallbackFsrs)
+        : createDefaultFsrsSettings();
+    const rawPreset = isRecord(preset) ? preset : {};
+    const rawPresetFsrs = isRecord(rawPreset.fsrs) ? rawPreset.fsrs : undefined;
+
+    const normalizedPreset: DeckOptionsPreset = {
+        name: getStringProp(rawPreset, "name") ?? DEFAULT_DECK_OPTIONS_PRESET.name,
+        autoAdvance: getBooleanProp(rawPreset, "autoAdvance") ?? DEFAULT_DECK_OPTIONS_PRESET.autoAdvance,
+        autoAdvanceSeconds:
+            getNumberProp(rawPreset, "autoAdvanceSeconds") ??
+            DEFAULT_DECK_OPTIONS_PRESET.autoAdvanceSeconds,
+        showProgressBar:
+            getBooleanProp(rawPreset, "showProgressBar") ??
+            DEFAULT_DECK_OPTIONS_PRESET.showProgressBar,
+        maxNewCards: getNumberProp(rawPreset, "maxNewCards") ?? DEFAULT_DECK_OPTIONS_PRESET.maxNewCards,
+        maxReviews: getNumberProp(rawPreset, "maxReviews") ?? DEFAULT_DECK_OPTIONS_PRESET.maxReviews,
+        learningSteps:
+            getStringProp(rawPreset, "learningSteps") ?? DEFAULT_DECK_OPTIONS_PRESET.learningSteps,
+        lapseSteps: getStringProp(rawPreset, "lapseSteps") ?? DEFAULT_DECK_OPTIONS_PRESET.lapseSteps,
+        fsrs: normalizeFsrsSettings(rawPresetFsrs ?? defaultFsrs, defaultFsrs),
+    };
+
+    if (
+        !rawPresetFsrs ||
+        !Object.prototype.hasOwnProperty.call(rawPresetFsrs, "learning_steps")
+    ) {
+        normalizedPreset.fsrs.learning_steps = parseLegacyFsrsSteps(
+            normalizedPreset.learningSteps,
+            defaultFsrs.learning_steps,
+        );
+    }
+
+    if (
+        !rawPresetFsrs ||
+        !Object.prototype.hasOwnProperty.call(rawPresetFsrs, "relearning_steps")
+    ) {
+        normalizedPreset.fsrs.relearning_steps = parseLegacyFsrsSteps(
+            normalizedPreset.lapseSteps,
+            defaultFsrs.relearning_steps,
+        );
+    }
+
+    return syncDeckOptionsPresetStepFields(normalizedPreset);
+}
+
+export function createDefaultDeckOptionsPreset(fallbackFsrs?: FsrsSettings): DeckOptionsPreset {
+    return normalizeDeckOptionsPreset(undefined, fallbackFsrs);
+}
+
+export function formatFsrsStepList(steps: readonly tsfsrs.StepUnit[]): string {
+    return steps.join(" ");
+}
+
+export function syncDeckOptionsPresetStepFields(preset: DeckOptionsPreset): DeckOptionsPreset {
+    const normalizedPreset = cloneDeckOptionsPreset(preset);
+    const fsrsSettings = normalizedPreset.fsrs ?? createDefaultFsrsSettings();
+
+    normalizedPreset.learningSteps = formatFsrsStepList(fsrsSettings.learning_steps);
+    normalizedPreset.lapseSteps = formatFsrsStepList(fsrsSettings.relearning_steps);
+
+    return normalizedPreset;
+}
+
+export function updateDeckOptionsPresetStepProxy(
+    preset: DeckOptionsPreset,
+    updates: Partial<Pick<DeckOptionsPreset, "learningSteps" | "lapseSteps">>,
+    fallbackFsrs?: FsrsSettings,
+): DeckOptionsPreset {
+    const normalizedPreset = normalizeDeckOptionsPreset(preset, fallbackFsrs);
+    const normalizedFsrs = normalizedPreset.fsrs ?? createDefaultFsrsSettings();
+
+    if (updates.learningSteps !== undefined) {
+        normalizedPreset.learningSteps = updates.learningSteps;
+        normalizedFsrs.learning_steps = parseLegacyFsrsSteps(
+            updates.learningSteps,
+            normalizedFsrs.learning_steps,
+        );
+    }
+
+    if (updates.lapseSteps !== undefined) {
+        normalizedPreset.lapseSteps = updates.lapseSteps;
+        normalizedFsrs.relearning_steps = parseLegacyFsrsSteps(
+            updates.lapseSteps,
+            normalizedFsrs.relearning_steps,
+        );
+    }
+
+    normalizedPreset.fsrs = normalizeFsrsSettings(normalizedFsrs, normalizedFsrs);
+    return syncDeckOptionsPresetStepFields(normalizedPreset);
+}
+
+export function normalizeDeckOptionsPresets(
+    presets: unknown,
+    fallbackFsrs?: FsrsSettings,
+): DeckOptionsPreset[] {
+    if (!Array.isArray(presets) || presets.length === 0) {
+        return [createDefaultDeckOptionsPreset(fallbackFsrs)];
+    }
+
+    return presets.map((preset) => normalizeDeckOptionsPreset(preset, fallbackFsrs));
+}
+
+export function resolveDeckOptionsPresetIndex(
+    settings: Pick<SRSettings, "deckOptionsPresets" | "deckPresetAssignment" | "fsrsSettings">,
+    deckPath?: string | null,
+): number {
+    const presetCount = settings.deckOptionsPresets?.length ?? 0;
+    if (presetCount <= 1) {
+        return 0;
+    }
+
+    if (!deckPath) {
+        return 0;
+    }
+
+    const assignedIndex = settings.deckPresetAssignment?.[deckPath];
+    return typeof assignedIndex === "number" && assignedIndex >= 0 && assignedIndex < presetCount
+        ? assignedIndex
+        : 0;
+}
+
+export function resolveDeckOptionsPreset(
+    settings: Pick<SRSettings, "deckOptionsPresets" | "deckPresetAssignment" | "fsrsSettings">,
+    deckPath?: string | null,
+): DeckOptionsPreset {
+    const fallbackFsrs = normalizeFsrsSettings(settings.fsrsSettings);
+    const presets = normalizeDeckOptionsPresets(settings.deckOptionsPresets, fallbackFsrs);
+    const presetIndex = resolveDeckOptionsPresetIndex(
+        {
+            deckOptionsPresets: presets,
+            deckPresetAssignment: settings.deckPresetAssignment,
+            fsrsSettings: fallbackFsrs,
+        },
+        deckPath,
+    );
+
+    return cloneDeckOptionsPreset(presets[presetIndex] ?? presets[0]);
+}
+
+export function resolveDeckFsrsSettings(
+    settings: Pick<SRSettings, "deckOptionsPresets" | "deckPresetAssignment" | "fsrsSettings">,
+    deckPath?: string | null,
+): FsrsSettings {
+    return cloneFsrsSettings(resolveDeckOptionsPreset(settings, deckPath).fsrs ?? DEFAULT_FSRS_SETTINGS);
+}
+
+export function syncFsrsSettingsCompatibilityMirror(settings: SRSettings): void {
+    const normalizedFsrsSettings = normalizeFsrsSettings(settings.fsrsSettings);
+    settings.deckOptionsPresets = normalizeDeckOptionsPresets(
+        settings.deckOptionsPresets,
+        normalizedFsrsSettings,
+    );
+    settings.fsrsSettings = resolveDeckFsrsSettings(settings);
+}
+
+export function setFsrsFuzzForAllDeckOptionsPresets(
+    settings: SRSettings,
+    enableFuzz: boolean,
+): void {
+    const fallbackFsrs = normalizeFsrsSettings(settings.fsrsSettings);
+    settings.deckOptionsPresets = normalizeDeckOptionsPresets(
+        settings.deckOptionsPresets,
+        fallbackFsrs,
+    ).map((preset) =>
+        normalizeDeckOptionsPreset(
+            {
+                ...preset,
+                fsrs: {
+                    ...preset.fsrs,
+                    enable_fuzz: enableFuzz,
+                },
+            },
+            fallbackFsrs,
+        ),
+    );
+    settings.fsrsSettings = normalizeFsrsSettings(
+        {
+            ...(settings.fsrsSettings ?? fallbackFsrs),
+            enable_fuzz: enableFuzz,
+        },
+        fallbackFsrs,
+    );
+    syncFsrsSettingsCompatibilityMirror(settings);
+}
 
 // Default progress bar style.
 export const DEFAULT_PROGRESS_BAR_STYLE: ProgressBarStyle = {
@@ -81,7 +483,7 @@ export const DEFAULT_PROGRESS_BAR_STYLE: ProgressBarStyle = {
 
 export interface SRSettings {
     // flashcards
-    responseOptionBtnsText: Record<string, string[]>;
+    flashcardResponseTexts: ReviewResponseTexts;
 
     flashcardTags: string[]; // [Deprecated] Use convertFoldersToDecks instead
     convertFoldersToDecks: boolean;
@@ -156,17 +558,12 @@ export interface SRSettings {
     enableVolumeKeyControl: boolean;
     volumeUpMapping: number;
     volumeDownMapping: number;
-    useReactCardUI: boolean; // Whether to use the React flashcard review UI
 
     // algorithm
-    algorithm: string; // Legacy field retained for backward compatibility
-    cardAlgorithm: string; // Flashcard review algorithm
-    noteAlgorithm: string; // Note review algorithm
-    baseEase: number;
-    lapsesIntervalChange: number;
-    easyBonus: number;
+    fsrsSettings: FsrsSettings;
+    weightedMultiplierSettings: WeightedMultiplierSettings;
+    noteResponseTexts: ReviewResponseTexts;
     loadBalance: boolean;
-    maximumInterval: number;
     maxLinkFactor: number;
 
     // storage
@@ -185,7 +582,6 @@ export interface SRSettings {
     repeatItems: boolean;
     trackedNoteToDecks: boolean;
     untrackWithReviewTag: boolean;
-    algorithmSettings: Record<string, unknown>;
 
     // Deck option presets
     deckOptionsPresets: DeckOptionsPreset[]; // All presets, where index 0 is the default preset
@@ -237,7 +633,7 @@ export interface SRSettings {
 
 export const DEFAULT_SETTINGS: SRSettings = {
     // flashcards
-    responseOptionBtnsText: DEFAULT_responseOptionBtnsText,
+    flashcardResponseTexts: { ...DEFAULT_FLASHCARD_RESPONSE_TEXTS },
 
     flashcardTags: ["#flashcards"],
     convertFoldersToDecks: true,
@@ -312,14 +708,12 @@ export const DEFAULT_SETTINGS: SRSettings = {
     enableVolumeKeyControl: true,
     volumeUpMapping: 1, // ReviewResponse.Hard
     volumeDownMapping: 2, // ReviewResponse.Good
-    useReactCardUI: false, // Use the classic UI by default
 
     // algorithm
-    baseEase: 250,
-    lapsesIntervalChange: 0.5,
-    easyBonus: 1.3,
+    fsrsSettings: cloneFsrsSettings(DEFAULT_FSRS_SETTINGS),
+    weightedMultiplierSettings: { ...DEFAULT_WEIGHTED_MULTIPLIER_SETTINGS },
+    noteResponseTexts: { ...DEFAULT_NOTE_RESPONSE_TEXTS },
     loadBalance: true,
-    maximumInterval: 36525,
     maxLinkFactor: 1.0,
 
     // storage
@@ -339,13 +733,9 @@ export const DEFAULT_SETTINGS: SRSettings = {
     repeatItems: false,
     trackedNoteToDecks: false,
     untrackWithReviewTag: false,
-    algorithm: Object.keys(algorithms)[0], // Legacy compatibility field
-    cardAlgorithm: "Fsrs", // Default flashcard algorithm
-    noteAlgorithm: "WeightedMultiplier", // Default note review algorithm
-    algorithmSettings: { algorithm: Object.values(algorithms)[0].settings },
 
     // Deck option presets
-    deckOptionsPresets: [{ ...DEFAULT_DECK_OPTIONS_PRESET }], // Start with a single default preset
+    deckOptionsPresets: [createDefaultDeckOptionsPreset(DEFAULT_FSRS_SETTINGS)], // Start with a single default preset
     deckPresetAssignment: {}, // Decks use the default preset unless assigned
     progressBarStyle: { ...DEFAULT_PROGRESS_BAR_STYLE },
 
@@ -478,12 +868,7 @@ export function syncDefaultClozePatterns(settings: SRSettings) {
 }
 
 export function upgradeSettings(settings: SRSettings) {
-    const legacySettings = settings as SRSettings & {
-        vaultId?: string;
-        licenseToken?: string;
-        lastVerification?: number;
-        enableCardLevelTrace?: boolean;
-    };
+    const legacySettings = settings as SRSettings & Record<string, unknown>;
 
     if (
         settings.randomizeCardOrder != null &&
@@ -572,8 +957,6 @@ export function upgradeSettings(settings: SRSettings) {
         settings.showRuntimeDebugMessages = false;
     }
 
-    delete legacySettings.enableCardLevelTrace;
-
     settings.openViewInNewTab = true;
     if (settings.clozeContextMode === undefined) {
         settings.clozeContextMode = "single";
@@ -605,46 +988,42 @@ export function upgradeSettings(settings: SRSettings) {
         settings.showOtherBoldClozeVisual = settings.showOtherClozesVisual ?? false;
     }
 
-    // Upgrade deck option presets by filling any missing fields introduced in newer versions.
-    if (settings.deckOptionsPresets && settings.deckOptionsPresets.length > 0) {
-        for (const preset of settings.deckOptionsPresets) {
-            if (preset.maxNewCards === undefined) {
-                preset.maxNewCards = DEFAULT_DECK_OPTIONS_PRESET.maxNewCards;
-            }
-            if (preset.maxReviews === undefined) {
-                preset.maxReviews = DEFAULT_DECK_OPTIONS_PRESET.maxReviews;
-            }
-        }
-    }
+    syncFsrsSettingsCompatibilityMirror(settings);
 
-    // Upgrade legacy single-algorithm settings to separate card and note algorithms.
-    if (!settings.cardAlgorithm) {
-        settings.cardAlgorithm = settings.algorithm || "Fsrs";
-        console.debug("Upgrading to dual algorithm: cards=" + settings.cardAlgorithm);
-    }
-    if (!settings.noteAlgorithm) {
-        settings.noteAlgorithm = "WeightedMultiplier";
-        console.debug("Upgrading to dual algorithm: notes=" + settings.noteAlgorithm);
-    }
+    settings.weightedMultiplierSettings = {
+        ...DEFAULT_WEIGHTED_MULTIPLIER_SETTINGS,
+        ...(isRecord(settings.weightedMultiplierSettings) ? settings.weightedMultiplierSettings : {}),
+    };
 
-    // Create algorithm settings storage when upgrading old settings.
-    if (!settings.algorithmSettings) {
-        settings.algorithmSettings = {};
-    }
+    settings.flashcardResponseTexts = {
+        again:
+            settings.flashcardResponseTexts?.again ??
+            DEFAULT_FLASHCARD_RESPONSE_TEXTS.again,
+        hard:
+            settings.flashcardResponseTexts?.hard ??
+            DEFAULT_FLASHCARD_RESPONSE_TEXTS.hard,
+        good:
+            settings.flashcardResponseTexts?.good ??
+            DEFAULT_FLASHCARD_RESPONSE_TEXTS.good,
+        easy:
+            settings.flashcardResponseTexts?.easy ??
+            DEFAULT_FLASHCARD_RESPONSE_TEXTS.easy,
+    };
 
-    // Create response button label storage when upgrading old settings.
-    if (!settings.responseOptionBtnsText) {
-        settings.responseOptionBtnsText = {};
-    }
-
-    // Ensure every algorithm has a default set of response button labels.
-    const defaultTexts = [t("RESET"), t("HARD"), t("GOOD"), t("EASY")];
-    const algorithmList = ["Default", "Anki", "Fsrs", "SM2", "WeightedMultiplier"];
-    algorithmList.forEach((algoName) => {
-        if (!settings.responseOptionBtnsText[algoName]) {
-            settings.responseOptionBtnsText[algoName] = defaultTexts;
-        }
-    });
+    settings.noteResponseTexts = {
+        again:
+            settings.noteResponseTexts?.again ??
+            DEFAULT_NOTE_RESPONSE_TEXTS.again,
+        hard:
+            settings.noteResponseTexts?.hard ??
+            DEFAULT_NOTE_RESPONSE_TEXTS.hard,
+        good:
+            settings.noteResponseTexts?.good ??
+            DEFAULT_NOTE_RESPONSE_TEXTS.good,
+        easy:
+            settings.noteResponseTexts?.easy ??
+            DEFAULT_NOTE_RESPONSE_TEXTS.easy,
+    };
 
     // Keep data in the plugin folder; the old track-file mode is no longer supported.
     if (settings.dataLocation !== DataLocation.PluginFolder) {
@@ -687,6 +1066,13 @@ export function upgradeSettings(settings: SRSettings) {
     }
 
     settings.isPro = hasSupporterLicenseState(settings.licenseState);
+
+    const currentSettingKeys = new Set(Object.keys(DEFAULT_SETTINGS));
+    for (const key of Object.keys(legacySettings)) {
+        if (!currentSettingKeys.has(key)) {
+            delete legacySettings[key];
+        }
+    }
 }
 
 export class SettingsUtil {

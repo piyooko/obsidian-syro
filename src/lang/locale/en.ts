@@ -345,9 +345,9 @@ export default normalizeSentenceCaseLocale({
     MAX_LINK_CONTRIB: "Maximum link contribution",
     MAX_LINK_CONTRIB_DESC:
         "Maximum contribution of the weighted ease of linked notes to the initial ease.",
-    FUZZING: "Fuzzing",
+    FUZZING: "Random due drift",
     FUZZING_DESC:
-        "When enabled, this adds a small random delay to the new interval time to prevent cards from sticking together and always being reviewed on the same day.",
+        "Add a small random offset to due dates so large batches do not pile up on the same day.",
     SWITCH_SHORT_TERM: "Switch to Short-term Scheduler",
     SWITCH_SHORT_TERM_DESC:
         "When disabled, this allow user to skip the short-term scheduler and directly switch to the long-term scheduler.",
@@ -370,14 +370,6 @@ export default normalizeSentenceCaseLocale({
     NEW_PER_DAY_NEG: "New per day must be -1 or greater.",
     REPEAT_ITEMS: "Repeat Items",
     REPEAT_ITEMS_DESC: "Should items marked as incorrect be repeated until correct?",
-    ALGORITHMS_CONFIRM: `Switching algorithms might reset or impact review timings on existing items.
-    This change is irreversible. Changing algorithms only takes effect after a restart
-    or a plugin reload. Are you sure you want to switch algorithms?
-    `,
-    ALGORITHMS_DESC: "The algorithm used for spaced repetition.",
-    ALGORITHM_SWITCH_SUCCESS: "Switch successful",
-    ALGORITHM_SWITCH_FAILED: "Switch failed, restored",
-
     // WeightedMultiplier algorithm
     WMS_ALGORITHM: "Weighted Multiplier Scheduler",
     WMS_ALGORITHM_DESC:
@@ -539,36 +531,6 @@ export default normalizeSentenceCaseLocale({
     FSRS_W_PARAM_DESC:
         'See <a href="https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm">FSRS V6 WIKI</a> and <a href="https://open-spaced-repetition.github.io/anki_fsrs_visualizer">FSRS w parameter visualization</a> to set various parameters.',
 
-    // anki.ts
-    ANKI_ALGORITHM_DESC:
-        'The algorithm used for spaced repetition. For more information see <a href="https://faqs.ankiweb.net/what-spaced-repetition-algorithm.html">Anki algorithm</a>.',
-    STARTING_EASE: "Starting Ease",
-    STARTING_EASE_DESC: "The initial ease given to an item.",
-    STARTING_EASE_ERROR: "Starting ease must be a positive number.",
-    STARTING_EASE_WARNING: "Starting ease lower than 1.3 is not recommended.",
-    EASY_BONUS_ANKI: "Easy Bonus",
-    EASY_BONUS_ANKI_DESC: "A bonus multiplier for items reviewed as easy.",
-    EASY_BONUS_ANKI_ERROR: "Easy bonus must be a number greater than or equal to 1.",
-    LAPSE_INTERVAL_MODIFIER: "Lapse Interval Modifier",
-    LAPSE_INTERVAL_MODIFIER_DESC:
-        "A factor to modify the review interval with when an item is reviewed as wrong.",
-    LAPSE_INTERVAL_ERROR: "Lapse interval must be a positive number.",
-    GRADUATING_INTERVAL: "Graduating Interval",
-    GRADUATING_INTERVAL_DESC:
-        "The interval (in days) to the next review after reviewing a new item as 'Good'.",
-    GRADUATING_INTERVAL_ERROR: "Interval must be a positive number.",
-    EASY_INTERVAL: "Easy Interval",
-    EASY_INTERVAL_DESC:
-        "The interval (in days) to the next review after reviewing a new item as 'Easy'.",
-    EASY_INTERVAL_ERROR: "Interval must be a positive number.",
-
-    // scheduling_default.ts
-    DEFAULT_ALGORITHM_DESC: "The algorithm used for spaced repetition.",
-
-    // supermemo.ts
-    SM2_ALGORITHM_DESC:
-        'The algorithm used for spaced repetition. Currently shares the same parameters as the Anki algorithm (only the algorithm processing method is different). For more information see <a href="https://www.supermemo.com/en/archives1990-2015/english/ol/sm2">SM2 algorithm</a>.',
-
     // info.ts
     ITEM_INFO_TITLE: "Item info of",
     CARDS_IN_NOTE: "Cards in this Note",
@@ -583,8 +545,6 @@ export default normalizeSentenceCaseLocale({
     // locationSetting.ts
     DATA_LOCATION_WARNING_TO_NOTE:
         "BE CAREFUL!!!\n  if you confirm this, it will convert all your scheduling informations in `tracked_files.json` to note, which will change lots of your note file in the same time.\n Please make sure the setting tags of flashcards and notes is what you are using.",
-    DATA_LOCATION_WARNING_OTHER_ALGO:
-        "if you want to save data on notefile, you **have to** use Default Algorithm.",
     DATA_LOCATION_WARNING_TO_TRACKED:
         "BE CAREFUL!!! \n if you confirm this, it will converte all your scheduling informations on note(which will be deleted in the same time) TO `tracked_files.json`.",
 
@@ -1004,15 +964,6 @@ export default normalizeSentenceCaseLocale({
     FOLDER_TRACKING_SAVE_SUCCESS: "Folder tracking settings saved",
     FOLDER_TRACKING_RESET: "Remove auto-added tags",
     FOLDER_TRACKING_RESET_SUCCESS: "Auto-added tags removed",
-    // algorithmSetting.ts
-    ALGO_CARD_SELECT: "Card Algorithm",
-    ALGO_CARD_SELECT_DESC: "Select algorithm for card reviews",
-    ALGO_SAVE_WARN_PREFIX: "If you want to use ",
-    ALGO_SAVE_WARN_SUFFIX: " algorithm, you **can't** save data on note file.",
-    ALGO_SWITCH_CONFIRM: "Switching card algorithm requires plugin reload. Are you sure?",
-    ALGO_NOTE_SELECT: "Note Algorithm",
-    ALGO_NOTE_SELECT_DESC: "Select algorithm for note reviews",
-    ALGO_NOTE_SWITCH_CONFIRM: "Switching note algorithm requires plugin reload. Are you sure?",
     // locationSetting.ts
     LOC_CONFIRM_NOTES: "### Review Notes\n",
     LOC_CONFIRM_FLASHCARDS: "\n---\n### Flashcards\n",
@@ -1040,7 +991,4 @@ export default normalizeSentenceCaseLocale({
     WMS_IMP_ORDER_ERROR: "Maximum multiplier must be greater than or equal to minimum multiplier.",
     NOTICE_REVIEW_UPDATE_ERROR:
         "Review update error: next=${nextReview}, last=${lastReview}, interval=${reviewInterval}, balanced=${balancedInterval}",
-    SM2_BLACKOUT: "Blackout",
-    SM2_INCORRECT: "Incorrect",
-    SM2_INCORRECT_EASY: "Incorrect (Easy)",
 });

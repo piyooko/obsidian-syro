@@ -1,40 +1,16 @@
-﻿/**
- * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
- * [鏍稿績] 鏁版嵁涓績鍗曚緥 (DataStore)銆?
- * 瀹冩槸鏁翠釜鎻掍欢鍐呭瓨鏁版嵁鐨勨€滄€讳粨搴撯€濓紝绠＄悊鎵€鏈夌殑澶嶄範椤?Items)銆佽拷韪枃浠?TrackedFiles)鍜屽涔犻槦鍒?Queues)銆?
- * 璐熻矗鏁版嵁鐨勫姞杞?Load)銆佷繚瀛?Save)浠ュ強涓庣鐩樻枃浠剁殑鍚屾銆?
- * 鍒涘缓鏂扮殑澶嶄範椤规椂锛屼細鏍规嵁椤圭洰绫诲瀷锛堝崱鐗囩敤 FSRS锛岀瑪璁扮敤鍔犳潈涔樻硶锛夐€夋嫨姝ｇ‘鐨勭畻娉曟潵鐢熸垚鍒濆鏁版嵁銆?
- * 杩借釜鏂囦欢浣跨敤鍞竴鐨?fileID 瀛楃涓蹭綔涓洪敭锛堣€屼笉鏄暟缁勪笅鏍囷級锛?
- * 杩欐牱鏃犺鏂囦欢鎬庝箞澧炲垹鎺掑簭锛屽涔犻」鍜屾枃浠剁殑鍏宠仈鍏崇郴閮戒笉浼氶敊浣嶃€?
- *
- * 瀹冨湪椤圭洰涓睘浜庯細鏁版嵁灞?(Data Layer)
- *
- * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
- * 1. src/dataStore/queue.ts (闃熷垪绠＄悊)
- * 2. src/dataStore/repetitionItem.ts (澶嶄範椤规暟鎹ā鍨?
- * 3. src/dataStore/adapter.ts (鏂囦欢绯荤粺閫傞厤鍣?
- * 4. src/main.ts (鑾峰彇鍗＄墖/绗旇瀵瑰簲鐨勭畻娉曞疄渚?
- *
- * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
- * 1. src/FlashcardReviewSequencer.ts (鑾峰彇鍗＄墖瀵瑰簲鐨勮皟搴︽暟鎹?
- * 2. src/algorithms/*.ts (绠楁硶闇€瑕佽鍙栧巻鍙叉暟鎹?
- * 3. 鍑犱箮鎵€鏈夐渶瑕佽闂叏灞€鐘舵€佺殑 UI 缁勪欢
- */
-/**
- * [鏁版嵁灞傦細璐熻矗鏁版嵁鐨勬寔涔呭寲銆佽鍙栧拰鍐呭瓨鐘舵€佺鐞哴 [鏍稿績] 鏁版嵁涓績鍗曚緥 (DataStore)锛岀鐞嗗唴瀛樹腑鐨勬墍鏈夋暟鎹紙鍗＄墖銆侀槦鍒椼€佹枃浠惰拷韪級銆?
- */
-import { MiscUtils, debug } from "src/util/utils_recall";
-import { SRSettings } from "../settings";
+﻿import { MiscUtils, debug } from "src/util/utils_recall";
+import { FsrsSettings, SRSettings } from "../settings";
 import SRPlugin from "src/main";
 
 import { TFile, TFolder } from "obsidian";
 
 import { FsrsData } from "src/algorithms/fsrs";
-import { AnkiData } from "src/algorithms/anki";
+import { WeightedMultiplierAlgorithm } from "src/algorithms/weightedMultiplier";
+import { FsrsAlgorithm } from "src/algorithms/fsrs";
 
 import { getStorePath } from "src/dataStore/dataLocation";
 import { Tags } from "src/tags";
-import { SrsAlgorithm, algorithmNames } from "src/algorithms/algorithms";
+import { SrsAlgorithm } from "src/algorithms/algorithms";
 import { TrackedFile } from "./trackedFile";
 import { RPITEMTYPE, RepetitionItem, ReviewResult, CardQueue } from "./repetitionItem";
 import { DEFAULT_QUEUE_DATA, Queue } from "./queue";
@@ -64,13 +40,7 @@ export interface SrsData {
      * @type {RepetitionItem[]}
      */
     items: RepetitionItem[];
-    /**
-     * key = fileID锛堝 "f_8d29aa"锛夛紝鐢ㄥ敮涓€瀛楃涓蹭綔涓洪敭锛屼笉鍐嶄娇鐢ㄦ暟缁勪笅鏍?
-     */
     trackedFiles: Record<string, TrackedFile>;
-    /**
-     * 浠呯敤浜庡睍绀洪『搴忥紝鍏冪礌鏄?fileID
-     */
     fileOrder: string[];
 
     /**
@@ -81,9 +51,6 @@ export interface SrsData {
 
 export type ReviewedCounts = Record<string, { new: number; due: number }>;
 
-/**
- * 鐢熸垚涓€涓敮涓€鐨勬枃浠?ID锛屾牸寮忎负 "f_" + 6 浣嶉殢鏈哄瓧绗?
- */
 export function generateFileID(): string {
     return "f_" + Math.random().toString(36).substring(2, 8);
 }
@@ -154,13 +121,14 @@ export class DataStore {
     private reviewOverlayFailureNotified = false;
 
     private getAlgorithmForItemType(itemType: RPITEMTYPE): SrsAlgorithm {
-        try {
-            return (
-                SRPlugin.getInstance()?.getAlgorithmForItem(itemType) ?? SrsAlgorithm.getInstance()
-            );
-        } catch {
-            return SrsAlgorithm.getInstance();
+        const plugin = SRPlugin.getInstance();
+        if (plugin) {
+            return plugin.getAlgorithmForItem(itemType);
         }
+
+        return itemType === RPITEMTYPE.CARD
+            ? new FsrsAlgorithm()
+            : new WeightedMultiplierAlgorithm();
     }
 
     public static getInstance(): DataStore {
@@ -458,7 +426,6 @@ export class DataStore {
     }
 
     toInstances() {
-        // 鈻堚枅 鏁版嵁杩佺Щ锛氭棫鏍煎紡锛堟暟缁勶級鈫?鏂版牸寮忥紙Record + fileOrder锛夆枅鈻?
         if (Array.isArray(this.data.trackedFiles)) {
             const oldFiles = this.data.trackedFiles as unknown as TrackedFile[];
             const newFiles: Record<string, TrackedFile> = {};
@@ -473,7 +440,6 @@ export class DataStore {
                 indexToID.set(i, fileID);
             }
 
-            // 杩佺Щ鎵€鏈?item 鐨?fileIndex 鈫?fileID
             for (const item of this.data.items) {
                 if (item == null) continue;
                 const legacyItem = item as LegacyFileIndexItem;
@@ -494,7 +460,6 @@ export class DataStore {
                 `[SR] Data migration completed: ${oldFiles.length} -> ${fileOrder.length} files`,
             );
         } else {
-            // 鏂版牸寮忥細灏?TrackedFile 瀵硅薄杞负瀹炰緥
             for (const fileID in this.data.trackedFiles) {
                 this.data.trackedFiles[fileID] = TrackedFile.create(this.data.trackedFiles[fileID]);
             }
@@ -527,31 +492,23 @@ export class DataStore {
         this.data.items = items;
         this.data.queues = Queue.create(this.data.queues);
         this.rebuildItemByIdIndex();
-        // 杩佺Щ锛氫慨澶?CARD 绫诲瀷 item 浣跨敤浜嗛敊璇畻娉曞垵濮嬫暟鎹殑闂
         this.migrateCardItemsToFsrs();
         this.logDebug(
             `[SR-Debug] toInstances complete. Final items count: ${this.data.items.length}`,
         );
     }
 
-    /**
-     * 鏁版嵁杩佺Щ锛氬皢 CARD 绫诲瀷 item 涓敊璇殑 WMS 鏁版嵁鏍煎紡杞崲涓?FSRS 鏍煎紡銆?
-     * 鍙鏂板崱锛堜粠鏈涔犺繃鐨勶級鎵ц閲嶇疆锛屽凡澶嶄範鐨勫崱鐗囧彧璁板綍璀﹀憡銆?
-     */
     private migrateCardItemsToFsrs() {
         let migratedCount = 0;
         for (const item of this.data.items) {
             if (item == null) continue;
             if (item.itemType !== RPITEMTYPE.CARD) continue;
-            // 濡傛灉宸茬粡鏄?FSRS 鏍煎紡锛堝惈 state 瀛楁锛夛紝璺宠繃
             if (item.isFsrs) continue;
 
             if (item.timesReviewed === 0) {
-                // 鏂板崱锛氬畨鍏ㄥ湴閲嶇疆涓?FSRS 绌哄崱鏁版嵁
                 item.data = createEmptyCard();
                 migratedCount++;
             } else {
-                // 宸插涔犺繃鐨勫崱锛氫笉鍋氱牬鍧忔€т慨鏀癸紝浠呰褰曡鍛?
                 console.warn(
                     "[SR] migrateCardItemsToFsrs: CARD item",
                     item.ID,
@@ -566,9 +523,6 @@ export class DataStore {
         }
     }
 
-    /**
-     * 娓呯悊鑴忔暟鎹細灏?timesReviewed === 0 浣嗗寘鍚畫鐣欒皟搴︽暟鎹垨瀛︿範鐘舵€佺殑 Item 閲嶇疆涓哄共鍑€鐨?New 鐘舵€?
-     */
     public cleanDirtyNewItems() {
         let cleanedCount = 0;
         for (const item of this.data.items) {
@@ -581,10 +535,11 @@ export class DataStore {
                 } else if (item.isFsrs) {
                     const data = item.data as FsrsData;
                     if (data && Number(data.state) !== 0) needsClean = true;
-                } else if (item.itemType === RPITEMTYPE.CARD) {
-                    const data = item.data as AnkiData;
-                    if (data && (data.lastInterval !== 0 || data.iteration !== 0))
+                } else if (item.itemType === RPITEMTYPE.NOTE) {
+                    const data = item.data as { currentInterval?: number };
+                    if (data && Number(data.currentInterval ?? 1) !== 1) {
                         needsClean = true;
+                    }
                 }
 
                 if (needsClean) {
@@ -651,7 +606,7 @@ export class DataStore {
         } catch (error) {
             this.logError("Error loading data", error);
             this.data = Object.assign({}, DEFAULT_SRS_DATA);
-            await this.save(); // 寮哄埗鎸佷箙鍖栦竴娆★紝浠ラ槻鍐嶆鍔犺浇鏃朵粛涓㈠け
+            await this.save();
         } finally {
             this.toInstances();
         }
@@ -752,12 +707,6 @@ export class DataStore {
         return this.data.items;
     }
 
-    /**
-     * getFileID 鈥?鏍规嵁鏂囦欢璺緞鏌ユ壘瀵瑰簲鐨?fileID銆?
-     *
-     * @param {string} path
-     * @returns {string} fileID | ""
-     */
     getFileID(path: string): string {
         for (const [fileID, tf] of Object.entries(this.data.trackedFiles)) {
             if (tf != null && tf.path === path) {
@@ -767,10 +716,6 @@ export class DataStore {
         return "";
     }
 
-    /**
-     * 鍏煎鏂规硶锛氳繑鍥炴暟瀛楀瀷 fileIndex锛岀敤浜庡皻鏈畬鍏ㄨ縼绉荤殑澶栭儴璋冪敤銆?
-     * 鎵惧埌杩斿洖 0锛屾壘涓嶅埌杩斿洖 -1銆?
-     */
     getFileIndex(path: string): number {
         return this.getFileID(path) !== "" ? 0 : -1;
     }
@@ -839,11 +784,7 @@ export class DataStore {
         return this.data.trackedFiles[fileID];
     }
 
-    /**
-     * 鍏煎鏂规硶锛氫繚鐣欐棫鎺ュ彛锛屽唴閮ㄤ笉鍐嶄娇鐢ㄣ€?
-     */
     getFileByIndex(_idx: number): TrackedFile {
-        // 鍏煎鎬т繚鐣欙紝瀹為檯涓嶅簲鍐嶈璋冪敤
         console.warn("[SR] getFileByIndex is deprecated, use getFileByID instead");
         return null;
     }
@@ -904,7 +845,11 @@ export class DataStore {
      * @param {number} itemId
      * @param {string} option
      */
-    reviewId(itemId: number, option: string | number): ReviewResult | null {
+    reviewId(
+        itemId: number,
+        option: string | number,
+        cardFsrsSettings?: FsrsSettings,
+    ): ReviewResult | null {
         const item = this.getItembyID(itemId);
         let result: ReviewResult;
         if (item == null) {
@@ -913,6 +858,9 @@ export class DataStore {
 
         // [fix] select algorithm by item type: CARD -> FSRS, NOTE -> WMS
         const algorithm = this.getAlgorithmForItemType(item.itemType);
+        if (item.itemType === RPITEMTYPE.CARD && cardFsrsSettings) {
+            algorithm.updateSettings(cardFsrsSettings);
+        }
         if (typeof option === "number") {
             option = algorithm.srsOptions()[option];
         }
@@ -1092,7 +1040,6 @@ export class DataStore {
         const lastTag = trackedFile.tags[trackedFile.tags.length - 1]; // Fallback for lastTag usage
         trackedFile.setUnTracked();
 
-        // 1. 褰诲簳娓呯悊 Note 绾у埆鐨?items
         for (const key in trackedFile.items) {
             const id = trackedFile.items[key];
             if (id >= 0) {
@@ -1102,7 +1049,6 @@ export class DataStore {
         }
         trackedFile.items = { file: -1 };
 
-        // 2. 褰诲簳娓呯悊鎵€鏈夌殑 Card items (涓嶉渶瑕佸尯鍒?cardName 鎴?setting 鏉′欢锛屾棦鐒?untrack锛屽繀椤诲叏娓?
         if (trackedFile.hasCards) {
             const allCardIds = trackedFile.itemIDs;
             allCardIds
@@ -1110,7 +1056,6 @@ export class DataStore {
                 .forEach((id: number) => this.unTrackItem(id));
             numItems += allCardIds.length;
 
-            // 3. 灏?trackedItems 缃┖锛屽交搴曟秷闄?JSON 骞界伒鍗℃畫鐣?
             trackedFile.trackedItems = [];
         }
 
@@ -1262,18 +1207,15 @@ export class DataStore {
         const removed = 0;
 
         if (trackedItem.reviewId === -1) {
-            // 鏂板崱锛堝唴瀹瑰彉浜嗭紝鎴栬€呮柊澧炵殑锛夛細鍒嗛厤鏂?ID
             const cardId = this._updateItem(undefined, fileID, RPITEMTYPE.CARD, deckName);
             trackedItem.reviewId = cardId;
             added++;
         } else {
-            // 鏃у崱锛堝唴瀹规病鍙橈級锛氬皾璇曡幏鍙栫幇鏈?item
             const item = this.getItembyID(trackedItem.reviewId);
             if (item) {
                 item.setTracked(fileID);
                 item.updateDeckName(deckName, true);
             } else {
-                // 寮傚父鎯呭喌锛欼D 瀛樺湪浣嗘壘涓嶅埌 Item锛堝彲鑳芥槸鏁版嵁搴撴崯鍧忥級锛岃涓烘柊鍗￠噸鏂板垱寤?
                 const cardId = this._updateItem(undefined, fileID, RPITEMTYPE.CARD, deckName);
                 trackedItem.reviewId = cardId;
                 added++;
@@ -1322,14 +1264,13 @@ export class DataStore {
         }
         const item = this.getItembyID(id);
         if (item.isDue) {
-            if (String(this.settings.algorithm) === String(algorithmNames.Fsrs)) {
+            if (item.isFsrs) {
                 const data: FsrsData = item.data as FsrsData;
                 if (new Date(data.last_review) < new Date(date)) {
                     rc[date].due++;
                 }
             } else {
-                const data: AnkiData = item.data as AnkiData;
-                if (data.lastInterval >= 1) {
+                if (item.timesReviewed > 0) {
                     rc[date].due++;
                 }
             }
@@ -1401,7 +1342,6 @@ export class DataStore {
     async pruneData() {
         this.data = MiscUtils.assignOnly(DEFAULT_SRS_DATA, this.data);
 
-        // 杩囨护鏃犳晥鐨?trackedFiles
         const newTrackedFiles: Record<string, TrackedFile> = {};
         const newFileOrder: string[] = [];
         for (const fileID of this.data.fileOrder || Object.keys(this.data.trackedFiles)) {
@@ -1415,7 +1355,6 @@ export class DataStore {
         this.data.trackedFiles = newTrackedFiles;
         this.data.fileOrder = newFileOrder;
 
-        // 閲嶅缓 items锛岀‘淇?fileID 姝ｇ‘
         this.data.items = Object.entries(this.data.trackedFiles)
             .map(([fileID, tkfile]) => {
                 return this.getItems(tkfile.itemIDs)
@@ -1438,25 +1377,17 @@ export class DataStore {
         return;
     }
 
-    /**
-     * 鍏ㄥ眬鍨冨溇鍥炴敹 (Global Garbage Collection)
-     * 鎵弿鎵€鏈?items锛岀墿鐞嗗垹闄ゆ湭琚换浣?TrackedFile 寮曠敤鐨勬潯鐩€?
-     * 杩欐槸涓€涓珮寮€閿€鎿嶄綔 O(N)锛屽簲鍦ㄤ綆棰戝満鏅皟鐢ㄣ€?
-     */
     async performGlobalGarbageCollection(): Promise<void> {
-        this.logInfo("[SR-GC] 寮€濮嬫墽琛屽叏灞€鍨冨溇鍥炴敹...");
+        this.logInfo("[SR-GC] Starting global garbage collection...");
         const trackedFiles = this.data.trackedFiles;
 
-        // 1. 鏀堕泦鎵€鏈夋椿璺冪殑 ID (White List)
         const referencedIds = new Set<number>();
         for (const tkf of Object.values(trackedFiles)) {
             if (tkf == null) continue;
-            // 鏀堕泦 Note ID
             for (const key in tkf.items) {
                 const id = tkf.items[key];
                 if (typeof id === "number" && id >= 0) referencedIds.add(id);
             }
-            // 鏀堕泦 Card IDs
             if (tkf.hasCards && tkf.trackedItems) {
                 for (const item of tkf.trackedItems) {
                     if (item.reviewId >= 0) referencedIds.add(item.reviewId);
@@ -1466,7 +1397,6 @@ export class DataStore {
 
         const oldItemCount = this.data.items.length;
 
-        // 2. 閲嶅缓 items 鏁扮粍 (Compact)
         const idMap = new Map<number, number>();
         const keptItems: RepetitionItem[] = [];
 
@@ -1476,7 +1406,7 @@ export class DataStore {
                 const oldID = item.ID;
                 const newID = keptItems.length;
                 idMap.set(oldID, newID);
-                item.ID = newID; // 鏇存柊 item 鑷韩鐨?ID 灞炴€?
+                item.ID = newID;
                 keptItems.push(item);
             }
         }
@@ -1484,11 +1414,9 @@ export class DataStore {
         const purgedCount = oldItemCount - keptItems.length;
 
         if (purgedCount > 0) {
-            // 3. 鏇存柊鎵€鏈?TrackedFiles 涓殑寮曠敤
             for (const tkf of Object.values(trackedFiles)) {
                 if (tkf == null) continue;
 
-                // 鏇存柊 Note ID
                 for (const key in tkf.items) {
                     const oldId = tkf.items[key];
                     if (idMap.has(oldId)) {
@@ -1496,7 +1424,6 @@ export class DataStore {
                     }
                 }
 
-                // 鏇存柊 Card IDs
                 if (tkf.hasCards && tkf.trackedItems) {
                     for (const item of tkf.trackedItems) {
                         if (item.reviewId >= 0 && idMap.has(item.reviewId)) {
@@ -1506,7 +1433,6 @@ export class DataStore {
                 }
             }
 
-            // 4. 鏇挎崲鍏ㄥ眬 items
             this.data.items = keptItems;
             this.markItemByIdIndexDirty();
             this.reviewItemOverlayById.clear();
@@ -1517,7 +1443,6 @@ export class DataStore {
                 `[SR-GC] GC completed. Purged ${purgedCount} orphan items (${oldItemCount} -> ${keptItems.length})`,
             );
 
-            // 5. 淇濆瓨
             await this.save();
         } else {
             this.logInfo("[SR-GC] No cleanup needed.");

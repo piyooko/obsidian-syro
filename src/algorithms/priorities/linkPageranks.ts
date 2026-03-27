@@ -1,6 +1,3 @@
-/**
- * [杈呭姪] 璁＄畻绗旇閲嶈鎬э紙PageRank锛夛紝鐢ㄤ簬绗旇澶嶄範鐨勬帓搴忋€?
- */
 import { MetadataCache, TFile } from "obsidian";
 import graph from "pagerank.js";
 import { NoteEaseList } from "src/NoteEaseList";
@@ -48,31 +45,18 @@ export class LinkRank {
     getContribution(note: TFile, easeByPath: NoteEaseList) {
         console.debug("[SR Debug LinkRank] ===== getContribution called =====");
         console.debug("[SR Debug LinkRank] note.path:", note.path);
-        console.debug("[SR Debug LinkRank] settings.noteAlgorithm:", this.settings.noteAlgorithm);
-        console.debug("[SR Debug LinkRank] algorithmSettings:", this.settings.algorithmSettings);
+        console.debug(
+            "[SR Debug LinkRank] weightedMultiplierSettings:",
+            this.settings.weightedMultiplierSettings,
+        );
 
-        const algoSettings = this.settings.algorithmSettings[this.settings.noteAlgorithm] as
-            | BaseEaseSettings
-            | undefined;
-        console.debug("[SR Debug LinkRank] algoSettings:", algoSettings);
-
-        if (!algoSettings) {
-            console.error("[SR Debug LinkRank] ERROR: algoSettings is undefined!");
-            console.error(
-                "[SR Debug LinkRank] Available algorithms:",
-                Object.keys(this.settings.algorithmSettings),
-            );
-            throw new Error(`Algorithm settings for ${this.settings.noteAlgorithm} not found`);
-        }
-
+        const algoSettings = this.settings.weightedMultiplierSettings as BaseEaseSettings;
         const baseEase = algoSettings.baseEase;
         console.debug("[SR Debug LinkRank] baseEase:", baseEase);
 
         if (baseEase === undefined || isNaN(baseEase)) {
             console.error("[SR Debug LinkRank] ERROR: baseEase is", baseEase);
-            throw new Error(
-                `baseEase is ${String(baseEase)} for algorithm ${String(this.settings.noteAlgorithm)}`,
-            );
+            throw new Error(`baseEase is ${String(baseEase)} for weightedMultiplierSettings`);
         }
 
         let linkTotal = 0,

@@ -1,23 +1,3 @@
-﻿/**
- * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
- * 瀹冩槸鏁翠釜鎻掍欢鐨勨€滃ぇ绠″鈥濆拰绗竴鍏ュ彛銆?
- * 褰撴彃浠惰鎵撳紑鏃讹紝瀹冩槸鏈€鍏堝紑濮嬪伐浣滅殑锛岃礋璐ｆ妸鍏朵粬鎵€鏈夌殑鍔熻兘妯″潡锛堟瘮濡備繚瀛樻暟鎹€佺畻娉曘€佹樉绀哄悇涓晫闈€佹彁渚涘揩鎹锋寚浠わ級鍏ㄩ儴缁勮璧锋潵骞惰瀹冧滑寮€濮嬩笂鐝€?
- * 姣忓ぉ鍏虫帀鎻掍欢鏃讹紝瀹冧篃璐熻矗璁╁ぇ瀹剁粺涓€涓嬬彮浼戞伅銆?
- * 瀹冭繕鍋峰伔鍔犱簡涓姛鑳斤細闅忔椂鏍稿褰撳墠鐢ㄦ埛鐨勮韩浠斤紝濡傛灉鏄厤璐圭敤鎴风敤鍒伴珮绾у揩鎹烽敭锛堟瘮濡傜壒娈婄殑濉┖棰樺埗浣滈敭锛夛紝瀹冨氨浼氭嫤涓嬫潵涓嶈鐢ㄣ€?
- *
- * 瀹冨湪椤圭洰涓睘浜庯細閫昏緫灞?
- *
- * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
- * 杩欎釜澶х瀹跺嚑涔庝細鐢ㄥ埌椤圭洰閲岀殑鎵€鏈夋牳蹇冩枃浠讹紝姣斿锛?
- * 1. src/settings.ts 鈥?鑾峰彇鐢ㄦ埛鐨勫亸濂借缃?
- * 2. src/dataStore/data.ts 鈥?鑾峰彇淇濆瓨鐨勫涔犳暟鎹?
- * 3. src/ui/views/* 鈥?璐熻矗璋冨嚭鍚勭鏄剧ず鐣岄潰
- * 4. src/services/LicenseManager.ts 鈥?鐢ㄦ潵楠岃瘉鐢ㄦ埛鐨勬縺娲荤爜瀵逛笉瀵癸紝鏄笉鏄珮绾т細鍛?
- *
- * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
- * 涓昏鐢辩瑪璁拌蒋浠舵湰韬潵鍛煎彨瀹冦€?
- * 鍚屾椂锛屽叾浠栧緢澶氶渶瑕佽窡澶х瀹惰淇℃伅鐨勫湴鏂逛篃浼氭壘瀹冦€?
- */
 import {
     App,
     getAllTags,
@@ -34,10 +14,12 @@ import graph from "pagerank.js";
 import {
     DEFAULT_SETTINGS,
     DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
+    FsrsSettings,
     SettingsUtil,
     SRSettings,
     SyncProgressDisplayMode,
     upgradeSettings,
+    WeightedMultiplierSettings,
 } from "src/settings";
 import {
     REACT_REVIEW_QUEUE_VIEW_TYPE as REVIEW_QUEUE_VIEW_TYPE,
@@ -63,7 +45,7 @@ import {
     IDeckTreeIterator,
     IIteratorOrder,
 } from "./DeckTreeIterator";
-import { CardScheduleCalculator, NoteCardScheduleParser } from "./CardSchedule";
+import { NoteCardScheduleParser } from "./CardSchedule";
 import { Note } from "./Note";
 import { NoteFileLoader } from "./NoteFileLoader";
 import { ISRFile, SrTFile as SrTFile } from "./SRFile";
@@ -80,13 +62,14 @@ import { DataLocation } from "./dataStore/dataLocation";
 import { NoteReviewStore, NoteReviewSource } from "./dataStore/noteReviewStore";
 import Commands from "./commands";
 import { SrsAlgorithm } from "src/algorithms/algorithms";
+import { FsrsAlgorithm } from "src/algorithms/fsrs";
+import { WeightedMultiplierAlgorithm } from "src/algorithms/weightedMultiplier";
 
 import { reviewResponseModal } from "src/ui/modals/reviewresponse-modal";
 import { debug, isIgnoredPath, isVersionNewerThanOther } from "./util/utils_recall";
 import { ReleaseNotes } from "src/ui/modals/ReleaseNotes";
 import { DEFAULT_DECKNAME } from "./constants";
 
-import { algorithms } from "src/algorithms/algorithms_switch";
 import { addFileMenuEvt, registerTrackFileEvents } from "./Events/trackFileEvents";
 import { SyncEvents } from "./Events/SyncEvents";
 import { ItemTrans, itemToShedNote } from "./dataStore/itemTrans";
@@ -149,11 +132,8 @@ import {
 } from "src/syncRequest";
 import { getFirstRunTutorial } from "src/firstRunTutorial";
 
-// 姣忔棩鐗岀粍缁熻鏁版嵁缁撴瀯锛堟寔涔呭寲瀛樺偍锛?
-// 姣忔棩鐗岀粍缁熻鏁版嵁缁撴瀯锛堟寔涔呭寲瀛樺偍锛?
 interface DailyDeckStats {
-    date: string; // 璁板綍鏃ユ湡锛屼緥濡?"2023-12-01"
-    // 鐗岀粍鍚?-> 璁℃暟
+    date: string;
     counts: Record<string, { new: number; review: number }>;
 }
 
@@ -181,7 +161,6 @@ function clearFolderTrackingFrontmatterTags(frontmatter: unknown): void {
     delete frontmatter["tags"];
 }
 
-// 杩愯鏃跺涔犻槦鍒楅」锛堜笉鍐嶉渶瑕佹寔涔呭寲鍒?plugin.data锛岀姸鎬佸瓨鍦?RepetitionItem.learningStep锛?
 export interface LearningQueueItem {
     card: Card;
     dueTime: number;
@@ -196,10 +175,8 @@ interface PluginData {
     // which covers most of the cases
     buryList: string[];
     historyDeck: string | null;
-    // 鎸佷箙鍖栧瓨鍌ㄦ瘡鏃ョ粺璁?
     dailyDeckStats: DailyDeckStats;
     folderTrackingRules: Record<string, FolderTrackingRule>;
-    // 娉ㄦ剰锛歭earningQueue 涓嶅啀瀛樺偍鍦ㄨ繖閲岋紝鐘舵€佸凡绉昏嚦 RepetitionItem.learningStep
 }
 
 const AUTO_SYNC_COOLDOWN_MS = 15_000;
@@ -231,18 +208,13 @@ export default class SRPlugin extends Plugin {
     private statusBarNote: HTMLElement;
     private statusBarFlashcard: HTMLElement;
     public data: PluginData;
-    // 鍙岀畻娉曟灦鏋?
-    cardAlgorithm: SrsAlgorithm; // 鍗＄墖澶嶄範绠楁硶
-    noteAlgorithm: SrsAlgorithm; // 绗旇澶嶄範绠楁硶
+    cardAlgorithm: SrsAlgorithm;
+    noteAlgorithm: SrsAlgorithm;
 
-    /**
-     * 鏍规嵁椤圭洰绫诲瀷鑾峰彇瀵瑰簲鐨勭畻娉曞疄渚?
-     */
     getAlgorithmForItem(itemType: RPITEMTYPE): SrsAlgorithm {
         return itemType === RPITEMTYPE.CARD ? this.cardAlgorithm : this.noteAlgorithm;
     }
 
-    // eTextScheduleStore: TextScheduleStore;  // 宸茬粡鍦ㄤ笅闈㈢殑浠ｇ爜涓畾涔?
     public tabViewManager: TabViewManager;
     public syncLock = false;
     private readonly activeLeafChangeHandler = (leaf: WorkspaceLeaf | null): void => {
@@ -280,19 +252,15 @@ export default class SRPlugin extends Plugin {
     // Derived from earlier pre-Syro command handling.
     public store: DataStore;
     public commands: Commands;
-    public algorithm: SrsAlgorithm;
     public reviewFloatBar: reviewResponseModal;
     public settingTab: SRSettingTab;
     public reviewCommitStore: ReviewCommitStore;
     public reviewPersistenceCoordinator: ReviewPersistenceCoordinator;
 
-    /** 浜嬩欢鎬荤嚎锛氬悓姝ュ畬鎴愬悗骞挎挱娑堟伅锛岄€氱煡宸叉墦寮€鐨?UI 缁勪欢灞€閮ㄥ埛鏂版暟瀛?*/
     public syncEvents: SyncEvents = new SyncEvents();
 
     public clock_start: number;
 
-    // 瀛︿範闃熷垪锛氬瓨鍌ㄥ湪鎻掍欢绾у埆锛屽叧闂涔犵晫闈㈠悗浠嶇劧淇濈暀
-    // 鏍煎紡: { card: Card, dueTime: number, deckName: string }[]
     public learningQueue: Array<{ card: Card; dueTime: number; deckName: string }> = [];
 
     private hasPerformedInitialGC = false;
@@ -428,20 +396,16 @@ export default class SRPlugin extends Plugin {
 
         appIcon();
 
-        // 娉ㄥ唽 Anki Cloze 缂栬緫鍣ㄨ楗版墿灞曪紙Linear 椋庢牸棰勮锛?
         initializeClozeDecoration(this.app);
         this.registerEditorExtension(clozeDecorationPlugin);
 
-        // 娉ㄥ唽 LaTeX Cloze 缂栬緫鍣ㄦ墿灞?
         initializeLatexPopover(this.app, {
             isEnabled: () => this.data.settings.enableLatexPopover === true,
         });
         this.registerEditorExtension(latexPopoverExtension);
 
-        // 娉ㄥ唽 LaTeX Cloze 棰勫鐞嗗櫒 (浣跨敤 atomic ranges)
         this.registerEditorExtension(latexClozePreprocessorPlugin);
 
-        // 娉ㄥ唽鏍囧噯 Cloze Markdown 鍚庡鐞嗗櫒 (闃呰妯″紡)
         this.registerMarkdownPostProcessor(clozePostProcessor);
 
         const PLUGIN_VERSION = this.manifest.version;
@@ -452,43 +416,15 @@ export default class SRPlugin extends Plugin {
 
         upgradeSettings(this.data.settings);
 
-        // 纭繚algorithmSettings涓湁瀵瑰簲绠楁硶鐨勯厤缃?
-        if (!this.data.settings.algorithmSettings[this.data.settings.cardAlgorithm]) {
-            this.data.settings.algorithmSettings[this.data.settings.cardAlgorithm] =
-                algorithms[this.data.settings.cardAlgorithm]?.defaultSettings() || {};
-        }
-        if (!this.data.settings.algorithmSettings[this.data.settings.noteAlgorithm]) {
-            this.data.settings.algorithmSettings[this.data.settings.noteAlgorithm] =
-                algorithms[this.data.settings.noteAlgorithm]?.defaultSettings() || {};
-        }
-
-        // 鍒濆鍖栧崱鐗囧涔犵畻娉?
-        this.cardAlgorithm = algorithms[this.data.settings.cardAlgorithm];
-        if (this.cardAlgorithm) {
-            this.cardAlgorithm.updateSettings(
-                this.data.settings.algorithmSettings[this.data.settings.cardAlgorithm],
-            );
-        }
-
-        // 鍒濆鍖栫瑪璁板涔犵畻娉?
-        this.noteAlgorithm = algorithms[this.data.settings.noteAlgorithm];
-        if (this.noteAlgorithm) {
-            this.noteAlgorithm.updateSettings(
-                this.data.settings.algorithmSettings[this.data.settings.noteAlgorithm],
-            );
-        }
-
-        // 淇濈暀algorithm瀛楁鐢ㄤ簬鍏煎鎬э紙鎸囧悜noteAlgorithm锛?
-        this.algorithm = this.noteAlgorithm;
-
-        // Update settings for both algorithms in the plugin data
         const settings = this.data.settings;
-        if (this.cardAlgorithm && this.cardAlgorithm.settings) {
-            settings.algorithmSettings[settings.cardAlgorithm] = this.cardAlgorithm.settings;
-        }
-        if (this.noteAlgorithm && this.noteAlgorithm.settings) {
-            settings.algorithmSettings[settings.noteAlgorithm] = this.noteAlgorithm.settings;
-        }
+        this.cardAlgorithm = new FsrsAlgorithm();
+        this.cardAlgorithm.updateSettings(settings.fsrsSettings);
+        settings.fsrsSettings = this.cardAlgorithm.settings as FsrsSettings;
+
+        this.noteAlgorithm = new WeightedMultiplierAlgorithm();
+        this.noteAlgorithm.updateSettings(settings.weightedMultiplierSettings);
+        settings.weightedMultiplierSettings =
+            this.noteAlgorithm.settings as WeightedMultiplierSettings;
 
         if (obsidianJustInstalled) {
             await this.initializeFirstRunTutorialNote();
@@ -571,7 +507,6 @@ export default class SRPlugin extends Plugin {
             );
         });
 
-        // 鍒濆鍖栫姸鎬佹爮鍛煎惛鐏姩鎬佹牱寮?
         this.updateStatusBarVisibility();
         this.updateStatusBarStyles();
         this.updateStatusBar();
@@ -598,10 +533,14 @@ export default class SRPlugin extends Plugin {
                         this.noteReviewStore.isTracked(fileish.path)
                     ) {
                         const options = this.noteAlgorithm.srsOptions();
-                        const algo = this.data.settings.noteAlgorithm;
-                        const showtext = this.data.settings.responseOptionBtnsText;
+                        const responseTexts = this.data.settings.noteResponseTexts;
+                        const showtext = [
+                            responseTexts.again,
+                            responseTexts.hard,
+                            responseTexts.good,
+                            responseTexts.easy,
+                        ];
 
-                        // 鑾峰彇绗旇鐨?RepetitionItem 浠ヨ绠楀悇閫夐」鐨勫涔犻棿闅斿ぉ鏁?
                         let intervals: number[] | null = null;
                         try {
                             const noteItem = this.noteReviewStore.getItem(fileish.path);
@@ -609,15 +548,12 @@ export default class SRPlugin extends Plugin {
                                 intervals = this.noteAlgorithm.calcAllOptsIntervals(noteItem);
                             }
                         } catch {
-                            // 濡傛灉鑾峰彇澶辫触锛堜緥濡傜瑪璁版湭琚拷韪級锛屽垯涓嶆樉绀洪棿闅?
+                            // Ignore interval preview failures and keep menu actions available.
                         }
 
-                        // === 淇敼锛氫粠 i=0 寮€濮嬶紝浠ュ寘鍚?閲嶆潵"閫夐」 ===
                         for (let i = 0; i < options.length; i++) {
                             menu.addItem((item) => {
-                                // 鐢熸垚甯﹂棿闅旂殑鏍囬锛氶毦搴? X澶╁悗
                                 let title: string;
-                                // 鑾峰彇鏍囧噯鍖栫殑閫夐」鍚嶇О锛堣嫳鏂囷級浠ヤ究鏄犲皠鍒扮炕璇?Key
                                 const optionName = options[i];
                                 let localizedOption: string;
 
@@ -626,7 +562,7 @@ export default class SRPlugin extends Plugin {
                                 else if (optionName === "Hard") localizedOption = t("UI_HARD");
                                 else if (optionName === "Good") localizedOption = t("UI_GOOD");
                                 else if (optionName === "Easy") localizedOption = t("UI_EASY");
-                                else localizedOption = showtext[algo][i]; // Fallback for other algos like SM2
+                                else localizedOption = showtext[i];
 
                                 if (intervals && intervals[i] !== undefined) {
                                     const intervalText = textInterval(intervals[i], false);
@@ -635,7 +571,6 @@ export default class SRPlugin extends Plugin {
                                         interval: intervalText,
                                     });
                                 } else {
-                                    // 娌℃湁闂撮殧淇℃伅鏃讹紙濡傛湭杩借釜鐨勭瑪璁帮級锛屽彧鏄剧ず闅惧害鍚嶇О
                                     title = localizedOption;
                                 }
                                 item.setTitle(title)
@@ -649,12 +584,9 @@ export default class SRPlugin extends Plugin {
                             });
                         }
 
-                        // 娣诲姞鍒嗛殧绗?
                         menu.addSeparator();
 
-                        // 娣诲姞"璁剧疆閲嶈鎬?鑿滃崟椤?
                         menu.addItem((item) => {
-                            // 鑾峰彇褰撳墠绗旇鐨?RepetitionItem
                             const noteItem = this.noteReviewStore.getItem(fileish.path);
                             const currentPriority = noteItem?.priority ?? 5;
 
@@ -673,10 +605,8 @@ export default class SRPlugin extends Plugin {
 
                                             this.runAsync(
                                                 (async () => {
-                                                    // 鏇存柊閲嶈鎬?
                                                     noteItem.priority = newPriority;
                                                     await this.noteReviewStore.save();
-                                                    // 鍒锋柊渚ц竟鏍?
                                                     this.updateAndSortDueNotes();
                                                     this.syncEvents.emit("note-review-updated");
                                                     new Notice(`${t("PRIORITY")}: ${newPriority}`);
@@ -709,13 +639,18 @@ export default class SRPlugin extends Plugin {
         });
 
         const options = this.noteAlgorithm.srsOptions();
-        const algo = this.data.settings.noteAlgorithm;
-        const showtext = this.data.settings.responseOptionBtnsText;
+        const responseTexts = this.data.settings.noteResponseTexts;
+        const showtext = [
+            responseTexts.again,
+            responseTexts.hard,
+            responseTexts.good,
+            responseTexts.easy,
+        ];
         options.map((option, i) => {
             this.addCommand({
                 id: "srs-note-review-" + option.toLowerCase(),
                 name: t("REVIEW_NOTE_DIFFICULTY_CMD", {
-                    difficulty: showtext[algo][i],
+                    difficulty: showtext[i],
                 }),
                 callback: () => {
                     const openFile: TFile | null = this.app.workspace.getActiveFile();
@@ -802,28 +737,23 @@ export default class SRPlugin extends Plugin {
             },
         });
 
-        // ============ Anki 椋庢牸鎸栫┖蹇嵎閿懡浠?============
 
-        // 鍚岀骇鎸栫┖ (Ctrl+Alt+Shift+C) - 浣跨敤褰撳墠琛屾渶澶?ID
         this.addCommand({
             id: "srs-cloze-same-level",
             name: t("CMD_CREATE_CLOZE_SAME_LEVEL"),
             icon: "flashcards",
             editorCallback: async (editor) => {
-                // 銆愪粯璐瑰姛鑳介檺鍒躲€?
                 const licMgr = LicenseManager.getInstance(this);
                 if (!(await licMgr.checkFeatureAccess("Anki 鎸栫┖"))) return;
                 this.insertAnkiCloze(editor, "same");
             },
         });
 
-        // 鏂扮骇鎸栫┖ (Alt+Shift+C) - 浣跨敤 maxId + 1
         this.addCommand({
             id: "srs-cloze-new-level",
             name: t("CMD_CREATE_CLOZE_NEW_LEVEL"),
             icon: "flashcards",
             editorCallback: async (editor) => {
-                // 銆愪粯璐瑰姛鑳介檺鍒躲€?
                 const licMgr = LicenseManager.getInstance(this);
                 if (!(await licMgr.checkFeatureAccess("Anki 鎸栫┖"))) return;
                 this.insertAnkiCloze(editor, "new");
@@ -844,14 +774,12 @@ export default class SRPlugin extends Plugin {
 
                 this.runAsync(this.requestSync({ trigger: "startup" }), "startup sync");
             }, 2000);
-            // ====== License 闃茬牬瑙ｆ娴嬬偣 A锛氬惎鍔ㄦ椂闈欓粯楠岃瘉 ======
             try {
                 const licMgr = LicenseManager.getInstance(this);
                 if (this.data.settings.licenseState?.token) {
                     this.runAsync(
                         licMgr.backgroundCheck(this.data.settings).then((isValid) => {
                             if (!isValid && this.data.settings.isPro) {
-                                // 鏈嶅姟鍣ㄦ槑纭嫆缁濓紝鎮勬倓闄嶇骇锛屼笉寮圭獥
                                 this.data.settings.isPro = false;
                                 this.runAsync(this.savePluginData(), "save license downgrade");
                             }
@@ -859,11 +787,9 @@ export default class SRPlugin extends Plugin {
                         "license background check",
                     );
                 } else {
-                    // 娌℃湁 token 涔熻鍒濆鍖栧崟渚嬶紝纭繚鍚庣画鑳界敤
                     LicenseManager.getInstance(this);
                 }
             } catch (e) {
-                // License 妫€娴嬩笉搴斿奖鍝嶆彃浠舵甯稿惎鍔?
                 console.warn("[SR] License backgroundCheck error:", e);
             }
         });
@@ -878,11 +804,6 @@ export default class SRPlugin extends Plugin {
         this.reviewFloatBar.close();
     }
 
-    /**
-     * 鎻掑叆 Anki 椋庢牸鎸栫┖
-     * @param editor 缂栬緫鍣ㄥ疄渚?
-     * @param type "same" - 鍚岀骇鎸栫┖(浣跨敤褰撳墠鏈€澶D), "new" - 鏂扮骇鎸栫┖(maxId+1)
-     */
     insertAnkiCloze(editor: import("obsidian").Editor, type: "same" | "new"): void {
         const selection = editor.getSelection();
         if (!selection) {
@@ -890,19 +811,15 @@ export default class SRPlugin extends Plugin {
             return;
         }
 
-        // 鑾峰彇褰撳墠琛?娈佃惤鐨勬枃鏈潵鍒ゆ柇涓婁笅鏂?ID
         const cursor = editor.getCursor();
         const lineText = editor.getLine(cursor.line);
 
         const currentMax = this.getMaxClozeIdFromText(lineText);
 
-        // 璁＄畻瑕佷娇鐢ㄧ殑 ID
         let nextId: number;
         if (type === "same") {
-            // 鍚岀骇锛氫娇鐢ㄥ綋鍓嶆渶澶?ID锛屽鏋滄病鏈夊垯涓?1
             nextId = currentMax === 0 ? 1 : currentMax;
         } else {
-            // 鏂扮骇锛氫娇鐢?maxId + 1
             nextId = currentMax + 1;
         }
 
@@ -912,9 +829,6 @@ export default class SRPlugin extends Plugin {
         new Notice(t("NOTICE_CLOZE_CREATED", { nextId: nextId.toString() }));
     }
 
-    /**
-     * 浠庢枃鏈腑鎻愬彇鏈€澶х殑 Cloze ID
-     */
     private getMaxClozeIdFromText(text: string): number {
         const matches = text.matchAll(/\{\{c(\d+)::/g);
         let max = 0;
@@ -925,12 +839,7 @@ export default class SRPlugin extends Plugin {
         return max;
     }
 
-    // ========== 姣忔棩缁熻杈呭姪鏂规硶 ==========
 
-    /**
-     * 鑾峰彇褰撳墠鐨?閫昏緫鏃ユ湡"
-     * 濡傛灉璁剧疆浜嗗噷鏅?4 鐐瑰埛鏂帮紝閭ｄ箞鍑屾櫒 3 鐐逛粛鐒跺睘浜?鏄ㄥぉ"
-     */
     public getRolloverDate(): string {
         return window
             .moment()
@@ -938,14 +847,9 @@ export default class SRPlugin extends Plugin {
             .format("YYYY-MM-DD");
     }
 
-    /**
-     * 鍔犺浇/閲嶇疆姣忔棩缁熻
-     * 濡傛灉瀛樺偍鐨勬棩鏈熶笉鏄粖澶╋紝璇存槑璺ㄥぉ浜嗭紝閲嶇疆鏁版嵁
-     */
     public loadDailyDeckStats(): void {
         const today = this.getRolloverDate();
 
-        // 鍒濆鍖?dailyDeckStats 濡傛灉涓嶅瓨鍦?
         if (!this.data.dailyDeckStats) {
             this.data.dailyDeckStats = { date: "", counts: {} };
         }
@@ -962,22 +866,15 @@ export default class SRPlugin extends Plugin {
         }
     }
 
-    /**
-     * 鑾峰彇鎸囧畾鐗岀粍鐨勪粖鏃ヨ鏁?
-     */
     public getDailyCounts(deckName: string): { new: number; review: number } {
         this.loadDailyDeckStats();
         const stats = this.data.dailyDeckStats.counts[deckName];
         return stats || { new: 0, review: 0 };
     }
 
-    /**
-     * 澧炲姞璁℃暟锛堟敮鎸佸眰绾э紝娌胯矾寰勫悜涓婃洿鏂版墍鏈夌鍏堢墝缁勶級
-     */
     public incrementDailyCounts(deckName: string, isNew: boolean): void {
         this.loadDailyDeckStats();
 
-        // 鑾峰彇鐗岀粍璺緞 lineage (渚嬪 A/B -> [A, A/B])
         const parts = deckName.split("/");
         let currentPath = "";
         const lineage: string[] = [];
@@ -986,7 +883,6 @@ export default class SRPlugin extends Plugin {
             lineage.push(currentPath);
         }
 
-        // 鏇存柊鏁存潯璺緞涓婄殑璁℃暟
         for (const path of lineage) {
             if (!this.data.dailyDeckStats.counts[path]) {
                 this.data.dailyDeckStats.counts[path] = { new: 0, review: 0 };
@@ -1002,14 +898,9 @@ export default class SRPlugin extends Plugin {
         this.requestPluginDataSave();
     }
 
-    /**
-     * 鍑忓皯璁℃暟锛堢敤浜庢挙閿€鎿嶄綔锛?
-     * 鏀寔灞傜骇锛屾部璺緞鍚戜笂鏇存柊鎵€鏈夌鍏堢墝缁?
-     */
     public decrementDailyCounts(deckName: string, isNew: boolean): void {
         this.loadDailyDeckStats();
 
-        // 鑾峰彇鐗岀粍璺緞 lineage (渚嬪 A/B -> [A, A/B])
         const parts = deckName.split("/");
         let currentPath = "";
         const lineage: string[] = [];
@@ -1018,7 +909,6 @@ export default class SRPlugin extends Plugin {
             lineage.push(currentPath);
         }
 
-        // 鏇存柊鏁存潯璺緞涓婄殑璁℃暟
         for (const path of lineage) {
             if (this.data.dailyDeckStats.counts[path]) {
                 if (isNew) {
@@ -2075,9 +1965,6 @@ export default class SRPlugin extends Plugin {
             // sort the deck names
             this.deckTree.sortSubdecksList();
 
-            // 浠?RepetitionItem.learningStep 鏀堕泦瀛︿範涓殑鍗＄墖锛堟柊鏂规锛氬崟涓€鏁版嵁婧愶級
-            // 蹇呴』鍦?filterForRemainingCards 涔嬪墠杩愯锛屼互纭繚澶勪簬瀛︿範鐘舵€佷絾閿欎綅鍦?new/due 鍒楄〃鐨勫崱鐗?
-            // 鑳借绉诲姩鍒?learningFlashcards 鐗╃悊鍒楄〃涓紝浠庤€屽彈 copyWithCardFilter 鐨勪繚鎶や笉琚繃婊ゆ帀銆?
             this.collectLearningCardsFromStore(this.deckTree);
 
             this.remainingDeckTree = DeckTreeFilter.filterForRemainingCards(
@@ -2096,8 +1983,6 @@ export default class SRPlugin extends Plugin {
                 );
             }
 
-            // [V3 璋冨害鍣╙ 涓嶅啀鍦?sync 鍏ㄥ眬闃舵搴旂敤姣忔棩涓婇檺銆?
-            // remainingDeckTree 淇濇寔婊¤锛屾瘡鏃ラ檺棰濆皢鍦ㄧ敤鎴风偣鍑荤墝缁勬椂鍔ㄦ€侀殧绂诲簲鐢ㄣ€?
             // if (reviewMode !== FlashcardReviewMode.Cram) {
             //     this.remainingDeckTree = DeckTreeFilter.filterByDailyLimits(
             //         this.remainingDeckTree,
@@ -2105,27 +1990,22 @@ export default class SRPlugin extends Plugin {
             //     );
             // }
 
-            // 濡傛灉闇€瑕侊紝鍙互鍦ㄨ繖閲屽啀娆″井璋冩垨鎺掑簭锛屼絾姝ゆ椂 learningQueue 宸茬粡鐢变箣鍓嶅 deckTree 鐨勮皟鐢ㄥ～鍏?
             // this.collectLearningCardsFromStore(this.remainingDeckTree);
             const calc: DeckTreeStatsCalculator = new DeckTreeStatsCalculator();
             this.cardStats = calc.calculate(this.deckTree);
             setDueDates(this.cardStats.delayedDays.dict, this.cardStats.delayedDays.dict);
 
-            // --- 濉厖鍏ㄥ眬缁熻缂撳瓨 ---
             const statsService = DeckStatsService.getInstance();
             statsService.setSyncEvents(this.syncEvents);
             statsService.clearCache();
 
-            // 閬嶅巻鎵€鏈夊崱鐗囷紝鎸夊眰绾ф敹闆?items 浠ヤ緵缁熻缂撳瓨浣跨敤
             const deckItemsMap = new Map<string, RepetitionItem[]>();
 
-            // 鎴戜滑閬嶅巻鏁翠釜 fullDeckTree 鏉ユ敹闆嗘墍鏈夌殑 items
             const addItemsToMap = (deck: Deck) => {
                 const deckPathName =
                     deck.deckName === "root" ? "root" : deck.getTopicPath().path.join("/");
 
                 const itemsInDeck: RepetitionItem[] = [];
-                // 鏀堕泦鎵€鏈夊崱鐗囩殑 item 瀹炰緥
                 const allDeckCards = [
                     ...deck.newFlashcards,
                     ...deck.dueFlashcards,
@@ -2256,7 +2136,7 @@ export default class SRPlugin extends Plugin {
             await note.writeNoteFile(this.data.settings);
         }
         // Full sync suppresses per-note saves; outside sync this persists per-note changes.
-        await this.store.save(); // 鏍稿績锛氬悓姝ュ畬绗旇鍙婂叾鍗＄墖 ID 鍚庡嵆鍒昏惤鐩?
+        await this.store.save();
         await note.clearTransientFileText(this.data.settings);
         return note;
     }
@@ -2277,7 +2157,7 @@ export default class SRPlugin extends Plugin {
             console.debug("[SR Debug] ===== saveReviewResponse called =====");
             console.debug("[SR Debug] note.path:", note.path);
             console.debug("[SR Debug] response:", response);
-            console.debug("[SR Debug] noteAlgorithm:", settings.noteAlgorithm);
+            console.debug("[SR Debug] noteAlgorithm: WeightedMultiplier");
         }
 
         if (isIgnoredPath(settings.noteFoldersToIgnore, note.path)) {
@@ -2286,7 +2166,6 @@ export default class SRPlugin extends Plugin {
         }
         const tracking = this.resolveNoteReviewTracking(note);
         if (!tracking) {
-            // tagCheck宸茬粡鏄剧ずNotice锛岃繖閲屼笉闇€瑕侀澶栨彁绀?
             if (debugScheduling) {
                 console.debug("[SR Debug] tagCheck failed");
             }
@@ -2302,9 +2181,9 @@ export default class SRPlugin extends Plugin {
         );
 
         let ease: number;
-        if (item.isNew && String(settings.noteAlgorithm) !== "Fsrs") {
+        if (item.isNew) {
             if (debugScheduling) {
-                console.debug("[SR Debug] Calculating ease for new note (non-FSRS)");
+                console.debug("[SR Debug] Calculating ease for new note (WMS)");
             }
             try {
                 ease = this.linkRank.getContribution(note, this.easeByPath).ease;
@@ -2369,7 +2248,6 @@ export default class SRPlugin extends Plugin {
             console.debug("[SR Debug] saveReviewResponse completed successfully");
         }
 
-        // 鉁?鍒锋柊UI
     }
 
     // return false if is ignored
@@ -2620,8 +2498,6 @@ export default class SRPlugin extends Plugin {
     }
 
     async savePluginData(): Promise<void> {
-        // 娉ㄦ剰锛歭earningQueue 涓嶅啀闇€瑕佸湪杩欓噷搴忓垪鍖?
-        // 瀛︿範鐘舵€佸凡缁忓瓨鍌ㄥ湪 RepetitionItem.learningStep 涓紝鐢?store.save() 绠＄悊
         await this.saveData(this.data);
     }
 
@@ -2654,19 +2530,16 @@ export default class SRPlugin extends Plugin {
             active: true,
         });
 
-        // --- 鏍稿績淇敼锛氶娆℃墦寮€渚ц竟鏍忔椂瑙﹀彂 GC ---
         if (!this.hasPerformedInitialGC) {
-            // 浣跨敤 setTimeout 閬垮厤闃诲鐣岄潰娓叉煋锛岀粰鐣岄潰涓€鐐瑰垵濮嬪寲鏃堕棿
             setTimeout(() => {
                 if (this.data.settings.showSchedulingDebugMessages) {
                     console.debug(
-                        "[SR-Init] 棣栨婵€娲诲涔犺鍥撅紝瑙﹀彂鍚庡彴鍏ㄥ眬鍨冨溇鍥炴敹 (GC)...",
+                        "[SR-Init] First review queue activation; triggering background global garbage collection (GC)...",
                     );
                 }
                 this.runAsync(
                     this.store.performGlobalGarbageCollection().then(() => {
                         this.hasPerformedInitialGC = true;
-                        // GC 鍚庡彲鑳?ID 鏄犲皠鍙樹簡锛屽埛鏂颁竴涓嬭鍥?
                         this.getReviewQueueView()?.redraw();
                     }),
                     "review queue garbage collection",
@@ -2712,13 +2585,11 @@ export default class SRPlugin extends Plugin {
         if (this.data.settings.showStatusBar === false) return;
         if (!this.statusBarNote || !this.statusBarFlashcard) return;
         if (!this.noteStats) return;
-        // 鑾峰彇鍒版湡鏁板€?
         const dueNotesCount = this.noteStats.onDueCount;
         const dueFlashcardsCount = this.remainingDeckTree
             ? this.remainingDeckTree.getDistinctCardCount(CardListType.All, true)
             : 0;
 
-        // --- 鏇存柊绗旇鐘舵€佹爮 ---
         this.statusBarNote.empty();
         const noteSpan = this.statusBarNote.createSpan({
             cls: "syro-status-note",
@@ -2740,7 +2611,6 @@ export default class SRPlugin extends Plugin {
             { placement: "top" },
         );
 
-        // --- 鏇存柊鍗＄墖鐘舵€佹爮 ---
         this.statusBarFlashcard.empty();
         const cardSpan = this.statusBarFlashcard.createSpan({
             cls: "syro-status-card",
@@ -2769,10 +2639,6 @@ export default class SRPlugin extends Plugin {
         );
     }
 
-    /**
-     * 鏍规嵁璁剧疆鏇存柊鐘舵€佹爮鐨勫姩鎬?CSS 鏍峰紡锛堝懠鍚哥伅 / 闂儊锛?
-     * 姣忔璁剧疆鍙樻洿鏃惰皟鐢紝瀹炴椂鐢熸晥鏃犻渶閲嶅惎
-     */
     updateStatusBarStyles() {
         const s = this.data.settings;
         document.body.setCssProps({
@@ -2829,15 +2695,10 @@ export default class SRPlugin extends Plugin {
             remainingDeckTree,
         );
 
-        const cardScheduleCalculator = new CardScheduleCalculator(
-            this.data.settings,
-            this.easeByPath,
-        );
         const reviewSequencer: IFlashcardReviewSequencer = new FlashcardReviewSequencer(
             reviewMode,
             deckIterator,
             this.data.settings,
-            cardScheduleCalculator,
             this.questionPostponementList,
         );
 
@@ -2857,10 +2718,6 @@ export default class SRPlugin extends Plugin {
         return this.isSRInFocus;
     }
 
-    /**
-     * 灏嗚繍琛屾椂瀛︿範闃熷垪鍚屾鍒?Deck 鏍戠殑 learningFlashcards 涓?
-     * 鐢ㄤ簬鍦?DeckUI.show() 鏃剁‘淇濆涔犺鏁版纭樉绀?
-     */
     public syncLearningQueueToDecks(): void {
         if (!this.learningQueue || this.learningQueue.length === 0) return;
         if (!this.remainingDeckTree) return;
@@ -2869,27 +2726,18 @@ export default class SRPlugin extends Plugin {
             const card = item.card;
             if (!card) continue;
 
-            // 鎵惧埌鍗＄墖鎵€灞炵殑 deck
             const topicPath = card.question?.topicPathList?.list[0];
             if (!topicPath) continue;
 
             const deck = this.remainingDeckTree.getDeck(topicPath);
             if (!deck) continue;
 
-            // 纭繚鍗＄墖鍦?learningFlashcards 涓?
             if (!deck.learningFlashcards.includes(card)) {
                 deck.learningFlashcards.push(card);
             }
         }
     }
 
-    /**
-     * 浠?DataStore 鐨?RepetitionItem 鏀堕泦瀛︿範涓殑鍗＄墖
-     * 閬嶅巻涓€娆?Deck 鏍戯紝妫€鏌ユ瘡寮犲崱鐗囩殑 isInLearningPhase
-     * 濡傛灉鏄涔犱腑涓斿埌鏈燂紝灏嗗崱鐗囩Щ鍔ㄥ埌 learningFlashcards 骞跺姞鍏ュ叏灞€闃熷垪
-     *
-     * 澶嶆潅搴︼細O(N)锛孨 涓烘€诲崱鐗囨暟
-     */
     private collectLearningCardsFromStore(deckTree: Deck): void {
         this.learningQueue = [];
         let movedCount = 0;
@@ -2897,7 +2745,6 @@ export default class SRPlugin extends Plugin {
         const traverse = (deck: Deck) => {
             const deckPath = deck.getTopicPath()?.path?.join("/") || deck.deckName;
 
-            // 1. 澶勭悊鏂板崱鍒楄〃涓殑閿欎綅鍗＄墖
             for (let i = deck.newFlashcards.length - 1; i >= 0; i--) {
                 const card = deck.newFlashcards[i];
                 if (card.repetitionItem?.isInLearningPhase) {
@@ -2912,7 +2759,6 @@ export default class SRPlugin extends Plugin {
                 }
             }
 
-            // 2. 澶勭悊鍒版湡鍗″垪琛ㄤ腑鐨勯敊浣嶅崱鐗?
             for (let i = deck.dueFlashcards.length - 1; i >= 0; i--) {
                 const card = deck.dueFlashcards[i];
                 if (card.repetitionItem?.isInLearningPhase) {
@@ -2927,7 +2773,6 @@ export default class SRPlugin extends Plugin {
                 }
             }
 
-            // 3. 灏嗗綋鍓嶇墝缁勪腑鎵€鏈夌殑瀛︿範鍗″姞鍏ュ叏灞€瀛︿範闃熷垪
             for (const card of deck.learningFlashcards) {
                 this.learningQueue.push({
                     card,
@@ -2936,7 +2781,6 @@ export default class SRPlugin extends Plugin {
                 });
             }
 
-            // 閫掑綊澶勭悊瀛愮墝缁?
             for (const subdeck of deck.subdecks) {
                 traverse(subdeck);
             }
@@ -2955,7 +2799,6 @@ export default class SRPlugin extends Plugin {
             );
         }
 
-        // 鎸?dueTime 鎺掑簭瀛︿範闃熷垪
         this.learningQueue.sort((a, b) => a.dueTime - b.dueTime);
     }
 }

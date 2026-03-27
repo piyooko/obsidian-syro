@@ -64,15 +64,11 @@ export interface UISettingsState {
     timelineAutoCommitReviewSelection: boolean; // Auto-write note review selections to timeline
     timelineEnableDurationPrefixSyntax: boolean; // Enable Nd:: prefix parsing and rendering
 
-    // Algorithm
-    cardAlgorithm: string;
-    noteAlgorithm: string;
-    baseEase: number;
-    easyBonus: number;
-
     // Weighted Multiplier Algorithm Settings
+    fsrsEnableFuzz: boolean;
     wmsImpMin: string;
     wmsImpMax: string;
+    wmsBaseEase: number;
     wmsAgainInterval: number;
     wmsHardFactor: number;
     wmsGoodFactor: number;

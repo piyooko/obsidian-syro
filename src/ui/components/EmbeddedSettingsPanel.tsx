@@ -492,20 +492,14 @@ const AlgoTab: React.FC<TabProps> = ({ settings, onChange }) => {
                 </div>
             </Section>
 
-            {/* 2. FSRS 部分 (保持不变) */}
+            {/* 2. FSRS 部分 */}
             <Section title={"FSRS (Flashcards)"}>
-                {/* ... */}
-                <div
-                    style={{
-                        padding: "12px 20px",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        opacity: 0.8,
-                    }}
-                >
-                    <div style={{ fontSize: "0.9em" }}>{t("FSRS_DESC")}</div>
-                </div>
+                <ToggleRow
+                    label={t("FUZZING")}
+                    desc={t("FUZZING_DESC")}
+                    value={settings.fsrsEnableFuzz}
+                    onChange={(value) => onChange("fsrsEnableFuzz", value)}
+                />
             </Section>
 
             {/* 3. 笔记复习算法：WMS (带模拟器) */}

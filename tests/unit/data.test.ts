@@ -1,177 +1,129 @@
-import { SrsAlgorithm, algorithmNames } from "src/algorithms/algorithms";
-import { setDueDates } from "src/algorithms/balance/balance";
-import { DefaultAlgorithm } from "src/algorithms/scheduling_default";
-import { DataStore } from "src/dataStore/data";
-import { DataLocation } from "src/dataStore/dataLocation";
-import { ItemTrans } from "src/dataStore/itemTrans";
-import { RPITEMTYPE } from "src/dataStore/repetitionItem";
-import { TrackedItem } from "src/dataStore/trackedFile";
-import { DEFAULT_DECKNAME } from "src/constants";
 import { NoteEaseList } from "src/NoteEaseList";
+import { DEFAULT_DECKNAME } from "src/constants";
+import { DataStore } from "src/dataStore/data";
+import { ItemTrans } from "src/dataStore/itemTrans";
+import { Queue } from "src/dataStore/queue";
+import { CardQueue, RPITEMTYPE } from "src/dataStore/repetitionItem";
+import { TrackedItem } from "src/dataStore/trackedFile";
 import { CardType } from "src/Question";
-import { DEFAULT_SETTINGS, SRSettings } from "src/settings";
-import { Stats } from "src/stats";
+import SRPlugin from "src/main";
+import { FsrsAlgorithm } from "src/algorithms/fsrs";
+import { createDefaultFsrsSettings, DEFAULT_SETTINGS } from "src/settings";
 import { Tags } from "src/tags";
 
-const settings_tkfile = Object.assign({}, DEFAULT_SETTINGS);
-settings_tkfile.dataLocation = DataLocation.PluginFolder;
-
-export class SampleDataStore {
-    static roundInt = (num: number) => Math.round(Math.random() * num);
-
-    static async create(settings: SRSettings) {
-        let store: DataStore;
-        let algo: SrsAlgorithm;
-        let arr: number[];
-        // const roundInt = (num: number) => Math.round(Math.random() * num);
-        // beforeEach(async () => {
-        // eslint-disable-next-line prefer-const
-        store = new DataStore(settings, "./");
-        await store.load();
-        // store.toInstances();
-        // eslint-disable-next-line prefer-const
-        algo = new DefaultAlgorithm();
-        algo.updateSettings(settings.algorithmSettings[algorithmNames.Default]);
-        const opts = algo.srsOptions();
-        // eslint-disable-next-line prefer-const
-        arr = Array.from(new Array(30)).map((_v, _idx) => {
-            const type = this.roundInt(1) > 0 ? RPITEMTYPE.CARD : RPITEMTYPE.NOTE;
-            store.trackFile("testPath" + _idx, type, true);
-            if (type === RPITEMTYPE.CARD) {
-                const tkfile = store.getTrackedFile("testPath" + _idx);
-
-                Array.from(Array(this.roundInt(10))).map((_v, _idx) => {
-                    const carditem = new TrackedItem(
-                        "chash" + _idx,
-                        _idx * 3,
-                        "",
-                        CardType.SingleLineBasic,
-                        {
-                            startOffset: 0,
-                            endOffset: 0,
-                            blockStartOffset: 0,
-                            blockEndOffset: 0,
-                        },
-                        "c1",
-                    );
-                    tkfile.trackedItems?.push(carditem);
-                    store.updateCardItems(tkfile, carditem, "fcard", false);
-                });
-            }
-            return this.roundInt(50);
-        });
-        const noteStats = new Stats();
-        const cardStats = new Stats();
-        store.items
-            .filter((item) => item.isTracked)
-            .filter((item) => {
-                if (item.isCard) {
-                    cardStats.updateStats(item);
-                } else {
-                    noteStats.updateStats(item);
-                }
-            });
-        setDueDates(noteStats.delayedDays.dict, cardStats.delayedDays.dict);
-        const size = store.itemSize;
-        arr.map((_v) => {
-            store.reviewId(
-                SampleDataStore.roundInt(size - 1),
-                opts[SampleDataStore.roundInt(opts.length - 1)],
-            );
-        });
-        Array.from(Array(SampleDataStore.roundInt(10))).map((_v) => {
-            store.unTrackItem(SampleDataStore.roundInt(size - 1));
-        });
-        // });
-        return { store, algo };
-    }
+function createStore(): DataStore {
+    const store = new DataStore(DEFAULT_SETTINGS, "./");
+    store.resetData();
+    store.data.queues = Queue.create(store.data.queues as any);
+    return store;
 }
 
-describe("jsonfiy", () => {
-    test("record", () => {
-        const que: Record<number, string> = {};
-        que[23] = "default";
-        const result = JSON.stringify(que);
-        const expected = '{"23":"default"}'; // key值为number会自动转换为string
-        expect(result).toEqual(expected);
+describe("DataStore algorithm binding", () => {
+    afterEach(() => {
+        (SRPlugin as any)._instance = undefined;
     });
 
-    test("Map stringify", () => {
-        const myMap = new Map([
-            [10, "value1"],
-            [11, "value2"],
-        ]);
-        // 不能直接转，需先处理为字面量
-        const result = JSON.stringify(Object.fromEntries(myMap));
-        // const result = JSON.stringify([...myMap.entries()]); // "[[10,"value1"],[11,"value2"]]"
-        const expected = '{"10":"value1","11":"value2"}';
-        expect(result).toEqual(expected);
-    });
-    test("Map values stringify", () => {
-        const myMap = new Map([
-            [10, { ID: 10, v: "value1" }],
-            [11, { ID: 10, v: "value2" }],
-        ]);
-        // 不能直接转，需先处理为字面量
-        const result = JSON.stringify([...myMap.values()]);
-        const expected = '[{"ID":10,"v":"value1"},{"ID":10,"v":"value2"}]';
-        expect(result).toEqual(expected);
-    });
-});
-describe("pruneDate", () => {
-    const settings_tkfile = Object.assign({}, DEFAULT_SETTINGS);
-    settings_tkfile.dataLocation = DataLocation.PluginFolder;
-    let store: DataStore;
-    // let algo: SrsAlgorithm;
-    // let arr: number[];
-    beforeEach(async () => {
-        const sample = await SampleDataStore.create(settings_tkfile);
-        store = sample.store;
+    test("creates note items with WMS data", () => {
+        const store = createStore();
+        store.trackFile("note-path.md", RPITEMTYPE.NOTE, false);
+
+        const item = store.getNoteItem("note-path.md");
+        expect(item).not.toBeNull();
+        expect(item?.itemType).toBe(RPITEMTYPE.NOTE);
+        expect(item?.isFsrs).toBe(false);
+        expect(item?.data).toMatchObject({ currentInterval: 1 });
     });
 
-    it("pruneData", () => {
-        store.pruneData();
-        const itemResult = store.items.every((item) => item != null && item.isTracked);
-        const tkfiles = Object.values(store.data.trackedFiles);
-        const tkfileResult = tkfiles.every((tkfile) => tkfile != null);
-        const check =
-            tkfiles.map((tkfile) => tkfile?.itemIDs.filter((id) => id >= 0)).flat().length ===
-            store.itemSize;
-        const checkcard = tkfiles.every((tkfile) =>
-            tkfile?.hasCards ? tkfile.itemIDs.length > 0 : (tkfile?.items.file ?? -1) >= 0,
+    test("creates card items with FSRS data", () => {
+        const store = createStore();
+        store.trackFile("card-path.md", RPITEMTYPE.CARD, false);
+
+        const trackedFile = store.getTrackedFile("card-path.md");
+        const trackedItem = new TrackedItem(
+            "card-hash",
+            0,
+            "",
+            CardType.SingleLineBasic,
+            {
+                startOffset: 0,
+                endOffset: 0,
+                blockStartOffset: 0,
+                blockEndOffset: 0,
+            },
+            "c1",
         );
-        expect(itemResult).toBe(true);
-        expect(tkfileResult).toBe(true);
-        expect(check).toBe(true);
-        expect(checkcard).toBe(true);
+        trackedFile.trackedItems.push(trackedItem);
+        store.updateCardItems(trackedFile, trackedItem, "#flashcards", false);
+
+        const item = store.getItembyID(trackedItem.reviewId);
+        expect(item).not.toBeNull();
+        expect(item?.itemType).toBe(RPITEMTYPE.CARD);
+        expect(item?.isFsrs).toBe(true);
+        expect(item?.data).toHaveProperty("state");
     });
 
-    it("unTrackItem ignores missing item ids", () => {
-        expect(() => store.unTrackItem(-1)).not.toThrow();
+    test("reviewId applies passed preset FSRS settings to card reviews", () => {
+        const store = createStore();
+        store.trackFile("card-path.md", RPITEMTYPE.CARD, false);
 
-        const existing = store.items.find((item) => item?.isTracked);
-        expect(existing).toBeDefined();
+        const trackedFile = store.getTrackedFile("card-path.md");
+        const trackedItem = new TrackedItem(
+            "card-hash",
+            0,
+            "",
+            CardType.SingleLineBasic,
+            {
+                startOffset: 0,
+                endOffset: 0,
+                blockStartOffset: 0,
+                blockEndOffset: 0,
+            },
+            "c1",
+        );
+        trackedFile.trackedItems.push(trackedItem);
+        store.updateCardItems(trackedFile, trackedItem, "#flashcards", false);
 
-        store.unTrackItem(existing.ID);
-        expect(() => store.unTrackItem(existing.ID)).not.toThrow();
+        const item = store.getItembyID(trackedItem.reviewId);
+        const cardAlgorithm = new FsrsAlgorithm();
+        jest.spyOn(cardAlgorithm, "appendRevlog").mockResolvedValue("");
+        const fsrsSettings = createDefaultFsrsSettings({
+            enable_fuzz: false,
+            learning_steps: ["2m", "20m"],
+            relearning_steps: ["15m"],
+        });
+
+        (SRPlugin as any)._instance = {
+            cardAlgorithm,
+            getAlgorithmForItem: () => cardAlgorithm,
+        };
+
+        const result = store.reviewId(item.ID, 0, fsrsSettings);
+        const intervalMinutes = (item.nextReview - Date.now()) / (1000 * 60);
+
+        expect(result).not.toBeNull();
+        expect(cardAlgorithm.settings.learning_steps).toEqual(["2m", "20m"]);
+        expect(item.queue).toBe(CardQueue.Learn);
+        expect(intervalMinutes).toBeGreaterThan(1.5);
+        expect(intervalMinutes).toBeLessThan(2.5);
     });
 
-    it("itemToReviewDecks recreates missing note items from tracked files", () => {
-        const path = "ghost-note-path";
+    test("itemToReviewDecks recreates missing note items from tracked files", () => {
+        const store = createStore();
+        const path = "ghost-note-path.md";
         store.trackFile(path, DEFAULT_DECKNAME, false);
 
         const trackedFile = store.getTrackedFile(path);
         const missingId = trackedFile.items.file;
         store.data.items = store.data.items.filter((item) => item?.ID !== missingId);
-        (store as any).markItemByIdIndexDirty();
+        (store as unknown as { markItemByIdIndexDirty: () => void }).markItemByIdIndexDirty();
 
         const note = { path } as any;
         const reviewDecks: Record<string, any> = {};
-        const easeByPath = new NoteEaseList(settings_tkfile);
+        const easeByPath = new NoteEaseList(DEFAULT_SETTINGS);
         const getDeckNameSpy = jest.spyOn(Tags, "getNoteDeckName").mockReturnValue(null);
 
         expect(() =>
-            ItemTrans.create(settings_tkfile).itemToReviewDecks(reviewDecks, [note], easeByPath),
+            ItemTrans.create(DEFAULT_SETTINGS).itemToReviewDecks(reviewDecks, [note], easeByPath),
         ).not.toThrow();
         expect(store.getNoteItem(path)).not.toBeNull();
         expect(reviewDecks[DEFAULT_DECKNAME]).toBeDefined();

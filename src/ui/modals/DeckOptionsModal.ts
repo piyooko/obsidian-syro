@@ -7,7 +7,13 @@
 import { App, Modal, Notice, Setting } from "obsidian";
 import SRPlugin from "src/main";
 import { t } from "src/lang/helpers";
-import { DeckOptionsPreset, DEFAULT_DECK_OPTIONS_PRESET } from "src/settings";
+import {
+    createDefaultDeckOptionsPreset,
+    DeckOptionsPreset,
+    normalizeDeckOptionsPreset,
+    syncFsrsSettingsCompatibilityMirror,
+    updateDeckOptionsPresetStepProxy,
+} from "src/settings";
 
 export class DeckOptionsModal extends Modal {
     private plugin: SRPlugin;
@@ -129,7 +135,14 @@ export class DeckOptionsModal extends Modal {
                     .setPlaceholder("1m 10m")
                     .setValue(preset.learningSteps)
                     .onChange(async (value) => {
-                        preset.learningSteps = value;
+                        Object.assign(
+                            preset,
+                            updateDeckOptionsPresetStepProxy(
+                                preset,
+                                { learningSteps: value },
+                                this.plugin.data.settings.fsrsSettings,
+                            ),
+                        );
                         await this.saveSettings();
                     }),
             );
@@ -159,7 +172,14 @@ export class DeckOptionsModal extends Modal {
                     .setPlaceholder("10m")
                     .setValue(preset.lapseSteps)
                     .onChange(async (value) => {
-                        preset.lapseSteps = value;
+                        Object.assign(
+                            preset,
+                            updateDeckOptionsPresetStepProxy(
+                                preset,
+                                { lapseSteps: value },
+                                this.plugin.data.settings.fsrsSettings,
+                            ),
+                        );
                         await this.saveSettings();
                     }),
             );
@@ -276,11 +296,15 @@ export class DeckOptionsModal extends Modal {
 
     private getPresets() {
         if (!this.plugin.data.settings.deckOptionsPresets?.length) {
-            this.plugin.data.settings.deckOptionsPresets = [{ ...DEFAULT_DECK_OPTIONS_PRESET }];
+            this.plugin.data.settings.deckOptionsPresets = [
+                createDefaultDeckOptionsPreset(this.plugin.data.settings.fsrsSettings),
+            ];
         }
-        this.plugin.data.settings.deckOptionsPresets.forEach((preset) =>
-            this.ensurePresetDefaults(preset),
+        this.plugin.data.settings.deckOptionsPresets = this.plugin.data.settings.deckOptionsPresets.map(
+            (preset) =>
+                normalizeDeckOptionsPreset(preset, this.plugin.data.settings.fsrsSettings),
         );
+        syncFsrsSettingsCompatibilityMirror(this.plugin.data.settings);
         return this.plugin.data.settings.deckOptionsPresets;
     }
 
@@ -297,34 +321,10 @@ export class DeckOptionsModal extends Modal {
         return presets[safeIndex];
     }
 
-    private ensurePresetDefaults(preset: DeckOptionsPreset) {
-        if (preset.maxNewCards === undefined) {
-            preset.maxNewCards = DEFAULT_DECK_OPTIONS_PRESET.maxNewCards;
-        }
-        if (preset.maxReviews === undefined) {
-            preset.maxReviews = DEFAULT_DECK_OPTIONS_PRESET.maxReviews;
-        }
-        if (preset.learningSteps === undefined) {
-            preset.learningSteps = DEFAULT_DECK_OPTIONS_PRESET.learningSteps;
-        }
-        if (preset.lapseSteps === undefined) {
-            preset.lapseSteps = DEFAULT_DECK_OPTIONS_PRESET.lapseSteps;
-        }
-        if (preset.autoAdvance === undefined) {
-            preset.autoAdvance = DEFAULT_DECK_OPTIONS_PRESET.autoAdvance;
-        }
-        if (preset.autoAdvanceSeconds === undefined) {
-            preset.autoAdvanceSeconds = DEFAULT_DECK_OPTIONS_PRESET.autoAdvanceSeconds;
-        }
-        if (preset.showProgressBar === undefined) {
-            preset.showProgressBar = DEFAULT_DECK_OPTIONS_PRESET.showProgressBar;
-        }
-    }
-
     private async createNewPreset() {
         const presets = this.getPresets();
         const newPreset: DeckOptionsPreset = {
-            ...DEFAULT_DECK_OPTIONS_PRESET,
+            ...createDefaultDeckOptionsPreset(this.plugin.data.settings.fsrsSettings),
             name: `${t("DECK_OPTIONS_DEFAULT_PRESET_NAME")} ${presets.length}`,
         };
         presets.push(newPreset);
@@ -354,6 +354,7 @@ export class DeckOptionsModal extends Modal {
     }
 
     private async saveSettings() {
+        syncFsrsSettingsCompatibilityMirror(this.plugin.data.settings);
         await this.plugin.savePluginData();
     }
 }

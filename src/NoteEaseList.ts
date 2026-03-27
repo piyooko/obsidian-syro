@@ -9,7 +9,7 @@
  * 1. src/settings.ts
  *
  * 哪些文件会用到它：
- * 1. src/CardScheduleCalculator.ts (查询 Ease)
+ * 1. src/dataStore/data.ts (查询 Ease)
  * 2. src/main.ts (初始化和构建列表)
  */
 import { SRSettings } from "./settings";
@@ -30,7 +30,7 @@ export class NoteEaseList implements INoteEaseList {
     }
 
     get baseEase() {
-        return this.settings.baseEase;
+        return this.settings.weightedMultiplierSettings.baseEase;
     }
 
     hasEaseForPath(path: string): boolean {

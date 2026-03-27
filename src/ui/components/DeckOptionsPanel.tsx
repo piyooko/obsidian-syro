@@ -12,7 +12,14 @@ import { X } from "lucide-react";
 import type SRPlugin from "src/main";
 import { t } from "src/lang/helpers";
 import { Deck } from "src/Deck";
-import { DeckOptionsPreset, DEFAULT_DECK_OPTIONS_PRESET } from "src/settings";
+import {
+    createDefaultDeckOptionsPreset,
+    DeckOptionsPreset,
+    DEFAULT_DECK_OPTIONS_PRESET,
+    normalizeDeckOptionsPreset,
+    syncFsrsSettingsCompatibilityMirror,
+    updateDeckOptionsPresetStepProxy,
+} from "src/settings";
 import { BaseComponent, InputRow, Section, ToggleRow } from "./common/SettingsComponents";
 
 interface DeckOptionsPanelProps {
@@ -37,18 +44,20 @@ interface PanelLayout {
     ready: boolean;
 }
 
-function normalizePreset(preset?: DeckOptionsPreset): DeckOptionsPreset {
-    return {
-        ...DEFAULT_DECK_OPTIONS_PRESET,
-        ...preset,
-    };
+function normalizePreset(
+    preset: DeckOptionsPreset | undefined,
+    plugin: SRPlugin,
+): DeckOptionsPreset {
+    return normalizeDeckOptionsPreset(preset, plugin.data.settings.fsrsSettings);
 }
 
 function createDraft(plugin: SRPlugin, deckPath: string): DeckOptionsDraft {
     const presets =
         plugin.data.settings.deckOptionsPresets?.length > 0
-            ? plugin.data.settings.deckOptionsPresets.map((preset) => normalizePreset(preset))
-            : [{ ...DEFAULT_DECK_OPTIONS_PRESET }];
+            ? plugin.data.settings.deckOptionsPresets.map((preset) =>
+                  normalizePreset(preset, plugin),
+              )
+            : [createDefaultDeckOptionsPreset(plugin.data.settings.fsrsSettings)];
     const assignment = { ...plugin.data.settings.deckPresetAssignment };
     const currentPresetIndex = assignment[deckPath] ?? 0;
     const safePresetIndex =
@@ -117,11 +126,14 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
         (updater: (preset: DeckOptionsPreset) => DeckOptionsPreset) => {
             setDraft((prev) => {
                 const presets = [...prev.presets];
-                presets[prev.currentPresetIndex] = updater({ ...presets[prev.currentPresetIndex] });
+                presets[prev.currentPresetIndex] = normalizePreset(
+                    updater({ ...presets[prev.currentPresetIndex] }),
+                    plugin,
+                );
                 return { ...prev, presets };
             });
         },
-        [],
+        [plugin],
     );
 
     const recalculateLayout = useCallback(() => {
@@ -182,7 +194,7 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
     const handleCreatePreset = useCallback(() => {
         setDraft((prev) => {
             const nextPreset: DeckOptionsPreset = {
-                ...DEFAULT_DECK_OPTIONS_PRESET,
+                ...createDefaultDeckOptionsPreset(plugin.data.settings.fsrsSettings),
                 name: `${t("DECK_OPTIONS_DEFAULT_PRESET_NAME")} ${prev.presets.length}`,
             };
             const presets = [...prev.presets, nextPreset];
@@ -222,7 +234,7 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
 
     const handleSave = useCallback(async () => {
         plugin.data.settings.deckOptionsPresets = draft.presets.map((preset) =>
-            normalizePreset(preset),
+            normalizePreset(preset, plugin),
         );
         plugin.data.settings.deckOptionsPresets = plugin.data.settings.deckOptionsPresets.map(
             (preset, index) => ({
@@ -235,6 +247,7 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
             }),
         );
         plugin.data.settings.deckPresetAssignment = { ...draft.assignment };
+        syncFsrsSettingsCompatibilityMirror(plugin.data.settings);
 
         if ((plugin.data.settings.deckPresetAssignment[deckPath] ?? 0) === 0) {
             delete plugin.data.settings.deckPresetAssignment[deckPath];
@@ -321,10 +334,13 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                             desc={t("DECK_OPTIONS_LEARNING_STEPS_DESC")}
                             value={currentPreset.learningSteps}
                             onChange={(value) =>
-                                updateCurrentPreset((preset) => ({
-                                    ...preset,
-                                    learningSteps: value,
-                                }))
+                                updateCurrentPreset((preset) =>
+                                    updateDeckOptionsPresetStepProxy(
+                                        preset,
+                                        { learningSteps: value },
+                                        plugin.data.settings.fsrsSettings,
+                                    ),
+                                )
                             }
                         />
                         <InputRow
@@ -346,7 +362,13 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                             desc={t("DECK_OPTIONS_RELEARNING_STEPS_DESC")}
                             value={currentPreset.lapseSteps}
                             onChange={(value) =>
-                                updateCurrentPreset((preset) => ({ ...preset, lapseSteps: value }))
+                                updateCurrentPreset((preset) =>
+                                    updateDeckOptionsPresetStepProxy(
+                                        preset,
+                                        { lapseSteps: value },
+                                        plugin.data.settings.fsrsSettings,
+                                    ),
+                                )
                             }
                         />
                     </Section>

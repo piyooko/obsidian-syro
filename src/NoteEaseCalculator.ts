@@ -11,7 +11,7 @@
  *
  * 哪些文件会用到它：
  * 1. src/FlashcardReviewSequencer.ts (可能在某些调度逻辑中使用)
- * 2. src/CardScheduleCalculator.ts (计算新卡初始 Ease)
+ * 2. src/dataStore/data.ts (为笔记相关排程补充 Ease 上下文)
  */
 import { Note } from "./Note";
 import { SRSettings } from "./settings";
@@ -39,7 +39,7 @@ export class NoteEaseCalculator {
             );
             result =
                 flashcardsInNoteAvgEase * flashcardContribution +
-                settings.baseEase * (1.0 - flashcardContribution);
+                settings.weightedMultiplierSettings.baseEase * (1.0 - flashcardContribution);
         }
         return result;
     }

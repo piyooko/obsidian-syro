@@ -1,32 +1,15 @@
-﻿/**
- * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
- * [绠楁硶灞俔 FSRS (Free Spaced Repetition Scheduler) 鐜颁唬绠楁硶瀹炵幇銆?
- * 鍩轰簬 `ts-fsrs` 搴擄紝鎻愪緵浜嗘洿鍏堣繘鐨勮皟搴﹂€昏緫銆傛敮鎸佽褰曡缁嗙殑 RevLog锛堝涔犳棩蹇楋級锛屽苟鑳芥牴鎹巻鍙茶褰曚紭鍖栧弬鏁般€?
- *
- * 瀹冨湪椤圭洰涓睘浜庯細绠楁硶灞?(Algorithms) / 瀹炵幇 (Implementation)
- *
- * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
- * 1. ts-fsrs (绗笁鏂瑰簱)
- * 2. src/dataStore/adapter.ts (璇诲啓鏃ュ織 csv)
- *
- * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
- * 1. src/algorithms/algorithms_switch.ts
- */
-/**
- * [绠楁硶灞傦細璐熻矗璁＄畻涓嬩竴娆″涔犵殑鏃堕棿銆侀棿闅斿拰闅惧害] [鏍稿績] FSRS (Free Spaced Repetition Scheduler) 鐜颁唬绠楁硶瀹炵幇銆?
- */
 import { Setting, Notice } from "obsidian";
 import { DateUtils, MiscUtils } from "src/util/utils_recall";
-import { SrsAlgorithm, algorithmNames } from "./algorithms";
+import { SrsAlgorithm } from "./algorithms";
 import { DataStore } from "../dataStore/data";
 
 import * as tsfsrs from "ts-fsrs";
 import { t } from "src/lang/helpers";
 import deepcopy from "deepcopy";
-import { AnkiData } from "./anki";
-import { Rating, ReviewLog } from "ts-fsrs";
+import { ReviewLog } from "ts-fsrs";
 import { FsrsReviewEvent, RepetitionItem, ReviewResult } from "src/dataStore/repetitionItem";
 import { Iadapter } from "src/dataStore/adapter";
+import { createDefaultFsrsSettings, FsrsSettings, normalizeFsrsSettings } from "src/settings";
 
 // https://github.com/mgmeyers/obsidian-kanban/blob/main/src/Settings.ts
 let applyDebounceTimer = 0;
@@ -38,25 +21,20 @@ function applySettingsUpdate(callback: () => void): void {
 export type FsrsData = tsfsrs.Card;
 
 export class RevLog {
-    // --- 1. 韬唤璇嗗埆 (Identity) ---
-    card_id = ""; // 馃憟 鏍稿績淇敼锛氭敼涓?string锛屽苟浣跨敤 uuid
-    item_type = ""; // 馃憟 鏂板锛氬尯鍒嗘槸 card 杩樻槸 note锛屾柟渚夸互鍚庡仛鐙珛缁熻
+    card_id = "";
+    item_type = "";
 
-    // --- 2. 鏍稿績澶嶄範鍔ㄤ綔 (Action) ---
     review_time = 0;
     review_rating = 0;
     review_state = 0;
     review_duration = 0;
 
-    // --- 3. 璁板繂鐘舵€佸揩鐓?(Memory State) - FSRS 鎷熷悎涓庨珮绾у浘琛ㄥ繀澶?---
-    stability = 0; // S锛氳蹇嗙ǔ瀹氭€?
-    difficulty = 0; // D锛氳蹇嗛毦搴?
+    stability = 0;
+    difficulty = 0;
 
-    // --- 4. 璋冨害鍙傛暟 (Scheduling) ---
-    elapsed_days = 0; // 瀹為檯缁忚繃澶╂暟 (鐪熷疄閬楀繕鐜囪绠楀叧閿?
-    scheduled_days = 0; // 瀹夋帓鐨勪笅娆″涔犲ぉ鏁?
+    elapsed_days = 0;
+    scheduled_days = 0;
 
-    // --- 5. 鍏冩暟鎹?(Metadata) ---
     tag = "";
 
     constructor(
@@ -67,11 +45,9 @@ export class RevLog {
         difficulty: number = 0,
     ) {
         if (item) {
-            // 馃憟 鏍稿績淇敼锛氫笉鍐嶄娇鐢?item.ID锛岃€屾槸浣跨敤缁堣韩涓嶅彉鐨?item.uuid
             this.card_id = item.uuid;
-            this.item_type = item.itemType; // 璁板綍绫诲瀷
+            this.item_type = item.itemType;
 
-            // 闃插尽鎬у鐞嗭細CSV 閬囧埌閫楀彿浼氶敊琛岋紝鎵€浠ョ粰鍖呭惈閫楀彿鐨?tag 鍔犱笂鍙屽紩鍙?
             this.tag = item.deckName.includes(",") ? `"${item.deckName}"` : item.deckName;
         }
 
@@ -80,9 +56,6 @@ export class RevLog {
             this.review_rating = reviewLog.rating;
             this.review_state = reviewLog.state;
 
-            // 馃憟 鏍稿績浼樺寲锛氳褰曞涔犫€滃悗鈥濈敓鎴愮殑绋冲畾鎬у弬鏁般€?
-            // 瀵逛簬 FSRS Optimizer锛岃繖涓€琛屼粛鐒朵唬琛?state=0 鐨勮浆鍖栵紱
-            // 瀵逛簬鐢ㄦ埛缁熻锛岃繖涓€琛岃褰曚簡杩欐澶嶄範浜х敓鐨勭粨鏋滐紙涓嶅啀鏄?0锛夈€?
             this.stability =
                 stability !== 0
                     ? Number(stability.toFixed(4))
@@ -101,19 +74,9 @@ export class RevLog {
         return;
     }
 
-    // 鑾峰彇 CSV 琛ㄥご
     static getKeyNames() {
         return Object.keys(new RevLog());
     }
-}
-
-interface FsrsSettings {
-    revlog_tags: string[];
-    request_retention: number;
-    maximum_interval: number;
-    w: readonly number[];
-    enable_fuzz: boolean;
-    enable_short_term: boolean;
 }
 
 const FsrsOptions: string[] = ["Again", "Hard", "Good", "Easy"]; // Manual =0
@@ -123,7 +86,7 @@ const FsrsOptions: string[] = ["Again", "Hard", "Good", "Easy"]; // Manual =0
  * https://github.com/open-spaced-repetition/free-spaced-repetition-scheduler
  * https://github.com/open-spaced-repetition/fsrs.js
  */
-export class FsrsAlgorithm extends SrsAlgorithm {
+export class FsrsAlgorithm extends SrsAlgorithm<FsrsSettings> {
     settings: FsrsSettings;
 
     fsrs = new tsfsrs.FSRS(tsfsrs.generatorParameters(this.settings));
@@ -135,7 +98,6 @@ export class FsrsAlgorithm extends SrsAlgorithm {
     REVLOG_TITLE = RevLog.getKeyNames().join(this.REVLOG_sep) + "\n";
     review_duration = 0;
 
-    // 馃憟 鏂板锛氶槻姝㈤珮棰戝啓鍏ュ鑷撮噸澶嶈〃澶寸殑绠€鏄撻攣
     private isWritingHeader = false;
 
     constructor() {
@@ -145,28 +107,10 @@ export class FsrsAlgorithm extends SrsAlgorithm {
     }
 
     defaultSettings(): FsrsSettings {
-        return {
-            revlog_tags: [],
-            ...tsfsrs.generatorParameters(),
-            // request_retention: 0.9,
-            // maximum_interval: 36500,
-            // w: [
-            //     0.4, 0.6, 2.4, 5.8, 4.93, 0.94, 0.86, 0.01, 1.49, 0.14, 0.94, 2.18, 0.05, 0.34,
-            //     1.26, 0.29, 2.61,
-            // ],
-            enable_short_term: true,
-            // enable_fuzz: false,
-        };
+        return createDefaultFsrsSettings();
     }
     updateSettings(settings: unknown) {
-        this.settings = MiscUtils.assignOnly(this.defaultSettings(), settings);
-        SrsAlgorithm.instance = this;
-        if (this.settings.w.length !== this.defaultSettings().w.length) {
-            const errmsg =
-                "fsrs algothrim has been updated, please update w of algorithm setting. reset `w` to default will fix this error";
-            console.error(errmsg);
-            new Notice(errmsg, 0);
-        }
+        this.settings = normalizeFsrsSettings(settings, this.defaultSettings());
         this.updateFsrsParams();
         this.getLogfilepath();
     }
@@ -243,10 +187,8 @@ export class FsrsAlgorithm extends SrsAlgorithm {
     }
 
     calcAllOptsIntervals(item: RepetitionItem) {
-        // 瀹夊叏妫€鏌ワ細濡傛灉 item 鎴?item.data 鏃犳晥锛屼娇鐢ㄧ┖鍗?
         let card: FsrsData;
         if (!item || !item.data || (item.data as FsrsData).state === undefined) {
-            // 鏂板崱鐗囨垨鏁版嵁鎹熷潖锛屽垱寤虹┖鍗?
             console.debug("[FSRS] Creating empty card for invalid item");
             card = tsfsrs.createEmptyCard();
         } else {
@@ -273,7 +215,6 @@ export class FsrsAlgorithm extends SrsAlgorithm {
         repeat: boolean,
         log: boolean = true,
     ): ReviewResult {
-        // 瀹夊叏妫€鏌ワ細濡傛灉 item 鎴?item.data 鏃犳晥锛屽垱寤虹┖鍗?
         let data: FsrsData;
         if (!item || !item.data || (item.data as FsrsData).state === undefined) {
             console.debug("[FSRS onSelection] Creating empty card for invalid item");
@@ -319,7 +260,6 @@ export class FsrsAlgorithm extends SrsAlgorithm {
             this.review_duration > 0 ? Math.max(0, now.getTime() - this.review_duration) : 0;
 
         if (log) {
-            // 馃憟 浼犲叆璁＄畻鍚庣殑 stability 鍜?difficulty
             void this.appendRevlog(item, review_log, data.stability, data.difficulty);
         }
 
@@ -332,12 +272,6 @@ export class FsrsAlgorithm extends SrsAlgorithm {
         };
     }
 
-    /**
-     * 璁板綍閲嶅鏁版嵁 鏃ュ織锛?
-     * @param now
-     * @param cid 瀵瑰簲鏁版嵁椤笽D
-     * @param rating
-     */
     async appendRevlog(
         item: RepetitionItem,
         reviewLog: ReviewLog,
@@ -367,7 +301,6 @@ export class FsrsAlgorithm extends SrsAlgorithm {
         let data = Object.values(rlog).join(this.REVLOG_sep);
         data += "\n";
 
-        // 馃憟 鏍稿績淇锛氭洿涓ヨ皑鐨勮〃澶村啓鍏ラ€昏緫
         if (!(await adapter.exists(this.logfilepath))) {
             if (!this.isWritingHeader) {
                 this.isWritingHeader = true;
@@ -382,12 +315,6 @@ export class FsrsAlgorithm extends SrsAlgorithm {
         return data;
     }
 
-    /**
-     * 閲嶅啓 閲嶅鏁版嵁 鏃ュ織锛?
-     * @param now
-     * @param cid 瀵瑰簲鏁版嵁椤笽D锛?
-     * @param rating
-     */
     async reWriteRevlog(data: string, withTitle = false) {
         const adapter = Iadapter.instance.adapter;
 
@@ -404,66 +331,6 @@ export class FsrsAlgorithm extends SrsAlgorithm {
             data = await adapter.read(this.logfilepath);
         }
         return data;
-    }
-
-    importer(fromAlgo: algorithmNames, items: RepetitionItem[]): void {
-        const options = this.srsOptions();
-        const initItvl = this.settings.w[4];
-        items.forEach((item) => {
-            if (item != null && item.data != null) {
-                const reps = item.timesReviewed;
-                let card = this.defaultData();
-                if (reps > 0) {
-                    const data = item.data as AnkiData;
-                    const due = new Date(item.nextReview);
-                    const interval = data.lastInterval;
-                    const lastview = new Date(
-                        item.nextReview - data.lastInterval * DateUtils.DAYS_TO_MILLIS,
-                    );
-
-                    let opt: string;
-                    item.data = card;
-                    if (interval > initItvl * 3) {
-                        // card.state = State.Learning;
-                        // in case the param is to big.
-                        opt = options[Rating.Easy - 1];
-                        this.onSelection(item, opt, false, false);
-                    }
-                    if (interval > initItvl) {
-                        opt = options[Rating.Easy - 1];
-                        this.onSelection(item, opt, false, false);
-                    }
-                    opt = options[Rating.Good - 1];
-                    this.onSelection(item, opt, false, false);
-
-                    card = item.data as FsrsData;
-                    card.due = due;
-                    card.scheduled_days = interval;
-                    card.reps = reps;
-                    card.last_review = lastview;
-                } else {
-                    item.data = card;
-                }
-                // item.data = deepcopy(card);
-                if (
-                    card.difficulty === 0 ||
-                    card.difficulty == null ||
-                    card.stability === 0 ||
-                    card.stability == null
-                ) {
-                    if (reps > 0) {
-                        const show = [item.ID, card, reps];
-                        console.warn("data switch: d, s" + card.difficulty + ", " + card.stability);
-                        console.warn(...show);
-                    }
-                }
-            }
-        });
-        items.some((item) => {
-            if (Object.prototype.hasOwnProperty.call(item.data, "ease")) {
-                throw new Error("conv to fsrs failed");
-            }
-        });
     }
 
     displaySettings(

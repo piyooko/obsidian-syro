@@ -1,28 +1,9 @@
-/**
- * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
- * 瀹氫箟浜嗏€滅墝缁勨€?Deck) 鐨勬暟鎹粨鏋勩€?
- * 杩欐槸涓€涓爲鐘剁粨鏋勶紝鏀寔瀛愮墝缁?(Subdecks)銆傛瘡涓墝缁勫寘鍚柊鍗°€佸埌鏈熷崱鍜屽涔犱腑鍗＄墖鐨勫垪琛ㄣ€?
- * 瀹冩槸缁勭粐鍗＄墖鐨勫鍣ㄣ€?
- *
- * 瀹冨湪椤圭洰涓睘浜庯細妯″瀷灞?(Model Layer)
- *
- * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
- * 1. src/Card.ts (鐗岀粍鍐呭瓨鏀剧殑瀵硅薄)
- * 2. src/TopicPath.ts (鐗岀粍鐨勮矾寰?Tag 瀹氫箟)
- *
- * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
- * 1. src/DeckTreeIterator.ts (閬嶅巻鐗岀粍鏍戣繘琛屽涔?
- * 2. src/FlashcardReviewSequencer.ts (鑾峰彇褰撳墠澶嶄範鐨勭墝缁勪笂涓嬫枃)
- * 3. src/NoteQuestionParser.ts (灏嗚В鏋愬嚭鐨勫崱鐗囨斁鍏ュ搴旂墝缁?
- */
-/**
- * [妯″瀷] 浠ｈ〃涓€涓墝缁勶紝鍖呭惈瀛愮墝缁勫拰鍗＄墖鍒楄〃銆?
- */
 import { Card } from "./Card";
 // import { FlashcardReviewMode } from "./FlashcardReviewSequencer";
 import { FlashcardReviewMode } from "./scheduling";
 import { Question } from "./Question";
 import { IQuestionPostponementList } from "./QuestionPostponementList";
+import { resolveDeckOptionsPreset } from "./settings";
 import { TopicPath, TopicPathList } from "./TopicPath";
 import type SRPlugin from "./main";
 
@@ -416,8 +397,6 @@ export class Deck {
         const result: Deck = new Deck(this.deckName, parent);
         result.newFlashcards = [...this.newFlashcards.filter((card) => predicate(card))];
         result.dueFlashcards = [...this.dueFlashcards.filter((card) => predicate(card))];
-        // 瀛︿範鍗＄墖涓嶅彈杩囨护鏉′欢褰卞搷锛岀洿鎺ュ鍒?
-        // 杩欑‘淇濆湪 filterForRemainingCards 鏃跺涔犲崱鐗囦笉浼氬洜 isNew/isDue 鏉′欢琚涪寮?
         result.learningFlashcards = [...this.learningFlashcards];
 
         for (const s of this.subdecks) {
@@ -464,23 +443,8 @@ export class DeckTreeFilter {
         });
     }
 
-    /**
-     * 搴旂敤姣忔棩涓婇檺杩囨护锛圓nki V3 璋冨害鍣ㄩ鏍?- 鑷《鍚戜笅婕忔枟鎴柇锛?
-     *
-     * 閲囩敤涓ユ牸鐨勮嚜椤跺悜涓嬶紙Top-Down锛夋湪妗跺師鐞嗭細
-     * 1. 鍒濆浠庢棤闄愬ぇ棰濆害寮€濮嬨€?
-     * 2. 鏌ヨ褰撳墠鑺傜偣鐨勮嚜韬彲鐢ㄩ檺棰濄€?
-     * 3. 灏嗕紶鍏ョ殑鐖堕檺棰濅笌褰撳墠闄愰鍙栬緝灏忓€硷紝浣滀负瀹為檯鏈夋晥闄愰銆?
-     * 4. 鎸夊疄闄呴檺棰濇敹闆嗗綋鍓嶈妭鐐圭洿灞炲崱鐗囷紝骞剁洿鎺ユ墸鍑忓紩鐢ㄥ璞′腑鐨勯檺棰濄€?
-     * 5. 灏嗗悓灞炰簬杩欎竴灞傜骇鐨勫墿浣欓檺棰濆悜涓嬩紶閫掞紝璁╁瓙鑺傜偣浜夋姠銆?
-     *
-     * @param node 褰撳墠澶勭悊鐨勭墝缁勮妭鐐?
-     * @param plugin 鎻掍欢瀹炰緥
-     * @returns 搴旂敤闄愬埗鍚庣殑鏂扮墝缁勬爲
-     */
     static filterByDailyLimits(node: Deck, plugin: SRPlugin): Deck {
         plugin.loadDailyDeckStats();
-        // 浣跨敤鏃犻檺澶х殑鍒濆闄愰锛屼唬琛ㄦ鏃惰妭鐐规槸鏈€澶栧眰璧风偣
         const initialLimits: DeckLimits = { newCards: Infinity, dueCards: Infinity };
         return this._applyTopDownLimits(node, plugin, initialLimits);
     }
@@ -495,14 +459,11 @@ export class DeckTreeFilter {
         const deckPath = node.getTopicPath().path.join("/") || node.deckName;
         const persistent = plugin.getDailyCounts(deckPath);
 
-        const presetIndex = settings.deckPresetAssignment?.[deckPath] ?? 0;
-        const preset = settings.deckOptionsPresets?.[presetIndex] || settings.deckOptionsPresets[0];
+        const preset = resolveDeckOptionsPreset(settings, deckPath);
 
-        // 1. 璁＄畻褰撳墠鑺傜偣鑷韩鐨勭粷瀵瑰墿浣欓厤棰?
         const myNewQuota = Math.max(0, (preset?.maxNewCards ?? 20) - persistent.new);
         const myDueQuota = Math.max(0, (preset?.maxReviews ?? 200) - persistent.review);
 
-        // 2. 涓庣埗绾т紶涓嬫潵鐨勯厤棰濊繘琛屾瘮杈冿紝鍙栬緝灏忓€?(鏍稿績锛氱埗鐗岀粍鐨勬紡鏂楀彲浠ュ崱浣忓瓙鐗岀粍)
         currentLimits.newCards = Math.min(currentLimits.newCards, myNewQuota);
         currentLimits.dueCards = Math.min(currentLimits.dueCards, myDueQuota);
 
@@ -513,10 +474,8 @@ export class DeckTreeFilter {
         }
 
         const result = new Deck(node.deckName, null);
-        // 瀛︿範涓殑鍗＄墖閫氬父涓嶈闄愶紝鍏ㄩ儴鏀捐
         result.learningFlashcards = [...node.learningFlashcards];
 
-        // 3. 浼樺厛鎷胯嚜宸辫繖灞傦紙鐩村睘鑺傜偣锛夌殑鍗＄墖锛屽苟瀹炴椂鎵ｅ噺鍙敤闄愰
         for (const card of node.newFlashcards) {
             if (currentLimits.newCards > 0) {
                 result.newFlashcards.push(card);
@@ -530,11 +489,7 @@ export class DeckTreeFilter {
             }
         }
 
-        // 4. 鍚戝瓙鑺傜偣浼犻€掑墿浣欓厤棰?
         for (const child of node.subdecks) {
-            // 銆愰噸瑕併€戝湪 JS 涓?currentLimits 鏄璞″紩鐢ㄤ紶閫掞紒
-            // 杩欐剰鍛崇潃 child1 娑堣€楀畬閰嶉鍚庯紝child2 鐪嬪埌鐨?currentLimits 浼氱浉搴斿噺灏戯紝
-            // 杩欏畬缇庢ā鎷熶簡 Anki 涓悓绾у瓙鐗岀粍鎸夌収椤哄簭娑堣€楃埗绾ч厤棰濈殑閫昏緫銆?
             const cappedChild = this._applyTopDownLimits(child, plugin, currentLimits);
             cappedChild.parent = result;
             result.subdecks.push(cappedChild);

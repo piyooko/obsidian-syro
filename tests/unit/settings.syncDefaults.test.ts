@@ -1,6 +1,9 @@
 import {
+    cloneFsrsSettings,
     DEFAULT_SETTINGS,
     DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
+    resolveDeckFsrsSettings,
+    resolveDeckOptionsPreset,
     SRSettings,
     upgradeSettings,
 } from "src/settings";
@@ -10,6 +13,16 @@ describe("sync progress display defaults", () => {
     test("new installs default to full-only progress tips", () => {
         expect(DEFAULT_SETTINGS.syncProgressDisplayMode).toBe(DEFAULT_SYNC_PROGRESS_DISPLAY_MODE);
         expect(DEFAULT_SETTINGS.syncProgressDisplayMode).toBe("full-only");
+    });
+
+    test("new installs enable FSRS fuzzing and keep official step defaults", () => {
+        expect(DEFAULT_SETTINGS.fsrsSettings.enable_fuzz).toBe(true);
+        expect(DEFAULT_SETTINGS.fsrsSettings.learning_steps).toEqual(
+            DEFAULT_SETTINGS.deckOptionsPresets[0]?.fsrs?.learning_steps,
+        );
+        expect(DEFAULT_SETTINGS.fsrsSettings.relearning_steps).toEqual(
+            DEFAULT_SETTINGS.deckOptionsPresets[0]?.fsrs?.relearning_steps,
+        );
     });
 
     test("new deck presets enable auto-advance with the progress bar by default", () => {
@@ -73,6 +86,41 @@ describe("sync progress display defaults", () => {
         );
     });
 
+    test("settings UI fans out the fuzz toggle to every preset and keeps the mirror aligned", () => {
+        const alternateFsrs = {
+            ...cloneFsrsSettings(DEFAULT_SETTINGS.fsrsSettings),
+            enable_fuzz: false,
+        };
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            fsrsSettings: alternateFsrs,
+            deckOptionsPresets: [
+                {
+                    ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                    fsrs: {
+                        ...DEFAULT_SETTINGS.deckOptionsPresets[0].fsrs,
+                        enable_fuzz: false,
+                    },
+                },
+                {
+                    ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                    name: "Preset 2",
+                    fsrs: {
+                        ...DEFAULT_SETTINGS.deckOptionsPresets[0].fsrs,
+                        enable_fuzz: false,
+                    },
+                },
+            ],
+        } as SRSettings;
+
+        const merged = mergeUIStateToSettings(settings, {
+            fsrsEnableFuzz: true,
+        });
+
+        expect(merged.fsrsSettings.enable_fuzz).toBe(true);
+        expect(merged.deckOptionsPresets.every((preset) => preset.fsrs?.enable_fuzz)).toBe(true);
+    });
+
     test("new installs enable sidebar file path tooltips with a 1000ms delay by default", () => {
         expect(DEFAULT_SETTINGS.sidebarFilePathTooltipEnabled).toBe(true);
         expect(DEFAULT_SETTINGS.sidebarFilePathTooltipDelayMs).toBe(1000);
@@ -90,5 +138,62 @@ describe("sync progress display defaults", () => {
             sidebarFilePathTooltipDelayMs: 999.8,
         });
         expect(uiState.sidebarFilePathTooltipDelayMs).toBe(1000);
+    });
+
+    test("upgradeSettings silently resets non-current FSRS weights and backfills missing steps", () => {
+        const legacyW = [
+            0.4, 0.6, 2.4, 5.8, 4.93, 0.94, 0.86, 0.01, 1.49, 0.14, 0.94, 2.18, 0.05, 0.34, 1.26,
+            0.29, 2.61,
+        ];
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            fsrsSettings: {
+                ...DEFAULT_SETTINGS.fsrsSettings,
+                w: legacyW,
+                learning_steps: undefined,
+                relearning_steps: undefined,
+            },
+        } as unknown as SRSettings;
+
+        upgradeSettings(settings);
+
+        expect(settings.fsrsSettings.w).toEqual(DEFAULT_SETTINGS.fsrsSettings.w);
+        expect(settings.fsrsSettings.learning_steps).toEqual(
+            DEFAULT_SETTINGS.fsrsSettings.learning_steps,
+        );
+        expect(settings.fsrsSettings.relearning_steps).toEqual(
+            DEFAULT_SETTINGS.fsrsSettings.relearning_steps,
+        );
+    });
+
+    test("preset-level FSRS resolution ignores legacy step strings and uses preset fsrs truth", () => {
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            deckPresetAssignment: {
+                alpha: 1,
+            },
+            deckOptionsPresets: [
+                DEFAULT_SETTINGS.deckOptionsPresets[0],
+                {
+                    ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                    name: "Alpha preset",
+                    learningSteps: "99m",
+                    lapseSteps: "88m",
+                    fsrs: {
+                        ...cloneFsrsSettings(DEFAULT_SETTINGS.fsrsSettings),
+                        learning_steps: ["2m", "20m"],
+                        relearning_steps: ["15m"],
+                    },
+                },
+            ],
+        } as SRSettings;
+
+        const preset = resolveDeckOptionsPreset(settings, "alpha");
+        const fsrs = resolveDeckFsrsSettings(settings, "alpha");
+
+        expect(preset.learningSteps).toBe("2m 20m");
+        expect(preset.lapseSteps).toBe("15m");
+        expect(fsrs.learning_steps).toEqual(["2m", "20m"]);
+        expect(fsrs.relearning_steps).toEqual(["15m"]);
     });
 });
