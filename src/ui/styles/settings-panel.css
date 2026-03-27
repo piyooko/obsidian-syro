@@ -706,14 +706,14 @@
         var(--setting-items-border-color, var(--background-modifier-border));
     border-radius: var(--setting-items-radius, var(--radius-m));
     box-shadow: none;
-    padding: var(--setting-items-padding, var(--size-4-5));
+    padding: 14px 16px;
 }
 
 .is-mobile .sr-settings-container .sr-settings-panel .setting-items > .setting-item {
     flex-wrap: nowrap;
     gap: 12px 14px;
     min-height: 0;
-    padding: 16px 0;
+    padding: 12px 0;
 }
 
 .is-mobile .sr-settings-container .sr-settings-panel .setting-item-info {
@@ -751,8 +751,8 @@
 }
 
 .is-mobile .sr-settings-container .sr-settings-panel .setting-item-control select.dropdown {
-    width: min(100%, 150px);
-    max-width: 150px;
+    width: 100%;
+    max-width: 100%;
     text-overflow: ellipsis;
 }
 
@@ -828,8 +828,8 @@ body.is-mobile .sr-settings-sections .setting-items > .setting-item:not(.mod-tog
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
-    padding-top: 18px;
-    padding-bottom: 18px;
+    padding-top: 14px;
+    padding-bottom: 14px;
 }
 
 body.is-mobile .sr-settings-sections .setting-items > .setting-item:not(.mod-toggle) .setting-item-info {
@@ -847,6 +847,52 @@ body.is-mobile
     width: 100%;
     margin-left: 0;
     justify-content: flex-start;
+}
+
+body.is-mobile
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.setting-item--mobile-inline:not(.mod-toggle) {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px 14px;
+}
+
+body.is-mobile
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.setting-item--mobile-inline:not(.mod-toggle)
+    .setting-item-info {
+    width: auto;
+    flex: 1 1 auto;
+    padding-right: 12px;
+}
+
+body.is-mobile
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.setting-item--mobile-inline:not(.mod-toggle)
+    .setting-item-control {
+    width: auto;
+    flex: 0 0 auto;
+    margin-left: auto;
+    justify-content: flex-end;
+}
+
+body.is-mobile
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.setting-item--mobile-inline:not(.mod-toggle)
+    .setting-item-control
+    input[type="text"],
+body.is-mobile
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.setting-item--mobile-inline:not(.mod-toggle)
+    .setting-item-control
+    input[type="number"] {
+    width: min(100%, 120px);
+    max-width: 120px;
 }
 
 body.is-mobile .sr-settings-sections .setting-item-control input[type="text"],

@@ -354,6 +354,21 @@ describe("EmbeddedSettingsPanel", () => {
         }
     });
 
+    it("keeps separator inputs opt-in inline on mobile", () => {
+        const view = renderPanel(createSettings(), { mobile: true });
+
+        try {
+            const inlineRows = Array.from(
+                view.container.querySelectorAll<HTMLElement>(".setting-item.setting-item--mobile-inline"),
+            );
+
+            expect(inlineRows).toHaveLength(2);
+            expect(inlineRows.every((row) => row.querySelector('input[type="text"]') !== null)).toBe(true);
+        } finally {
+            view.cleanup();
+        }
+    });
+
     it("shows only the FSRS random due drift toggle on the algorithm tab", () => {
         const view = renderPanel(createSettings());
 

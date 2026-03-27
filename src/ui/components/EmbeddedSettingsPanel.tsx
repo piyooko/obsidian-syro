@@ -555,11 +555,13 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
 
             <Section title={t("SETTINGS_SECTION_SEPARATORS")}>
                 <InputRow
+                    className="setting-item--mobile-inline"
                     label={t("SETTINGS_INLINE_SEPARATOR")}
                     value={settings.singleLineCardSeparator}
                     onChange={(v) => onChange("singleLineCardSeparator", v)}
                 />
                 <InputRow
+                    className="setting-item--mobile-inline"
                     label={t("SETTINGS_MULTILINE_SEPARATOR")}
                     value={settings.multilineCardSeparator}
                     onChange={(v) => onChange("multilineCardSeparator", v)}
