@@ -1,22 +1,3 @@
-/**
- * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
- * 瀹炵幇浜嗏€滆凯浠ｅ櫒妯″紡鈥濓紝璐熻矗鍦ㄥ涔犺繃绋嬩腑閬嶅巻鐗岀粍鏍戙€?
- * 瀹冨喅瀹氫簡鍦ㄥ涔犳椂鈥滀笅涓€寮犲崱鐗団€濇槸璋侊紝鏀寔涓嶅悓鐨勯亶鍘嗛『搴忥紙濡傞『搴忋€侀殢鏈恒€佷紭鍏堟柊鍗?澶嶄範鍗★級銆?
- * 鍚屾椂涔熸敮鎸佽法鐗岀粍锛圖eck锛夌殑閬嶅巻銆?
- *
- * 瀹冨湪椤圭洰涓睘浜庯細閫昏緫灞?(Logic Layer)
- *
- * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
- * 1. src/Deck.ts (琚亶鍘嗙殑鏁版嵁缁撴瀯)
- * 2. src/Card.ts (閬嶅巻杩斿洖鐨勫厓绱?
- *
- * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
- * 1. src/FlashcardReviewSequencer.ts (澶嶄範娴佺▼鎺у埗鍣ㄤ緷璧栧畠鏉ヨ幏鍙栧崱鐗?
- * 2. src/DeckTreeStatsCalculator.ts (渚濊禆瀹冩潵閬嶅巻缁熻鏁版嵁)
- */
-/**
- * [閫昏緫] 杩唬鍣ㄦā寮忥紝璐熻矗鍦ㄥ涔犳椂閬嶅巻鐗岀粍鏍戯紝鍐冲畾涓嬩竴寮犲崱鐗囥€?
- */
 import { Card } from "./Card";
 import { CardListType, Deck } from "./Deck";
 import { Question } from "./Question";
@@ -48,14 +29,14 @@ export interface IDeckTreeIterator {
     get currentDeck(): Deck;
     get currentCard(): Card;
     get hasCurrentCard(): boolean;
-    get currentTopicPath(): TopicPath; // 鏂板锛氱敤浜庡崱缁勯殧绂昏繃婊?
+    get currentTopicPath(): TopicPath;
     setBaseDeck(baseDeck: Deck): void;
     setIteratorTopicPath(topicPath: TopicPath): void;
     deleteCurrentCardFromAllDecks(): boolean;
     deleteCurrentQuestionFromAllDecks(): boolean;
     moveCurrentCardToEndOfList(): void;
     nextCard(): boolean;
-    setCurrentCard(card: Card, deck: Deck): void; // 鏂板锛氱敤浜庢挙閿€鍔熻兘
+    setCurrentCard(card: Card, deck: Deck): void;
 }
 
 class SingleDeckIterator {
@@ -451,22 +432,17 @@ export class DeckTreeIterator implements IDeckTreeIterator {
         }
     }
 
-    // 鏂板锛氱洿鎺ヨ缃綋鍓嶅崱鐗囷紙鐢ㄤ簬鎾ら攢鍔熻兘锛?
     setCurrentCard(card: Card, deck: Deck): void {
-        // 1. 鎵惧埌鍗＄墖鎵€鍦ㄧ殑鐗岀粍鍦?deckArray 涓殑绱㈠紩
         const deckIdx = this.deckArray.findIndex((d) => d === deck);
         if (deckIdx === -1) {
-            // 濡傛灉鐗岀粍涓嶅湪褰撳墠鏁扮粍涓紝闇€瑕佹洿鏂?deckArray
             this.setIteratorTopicPath(deck.getTopicPath());
         }
 
-        // 2. 璁剧疆褰撳墠鐗岀粍
         const newDeckIdx = this.deckArray.findIndex((d) => d === deck);
         if (newDeckIdx >= 0) {
             this.setDeckIdx(newDeckIdx);
         }
 
-        // 3. 鍦ㄥ崱鐗囧垪琛ㄤ腑鎵惧埌鍗＄墖骞惰缃储寮?
         const cardListType = card.cardListType;
         const cardList = deck.getCardListForCardType(cardListType);
         const cardIdx = cardList.findIndex((c) => c === card);

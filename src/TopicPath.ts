@@ -1,21 +1,3 @@
-/**
- * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
- * 灏佽浜嗙墝缁勭殑璺緞閫昏緫 (渚嬪 `#flashcards/science/physics`)銆?
- * 璐熻矗瑙ｆ瀽 Tag 瀛楃涓诧紝澶勭悊灞傜骇鍏崇郴锛屼互鍙婃牸寮忓寲杈撳嚭銆?
- *
- * 瀹冨湪椤圭洰涓睘浜庯細宸ュ叿/妯″瀷灞?(Utility/Model Layer)
- *
- * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
- * 1. src/settings.ts (鑾峰彇 Tag 璁剧疆)
- *
- * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
- * 1. src/Deck.ts (鐗岀粍鐨勫眰绾ф爣璇?
- * 2. src/Question.ts (闂鎵€灞炵殑 Tag)
- * 3. src/NoteQuestionParser.ts (瑙ｆ瀽绗旇涓殑 Tag)
- */
-/**
- * [妯″瀷] 澶勭悊鐗岀粍璺緞锛堝 #tag/subtag锛夈€?
- */
 import { SRSettings } from "src/settings";
 import { DEFAULT_DECKNAME, OBSIDIAN_TAG_AT_STARTOFLINE_REGEX } from "./constants";
 import { ISRFile } from "./SRFile";
@@ -98,10 +80,8 @@ export class TopicPath {
         if (settings.convertFoldersToDecks) {
             const deckPath: string[] = noteFile.path.split("/");
 
-            // 鍙栧嚭鏂囦欢鍚嶏紝鍘绘帀鍚庣紑锛屼綔涓虹墝缁勭殑鏈€鍚庝竴灞?
             const filename = deckPath.pop();
             if (filename) {
-                // 鍘婚櫎 .md 鍚庣紑 (鎴栬€呭叾浠栨墿灞曞悕)
                 const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
                 deckPath.push(nameWithoutExt);
             }

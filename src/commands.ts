@@ -1,24 +1,4 @@
-﻿/**
- * 鏉╂瑤閲滈弬鍥︽娑撴槒顩﹂弰顖氬叡娴犫偓娑斿牏娈戦敍?
- * 鐎规矮绠熼幓鎺嶆閹绘劒绶甸惃鍕閺堝鎳℃禒銈忕礄娓氬顩ч垾妯哄弿鐏炩偓閸氬本顒為崡锛勫閳ユ瑣鈧讲鈧ɑ甯规潻鐔奉槻娑旂姭鈧瑧鐡戦敍澶堚偓?
- * 鏉╂瑤绨洪崨鎴掓姢娴兼艾鍤悳鏉挎躬 Obsidian 閻ㄥ嫬鎳℃禒銈夋桨閺夊じ鑵戦敍宀€鏁ら幋宄板讲娴犮儵鈧俺绻冭箛顐ｅ祹闁款喗鍨ㄩ懣婊冨礋鐟欙箑褰傞妴?
- * 閸忔湹鑵戦張鈧柌宥堫洣閻ㄥ嫧鈧粌鍙忕仦鈧崥灞绢劄閸楋紕澧栭垾婵嗘嚒娴犮倓绱伴柆宥呭坊閹碘偓閺堝鎷烽煪顏呮瀮娴犺绱濆〒鍛倞楠炵晫浼掗弫鐗堝祦閿涘瞼鈥樻穱婵堫梿閻╂ɑ鏆熼幑顔煎冀閺勭姴鐤勯梽鍛剰閸愮偣鈧?
- * 鏉╁€熼嚋閺傚洣娆㈡担璺ㄦ暏 fileID 鐎涙顑佹稉韫稊娑撳搫鏁稉鈧弽鍥槕閿涘奔绗夐崘宥勭贩鐠ф牗鏆熺紒鍕瑓閺嶅洢鈧?
- *
- * 鐎瑰啫婀い鍦窗娑擃厼鐫樻禍搴窗闁槒绶仦?(Logic Layer)
- *
- * 鐎瑰啩绱伴悽銊ュ煂閸濐亙绨洪弬鍥︽閿?
- * 1. src/dataStore/data.ts
- * 2. src/dataStore/trackedFile.ts
- * 3. src/dataStore/repetitionItem.ts
- *
- * 閸濐亙绨洪弬鍥︽娴兼氨鏁ら崚鏉跨暊閿?
- * 1. src/main.ts (閹绘帊娆㈤崥顖氬З閺冭埖鏁為崘宀冪箹娴滄稑鎳℃禒?
- */
-/**
- * [閸忋儱褰沒 濞夈劌鍞?Obsidian 閸涙垝鎶ら棃銏℃緲娑擃厾娈戦崨鎴掓姢閵?
- */
-import { MarkdownView, Notice, TFile } from "obsidian";
+﻿import { MarkdownView, Notice, TFile } from "obsidian";
 import ObsidianSrsPlugin from "./main";
 import { Queue } from "./dataStore/queue";
 import { RPITEMTYPE, RepetitionItem } from "./dataStore/repetitionItem";

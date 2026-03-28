@@ -1,15 +1,3 @@
-/**
- * [核心] 解析卡片语法�?:, ???, cloze），将文本转换为 Question 对象�?
- *
- * 属于：逻辑�?
- *
- * 用到�?
- * - clozecraft (处理挖空)
- * - src/Question (卡片类型定义)
- *
- * 被用到：
- * - 负责提取卡片的核心模�?
- */
 import { CardType } from "src/Question";
 import {
     findCodeContextSegments,
@@ -56,35 +44,25 @@ export class ParsedQuestionInfo {
 }
 
 function hasInlineMarker(text: string, marker: string): boolean {
-    // 没有标记直接返回
     if (marker.length == 0) return false;
 
-    // 从位�?0 开始查�?
     let startIndex = 0;
     const codeContexts = findCodeContextSegments(text);
 
     for (;;) {
         const markerIdx = text.indexOf(marker, startIndex);
 
-        // 如果找不到分隔符了，返回 false
         if (markerIdx === -1) return false;
 
-        // 1. 检查是否在代码�?(Inline Code Block) �?
         const isInsideCode = isIndexInsideCodeContext(markerIdx, codeContexts);
 
-        // 2. 检查是否在 Anki 挖空格式 ({{c1::...}}) �?
-        // 逻辑：截取分隔符前面的字符串，看结尾是否匹配 "{{c" + 数字
         const prefix = text.substring(0, markerIdx);
-        // 正则解释：\{\{c 转义{{c，\d+ 匹配一个或多个数字�? 表示匹配字符串结�?
         const isInsideAnki = /\{\{c\d+$/.test(prefix);
 
-        // 只有当它既不在代码块里，也不�?Anki 挖空格式里，才是真正的分隔符
         if (!isInsideCode && !isInsideAnki) {
             return true;
         }
 
-        // 如果当前找到的这�?:: 无效（在代码块或Anki里）�?
-        // 就从当前位置之后继续找下一�?::
         startIndex = markerIdx + marker.length;
     }
 }
@@ -161,8 +139,6 @@ export function parse(text: string, options: ParserOptions): ParsedQuestionInfo[
         }
         cardText += currentLine.trimEnd();
 
-        // �?关键：优先检�?Anki 风格挖空 {{c1::...}}
-        // 必须�?inline separator 检测之前，否则 :: 会被误识别为 SingleLineBasic
         if (
             options.convertAnkiClozesToClozes &&
             cardType === null &&
@@ -171,7 +147,6 @@ export function parse(text: string, options: ParserOptions): ParsedQuestionInfo[
             cardType = CardType.AnkiCloze;
         }
 
-        // Pick up inline cards (只有当不�?AnkiCloze 时才检�?
         if (cardType === null) {
             for (const { separator, type } of inlineSeparators) {
                 if (hasInlineMarker(currentLine, separator)) {
@@ -212,11 +187,9 @@ export function parse(text: string, options: ParserOptions): ParsedQuestionInfo[
             const codeBlockClose = currentLine.match(/`+|~+/)[0];
             const codeBlockStart = currentLine;
 
-            // 1. 直接读取整个代码块，不再拆分段落
             let codeBlockContent = "";
             const startLine = i;
 
-            // 跳过首行
             i++;
 
             while (i < lines.length && !lines[i].startsWith(codeBlockClose)) {
@@ -224,21 +197,16 @@ export function parse(text: string, options: ParserOptions): ParsedQuestionInfo[
                 i++;
             }
 
-            // 此时 i 指向结束标记�?
             const endLine = i;
 
-            // 2. 检查是否有 Anki 挖空
             if (
                 options.parseClozesInCodeBlocks &&
                 options.convertAnkiClozesToClozes &&
                 /\{\{c\d+::/.test(codeBlockContent)
             ) {
                 cardType = CardType.AnkiCloze;
-                // 拼接完整的代码块字符�?
-                // 注意：我们这里保留完整内容，"裁剪"工作交给 QuestionTypeAnkiCloze 去做
                 cardText = codeBlockStart + "\n" + codeBlockContent + codeBlockClose;
 
-                // 记录正确的起止行�?
                 firstLineNo = startLine;
                 lastLineNo = endLine;
 
@@ -246,7 +214,6 @@ export function parse(text: string, options: ParserOptions): ParsedQuestionInfo[
                     new ParsedQuestionInfo(CardType.AnkiCloze, cardText, firstLineNo, lastLineNo),
                 );
 
-                // 重置状�?
                 cardType = null;
                 cardText = "";
             } else if (cardType !== null) {
@@ -258,7 +225,6 @@ export function parse(text: string, options: ParserOptions): ParsedQuestionInfo[
             (hasStandardClozeOutsideCode(currentLine, options.clozePatterns) ||
                 hasNonStandardClozeOutsideCode(currentLine, options.clozePatterns))
         ) {
-            // Pick up cloze cards (普�?Cloze 格式，AnkiCloze 已在前面检�?
             cardType = CardType.Cloze;
         }
     }

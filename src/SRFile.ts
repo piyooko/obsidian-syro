@@ -1,22 +1,4 @@
-﻿/**
- * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
- * 鏂囦欢绯荤粺閫傞厤鍣ㄦ帴鍙?(ISRFile) 鍙婂叾瀹炵幇 (SrTFile)銆?
- * 瀹冨 Obsidian 鐨?`TFile` 杩涜浜嗗皝瑁咃紝鎻愪緵缁熶竴鐨?read/write 鎺ュ彛锛屽苟澶勭悊 Frontmatter 鍜?Tag 鐨勮鍙栥€?
- * 杩欎娇寰楁牳蹇冮€昏緫鍙互涓?Obsidian API 瑙ｈ€︼紙鏂逛究娴嬭瘯鎴栬縼绉伙級銆?
- *
- * 瀹冨湪椤圭洰涓睘浜庯細閫傞厤鍣ㄥ眰 (Adapter Layer)
- *
- * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
- * 1. Obsidian API
- *
- * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
- * 1. src/Note.ts (Note 瀵硅薄鎸佹湁 SRFile)
- * 2. src/NoteFileLoader.ts (鍔犺浇鏂囦欢)
- */
-/**
- * [閫傞厤鍣╙ 鍖呰 TFile锛屾彁渚涜鍐欐帴鍙ｃ€?
- */
-import {
+﻿import {
     MetadataCache,
     TFile,
     Vault,

@@ -1,18 +1,3 @@
-/**
- * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
- * [宸ュ叿灞俔 闅忔満鏁版彁渚涜€呮帴鍙ｄ笌瀹炵幇銆?
- * 鍚屾牱鏄负浜嗘柟渚垮崟鍏冩祴璇曪紝鍙互鏇挎崲鎺?`Math.random()`锛岃闅忔満缁撴灉鍙娴嬨€?
- * 涔熷寘鍚簡 `WeightedRandomNumber` 绫伙紝鐢ㄤ簬瀹炵幇甯︽潈閲嶇殑闅忔満鎶藉彇閫昏緫銆?
- *
- * 瀹冨湪椤圭洰涓睘浜庯細宸ュ叿灞?(Utils) / 闅忔満 (Random)
- *
- * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
- * (鏃犲唴閮ㄤ緷璧?
- *
- * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
- * 1. src/DeckTreeIterator.ts (闅忔満澶嶄範椤哄簭)
- * 2. src/algorithms/balance.ts
- */
 import { getTypedObjectEntries } from "./utils";
 
 export interface IRandomNumberProvider {
