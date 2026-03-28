@@ -8,6 +8,7 @@ import React, {
     useRef,
     useState,
 } from "react";
+import { Platform } from "obsidian";
 import { X } from "lucide-react";
 import type SRPlugin from "src/main";
 import { t } from "src/lang/helpers";
@@ -21,6 +22,7 @@ import {
     updateDeckOptionsPresetStepProxy,
 } from "src/settings";
 import { BaseComponent, InputRow, Section, ToggleRow } from "./common/SettingsComponents";
+import { useMobileNavbarOffset } from "./useMobileNavbarOffset";
 
 interface DeckOptionsPanelProps {
     plugin: SRPlugin;
@@ -99,6 +101,7 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
 }) => {
     const panelRef = useRef<HTMLDivElement>(null);
     const titleId = useId();
+    const mobileNavbarOffset = useMobileNavbarOffset();
     const [draft, setDraft] = useState<DeckOptionsDraft>(() => createDraft(plugin, deckPath));
     const [layout, setLayout] = useState<PanelLayout>({
         width: 680,
@@ -139,18 +142,19 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
     const recalculateLayout = useCallback(() => {
         if (!containerElement) return;
 
-        const horizontalPadding = 48;
-        const verticalPadding = 40;
+        const isMobileLayout = Platform.isMobile;
+        const horizontalPadding = isMobileLayout ? 16 : 48;
+        const verticalPadding = (isMobileLayout ? 16 : 40) + mobileNavbarOffset;
         const availableWidth = Math.max(320, containerElement.clientWidth - horizontalPadding);
         const width = Math.max(320, Math.min(preferredWidth, availableWidth));
-        const maxHeight = Math.max(360, containerElement.clientHeight - verticalPadding);
+        const maxHeight = Math.max(220, containerElement.clientHeight - verticalPadding);
 
         setLayout({
             width,
             maxHeight,
             ready: true,
         });
-    }, [containerElement, preferredWidth]);
+    }, [containerElement, mobileNavbarOffset, preferredWidth]);
 
     useLayoutEffect(() => {
         recalculateLayout();
@@ -260,7 +264,11 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
     }, [deckPath, draft.assignment, draft.presets, onClose, onSaved, plugin]);
 
     return (
-        <div className="sr-deck-options-overlay" onMouseDown={onClose}>
+        <div
+            className="sr-deck-options-overlay"
+            style={{ ["--sr-mobile-navbar-offset" as string]: `${mobileNavbarOffset}px` }}
+            onMouseDown={onClose}
+        >
             <div
                 ref={panelRef}
                 className={`sr-settings-panel sr-deck-options-anchor-panel ${layout.ready ? "is-ready" : ""}`}

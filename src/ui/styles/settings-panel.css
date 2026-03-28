@@ -11,6 +11,14 @@
     overflow: hidden;
 }
 
+.sr-settings-react-root {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
 .sr-settings-panel {
     display: flex;
     flex-direction: column;
@@ -164,7 +172,7 @@
 
 .sr-setting-subgroup {
     padding-left: 20px;
-    border-left: 2px solid var(--background-modifier-border);
+    border-left: 0;
 }
 
 /* 标题样式 */
@@ -411,6 +419,25 @@
     max-width: 100%;
 }
 
+.sr-settings-panel .setting-item.setting-item--color {
+    align-items: center;
+}
+
+.sr-settings-panel .setting-item.setting-item--color .setting-item-control {
+    align-self: center;
+    justify-content: flex-end;
+    margin-top: 0;
+    margin-left: auto;
+    flex: 0 0 auto;
+    width: 38px;
+    min-width: 38px;
+    max-width: 38px;
+}
+
+.sr-settings-panel .setting-item.setting-item--color .setting-item-control > * {
+    flex-shrink: 0;
+}
+
 /* ==========================================
    控件样式微调 (适配背景色)
    ========================================== */
@@ -439,7 +466,8 @@
     resize: vertical;
 }
 
-.sr-settings-panel .mod-toggle .checkbox-container {
+.is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container,
+.sr-deck-options-anchor-panel .mod-toggle .checkbox-container {
     display: inline-block;
     position: relative;
     flex-shrink: 0;
@@ -453,7 +481,8 @@
     max-height: calc(var(--toggle-thumb-height) + var(--toggle-border-width) * 2);
 }
 
-.sr-settings-panel .mod-toggle .checkbox-container input {
+.is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container input,
+.sr-deck-options-anchor-panel .mod-toggle .checkbox-container input {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -640,9 +669,48 @@
     overflow-y: hidden;
 }
 
+body:not(.is-mobile) .vertical-tab-content.sr-settings-container {
+    padding-bottom: 0 !important;
+}
+
+body:not(.is-mobile) .sr-settings-container .sr-settings-panel {
+    padding-bottom: 0;
+}
+
+body:not(.is-mobile) .sr-settings-container .sr-settings-panel .setting-items > .setting-item.mod-toggle {
+    align-items: center !important;
+}
+
+body:not(.is-mobile) .sr-settings-container .sr-settings-panel .setting-item.mod-toggle .setting-item-control {
+    align-self: center !important;
+}
+
+body:not(.is-mobile) .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container {
+    line-height: normal;
+    min-width: auto;
+    max-width: none;
+    min-height: auto;
+    max-height: none;
+}
+
+body:not(.is-mobile) .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container input {
+    appearance: auto;
+    -webkit-appearance: auto;
+}
+
+body:not(.is-mobile) .sr-settings-container .sr-settings-panel .mod-toggle .setting-item-control > .checkbox-container {
+    min-width: auto;
+    max-width: none;
+}
+
+body.is-mobile .vertical-tab-content.sr-settings-container,
+body.is-phone .modal.mod-settings .vertical-tab-content.sr-settings-container {
+    padding-bottom: 0 !important;
+}
+
 .is-mobile .sr-settings-container .sr-settings-panel {
     background: transparent;
-    padding-bottom: max(28px, env(safe-area-inset-bottom, 0px));
+    padding-bottom: 0;
     flex: 1 1 auto;
     min-height: 0;
     height: 100%;
@@ -675,7 +743,7 @@
 }
 
 .is-mobile .sr-settings-container .sr-style-setting-content-pane-inner {
-    padding: 0 8px 14px;
+    padding: 0 8px calc(14px + var(--sr-mobile-navbar-offset, 0px));
 }
 
 .is-mobile .sr-settings-container .sr-settings-sections {
@@ -772,7 +840,7 @@
 }
 
 .is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .setting-item-control {
-    align-self: start;
+    align-self: center;
     margin-top: 2px;
     margin-left: auto;
     flex: 0 0 auto;
@@ -836,7 +904,11 @@
 /* ======================================================
    Mobile setting layout: stack non-toggle rows like Obsidian
    ====================================================== */
-body.is-mobile .sr-settings-sections .setting-items > .setting-item:not(.mod-toggle) {
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-sections
+    .setting-items
+    > .setting-item:not(.mod-toggle):not(.setting-item--color) {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
@@ -844,7 +916,12 @@ body.is-mobile .sr-settings-sections .setting-items > .setting-item:not(.mod-tog
     padding-bottom: 14px;
 }
 
-body.is-mobile .sr-settings-sections .setting-items > .setting-item:not(.mod-toggle) .setting-item-info {
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-sections
+    .setting-items
+    > .setting-item:not(.mod-toggle):not(.setting-item--color)
+    .setting-item-info {
     width: 100%;
     min-width: 0;
     margin-right: 0;
@@ -852,9 +929,10 @@ body.is-mobile .sr-settings-sections .setting-items > .setting-item:not(.mod-tog
 }
 
 body.is-mobile
+    .sr-settings-container
     .sr-settings-sections
     .setting-items
-    > .setting-item:not(.mod-toggle)
+    > .setting-item:not(.mod-toggle):not(.setting-item--color)
     .setting-item-control {
     width: 100%;
     margin-left: 0;
@@ -862,6 +940,7 @@ body.is-mobile
 }
 
 body.is-mobile
+    .sr-settings-container
     .sr-settings-sections
     .setting-items
     > .setting-item.setting-item--mobile-inline:not(.mod-toggle) {
@@ -871,6 +950,7 @@ body.is-mobile
 }
 
 body.is-mobile
+    .sr-settings-container
     .sr-settings-sections
     .setting-items
     > .setting-item.setting-item--mobile-inline:not(.mod-toggle)
@@ -881,6 +961,7 @@ body.is-mobile
 }
 
 body.is-mobile
+    .sr-settings-container
     .sr-settings-sections
     .setting-items
     > .setting-item.setting-item--mobile-inline:not(.mod-toggle)
@@ -892,12 +973,14 @@ body.is-mobile
 }
 
 body.is-mobile
+    .sr-settings-container
     .sr-settings-sections
     .setting-items
     > .setting-item.setting-item--mobile-inline:not(.mod-toggle)
     .setting-item-control
     input[type="text"],
 body.is-mobile
+    .sr-settings-container
     .sr-settings-sections
     .setting-items
     > .setting-item.setting-item--mobile-inline:not(.mod-toggle)
@@ -907,16 +990,16 @@ body.is-mobile
     max-width: 120px;
 }
 
-body.is-mobile .sr-settings-sections .setting-item-control input[type="text"],
-body.is-mobile .sr-settings-sections .setting-item-control input[type="number"],
-body.is-mobile .sr-settings-sections .setting-item-control select,
-body.is-mobile .sr-settings-sections .setting-item-control textarea,
-body.is-mobile .sr-settings-sections .setting-item-control .slider {
+body.is-mobile .sr-settings-container .sr-settings-sections .setting-item-control input[type="text"],
+body.is-mobile .sr-settings-container .sr-settings-sections .setting-item-control input[type="number"],
+body.is-mobile .sr-settings-container .sr-settings-sections .setting-item-control select,
+body.is-mobile .sr-settings-container .sr-settings-sections .setting-item-control textarea,
+body.is-mobile .sr-settings-container .sr-settings-sections .setting-item-control .slider {
     width: 100%;
     max-width: 100%;
 }
 
-body.is-mobile .sr-settings-sections .cmdr-slider .setting-item-control > div {
+body.is-mobile .sr-settings-container .sr-settings-sections .cmdr-slider .setting-item-control > div {
     display: flex;
     width: 100%;
     align-items: center;
@@ -934,7 +1017,7 @@ body.is-mobile
     .sr-settings-container
     .sr-settings-panel
     .sr-setting-subgroup
-    > .setting-item:not(.mod-toggle):not(.setting-item-heading) {
+    > .setting-item:not(.mod-toggle):not(.setting-item-heading):not(.setting-item--color) {
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
@@ -944,7 +1027,7 @@ body.is-mobile
     .sr-settings-container
     .sr-settings-panel
     .sr-setting-subgroup
-    > .setting-item:not(.mod-toggle):not(.setting-item-heading)
+    > .setting-item:not(.mod-toggle):not(.setting-item-heading):not(.setting-item--color)
     .setting-item-info {
     width: 100%;
     min-width: 0;
@@ -955,7 +1038,7 @@ body.is-mobile
     .sr-settings-container
     .sr-settings-panel
     .sr-setting-subgroup
-    > .setting-item:not(.mod-toggle):not(.setting-item-heading)
+    > .setting-item:not(.mod-toggle):not(.setting-item-heading):not(.setting-item--color)
     .setting-item-control {
     flex: 1 0 100%;
     width: 100%;
@@ -976,16 +1059,21 @@ body.is-mobile
     gap: 12px;
 }
 
-body.is-mobile .sr-settings-container .sr-settings-panel .setting-item.setting-item--color {
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.setting-item--color {
     flex-direction: row;
-    align-items: flex-start;
+    align-items: center;
     gap: 12px 16px;
 }
 
 body.is-mobile
     .sr-settings-container
-    .sr-settings-panel
-    .setting-item.setting-item--color
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.setting-item--color
     .setting-item-info {
     flex: 1 1 auto;
     width: auto;
@@ -996,12 +1084,13 @@ body.is-mobile
 
 body.is-mobile
     .sr-settings-container
-    .sr-settings-panel
-    .setting-item.setting-item--color
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.setting-item--color
     .setting-item-control {
-    align-self: start;
+    align-self: center;
     justify-content: flex-end;
-    margin-top: 2px;
+    margin-top: 0;
     margin-left: auto;
     flex: 0 0 auto;
     width: 44px;
@@ -1011,8 +1100,9 @@ body.is-mobile
 
 body.is-mobile
     .sr-settings-container
-    .sr-settings-panel
-    .setting-item.setting-item--color
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.setting-item--color
     .setting-item-control
     > * {
     flex-shrink: 0;
@@ -1122,6 +1212,8 @@ body.is-mobile
     min-height: 0;
     height: auto;
     max-height: none;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
     padding: 0 10px 8px;
 }
 
@@ -1161,7 +1253,7 @@ body.is-mobile
 }
 
 .is-mobile .sr-deck-options-overlay {
-    padding: 8px;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px) + var(--sr-mobile-navbar-offset, 0px));
 }
 
 .is-mobile .sr-deck-options-anchor-panel {
@@ -1176,6 +1268,144 @@ body.is-mobile
 
 .is-mobile .sr-deck-options-scroll {
     padding: 0 6px 4px;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .sr-deck-options-select-control {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    gap: 8px;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .sr-deck-options-select-control select {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .sr-deck-options-select-control .clickable-icon {
+    flex: 0 0 32px;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .setting-group > .setting-item.setting-item-heading {
+    padding: 0 8px;
+    margin-bottom: 8px;
+}
+
+.is-mobile
+    .sr-deck-options-anchor-panel
+    .setting-group
+    > .setting-item.setting-item-heading
+    .setting-item-name {
+    font-size: var(--setting-group-heading-size, 12px);
+}
+
+.is-mobile .sr-deck-options-anchor-panel .setting-group > .setting-items {
+    background: var(--setting-items-background, var(--background-secondary));
+    border: var(--setting-items-border-width, 0) solid
+        var(--setting-items-border-color, var(--background-modifier-border));
+    border-radius: var(--setting-items-radius, var(--radius-m));
+    box-shadow: none;
+    padding: 14px 16px;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .setting-items > .setting-item {
+    flex-wrap: nowrap;
+    gap: 12px 14px;
+    min-height: 0;
+    padding: 12px 0;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .setting-item-info {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-right: 12px;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .setting-item-name {
+    font-size: 16px;
+    line-height: 1.28;
+    font-weight: 600;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .setting-item-description {
+    margin-top: 7px;
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .setting-item-control {
+    flex: 0 1 auto;
+    width: auto;
+    margin-left: auto;
+    min-width: 0;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .setting-item-control > * {
+    max-width: 100%;
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .setting-item.mod-toggle {
+    flex-wrap: nowrap;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .mod-toggle .setting-item-control {
+    align-self: start;
+    margin-top: 2px;
+    margin-left: auto;
+    flex: 0 0 auto;
+    width: var(--toggle-width);
+    min-width: var(--toggle-width);
+    max-width: var(--toggle-width);
+}
+
+.is-mobile .sr-deck-options-anchor-panel .mod-toggle .setting-item-control > * {
+    flex-shrink: 0;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .setting-items > .setting-item:not(.mod-toggle) {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding-top: 14px;
+    padding-bottom: 14px;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .setting-items > .setting-item:not(.mod-toggle) .setting-item-info {
+    width: 100%;
+    min-width: 0;
+    margin-right: 0;
+    padding-right: 0;
+}
+
+.is-mobile
+    .sr-deck-options-anchor-panel
+    .setting-items
+    > .setting-item:not(.mod-toggle)
+    .setting-item-control {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+}
+
+.is-mobile .sr-deck-options-anchor-panel .setting-item-control input[type="text"],
+.is-mobile .sr-deck-options-anchor-panel .setting-item-control input[type="number"],
+.is-mobile .sr-deck-options-anchor-panel .setting-item-control select,
+.is-mobile .sr-deck-options-anchor-panel .setting-item-control textarea,
+.is-mobile .sr-deck-options-anchor-panel .setting-item-control .slider {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
 }
 
 .modal.sr-folder-tracking-modal-shell {

@@ -35,6 +35,7 @@ import {
     SliderRow,
     ActionRow,
 } from "./common/SettingsComponents";
+import { useMobileNavbarOffset } from "./useMobileNavbarOffset";
 
 // ==========================================
 // 辅助组件：支持者标识
@@ -1604,6 +1605,7 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
     onSettingsChange,
     version: _version = "0.0.1",
 }) => {
+    const mobileNavbarOffset = useMobileNavbarOffset();
     const [activeTab, setActiveTab] = useState<TabId>("flashcards");
     const [headerActiveTab, setHeaderActiveTab] = useState<TabId>("flashcards");
     const [settings, setSettings] = useState<UISettingsState>(initialSettings);
@@ -1861,7 +1863,10 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
     );
 
     return (
-        <div className="sr-settings-panel">
+        <div
+            className="sr-settings-panel"
+            style={{ ["--sr-mobile-navbar-offset" as string]: `${mobileNavbarOffset}px` }}
+        >
             {/* Horizontal Header */}
             <TabHeader tabs={TABS} activeTab={headerActiveTab} onTabSelect={handleTabSelect} />
 
