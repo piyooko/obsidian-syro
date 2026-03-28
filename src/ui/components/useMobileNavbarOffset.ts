@@ -31,7 +31,7 @@ export function useMobileNavbarOffset(): number {
     const [offset, setOffset] = useState(0);
 
     useEffect(() => {
-        if (!Platform.isMobile || typeof document === "undefined") {
+        if (Platform?.isMobile !== true || typeof document === "undefined") {
             setOffset(0);
             return;
         }
