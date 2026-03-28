@@ -68,8 +68,11 @@
     box-sizing: border-box;
 }
 
-.is-mobile .sr-deck-list-scroll {
-    padding: 8px;
+.sr-deck-list-view.sr-phone-layout .sr-deck-list-scroll {
+    padding-top: max(12px, calc(env(safe-area-inset-top) + 12px));
+    padding-right: calc(env(safe-area-inset-right) + 12px);
+    padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
+    padding-left: calc(env(safe-area-inset-left) + 12px);
 }
 
 /* ==========================================
@@ -116,6 +119,11 @@
     will-change: width;
 }
 
+.sr-deck-list-view.sr-phone-layout .sr-deck-tree-shell {
+    width: 100%;
+    max-width: 100%;
+}
+
 .sr-deck-tree-shell--resizing {
     user-select: none;
 }
@@ -143,15 +151,12 @@
 }
 
 /* 移动端：去除卡片样式，贴边显示 */
-.is-mobile .sr-deck-tree {
-    --sr-deck-row-inline-padding: max(2px, calc(var(--syro-deck-row-inline-padding, 8px) - 6px));
-    --sr-deck-children-inline-padding: 4px;
-    background: transparent;
-    border: none;
-    border-radius: 0;
+.sr-deck-list-view.sr-phone-layout .sr-deck-tree {
     max-width: 100%;
     margin: 0;
-    padding: 0;
+    box-shadow:
+        0 18px 40px -28px rgba(0, 0, 0, 0.45),
+        0 8px 18px -16px rgba(0, 0, 0, 0.3);
 }
 
 /* ==========================================
@@ -171,14 +176,21 @@
 }
 
 /* 移动端隐藏表头 */
-.is-mobile .sr-deck-header {
-    display: none;
-}
 
 .sr-deck-header-name {
     flex: 1;
     padding-left: 20px;
     /* 18px icon + 2px gap = 20px vs Row's 20px offset */
+}
+
+.sr-deck-header-name-compact {
+    position: relative;
+    min-width: 0;
+}
+
+.sr-deck-header-name-label {
+    display: block;
+    min-width: 0;
 }
 
 .sr-deck-header-stat {
@@ -253,9 +265,13 @@
     background-color: var(--background-modifier-hover) !important;
 }
 
-.is-mobile .sr-deck-sync-btn {
-    display: none !important;
+.sr-deck-sync-btn--compact-header {
+    position: absolute;
+    top: 50%;
+    left: -2px;
+    transform: translateY(-50%);
 }
+
 
 /* ==========================================
    牌组列表容器
@@ -306,12 +322,13 @@
     background: var(--background-modifier-hover);
 }
 
+.sr-deck-row-compact {
+    cursor: default;
+}
+
 /* 移动端行样式 */
-.is-mobile .sr-deck-row {
-    padding-block: 2px;
-    /* Reduced padding-left to 2px for tighter fit */
-    min-height: max(32px, calc(var(--syro-deck-row-min-height, 28px) + 4px));
-    margin-block: 0;
+.sr-deck-list-view.sr-touch-layout .sr-deck-row {
+    min-height: max(34px, calc(var(--syro-deck-row-min-height, 28px) + 6px));
 }
 
 /* ==========================================
@@ -332,7 +349,7 @@
    3. SVG 中心(x=6) + 边隙(3px) = 9px。
    4. 总对齐位置 = 2px + 9px = 11px。
 */
-.is-mobile .sr-deck-children {
+.sr-deck-list-view.sr-touch-layout .sr-deck-children {
     margin-left: var(--sr-deck-children-guide-offset);
     /* 11px 对齐箭头中心 */
     padding-left: var(--sr-deck-children-inline-padding);
@@ -349,6 +366,10 @@
     min-width: 0;
     gap: 2px;
     /* Reduced gap */
+}
+
+.sr-deck-name-col-clickable {
+    cursor: pointer;
 }
 
 /* ==========================================
@@ -397,9 +418,6 @@
 }
 
 /* 移动端：稍大字号 */
-.is-mobile .sr-deck-name {
-    font-size: 15px;
-}
 
 /* ==========================================
    统计数字容器 - Anki 风格
@@ -413,14 +431,20 @@
     flex-shrink: 0;
 }
 
-/* 移动端：紧凑排列 */
-.is-mobile .sr-deck-stats-group {
-    gap: 2px;
-    /* Reduced gap from 6px */
-    margin-left: auto;
-    padding: 2px 4px;
+.sr-deck-stats-trigger {
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
     justify-content: flex-end;
+    border-radius: var(--syro-deck-row-radius, 4px);
 }
+
+/* 移动端：紧凑排列 */
 
 /* ==========================================
    单个统计数字
@@ -437,11 +461,11 @@
 }
 
 /* 移动端统计数字 - 减小字号 */
-.is-mobile .sr-deck-stat {
-    font-size: 11px;
+.sr-deck-list-view.sr-touch-layout .sr-deck-stat {
+    font-size: 13px;
     /* 减小字号 */
-    min-width: auto;
-    padding: 0 1px;
+    min-width: 40px;
+    padding: 0;
     /* Reduced padding from 3px */
 }
 
@@ -510,10 +534,137 @@
 }
 
 /* 移动端适配：齿轮作为唯一入口，需要常驻可见 */
-.is-mobile .sr-deck-settings-btn {
+.sr-deck-list-view.sr-touch-layout .sr-deck-settings-btn {
     display: flex !important;
     opacity: 1;
-    margin-left: 2px !important;
+    margin-left: 6px !important;
+    width: 28px;
+    height: 28px;
+}
+
+.sr-deck-list-view.sr-touch-layout .sr-deck-sync-btn {
+    width: 28px;
+    height: 28px;
+}
+
+.sr-deck-list-view.sr-touch-layout:not(.sr-phone-layout) .sr-deck-tree-resize-handle {
+    width: 22px;
+}
+
+.sr-deck-list-view.sr-touch-layout:not(.sr-phone-layout) .sr-deck-tree-resize-handle--left {
+    left: -11px;
+}
+
+.sr-deck-list-view.sr-touch-layout:not(.sr-phone-layout) .sr-deck-tree-resize-handle--right {
+    right: -11px;
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-tree {
+    --sr-deck-row-inline-margin: 2px;
+    --sr-deck-row-inline-padding: 4px;
+    --sr-deck-collapse-btn-size: 14px;
+    --sr-deck-collapse-btn-center-offset: 7px;
+    --sr-deck-children-inline-padding: 8px;
+    --sr-deck-compact-stat-width: 38px;
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-list {
+    padding: 2px 0;
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-header {
+    padding: 6px var(--sr-deck-row-inline-padding);
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-header-compact {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) repeat(3, var(--sr-deck-compact-stat-width));
+    column-gap: 0;
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-header-name {
+    padding-left: calc(var(--sr-deck-collapse-btn-size) + 4px);
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-header-name-compact {
+    padding-left: calc(var(--sr-deck-collapse-btn-size) + 4px);
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-sync-btn--compact-header {
+    width: calc(var(--sr-deck-collapse-btn-size) + 4px);
+    height: calc(var(--sr-deck-collapse-btn-size) + 4px);
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-header-stat {
+    width: auto;
+    min-width: 0;
+    font-size: 8px;
+    letter-spacing: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-header-action {
+    width: 24px;
+}
+
+.sr-deck-list-view.sr-touch-layout.sr-phone-layout .sr-deck-row {
+    min-height: 30px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.sr-deck-list-view.sr-touch-layout.sr-phone-layout .sr-deck-row-compact {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) repeat(3, var(--sr-deck-compact-stat-width));
+    column-gap: 0;
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-name-col {
+    gap: 1px;
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-name {
+    font-size: 13px;
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-stats-group {
+    gap: 0;
+    margin-left: 0;
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-stat {
+    width: auto;
+    min-width: 0;
+    padding: 0;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-stats-trigger {
+    display: grid;
+    grid-template-columns: repeat(3, var(--sr-deck-compact-stat-width));
+    grid-column: 2 / 5;
+    min-height: 0;
+    height: auto;
+    line-height: 1;
+    padding-left: 0 !important;
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-settings-btn {
+    display: none !important;
+}
+
+.sr-deck-list-view.sr-phone-layout .sr-deck-sync-btn {
+    width: 20px;
+    height: 20px;
 }
 
 /* ==========================================
@@ -551,6 +702,6 @@ body.syro-deck-tree-square-corners .sr-deck-row,
 body.syro-deck-tree-square-corners .sr-deck-sync-btn,
 body.syro-deck-tree-square-corners .sr-deck-collapse-btn,
 body.syro-deck-tree-square-corners .sr-deck-settings-btn,
-body.syro-deck-tree-square-corners .is-mobile .sr-deck-stats-group {
+body.syro-deck-tree-square-corners .sr-deck-list-view.sr-touch-layout .sr-deck-stats-group {
     border-radius: 0 !important;
 }

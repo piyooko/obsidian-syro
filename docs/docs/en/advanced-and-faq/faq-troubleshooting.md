@@ -28,7 +28,7 @@ This usually happens after large-scale file moves or folder renames, when cached
 
 **Checklist:**
 
-1. **Confirm which algorithm is active**: make sure FSRS is actually enabled in settings. Some older compatibility parameters do nothing unless the corresponding legacy mode is active.
+1. **Confirm which review flow you are checking**: flashcards always use FSRS, while note review always uses WMS. If a parameter appears ineffective, double-check that you are editing the section for the correct review type.
 2. **Check daily caps**: if you feel certain cards should be showing up but never do, open the deck tree, click the gear icon on the relevant deck, and inspect `Reviews/Day`. If the cap is too low, cards may simply be blocked from surfacing today.
 
 ## Advanced help and feedback

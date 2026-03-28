@@ -65,7 +65,13 @@ interface ToggleRowProps {
     onChange: (v: boolean) => void;
 }
 
-export const ToggleRow: React.FC<ToggleRowProps> = ({ label, desc, tooltip, value, onChange }) => (
+export const ToggleRow: React.FC<ToggleRowProps> = ({
+    label,
+    desc,
+    tooltip,
+    value,
+    onChange,
+}) => (
     <BaseComponent label={label} desc={desc} tooltip={tooltip} className="mod-toggle">
         <label
             className={`checkbox-container ${value ? "is-enabled" : ""}`}
@@ -215,12 +221,19 @@ export const ColorPickerRow: React.FC<ColorPickerRowProps> = ({
     onChange,
 }) => (
     <BaseComponent label={label} desc={desc} tooltip={tooltip} className="setting-item--color">
-        <input
-            type="color"
-            className="sr-color-input"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-        />
+        <label className="sr-color-input-shell">
+            <input
+                type="color"
+                className="sr-color-input"
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+            />
+            <span
+                className="sr-color-input-swatch"
+                style={{ backgroundColor: value }}
+                aria-hidden="true"
+            />
+        </label>
     </BaseComponent>
 );
 

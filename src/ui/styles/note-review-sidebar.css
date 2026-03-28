@@ -13,23 +13,72 @@
    主容器
    ========================================== */
 .sr-note-sidebar {
+    --sr-note-sidebar-surface: var(--background-primary);
     width: 100%;
     height: 100%;
     display: flex;
     flex-direction: column;
-    background: var(--background-primary);
+    background: var(--sr-note-sidebar-surface);
     user-select: none;
     font-family: var(--font-interface);
+}
+
+.workspace-drawer .sr-note-sidebar {
+    --sr-note-sidebar-surface: var(--mobile-sidebar-background, var(--background-primary));
+}
+
+.is-mobile .workspace-drawer.sr-note-sidebar--mobile-drawer-shell,
+.is-mobile .workspace-drawer:has(.sr-note-sidebar) {
+    /* Keep the Syro mobile drawer above wallpaper-style overlay layers. */
+    z-index: 50 !important;
+    isolation: isolate;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background: var(--mobile-sidebar-background) !important;
+}
+
+.workspace-drawer:has(.sr-note-sidebar) .workspace-drawer-inner,
+.workspace-drawer:has(.sr-note-sidebar) .workspace-drawer-tab-container,
+.workspace-drawer:has(.sr-note-sidebar) .workspace-drawer-active-tab-container,
+.workspace-drawer:has(.sr-note-sidebar) .workspace-drawer-active-tab-content {
+    background: var(--mobile-sidebar-background) !important;
+}
+
+.workspace-drawer .sr-note-sidebar > .sr-note-sidebar__content,
+.workspace-drawer .sr-note-sidebar .sr-sections-container {
+    background: var(--mobile-sidebar-background) !important;
+}
+
+.workspace-drawer .sr-note-sidebar .sr-timeline-container,
+.workspace-drawer .sr-note-sidebar .sr-timeline-header,
+.workspace-drawer .sr-note-sidebar .sr-timeline-body {
+    background: var(--mobile-sidebar-background) !important;
+}
+
+.workspace-drawer-inner:has(.sr-note-sidebar) {
+    padding-bottom: 0 !important;
+}
+
+.workspace-drawer-active-tab-content .sr-note-sidebar {
+    background: var(--mobile-sidebar-background, var(--background-primary)) !important;
+}
+
+.workspace-drawer-inner.sr-note-sidebar--mobile-drawer-host {
+    padding-bottom: 0 !important;
+}
+
+body.sr-timeline-resize-active {
+    cursor: row-resize;
 }
 
 /* ==========================================
    Tag Filter Bar
    ========================================== */
 .sr-filter-bar {
-    background: var(--background-primary);
+    background: var(--sr-note-sidebar-surface);
     border-bottom: none;
     flex-shrink: 0;
-    padding: 8px 0;
+    padding: 8px 0 6px;
     position: relative;
     z-index: 10;
     display: flex;
@@ -43,6 +92,14 @@
     align-items: center;
     gap: 8px;
     padding: 0 12px 8px 12px;
+}
+
+.sr-filter-bar-search-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .sr-sort-mode-btn {
@@ -71,13 +128,16 @@
 }
 
 .sr-tag-search-input {
-    flex: 1;
+    flex: 1 1 auto;
+    width: 100%;
     background: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
     color: var(--text-normal);
     border-radius: 6px;
     padding: 6px 10px;
     font-size: 12px;
+    box-sizing: border-box;
+    min-width: 0;
     outline: none;
     transition: all 0.2s;
 }
@@ -120,7 +180,7 @@
     justify-content: flex-start;
     flex-wrap: wrap;
     gap: 6px;
-    padding: 0 12px 8px 12px;
+    padding: 0 12px 6px 12px;
     overflow-y: auto;
     flex: 1;
 }
@@ -231,41 +291,35 @@
     display: flex;
     align-items: center;
     justify-content: center;
-
-    height: 12px;
-    /* 点击区域高度 */
-    margin: -6px 0;
-    /* 负边距抵消原有空间 */
-
+    height: 16px;
+    padding: 6px 0;
+    box-sizing: border-box;
     width: 100%;
     cursor: ns-resize;
     position: relative;
-    z-index: 50;
-    /* 提高层级 */
+    z-index: 10;
     background: transparent;
-    /* 容器本身透明 */
+    flex-shrink: 0;
+    touch-action: none;
 }
 
-/* 视觉上的线条 */
-.sr-resizable-divider::after {
-    content: "";
-    display: block;
-    width: 100%;
-    height: 2px;
-    /* 默认线条厚度 */
-    background-color: var(--background-modifier-border);
-    transition: all 0.2s;
-}
-
-.sr-resizable-divider:hover::after {
-    height: 4px;
-    /* 悬停加粗 */
-    background-color: var(--interactive-accent);
-}
-
-/* 隐藏旧的手柄 */
 .sr-divider-handle {
-    display: none;
+    display: block;
+    width: calc(100% - 16px);
+    height: 2px;
+    border-radius: 999px;
+    background: var(--background-modifier-border);
+    opacity: 0.9;
+    transition:
+        background-color 0.15s,
+        opacity 0.15s,
+        transform 0.15s;
+}
+
+.sr-resizable-divider:hover .sr-divider-handle {
+    background: var(--interactive-accent);
+    opacity: 1;
+    transform: scaleY(1.4);
 }
 
 /* ==========================================
@@ -277,6 +331,20 @@
     padding: 12px 12px 24px 12px;
     scrollbar-width: thin;
     scrollbar-color: var(--background-modifier-border) transparent;
+}
+
+.sr-note-sidebar__content--timeline-gesture-blocked {
+    position: relative;
+}
+
+.sr-note-sidebar__content--timeline-gesture-blocked::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 80;
+    background: transparent;
+    pointer-events: auto;
+    touch-action: none;
 }
 
 .sr-note-sidebar__content::-webkit-scrollbar {
@@ -646,13 +714,125 @@
     font-size: 13px;
 }
 
-.is-mobile .sr-resizable-divider {
-    height: 12px;
+.sr-note-sidebar--phone-mobile-drawer .sr-filter-bar {
+    padding: 12px 0 0 0;
 }
 
-.is-mobile .sr-divider-handle {
-    width: 60px;
-    height: 4px;
+.sr-note-sidebar--phone-mobile-drawer .sr-filter-bar-header {
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 0 16px 12px 16px;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-filter-bar-search-group {
+    flex: 1 1 auto;
+    width: auto;
+    gap: 6px;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-sort-mode-btn {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    border-radius: 6px;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-sort-mode-btn svg {
+    width: 24px;
+    height: 24px;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-tag-search-input {
+    height: 36px;
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 16px;
+    line-height: 34px;
+    border-radius: 8px;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-clear-tags-btn {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+    border-radius: 4px;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-tag-scroll-container {
+    gap: 8px;
+    padding: 0 16px;
+    flex: 0 1 auto;
+    min-height: 0;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-tag-pill {
+    padding: calc(var(--syro-sidebar-tag-pill-padding-y, 4px) + 3px)
+        calc(var(--syro-sidebar-tag-pill-padding-x, 10px) + 3px);
+    font-size: 12px;
+    line-height: 1.15;
+    border-radius: 6px;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-tag-count {
+    margin-left: 5px;
+    font-size: 9px;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-resizable-divider {
+    height: 0;
+    padding: 0;
+    overflow: visible;
+    background: transparent !important;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-divider-handle {
+    position: absolute;
+    top: 0px;
+    left: 6px;
+    right: 6px;
+    width: auto;
+    height: 20px;
+    background: transparent;
+    opacity: 1;
+    transform: none;
+    transition: none;
+    z-index: 10;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-divider-handle::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 2px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--background-modifier-border) 92%, transparent);
+    opacity: 0.92;
+    transition:
+        background-color 0.15s,
+        opacity 0.15s,
+        transform 0.15s;
+    transform-origin: center top;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-resizable-divider:hover,
+.sr-note-sidebar--phone-mobile-drawer .sr-resizable-divider:active {
+    background: transparent !important;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-resizable-divider:hover .sr-divider-handle,
+.sr-note-sidebar--phone-mobile-drawer .sr-resizable-divider:active .sr-divider-handle {
+    background: transparent;
+    opacity: 1;
+    transform: none;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-resizable-divider:hover .sr-divider-handle::before,
+.sr-note-sidebar--phone-mobile-drawer .sr-resizable-divider:active .sr-divider-handle::before {
+    background: var(--interactive-accent);
+    opacity: 1;
+    transform: scaleY(1.6);
 }
 
 .is-mobile .sr-new-item {
@@ -698,6 +878,10 @@
     background: var(--sr-timeline-accent);
 }
 
+.sr-timeline-sash--dragging {
+    background: var(--sr-timeline-accent);
+}
+
 .sr-timeline-sash-handle {
     width: 32px;
     height: 2px;
@@ -710,6 +894,11 @@
 }
 
 .sr-timeline-sash:hover .sr-timeline-sash-handle {
+    opacity: 1;
+    background: var(--text-on-accent);
+}
+
+.sr-timeline-sash--dragging .sr-timeline-sash-handle {
     opacity: 1;
     background: var(--text-on-accent);
 }
@@ -747,6 +936,14 @@
     background: var(--background-modifier-hover);
 }
 
+.sr-timeline-header--resizable {
+    cursor: row-resize;
+}
+
+.sr-timeline-header--dragging {
+    background: var(--background-modifier-hover);
+}
+
 .sr-timeline-header-icon {
     width: 16px;
     height: 16px;
@@ -759,6 +956,10 @@
 }
 
 .sr-timeline-header:hover .sr-timeline-header-icon {
+    opacity: 1;
+}
+
+.sr-timeline-header--dragging .sr-timeline-header-icon {
     opacity: 1;
 }
 
@@ -779,6 +980,29 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.sr-note-sidebar--mobile-drawer .sr-timeline-sash {
+    height: 12px;
+    margin-top: -6px;
+    touch-action: none;
+}
+
+.sr-note-sidebar--mobile-drawer .sr-timeline-sash-handle {
+    width: 44px;
+    height: 3px;
+    opacity: 0.45;
+}
+
+.sr-note-sidebar--mobile-drawer .sr-timeline-header {
+    min-height: 32px;
+    padding: 4px 8px;
+    touch-action: none;
+}
+
+.sr-note-sidebar--mobile-drawer .sr-timeline-header-icon {
+    width: 18px;
+    height: 18px;
 }
 
 /* 抽屉内容体 */

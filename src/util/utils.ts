@@ -1,22 +1,8 @@
-/**
- * 杩欎釜鏂囦欢涓昏鏄共浠€涔堢殑锛?
- * [宸ュ叿灞俔 閫氱敤宸ュ叿鍑芥暟闆嗗悎銆?
- * 鍖呭惈浜嗗ぇ閲忓熀纭€鐨勮緟鍔╁嚱鏁帮紝濡傦細鍝堝笇璁＄畻 (cyrb53)銆佹棩鏈熸牸寮忓寲銆佽矾寰勬瘮杈冦€丗rontmatter 鎻愬彇銆佸瓧绗︿覆鐩镐技搴﹁绠楃瓑銆?
- * 鏄」鐩腑鏈€搴曞眰鐨勫伐鍏峰簱涔嬩竴銆?
- *
- * 瀹冨湪椤圭洰涓睘浜庯細宸ュ叿灞?(Utils) / 閫氱敤 (Common)
- *
- * 瀹冧細鐢ㄥ埌鍝簺鏂囦欢锛?
- * 1. src/constants.ts
- *
- * 鍝簺鏂囦欢浼氱敤鍒板畠锛?
- * (琚」鐩腑鍑犱箮鎵€鏈夋ā鍧楀箍娉涘紩鐢?
- */
-import { sep } from "path";
 import { PREFERRED_DATE_FORMAT } from "src/constants";
 import type { MomentValue } from "./DateProvider";
 
 type Hex = number;
+const PATH_SEPARATOR = "/";
 
 // https://stackoverflow.com/a/69019874
 type ObjectType = Record<PropertyKey, unknown>;
@@ -93,7 +79,6 @@ export function cyrb53(str: string, seed = 0): string {
     return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
 }
 
-// 馃憞锔?format as "YYYY-MM-DD"
 // https://bobbyhadz.com/blog/typescript-date-format
 export function formatDate_YYYY_MM_DD(ticks: MomentValue): string {
     return ticks.format(PREFERRED_DATE_FORMAT);
@@ -180,13 +165,13 @@ export function convertToStringOrEmpty(v: unknown): string {
 export function isEqualOrSubPath(toCheck: string, rootPath: string): boolean {
     const rootPathSections = rootPath
         .toLowerCase()
-        .replaceAll(/(\\|\/)+/g, sep)
-        .split(sep)
+        .replaceAll(/(\\|\/)+/g, PATH_SEPARATOR)
+        .split(PATH_SEPARATOR)
         .filter((p) => p !== "");
     const pathSections = toCheck
         .toLowerCase()
-        .replaceAll(/(\\|\/)+/g, sep)
-        .split(sep)
+        .replaceAll(/(\\|\/)+/g, PATH_SEPARATOR)
+        .split(PATH_SEPARATOR)
         .filter((p) => p !== "");
     if (pathSections.length < rootPathSections.length) {
         return false;
@@ -320,8 +305,3 @@ export function parseObsidianFrontmatterTag(tagStr: string): string[] {
     }
     return result;
 }
-
-/**
- * 璁＄畻涓や釜瀛楃涓茬殑鐩镐技搴?(0.0 鍒?1.0)
- * 浣跨敤 Dice Coefficient 绠楁硶 (鍩轰簬鍙屽瓧绗︾粍 bigrams)
- */

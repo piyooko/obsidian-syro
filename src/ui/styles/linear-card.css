@@ -153,6 +153,22 @@
     border-color: rgba(255, 255, 255, 0.06);
 }
 
+.sr-header-measurements {
+    position: absolute;
+    inset: 0 auto auto 0;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.sr-card-header.sr-card-header-measure {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: max-content;
+    min-width: max-content;
+}
+
 /* 统计看板 - UIsandbox 风格 */
 .sr-stats-panel {
     display: flex;
@@ -167,6 +183,11 @@
 .theme-dark .sr-stats-panel {
     background: rgba(0, 0, 0, 0.4);
     border-color: rgba(255, 255, 255, 0.06);
+}
+
+.sr-stats-panel.sr-stats-panel-compact {
+    padding: 1px;
+    gap: 1px;
 }
 
 .sr-stats-divider {
@@ -189,6 +210,11 @@
     border-radius: 6px;
     transition: all 0.2s;
     opacity: 0.4;
+}
+
+.sr-stats-panel.sr-stats-panel-compact .sr-stat-badge {
+    padding: 2px 5px;
+    gap: 3px;
 }
 
 .sr-stat-badge:hover {
@@ -225,6 +251,11 @@
     flex-shrink: 0;
 }
 
+.sr-stats-panel.sr-stats-panel-compact .sr-stat-dot {
+    width: 5px;
+    height: 5px;
+}
+
 .sr-stat-dot.sr-stat-new {
     background: #3b82f6;
 }
@@ -253,6 +284,10 @@
     color: var(--text-muted);
 }
 
+.sr-stats-panel.sr-stats-panel-compact .sr-stat-label {
+    display: none;
+}
+
 /* 活跃状态下的 label 颜色 */
 .sr-stat-badge.active .sr-stat-label.sr-stat-new {
     color: #3b82f6;
@@ -275,6 +310,15 @@
     color: var(--text-muted);
     min-width: 14px;
     text-align: center;
+}
+
+.sr-stats-panel.sr-stats-panel-compact .sr-stats-divider {
+    margin: 0 2px;
+}
+
+.sr-stats-panel.sr-stats-panel-compact .sr-stat-count {
+    min-width: 12px;
+    font-size: 11px;
 }
 
 /* 活跃状态下的 count 颜色 */
@@ -304,6 +348,8 @@
     font-size: 12px;
     font-family: var(--font-monospace);
     color: var(--text-muted);
+    min-width: 0;
+    overflow: hidden;
 }
 
 .sr-header-left,
@@ -311,6 +357,23 @@
     display: flex;
     align-items: center;
     gap: 12px;
+}
+
+.sr-header-left {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.sr-header-right {
+    flex: 0 0 auto;
+}
+
+.sr-breadcrumbs-trail {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
 }
 
 @media (min-width: 640px) {
@@ -574,6 +637,19 @@
     overflow-y: auto;
     padding: var(--syro-review-content-padding-y, 24px) var(--syro-review-content-padding-x, 40px);
     scroll-padding-block: clamp(32px, 10vh, 72px);
+}
+
+.sr-inline-breadcrumbs {
+    margin-bottom: 14px;
+    overflow: hidden;
+    color: var(--text-faint);
+    font-size: 11px;
+    font-family: var(--font-monospace);
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.86;
 }
 
 /* 基础卡片内容 */
@@ -949,7 +1025,6 @@ body.syro-review-compact-actions .sr-linear-btn-sub {
     position: absolute;
     inset: 0;
     background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(2px);
 }
 
 .sr-debug-modal {
@@ -960,11 +1035,12 @@ body.syro-review-compact-actions .sr-linear-btn-sub {
     background: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
     border-radius: 12px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 14px 28px -12px rgba(0, 0, 0, 0.38);
     display: flex;
     flex-direction: column;
     overflow: hidden;
     color: var(--text-normal);
+    will-change: transform, opacity;
 }
 
 .sr-debug-modal-header {
@@ -1248,9 +1324,26 @@ body.syro-review-compact-actions .sr-linear-btn-sub {
 }
 
 .sr-debug-raw {
-    padding: 20px;
+    padding: 14px 20px 20px;
     background: var(--background-primary);
     border-top: 1px solid var(--background-modifier-border);
+}
+
+.sr-debug-raw-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    cursor: pointer;
+    list-style: none;
+}
+
+.sr-debug-raw-summary::-webkit-details-marker {
+    display: none;
+}
+
+.sr-debug-raw[open] .sr-debug-raw-summary {
+    margin-bottom: 10px;
 }
 
 .sr-debug-raw-title {
@@ -1258,7 +1351,14 @@ body.syro-review-compact-actions .sr-linear-btn-sub {
     font-weight: bold;
     color: var(--text-muted);
     text-transform: uppercase;
-    margin-bottom: 8px;
+}
+
+.sr-debug-raw-toggle {
+    min-width: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-align: center;
 }
 
 .sr-debug-raw-content {
@@ -1431,7 +1531,6 @@ body.syro-review-compact-actions .sr-linear-btn-sub {
    ========================================== */
 
 /* 强制重置 Obsidian 模态框样式，防止干扰 */
-.is-mobile #sr-modal,
 .is-phone #sr-modal {
     background: transparent !important;
     border: none !important;
@@ -1449,11 +1548,11 @@ body.syro-review-compact-actions .sr-linear-btn-sub {
 }
 
 /* 确保内部所有容器高度传递 */
-.is-mobile #sr-modal .modal-content,
-.is-mobile #sr-modal .sr-modal-content,
-.is-mobile .sr-react-app-root,
-.is-mobile .sr-review-session,
-.is-mobile .sr-card-review-view {
+.is-phone #sr-modal .modal-content,
+.is-phone #sr-modal .sr-modal-content,
+.is-phone .sr-react-app-root,
+.is-phone .sr-review-session,
+.is-phone .sr-card-review-view {
     height: 100% !important;
     width: 100% !important;
     padding: 0 !important;
@@ -1463,8 +1562,7 @@ body.syro-review-compact-actions .sr-linear-btn-sub {
 
 /* 核心容器：用于定位和限制区域 */
 /* 使用 position: fixed 逃离模态框可能的定位问题 */
-.is-mobile .sr-linear-card-wrapper,
-.is-phone .sr-linear-card-wrapper {
+.sr-linear-card-wrapper.sr-phone-layout {
     position: fixed !important;
     inset: 0 !important;
     /* 占满整个屏幕 */
@@ -1481,20 +1579,28 @@ body.syro-review-compact-actions .sr-linear-btn-sub {
     background: rgba(0, 0, 0, 0.5);
     /* 遮罩层背景，略微加深 */
     display: flex;
-    align-items: center;
-    justify-content: center;
     box-sizing: border-box;
     /* 关键：让 padding 包含在尺寸内 */
 }
 
 /* 此时卡片只需占满 wrapper 剩余空间 */
-.is-mobile .sr-linear-card,
-.is-phone .sr-linear-card {
-    width: 100% !important;
-    height: 100% !important;
+.sr-linear-card-wrapper.sr-phone-layout.sr-overlay-mobile-navbar {
+    padding-bottom: max(10px, calc(env(safe-area-inset-bottom) + 4px)) !important;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout.sr-mobile-maximized {
+    align-items: stretch;
+    justify-content: stretch;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout.sr-mobile-resizable {
+    align-items: center;
+    justify-content: center;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-linear-card {
     max-width: none !important;
     max-height: none !important;
-    min-height: 0 !important;
     margin: 0 !important;
 
     /* 保持圆角，简化阴影以提升性能 */
@@ -1512,164 +1618,202 @@ body.syro-review-compact-actions .sr-linear-btn-sub {
 }
 
 /* 移动端：Review Session 容器性能优化 */
-.is-mobile .sr-review-session,
-.is-phone .sr-review-session {
+.sr-linear-card-wrapper.sr-phone-layout.sr-mobile-maximized .sr-linear-card {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout.sr-mobile-resizable .sr-linear-card {
+    max-width: 100% !important;
+    max-height: 100% !important;
+    min-height: 0 !important;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-review-session {
     will-change: transform;
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
 }
 
 /* 移动端：调整大小手柄更大触摸区域 */
-.is-mobile .sr-resize-handle-n,
-.is-mobile .sr-resize-handle-s,
-.is-phone .sr-resize-handle-n,
-.is-phone .sr-resize-handle-s {
+.sr-linear-card-wrapper.sr-phone-layout .sr-resize-handle-n,
+.sr-linear-card-wrapper.sr-phone-layout .sr-resize-handle-s {
     height: 20px;
 }
 
-.is-mobile .sr-resize-handle-e,
-.is-mobile .sr-resize-handle-w,
-.is-phone .sr-resize-handle-e,
-.is-phone .sr-resize-handle-w {
+.sr-linear-card-wrapper.sr-phone-layout .sr-resize-handle-e,
+.sr-linear-card-wrapper.sr-phone-layout .sr-resize-handle-w {
     width: 20px;
 }
 
-.is-mobile .sr-resize-handle-ne,
-.is-mobile .sr-resize-handle-nw,
-.is-mobile .sr-resize-handle-se,
-.is-mobile .sr-resize-handle-sw,
-.is-phone .sr-resize-handle-ne,
-.is-phone .sr-resize-handle-nw,
-.is-phone .sr-resize-handle-se,
-.is-phone .sr-resize-handle-sw {
+.sr-linear-card-wrapper.sr-phone-layout .sr-resize-handle-ne,
+.sr-linear-card-wrapper.sr-phone-layout .sr-resize-handle-nw,
+.sr-linear-card-wrapper.sr-phone-layout .sr-resize-handle-se,
+.sr-linear-card-wrapper.sr-phone-layout .sr-resize-handle-sw {
     width: 24px;
     height: 24px;
 }
 
 /* 移动端：Header 优化 */
-.is-mobile .sr-card-header,
-.is-phone .sr-card-header {
-    height: 44px;
-    padding: 0 12px;
+.sr-linear-card-wrapper.sr-phone-layout .sr-card-header {
+    height: 42px;
+    padding: 0 10px;
+    gap: 6px;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-header-left,
+.sr-linear-card-wrapper.sr-phone-layout .sr-header-right {
+    gap: 8px;
 }
 
 /* 移动端：隐藏面包屑，只显示文件名 */
-.is-mobile .sr-breadcrumb-item,
-.is-mobile .sr-breadcrumb-separator,
-.is-phone .sr-breadcrumb-item,
-.is-phone .sr-breadcrumb-separator {
+.sr-linear-card-wrapper.sr-phone-layout .sr-breadcrumb-item,
+.sr-linear-card-wrapper.sr-phone-layout .sr-breadcrumb-separator {
     display: none !important;
 }
 
 /* 移动端：文件名 badge 紧凑化 */
-.is-mobile .sr-filename-badge,
-.is-phone .sr-filename-badge {
+.sr-linear-card-wrapper.sr-phone-layout .sr-filename-badge {
     padding: 2px 6px;
 }
 
-.is-mobile .sr-filename-badge span,
-.is-phone .sr-filename-badge span {
-    max-width: 100px;
-    font-size: 11px;
+.sr-linear-card-wrapper.sr-phone-layout .sr-filename-badge span {
+    max-width: 88px;
+    font-size: 10px;
 }
 
 /* 移动端：统计面板紧凑化 */
-.is-mobile .sr-stats-panel,
-.is-phone .sr-stats-panel {
-    padding: 2px;
-    gap: 2px;
+.sr-linear-card-wrapper.sr-phone-layout .sr-stats-panel {
+    padding: 1px;
+    gap: 1px;
 }
 
-.is-mobile .sr-stat-badge,
-.is-phone .sr-stat-badge {
-    padding: 2px 6px;
-    gap: 4px;
+.sr-linear-card-wrapper.sr-phone-layout .sr-stat-badge {
+    padding: 2px 5px;
+    gap: 3px;
 }
 
-.is-mobile .sr-stat-label,
-.is-phone .sr-stat-label {
+.sr-linear-card-wrapper.sr-phone-layout .sr-stat-dot {
+    width: 5px;
+    height: 5px;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-stat-label {
     display: none;
     /* 只显示数字和点 */
 }
 
-.is-mobile .sr-stats-divider,
-.is-phone .sr-stats-divider {
+.sr-linear-card-wrapper.sr-phone-layout .sr-stats-divider {
     margin: 0 2px;
 }
 
-/* 移动端：内容区域优化 */
-.is-mobile .sr-card-content-scroll,
-.is-phone .sr-card-content-scroll {
-    padding: max(20px, calc(var(--syro-review-content-padding-y, 24px) - 8px))
-        max(16px, calc(var(--syro-review-content-padding-x, 40px) - 24px));
-    scroll-padding-block: 72px;
-}
-
-.is-mobile .sr-cloze-content,
-.is-phone .sr-cloze-content {
-    padding-block: 0;
-}
-
-/* 移动端：Footer 优化 */
-.is-mobile .sr-card-footer,
-.is-phone .sr-card-footer {
-    padding: 12px;
-}
-
-/* 移动端：评分按钮更大触摸区域 */
-.is-mobile .sr-rating-buttons,
-.is-phone .sr-rating-buttons {
-    gap: 8px;
-}
-
-.is-mobile .sr-linear-btn,
-.is-phone .sr-linear-btn {
-    padding: 12px 8px;
-    min-height: 56px;
-}
-
-.is-mobile .sr-linear-btn-label,
-.is-phone .sr-linear-btn-label {
-    font-size: 13px;
-}
-
-.is-mobile .sr-linear-btn-sub,
-.is-phone .sr-linear-btn-sub {
+.sr-linear-card-wrapper.sr-phone-layout .sr-stat-count {
+    min-width: 12px;
     font-size: 11px;
 }
 
+/* 移动端：内容区域优化 */
+.sr-linear-card-wrapper.sr-phone-layout .sr-card-content-area {
+    min-height: 0;
+    flex: 1 1 auto;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-card-content-scroll {
+    padding: 16px 16px 18px;
+    scroll-padding-block: 56px;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-cloze-content {
+    padding-block: 0;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-inline-breadcrumbs {
+    margin-bottom: 10px;
+    font-size: 10px;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-basic-content {
+    gap: 24px;
+}
+
+/* 移动端：Footer 优化 */
+.sr-linear-card-wrapper.sr-phone-layout .sr-card-footer {
+    margin-top: auto;
+    padding: 10px 12px max(8px, calc(env(safe-area-inset-bottom) + 6px));
+}
+
+/* 移动端：评分按钮更大触摸区域 */
+.sr-linear-card-wrapper.sr-phone-layout.sr-overlay-mobile-navbar .sr-card-footer {
+    padding: 10px 12px max(10px, calc(env(safe-area-inset-bottom) + 2px));
+}
+
+body.syro-review-mobile-navbar-covered .mobile-navbar.mod-raised,
+.mobile-navbar.mod-raised.syro-review-mobile-navbar-covered {
+    display: none !important;
+    pointer-events: none !important;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-rating-buttons {
+    gap: 6px;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-linear-btn {
+    height: 48px;
+    min-height: 48px;
+    justify-content: flex-start;
+    padding: 0 8px;
+    gap: 6px;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-linear-btn-icon-wrapper {
+    width: 14px;
+    margin-top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-linear-btn-content {
+    gap: 1px;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-linear-btn-label {
+    font-size: 11px;
+    line-height: 1.05;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-linear-btn-sub {
+    font-size: 9px;
+    line-height: 1;
+}
+
 /* 移动端：显示答案按钮更大 */
-.is-mobile .sr-show-answer-btn,
-.is-phone .sr-show-answer-btn {
-    padding: 12px;
-    font-size: 15px;
+.sr-linear-card-wrapper.sr-phone-layout .sr-show-answer-btn {
+    height: 42px;
+    padding: 0 12px;
+    font-size: 14px;
 }
 
 /* 移动端：隐藏键盘快捷键提示 */
-.is-mobile .sr-kbd,
-.is-mobile .sr-linear-btn-shortcut,
-.is-mobile .sr-menu-item-kbd,
-.is-phone .sr-kbd,
-.is-phone .sr-linear-btn-shortcut,
-.is-phone .sr-menu-item-kbd {
+.sr-linear-card-wrapper.sr-phone-layout .sr-kbd,
+.sr-linear-card-wrapper.sr-phone-layout .sr-linear-btn-shortcut,
+.sr-linear-card-wrapper.sr-phone-layout .sr-menu-item-kbd {
     display: none !important;
 }
 
 /* 移动端：菜单优化 */
-.is-mobile .sr-dropdown-menu,
-.is-phone .sr-dropdown-menu {
+.sr-linear-card-wrapper.sr-phone-layout .sr-dropdown-menu {
     width: 160px;
 }
 
-.is-mobile .sr-menu-item,
-.is-phone .sr-menu-item {
+.sr-linear-card-wrapper.sr-phone-layout .sr-menu-item {
     padding: 10px 12px;
     font-size: 14px;
 }
 
 /* 移动端：返回按钮更大触摸区域 */
-.is-mobile .sr-exit-btn,
-.is-phone .sr-exit-btn {
+.sr-linear-card-wrapper.sr-phone-layout .sr-exit-btn {
     padding: 8px;
     margin-left: -4px;
 }
@@ -1947,8 +2091,8 @@ body.syro-review-compact-actions .sr-linear-btn-sub {
 }
 
 /* 移动端公式字号适配 */
-.is-mobile .sr-card-content-area .MathJax,
-.is-mobile .sr-card-content-area mjx-container {
+.sr-linear-card-wrapper.sr-phone-layout .sr-card-content-area .MathJax,
+.sr-linear-card-wrapper.sr-phone-layout .sr-card-content-area mjx-container {
     font-size: 1.1em !important;
 }
 

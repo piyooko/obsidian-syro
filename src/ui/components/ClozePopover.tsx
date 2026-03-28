@@ -6,7 +6,6 @@ import "../styles/cloze-popover.css";
 import { t } from "src/lang/helpers";
 
 // =========================================
-// 缂侇偉顕ч悗椋庘偓瑙勭煯缁?
 // =========================================
 interface ClozeGroup {
     id: string;
@@ -37,15 +36,12 @@ interface ClozePopoverProps {
     };
 }
 
-// 閻庢稒锚閸嬪秶浜搁崫鍕靛殶闁?key
 const SIZE_STORAGE_KEY = "sr-cloze-popover-size";
 
-// 濮掓稒顭堥鑽や焊閸濆嫷鍤?
 const DEFAULT_WIDTH = 680;
 const DEFAULT_HEIGHT = 420;
 
 // =========================================
-// Markdown 婵炴挸寮堕悡瀣磼閸曨亝顐?
 // =========================================
 const MarkdownBlock: React.FC<{
     content: string;
@@ -65,7 +61,6 @@ const MarkdownBlock: React.FC<{
 };
 
 // =========================================
-// 濡澘瀚～宥夊础閿涘嫬顣荤紓浣稿濞?(闁哄鑳堕悾婵堟媼閹规劦鍚€)
 // =========================================
 const PreviewCard: React.FC<{
     activeClozeId: string;
@@ -74,7 +69,6 @@ const PreviewCard: React.FC<{
 }> = ({ activeClozeId, segments, renderMarkdown }) => {
     const [showAnswer, setShowAnswer] = useState(false);
 
-    // 闁哄瀚伴埀顒傚Х閺併倖绂嶆惔銏♀枖缂佲偓閾忚鐣遍柡鍌氭处濠€浼村礃閸涱収鍟?
     const content = useMemo(() => {
         return segments
             .map((seg) => {
@@ -96,19 +90,16 @@ const PreviewCard: React.FC<{
             onClick={() => setShowAnswer(!showAnswer)}
             title="Click to toggle answer preview"
         >
-            {/* 闁告绱曟晶鏍礃閸涱収鍟囧☉鎾诡唺缂?*/}
             <div className="sr-preview-card-body">
                 <MarkdownBlock content={content} renderMarkdown={renderMarkdown} />
             </div>
 
-            {/* 閹煎瓨娲熼崕瀛樸亜閻㈢數鍨抽柟绋挎川閵?*/}
             <div className="sr-preview-card-footer-minimal">{activeClozeId}</div>
         </div>
     );
 };
 
 // =========================================
-// Popover 濞戞捁宕电划宥嗙?
 // =========================================
 export const ClozePopover: React.FC<ClozePopoverProps> = ({
     anchorElement,
@@ -129,10 +120,8 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
     const isResizing = useRef(false);
     const sizeRef = useRef(size);
 
-    // 闂佸じ绀侀悾鍓р偓闈涚秺缂嶅牓寮悷鐗堝€?
     const alignmentRef = useRef<"top" | "bottom" | null>(null);
 
-    // 閻犱緤绱曢悾濠氬箥閳ь剟寮垫径濠冩殰濞戞挴鍋撻柣?cloze ID
     const uniqueClozeIds = useMemo(() => {
         const ids = new Set<string>();
         segments.forEach((s) => {
@@ -145,7 +134,6 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
         sizeRef.current = size;
     }, [size]);
 
-    // 闁告梻濮惧ù鍥╂媼閺夎法绠撻柣銊ュ閺勫倻鈧?
     useEffect(() => {
         let isMounted = true;
 
@@ -169,7 +157,6 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
         };
     }, [storage]);
 
-    // 閻犱緤绱曢悾鑽も偓瑙勭煯缂嶅懘鏁嶅棰濇禃婵炲棌鍓濆▍銈夋嚄閽樺鐏查柡鍌ゅ弿缁辨繃绋婄€ｎ亝鍊甸梺澶哥閻ｉ箖寮悷鐗堝€?
     const updatePosition = useCallback(() => {
         if (!anchorElement) return;
 
@@ -181,7 +168,6 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
         let left: number;
         let top: number;
 
-        // 1. 缁绢収鍠栭悾楣冨垂閸屾粍绾悗闈涚秺缂嶅牓寮悷鎵闁挎稑鐗呯划搴純閺嶎煈鍋ч柨?
         if (alignmentRef.current === null) {
             const spaceAbove = anchorRect.top;
             const spaceBelow = viewportHeight - anchorRect.bottom;
@@ -193,14 +179,12 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
             }
         }
 
-        // 2. 闁哄秷顫夊畵渚€鏌ㄦ担鍝ユ毎闁汇劌瀚顔筋瀲閹邦厽鐓欑€殿喖绻楅鍝ョ不濡も偓濞兼寮?
         if (alignmentRef.current === "top") {
             top = anchorRect.top - size.height - padding;
         } else {
             top = anchorRect.bottom + padding;
         }
 
-        // 3. 婵ɑ娼欓柦鈺冣偓瑙勭煯缂?(鐎归潻绠戦顔筋瀲閹板墎绀夐悽顖ょ畳缁旂喖鎮剧仦缁㈡⒕闁?
         left = anchorRect.left;
 
         if (left + size.width > viewportWidth - padding) {
@@ -213,7 +197,6 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
         setPosition({ top, left });
     }, [anchorElement, size]);
 
-    // 闁告帗绻傞～鎰偓瑙勭煯缂?+ 婵犲﹥鑹炬慨鈺冩崉閻斿吋顓?
     useEffect(() => {
         updatePosition();
 
@@ -228,7 +211,6 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
         };
     }, [updatePosition]);
 
-    // 闁绘劗鎳撻崵顔藉緞閺嶎厼鍔ラ柛蹇斿▕濡?
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if (isResizing.current) return;
@@ -251,7 +233,6 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
         };
     }, [onClose, anchorElement]);
 
-    // ESC 闁稿繑濞婂Λ?
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === "Escape") onClose();
@@ -260,7 +241,6 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
         return () => document.removeEventListener("keydown", handleKeyDown);
     }, [onClose]);
 
-    // 閻犲鍟弳锝嗗緞瑜嶉惃顒佸緞閸曨厽鍊?
     const handleResizeStart = (e: React.MouseEvent, direction: string) => {
         e.preventDefault();
         e.stopPropagation();
@@ -302,7 +282,6 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
         document.addEventListener("mouseup", handleMouseUp);
     };
 
-    // 缂佸顕ф慨鈺冪博椤栨侗姊炬繛?
     const isMobile = window.innerWidth <= 480 || Platform.isPhone || Platform.isTablet;
 
     if (isMobile) {
@@ -310,30 +289,24 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
             <>
                 <div className="sr-mobile-cloze-backdrop" onClick={onClose} />
                 <div className="sr-mobile-cloze-menu">
-                    {/* 鐟滅増鎸告晶鐘绘焻婢跺鍘柣銊ュ閻ｆ繄鎲版担铚傜箚闁?(闁告瑯鍨堕埀顒€顧€缁辨繃鎷呭鈧拹鐔煎冀閸ヮ剦鏆柟瀛樼墬瑜颁胶绮? */}
                     <div className="sr-mobile-menu-header">
                         <span className="sr-mobile-menu-title">c{currentId}</span>
                         <span className="sr-mobile-menu-content-preview">{currentContent}</span>
                     </div>
 
-                    {/* 闁瑰灝绉崇紞鏃堝礆濡ゅ嫨鈧?*/}
                     <div className="sr-mobile-menu-list">
-                        {/* 闁瑰嘲妫楅崹搴㈢箙椤愩倐鏁?*/}
                         <div className="sr-mobile-menu-item" onClick={onSplit}>
                             <SplitSquareHorizontal size={18} />
                             <span>{t("CLOZE_SPLIT_THIS_PART")}</span>
                         </div>
 
-                        {/* 闁告艾鐗嗛懟鐔煎箥閳ь剟寮?*/}
                         <div className="sr-mobile-menu-item" onClick={onMergeAll}>
                             <Layers size={18} />
                             <span>{t("CLOZE_MERGE_ALL")}</span>
                         </div>
 
-                        {/* 闁告帒妫濆▓褏鐥?*/}
                         {otherGroups.length > 0 && <div className="sr-mobile-menu-divider" />}
 
-                        {/* 闁告艾鐗嗛懟鐔兼焻婢舵劑鈧?*/}
                         {otherGroups.map((group) => (
                             <div
                                 key={group.id}
@@ -367,7 +340,6 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
                 zIndex: 1000,
             }}
         >
-            {/* 閻犲鍟弳锝嗗緞瑜嶉惃顒勫箥鐎ｎ偆鍔?*/}
             <div
                 className="sr-popover-resize-handle sr-resize-e"
                 onMouseDown={(e) => handleResizeStart(e, "e")}
@@ -381,11 +353,9 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
                 onMouseDown={(e) => handleResizeStart(e, "se")}
             />
 
-            {/* Body: 闁告瑥鏈悥顔炬暜閸愩劎婀?*/}
             <div
                 className={`sr-popover-body ${uniqueClozeIds.length <= 1 ? "sr-single-cloze" : ""}`}
             >
-                {/* 鐎归潻闄勯悥顕€鏁嶅顓熸儥濞达絾绮岀亸?*/}
                 <div className="sr-popover-left">
                     <div className="sr-popover-left-header">
                         <h2 className="sr-popover-title">{t("CLOZE_MANAGE_TITLE")}</h2>
@@ -395,7 +365,6 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
                     </div>
 
                     <div className="sr-popover-scroll-content">
-                        {/* 鐎垫澘鎳庨幃搴ㄧ嵁鐠虹尨缍栫紒?*/}
                         <div className="sr-popover-section">
                             <label className="sr-popover-label">
                                 {t("CLOZE_CURRENT_SELECTION")}
@@ -406,7 +375,6 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
                             </div>
                         </div>
 
-                        {/* 濞?..闁告艾鐗嗛懟?*/}
                         {otherGroups.length > 0 && (
                             <div className="sr-popover-section">
                                 <label className="sr-popover-label">
@@ -430,7 +398,6 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
                             </div>
                         )}
 
-                        {/* 闁瑰灝绉崇紞鏃堝箰婢舵劖灏?*/}
                         <div className="sr-popover-actions">
                             <button onClick={onSplit} className="sr-popover-btn-secondary">
                                 <SplitSquareHorizontal size={14} />
@@ -444,7 +411,6 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
                     </div>
                 </div>
 
-                {/* 闁告瑨娅曢悥顕€鏁嶅顓犫偓顒傜不閳ь剚锛愰崟顕呮綌闁?- 闁告瑯浜濆﹢浣瑰緞濮橆偊鍤嬪┑澶樺亞閳规牠寮懜鍨枖缂佲偓?*/}
                 {uniqueClozeIds.length > 1 && (
                     <div className="sr-popover-right-minimal">
                         <div className="sr-popover-preview-cards-container">

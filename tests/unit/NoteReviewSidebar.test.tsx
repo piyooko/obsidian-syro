@@ -36,6 +36,12 @@ jest.mock("src/ui/components/TimelineCodeMirror", () => ({
     globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+let hoverTooltipCapability = true;
+
+function setHoverTooltipCapability(enabled: boolean) {
+    hoverTooltipCapability = enabled;
+}
+
 beforeAll(() => {
     (HTMLElement.prototype as HTMLElement & {
         setCssProps?: (props: Record<string, string>) => void;
@@ -51,6 +57,20 @@ beforeAll(() => {
     }) as typeof window.requestAnimationFrame;
     window.requestAnimationFrame = immediateRaf;
     window.cancelAnimationFrame = jest.fn();
+
+    Object.defineProperty(window, "matchMedia", {
+        writable: true,
+        value: jest.fn().mockImplementation((query: string) => ({
+            matches: hoverTooltipCapability,
+            media: query,
+            onchange: null,
+            addEventListener: jest.fn(),
+            removeEventListener: jest.fn(),
+            addListener: jest.fn(),
+            removeListener: jest.fn(),
+            dispatchEvent: jest.fn(),
+        })),
+    });
 });
 
 function createItem(overrides: Partial<NoteReviewItem> = {}): NoteReviewItem {
@@ -76,11 +96,45 @@ function renderSidebar(
         progressRingDirection?: SidebarProgressRingDirection;
         filePathTooltipEnabled?: boolean;
         filePathTooltipDelayMs?: number;
+        mountInMobileDrawer?: boolean;
+        isForegroundDrawerView?: boolean;
+        isTimelineOpen?: boolean;
+        timelineHeight?: number;
+        filterBarHeight?: number;
+        onTimelineToggle?: jest.Mock;
+        activeFilePath?: string;
+        selectedItem?: NoteReviewItem | null;
+        onNoteClick?: jest.Mock;
+        onNoteSelect?: jest.Mock;
     } = {},
 ) {
     const container = document.createElement("div");
     document.body.appendChild(container);
-    const root = createRoot(container);
+    let drawerShell: HTMLDivElement | null = null;
+    let drawerInner: HTMLDivElement | null = null;
+    let drawerHeader: HTMLDivElement | null = null;
+    let drawerTabContainer: HTMLDivElement | null = null;
+    let activeTabContent: HTMLDivElement | null = null;
+    let renderTarget: Element = container;
+
+    if (options.mountInMobileDrawer) {
+        drawerShell = document.createElement("div");
+        drawerShell.className = "workspace-drawer mod-right mod-active";
+        drawerInner = document.createElement("div");
+        drawerInner.className = "workspace-drawer-inner";
+        drawerHeader = document.createElement("div");
+        drawerHeader.className = "workspace-drawer-header";
+        drawerTabContainer = document.createElement("div");
+        drawerTabContainer.className = "workspace-drawer-tab-container";
+        activeTabContent = document.createElement("div");
+        activeTabContent.className = "workspace-drawer-active-tab-content";
+        drawerInner.append(drawerHeader, drawerTabContainer, activeTabContent);
+        drawerShell.appendChild(drawerInner);
+        container.appendChild(drawerShell);
+        renderTarget = activeTabContent;
+    }
+
+    const root = createRoot(renderTarget);
     const data: NoteReviewSidebarState = {
         sections: [
             {
@@ -99,7 +153,8 @@ function renderSidebar(
             React.createElement(NoteReviewSidebar, {
                 app: {} as never,
                 data,
-                onNoteClick: jest.fn(),
+                activeFilePath: options.activeFilePath,
+                onNoteClick: options.onNoteClick ?? jest.fn(),
                 onNoteContextMenu: jest.fn(),
                 showSidebarProgressIndicator: options.showSidebarProgressIndicator,
                 progressRingColor: options.progressRingColor,
@@ -107,12 +162,24 @@ function renderSidebar(
                 progressRingDirection: options.progressRingDirection,
                 filePathTooltipEnabled: options.filePathTooltipEnabled,
                 filePathTooltipDelayMs: options.filePathTooltipDelayMs,
+                filterBarHeight: options.filterBarHeight,
+                isForegroundDrawerView: options.isForegroundDrawerView,
+                isTimelineOpen: options.isTimelineOpen,
+                timelineHeight: options.timelineHeight,
+                onTimelineToggle: options.onTimelineToggle,
+                selectedItem: options.selectedItem,
+                onNoteSelect: options.onNoteSelect,
             }),
         );
     });
 
     return {
         container,
+        drawerShell,
+        drawerInner,
+        drawerHeader,
+        drawerTabContainer,
+        activeTabContent,
         cleanup: () => {
             act(() => root.unmount());
             container.remove();
@@ -123,6 +190,9 @@ function renderSidebar(
 describe("NoteReviewSidebar", () => {
     afterEach(() => {
         document.body.innerHTML = "";
+        document.body.className = "";
+        document.documentElement.className = "";
+        setHoverTooltipCapability(true);
     });
 
     it("renders a progress arc and keeps the ring before the tag text", () => {
@@ -259,6 +329,331 @@ describe("NoteReviewSidebar", () => {
         }
     });
 
+    it("keeps mobile drawer detection but stops writing bottom-gap filler state", () => {
+        const view = renderSidebar([createItem()], {
+            mountInMobileDrawer: true,
+            isForegroundDrawerView: true,
+        });
+
+        try {
+            const sidebar = view.container.querySelector(".sr-note-sidebar") as HTMLElement | null;
+
+            expect(sidebar?.classList.contains("sr-note-sidebar--mobile-drawer")).toBe(true);
+            expect(view.drawerInner?.classList.contains("sr-note-sidebar--mobile-drawer-host")).toBe(
+                true,
+            );
+            expect(sidebar?.style.getPropertyValue("--sr-drawer-bottom-gap")).toBe("");
+            expect(view.drawerInner?.style.getPropertyValue("--sr-drawer-bottom-gap")).toBe("");
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("forces the timeline open inside the mobile drawer and ignores collapse clicks", () => {
+        const onTimelineToggle = jest.fn();
+        const view = renderSidebar([createItem()], {
+            mountInMobileDrawer: true,
+            isForegroundDrawerView: true,
+            isTimelineOpen: false,
+            onTimelineToggle,
+        });
+
+        try {
+            const timelineBody = view.container.querySelector(".sr-timeline-body");
+            const timelineHeader = view.container.querySelector(".sr-timeline-header") as
+                | HTMLElement
+                | null;
+
+            expect(timelineBody).not.toBeNull();
+            expect(timelineHeader).not.toBeNull();
+
+            act(() => {
+                timelineHeader?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            expect(onTimelineToggle).not.toHaveBeenCalled();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("allows a shorter minimum timeline height in the mobile drawer", () => {
+        const view = renderSidebar([createItem()], {
+            mountInMobileDrawer: true,
+            isForegroundDrawerView: true,
+            isTimelineOpen: false,
+            timelineHeight: 10,
+        });
+
+        try {
+            const timelineContainer = view.container.querySelector(".sr-timeline-container") as
+                | HTMLElement
+                | null;
+
+            expect(timelineContainer).not.toBeNull();
+            expect(timelineContainer?.style.height).toBe("64px");
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("adds the phone mobile drawer class only on narrow mobile drawers", () => {
+        document.body.classList.add("is-mobile");
+
+        const view = renderSidebar([createItem()], {
+            mountInMobileDrawer: true,
+            isForegroundDrawerView: true,
+        });
+
+        try {
+            const sidebar = view.container.querySelector(".sr-note-sidebar") as HTMLElement | null;
+            const dividerHandle = view.container.querySelector(".sr-resizable-divider .sr-divider-handle");
+
+            expect(sidebar?.classList.contains("sr-note-sidebar--mobile-drawer")).toBe(true);
+            expect(sidebar?.classList.contains("sr-note-sidebar--phone-mobile-drawer")).toBe(true);
+            expect(dividerHandle).not.toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("uses content-height filter bars with a bounded tag area on phone-sized mobile drawers", () => {
+        document.body.classList.add("is-mobile");
+
+        const view = renderSidebar(
+            [
+                createItem({
+                    tags: ["alpha", "beta", "gamma", "delta", "epsilon"],
+                }),
+            ],
+            {
+                mountInMobileDrawer: true,
+                isForegroundDrawerView: true,
+                filterBarHeight: 160,
+            },
+        );
+
+        try {
+            const filterBar = view.container.querySelector(".sr-filter-bar") as HTMLElement | null;
+            const tagScrollContainer = view.container.querySelector(
+                ".sr-tag-scroll-container",
+            ) as HTMLElement | null;
+
+            expect(filterBar).not.toBeNull();
+            expect(tagScrollContainer).not.toBeNull();
+            expect(filterBar?.style.height).toBe("");
+            expect(tagScrollContainer?.style.maxHeight).toBe("160px");
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("renders the phone drawer search controls inside a grouped search container", () => {
+        document.body.classList.add("is-mobile");
+
+        const view = renderSidebar([createItem()], {
+            mountInMobileDrawer: true,
+            isForegroundDrawerView: true,
+        });
+
+        try {
+            const searchGroup = view.container.querySelector(".sr-filter-bar-search-group");
+            const searchInput = searchGroup?.querySelector(".sr-tag-search-input");
+            const header = view.container.querySelector(".sr-filter-bar-header");
+
+            expect(header).not.toBeNull();
+            expect(searchGroup).not.toBeNull();
+            expect(searchInput).not.toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("keeps the phone drawer divider drag updating the bounded tag area height", () => {
+        document.body.classList.add("is-mobile");
+
+        const view = renderSidebar([createItem()], {
+            mountInMobileDrawer: true,
+            isForegroundDrawerView: true,
+            filterBarHeight: 160,
+        });
+
+        try {
+            const divider = view.container.querySelector(".sr-resizable-divider") as HTMLElement | null;
+            const tagScrollContainer = view.container.querySelector(
+                ".sr-tag-scroll-container",
+            ) as HTMLElement | null;
+
+            expect(divider).not.toBeNull();
+            expect(tagScrollContainer?.style.maxHeight).toBe("160px");
+
+            act(() => {
+                divider?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientY: 100 }));
+                document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientY: 120 }));
+                document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientY: 120 }));
+            });
+
+            expect(tagScrollContainer?.style.maxHeight).toBe("180px");
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("keeps fixed filter bar heights on tablet drawers", () => {
+        document.body.classList.add("is-mobile", "is-tablet");
+
+        const view = renderSidebar([createItem()], {
+            mountInMobileDrawer: true,
+            isForegroundDrawerView: true,
+            filterBarHeight: 160,
+        });
+
+        try {
+            const filterBar = view.container.querySelector(".sr-filter-bar") as HTMLElement | null;
+            const tagScrollContainer = view.container.querySelector(
+                ".sr-tag-scroll-container",
+            ) as HTMLElement | null;
+
+            expect(filterBar?.style.height).toBe("160px");
+            expect(tagScrollContainer?.style.maxHeight).toBe("");
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("keeps the divider as a transparent hit area with only the handle rendered inline", () => {
+        document.body.classList.add("is-mobile");
+
+        const view = renderSidebar([createItem()], {
+            mountInMobileDrawer: true,
+            isForegroundDrawerView: true,
+            filterBarHeight: 160,
+        });
+
+        try {
+            const divider = view.container.querySelector(".sr-resizable-divider") as
+                | HTMLElement
+                | null;
+            const dividerHandle = view.container.querySelector(".sr-divider-handle") as
+                | HTMLElement
+                | null;
+
+            expect(divider).not.toBeNull();
+            expect(dividerHandle).not.toBeNull();
+            expect(divider?.childElementCount).toBe(1);
+            expect(divider?.getAttribute("style")).toBeNull();
+            expect(dividerHandle?.getAttribute("style")).toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("keeps tablet mobile drawers out of the phone-only compact mode", () => {
+        document.body.classList.add("is-mobile", "is-tablet");
+
+        const view = renderSidebar([createItem()], {
+            mountInMobileDrawer: true,
+            isForegroundDrawerView: true,
+        });
+
+        try {
+            const sidebar = view.container.querySelector(".sr-note-sidebar") as HTMLElement | null;
+
+            expect(sidebar?.classList.contains("sr-note-sidebar--mobile-drawer")).toBe(true);
+            expect(sidebar?.classList.contains("sr-note-sidebar--phone-mobile-drawer")).toBe(false);
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("uses tap-to-select before opening notes on phone-sized mobile drawers", () => {
+        document.body.classList.add("is-mobile");
+
+        const item = createItem();
+        const onNoteClick = jest.fn();
+        const onNoteSelect = jest.fn();
+        const view = renderSidebar([item], {
+            mountInMobileDrawer: true,
+            isForegroundDrawerView: true,
+            onNoteClick,
+            onNoteSelect,
+        });
+
+        try {
+            const noteItem = view.container.querySelector(".sr-new-item") as HTMLElement | null;
+            expect(noteItem).not.toBeNull();
+
+            act(() => {
+                noteItem?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            expect(onNoteSelect).toHaveBeenCalledTimes(1);
+            expect(onNoteSelect).toHaveBeenCalledWith(item);
+            expect(onNoteClick).not.toHaveBeenCalled();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("opens the note on a second tap when the phone-sized mobile drawer item is already selected", () => {
+        document.body.classList.add("is-mobile");
+
+        const item = createItem();
+        const onNoteClick = jest.fn();
+        const onNoteSelect = jest.fn();
+        const view = renderSidebar([item], {
+            mountInMobileDrawer: true,
+            isForegroundDrawerView: true,
+            selectedItem: item,
+            onNoteClick,
+            onNoteSelect,
+        });
+
+        try {
+            const noteItem = view.container.querySelector(".sr-new-item") as HTMLElement | null;
+            expect(noteItem).not.toBeNull();
+            expect(noteItem?.classList.contains("sr-new-item--active")).toBe(true);
+
+            act(() => {
+                noteItem?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            expect(onNoteClick).toHaveBeenCalledTimes(1);
+            expect(onNoteClick).toHaveBeenCalledWith(item);
+            expect(onNoteSelect).not.toHaveBeenCalled();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("keeps single-tap open behavior for tablet mobile drawers", () => {
+        document.body.classList.add("is-mobile", "is-tablet");
+
+        const item = createItem();
+        const onNoteClick = jest.fn();
+        const onNoteSelect = jest.fn();
+        const view = renderSidebar([item], {
+            mountInMobileDrawer: true,
+            isForegroundDrawerView: true,
+            onNoteClick,
+            onNoteSelect,
+        });
+
+        try {
+            const noteItem = view.container.querySelector(".sr-new-item") as HTMLElement | null;
+            expect(noteItem).not.toBeNull();
+
+            act(() => {
+                noteItem?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            expect(onNoteSelect).toHaveBeenCalledTimes(1);
+            expect(onNoteClick).toHaveBeenCalledTimes(1);
+        } finally {
+            view.cleanup();
+        }
+    });
+
     it("shows the file path tooltip after the configured hover delay", () => {
         jest.useFakeTimers();
         const item = createItem({ path: "folder/example.md" });
@@ -289,6 +684,57 @@ describe("NoteReviewSidebar", () => {
             const tooltip = document.body.querySelector(".sr-note-path-tooltip") as HTMLElement | null;
             expect(tooltip).not.toBeNull();
             expect(tooltip?.textContent).toContain(item.path);
+        } finally {
+            view.cleanup();
+            jest.useRealTimers();
+        }
+    });
+
+    it("does not show the file path tooltip without hover-capable pointer support", () => {
+        jest.useFakeTimers();
+        setHoverTooltipCapability(false);
+
+        const item = createItem({ path: "folder/touch-only.md" });
+        const view = renderSidebar([item], {
+            filePathTooltipEnabled: true,
+            filePathTooltipDelayMs: 1000,
+        });
+
+        try {
+            const noteItem = view.container.querySelector(".sr-new-item") as HTMLElement | null;
+            expect(noteItem).not.toBeNull();
+
+            act(() => {
+                noteItem?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+                jest.advanceTimersByTime(1000);
+            });
+
+            expect(document.body.querySelector(".sr-note-path-tooltip")).toBeNull();
+        } finally {
+            view.cleanup();
+            jest.useRealTimers();
+        }
+    });
+
+    it("does not show the file path tooltip on focus without mouse hover", () => {
+        jest.useFakeTimers();
+
+        const item = createItem({ path: "folder/focus.md" });
+        const view = renderSidebar([item], {
+            filePathTooltipEnabled: true,
+            filePathTooltipDelayMs: 1000,
+        });
+
+        try {
+            const noteItem = view.container.querySelector(".sr-new-item") as HTMLElement | null;
+            expect(noteItem).not.toBeNull();
+
+            act(() => {
+                noteItem?.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
+                jest.advanceTimersByTime(1000);
+            });
+
+            expect(document.body.querySelector(".sr-note-path-tooltip")).toBeNull();
         } finally {
             view.cleanup();
             jest.useRealTimers();

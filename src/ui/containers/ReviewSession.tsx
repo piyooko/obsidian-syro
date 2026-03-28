@@ -6,7 +6,16 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
-import { Component, MarkdownRenderer, Notice, Platform, TFile, type Editor } from "obsidian";
+import {
+    Component,
+    MarkdownRenderer,
+    Notice,
+    Platform,
+    TFile,
+    WorkspaceLeaf,
+    type Editor,
+} from "obsidian";
+import { SR_TAB_VIEW } from "src/constants";
 import { t } from "src/lang/helpers";
 import { ReviewContext } from "../context/ReviewContext";
 import { DeckOptionsPanel } from "../components/DeckOptionsPanel";
@@ -31,6 +40,7 @@ type ViewType = "deck-list" | "review";
 interface ReviewSessionProps {
     plugin: SRPlugin;
     sequencer: IFlashcardReviewSequencer;
+    hostLeaf: WorkspaceLeaf;
     markdownOwner: Component;
     initialView?: ViewType;
     onClose?: () => void;
@@ -84,6 +94,21 @@ const mobileSlideVariants: Variants = {
     }),
 };
 
+const REVIEW_MOBILE_NAVBAR_COVER_CLASS = "syro-review-mobile-navbar-covered";
+const REVIEW_MOBILE_NAVBAR_OWNER_ATTR = "data-syro-review-mobile-navbar-owner";
+
+function detectBlockingMobileNavbar(): boolean {
+    if (!Platform.isMobile || typeof document === "undefined") {
+        return false;
+    }
+
+    if (document.body.classList.contains("is-floating-nav")) {
+        return true;
+    }
+
+    return Boolean(document.querySelector(".mobile-navbar.mod-raised, .mobile-navbar-actions"));
+}
+
 // ==========================================
 // Deck helpers
 // ==========================================
@@ -129,6 +154,14 @@ function hasEditor(view: unknown): view is { editor: Editor } {
     return typeof view === "object" && view !== null && "editor" in view;
 }
 
+function getMobileNavbars(): HTMLElement[] {
+    if (typeof document === "undefined") {
+        return [];
+    }
+
+    return Array.from(document.querySelectorAll<HTMLElement>(".mobile-navbar"));
+}
+
 // ==========================================
 // Review session
 // ==========================================
@@ -136,6 +169,7 @@ function hasEditor(view: unknown): view is { editor: Editor } {
 export const ReviewSession: React.FC<ReviewSessionProps> = ({
     plugin,
     sequencer,
+    hostLeaf,
     markdownOwner,
     initialView = "deck-list",
     onClose: _onClose,
@@ -146,7 +180,14 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     const [tick, setTick] = useState(0); // Force rerenders after sync or deck updates.
     const [reviewUiResetToken, setReviewUiResetToken] = useState(0);
     const [recentDeckPath, setRecentDeckPath] = useState<string | null>(null);
+    const [hasBlockingMobileNavbar, setHasBlockingMobileNavbar] = useState(() =>
+        detectBlockingMobileNavbar(),
+    );
     const deckListScrollTopRef = useRef(0);
+    const hostLeafId = useMemo(
+        () => String((hostLeaf as WorkspaceLeaf & { id?: string | number }).id ?? "leaf"),
+        [hostLeaf],
+    );
 
     const logRuntimeDebug = useCallback(
         (...args: unknown[]) => {
@@ -192,6 +233,141 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             void plugin.flushReviewPersistence(1200);
         };
     }, [plugin]);
+
+    const applyReviewMobileNavbarCover = useCallback(() => {
+        if (typeof document === "undefined") {
+            return;
+        }
+
+        document.body.classList.add(REVIEW_MOBILE_NAVBAR_COVER_CLASS);
+        document.body.setAttribute(REVIEW_MOBILE_NAVBAR_OWNER_ATTR, hostLeafId);
+
+        for (const navbar of getMobileNavbars()) {
+            navbar.classList.add(REVIEW_MOBILE_NAVBAR_COVER_CLASS);
+        }
+    }, [hostLeafId]);
+
+    const clearReviewMobileNavbarCover = useCallback(() => {
+        if (typeof document === "undefined") {
+            return;
+        }
+
+        const currentOwner = document.body.getAttribute(REVIEW_MOBILE_NAVBAR_OWNER_ATTR);
+        if (currentOwner && currentOwner !== hostLeafId) {
+            return;
+        }
+
+        document.body.classList.remove(REVIEW_MOBILE_NAVBAR_COVER_CLASS);
+        document.body.removeAttribute(REVIEW_MOBILE_NAVBAR_OWNER_ATTR);
+
+        for (const navbar of getMobileNavbars()) {
+            navbar.classList.remove(REVIEW_MOBILE_NAVBAR_COVER_CLASS);
+        }
+    }, [hostLeafId]);
+
+    const syncReviewMobileNavbarCover = useCallback((blockingMobileNavbar = hasBlockingMobileNavbar) => {
+        if (!Platform.isMobile || typeof document === "undefined") {
+            clearReviewMobileNavbarCover();
+            return;
+        }
+
+        const activeLeaf = plugin.app.workspace.getMostRecentLeaf();
+        const shouldCover =
+            view === "review" &&
+            blockingMobileNavbar &&
+            activeLeaf === hostLeaf &&
+            hostLeaf.view.getViewType() === SR_TAB_VIEW;
+
+        if (shouldCover) {
+            applyReviewMobileNavbarCover();
+            return;
+        }
+
+        clearReviewMobileNavbarCover();
+    }, [
+        applyReviewMobileNavbarCover,
+        clearReviewMobileNavbarCover,
+        hostLeaf,
+        hasBlockingMobileNavbar,
+        plugin.app.workspace,
+        view,
+    ]);
+
+    useEffect(() => {
+        if (!Platform.isMobile) {
+            setHasBlockingMobileNavbar(false);
+            return;
+        }
+
+        const observerTarget = document.querySelector(".app-container") ?? document.body;
+        let frameId = 0;
+
+        const scheduleRefresh = () => {
+            window.cancelAnimationFrame(frameId);
+            frameId = window.requestAnimationFrame(() => {
+                const nextValue = detectBlockingMobileNavbar();
+                setHasBlockingMobileNavbar((prev) => (prev === nextValue ? prev : nextValue));
+                syncReviewMobileNavbarCover(nextValue);
+            });
+        };
+
+        scheduleRefresh();
+
+        window.addEventListener("resize", scheduleRefresh);
+        window.addEventListener("orientationchange", scheduleRefresh);
+
+        const observer = new MutationObserver(() => {
+            scheduleRefresh();
+        });
+        observer.observe(observerTarget, {
+            attributes: true,
+            attributeFilter: ["class"],
+            childList: true,
+            subtree: true,
+        });
+
+        return () => {
+            window.removeEventListener("resize", scheduleRefresh);
+            window.removeEventListener("orientationchange", scheduleRefresh);
+            observer.disconnect();
+            window.cancelAnimationFrame(frameId);
+        };
+    }, [syncReviewMobileNavbarCover]);
+
+    useEffect(() => {
+        syncReviewMobileNavbarCover();
+
+        return () => {
+            clearReviewMobileNavbarCover();
+        };
+    }, [clearReviewMobileNavbarCover, syncReviewMobileNavbarCover]);
+
+    useEffect(() => {
+        if (!Platform.isMobile) {
+            return;
+        }
+
+        const workspace = plugin.app.workspace;
+        let frameId = 0;
+
+        const syncAfterWorkspaceChange = () => {
+            window.cancelAnimationFrame(frameId);
+            frameId = window.requestAnimationFrame(() => {
+                syncReviewMobileNavbarCover();
+            });
+        };
+
+        const activeLeafChangeRef = workspace.on("active-leaf-change", syncAfterWorkspaceChange);
+        const fileOpenRef = workspace.on("file-open", syncAfterWorkspaceChange);
+        const layoutChangeRef = workspace.on("layout-change", syncAfterWorkspaceChange);
+
+        return () => {
+            window.cancelAnimationFrame(frameId);
+            workspace.offref(activeLeafChangeRef);
+            workspace.offref(fileOpenRef);
+            workspace.offref(layoutChangeRef);
+        };
+    }, [plugin.app.workspace, syncReviewMobileNavbarCover]);
     const contextValue = useMemo(
         () => ({
             app: plugin.app,
@@ -252,12 +428,13 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     // Return from card review to the deck list.
     const handleExitReview = useCallback(() => {
         void plugin.flushReviewPersistence(1200);
+        clearReviewMobileNavbarCover();
         plugin.setSRViewInFocus(false);
         setDirection(-1);
         setView("deck-list");
         void plugin.savePluginData();
         forceUpdate(); // Refresh deck counts after leaving review.
-    }, [plugin, forceUpdate]);
+    }, [clearReviewMobileNavbarCover, plugin, forceUpdate]);
 
     // Submit a review response for the current card.
     const handleAnswer = useCallback(
@@ -319,10 +496,14 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         [plugin],
     );
 
-    const isMobile = Platform.isMobile;
-
-    // Use the simpler mobile animation set on phones and tablets.
-    const activeVariants = isMobile ? mobileSlideVariants : slideVariants;
+    const isPhoneLayout = Platform.isPhone;
+    // Keep the simplified fade only on phones; tablets reuse the desktop pane motion.
+    const activeVariants = isPhoneLayout ? mobileSlideVariants : slideVariants;
+    const shouldOverlayMobileNavbarForReview =
+        view === "review" &&
+        hasBlockingMobileNavbar &&
+        plugin.app.workspace.getMostRecentLeaf() === hostLeaf &&
+        hostLeaf.view.getViewType() === SR_TAB_VIEW;
 
     return (
         <ReviewContext.Provider value={contextValue}>
@@ -387,6 +568,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                             <CardReviewView
                                 sequencer={sequencer}
                                 plugin={plugin}
+                                clearReviewMobileNavbarCover={clearReviewMobileNavbarCover}
                                 markdownOwner={markdownOwner}
                                 onAnswer={(rating) => {
                                     void handleAnswer(rating);
@@ -400,6 +582,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                                 onExit={handleExitReview}
                                 tick={tick}
                                 uiResetToken={reviewUiResetToken}
+                                overlayMobileNavbar={shouldOverlayMobileNavbarForReview}
                             />
                         </motion.div>
                     )}
@@ -444,8 +627,18 @@ const DeckListView: React.FC<DeckListViewProps> = ({
     const treeShellRef = useRef<HTMLDivElement>(null);
     const [openDeckOptions, setOpenDeckOptions] = useState<OpenDeckOptionsState | null>(null);
     const [isSyncing, setIsSyncing] = useState(plugin.syncLock);
+    const isPhoneLayout = Platform.isPhone;
+    const isTouchLayout = Platform.isMobile;
     const initialTreeWidth = Number(plugin.data.settings.reactDeckTreeWidth ?? 860);
     const [treeWidth, setTreeWidth] = useState(initialTreeWidth);
+    const deckListClassName = [
+        "sr-deck-list-view",
+        isPhoneLayout ? "sr-phone-layout" : "",
+        isTouchLayout ? "sr-touch-layout" : "",
+    ]
+        .filter(Boolean)
+        .join(" ");
+    const shellWidth = isPhoneLayout ? "100%" : `min(100%, ${treeWidth}px)`;
 
     useLayoutEffect(() => {
         const host = treeHostRef.current;
@@ -505,6 +698,7 @@ const DeckListView: React.FC<DeckListViewProps> = ({
 
     const handleTreeResizeStart = useCallback(
         (event: React.MouseEvent | React.TouchEvent, direction: "w" | "e") => {
+            if (isPhoneLayout) return;
             event.preventDefault();
             event.stopPropagation();
 
@@ -557,12 +751,12 @@ const DeckListView: React.FC<DeckListViewProps> = ({
             document.addEventListener("touchmove", handleMove, { passive: false });
             document.addEventListener("touchend", handleEnd);
         },
-        [plugin, treeWidth],
+        [isPhoneLayout, plugin, treeWidth],
     );
 
     return (
         <div
-            className="sr-deck-list-view"
+            className={deckListClassName}
             ref={panelHostRef}
             style={{
                 height: "100%",
@@ -575,13 +769,15 @@ const DeckListView: React.FC<DeckListViewProps> = ({
                 <div
                     className="sr-deck-tree-shell"
                     ref={treeShellRef}
-                    style={{ width: `min(100%, ${treeWidth}px)` }}
+                    style={{ width: shellWidth }}
                 >
-                    <div
-                        className="sr-deck-tree-resize-handle sr-deck-tree-resize-handle--left"
-                        onMouseDown={(e) => handleTreeResizeStart(e, "w")}
-                        onTouchStart={(e) => handleTreeResizeStart(e, "w")}
-                    />
+                    {!isPhoneLayout && (
+                        <div
+                            className="sr-deck-tree-resize-handle sr-deck-tree-resize-handle--left"
+                            onMouseDown={(e) => handleTreeResizeStart(e, "w")}
+                            onTouchStart={(e) => handleTreeResizeStart(e, "w")}
+                        />
+                    )}
                     <DeckTree
                         decks={decks}
                         onDeckClick={onDeckClick}
@@ -591,11 +787,13 @@ const DeckListView: React.FC<DeckListViewProps> = ({
                         isSyncing={isSyncing}
                         recentDeckPath={recentDeckPath}
                     />
-                    <div
-                        className="sr-deck-tree-resize-handle sr-deck-tree-resize-handle--right"
-                        onMouseDown={(e) => handleTreeResizeStart(e, "e")}
-                        onTouchStart={(e) => handleTreeResizeStart(e, "e")}
-                    />
+                    {!isPhoneLayout && (
+                        <div
+                            className="sr-deck-tree-resize-handle sr-deck-tree-resize-handle--right"
+                            onMouseDown={(e) => handleTreeResizeStart(e, "e")}
+                            onTouchStart={(e) => handleTreeResizeStart(e, "e")}
+                        />
+                    )}
                 </div>
             </div>
             {openDeckOptions && (
@@ -604,7 +802,10 @@ const DeckListView: React.FC<DeckListViewProps> = ({
                     deckName={openDeckOptions.deckName}
                     deckPath={openDeckOptions.deckPath}
                     containerElement={panelHostRef.current}
-                    preferredWidth={Math.min(treeWidth, 760)}
+                    preferredWidth={Math.min(
+                        isPhoneLayout ? panelHostRef.current?.clientWidth ?? 420 : treeWidth,
+                        760,
+                    )}
                     onClose={() => setOpenDeckOptions(null)}
                     onSaved={() => {
                         if (plugin.data.settings.showRuntimeDebugMessages) {
@@ -624,6 +825,7 @@ const DeckListView: React.FC<DeckListViewProps> = ({
 interface CardReviewViewProps {
     sequencer: IFlashcardReviewSequencer;
     plugin: SRPlugin;
+    clearReviewMobileNavbarCover: () => void;
     markdownOwner: Component;
     onAnswer: (rating: number) => void;
     onUndo: () => void;
@@ -631,11 +833,13 @@ interface CardReviewViewProps {
     onExit: () => void;
     tick: number;
     uiResetToken: number;
+    overlayMobileNavbar: boolean;
 }
 
 const CardReviewView: React.FC<CardReviewViewProps> = ({
     sequencer,
     plugin,
+    clearReviewMobileNavbarCover,
     markdownOwner,
     onAnswer,
     onUndo,
@@ -643,6 +847,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     onExit,
     tick: _tick,
     uiResetToken,
+    overlayMobileNavbar,
 }) => {
     const card = sequencer.currentCard;
     const question = sequencer.currentQuestion;
@@ -751,6 +956,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
         const noteFile = resolveNoteFile(question.note?.file);
         if (!noteFile) return;
 
+        clearReviewMobileNavbarCover();
         const activeLeaf = plugin.app.workspace.getLeaf("tab");
         await activeLeaf.openFile(noteFile);
 
@@ -803,6 +1009,8 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
             MarkdownRenderer.render(plugin.app, text, el, sourcePath, markdownOwner),
         [plugin.app, sourcePath, markdownOwner],
     );
+    const isPhoneLayout = Platform.isPhone;
+    const allowResize = !isPhoneLayout;
 
     // Persist resized card dimensions.
     const handleResize = (width: number, height: number) => {
@@ -853,7 +1061,9 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
                 width={settings.reactFlashcardWidth}
                 height={settings.reactFlashcardHeight}
                 debugInfo={debugInfo}
-                isMobile={Platform.isMobile}
+                isMobile={isPhoneLayout}
+                allowResize={allowResize}
+                overlayMobileNavbar={overlayMobileNavbar}
                 plugin={plugin}
                 rawContent={question.questionText?.actualQuestion || ""}
                 onUpdateContent={(text) => {

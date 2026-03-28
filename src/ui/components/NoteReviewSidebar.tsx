@@ -43,6 +43,15 @@ import type {
     SidebarProgressRingDirection,
 } from "src/settings";
 
+const TIMELINE_MIN_HEIGHT_PX = 100;
+export const MOBILE_TIMELINE_MIN_HEIGHT_PX = 64;
+const TIMELINE_MAX_HEIGHT_VIEWPORT_RATIO = 0.8;
+const TIMELINE_HEADER_DRAG_THRESHOLD_PX = 8;
+const TIMELINE_TOUCH_BLOCK_COOLDOWN_MS = 120;
+const MOBILE_DRAWER_HOST_CLASS = "sr-note-sidebar--mobile-drawer-host";
+const MOBILE_DRAWER_SHELL_CLASS = "sr-note-sidebar--mobile-drawer-shell";
+const TIMELINE_RESIZE_BODY_CLASS = "sr-timeline-resize-active";
+
 type DocumentWithViewTransition = Document & {
     startViewTransition?: (callback: () => void) => void;
 };
@@ -53,6 +62,43 @@ function getNotePathFromElement(element: Element | null): string | null {
     }
 
     return element.dataset.notePath ?? null;
+}
+
+function findTouchByIdentifier(touchList: TouchList, identifier: number): Touch | null {
+    for (let index = 0; index < touchList.length; index += 1) {
+        const touch = touchList.item(index);
+        if (touch?.identifier === identifier) {
+            return touch;
+        }
+    }
+
+    return null;
+}
+
+function isPhoneMobileDrawerLayout(): boolean {
+    if (typeof document === "undefined") {
+        return false;
+    }
+
+    const hasMobileClass =
+        document.body.classList.contains("is-mobile") ||
+        document.documentElement.classList.contains("is-mobile");
+    const hasTabletClass =
+        document.body.classList.contains("is-tablet") ||
+        document.documentElement.classList.contains("is-tablet");
+
+    return hasMobileClass && !hasTabletClass;
+}
+
+function canUseHoverPathTooltips(): boolean {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+        return false;
+    }
+
+    return (
+        window.matchMedia("(any-hover: hover) and (any-pointer: fine)").matches ||
+        window.matchMedia("(hover: hover) and (pointer: fine)").matches
+    );
 }
 
 // ==========================================
@@ -77,6 +123,7 @@ interface FilterBarProps {
     onShowTagContextMenu?: (e: React.MouseEvent, tag: string) => void;
     onMobileTagDrop?: (notePath: string, tag: string) => void;
     hideHeader?: boolean;
+    isPhoneMobileDrawer?: boolean;
 }
 
 // ==========================================
@@ -185,6 +232,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
     onShowTagContextMenu,
     onMobileTagDrop,
     hideHeader = false,
+    isPhoneMobileDrawer = false,
 }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -521,25 +569,27 @@ const FilterBar: React.FC<FilterBarProps> = ({
         <div
             className="sr-filter-bar"
             ref={containerRef}
-            style={{ height: `${height}px` }}
+            style={isPhoneMobileDrawer ? undefined : { height: `${height}px` }}
             onTouchMove={handleTouchMove}
         >
             {/* 头部区域：搜索框始终存在，菜单区域浮现在上层 */}
             {!hideHeader && (
                 <div className="sr-filter-bar-header" style={{ position: "relative" }}>
                     <SortModeButton mode={sortMode} onModeChange={onSortModeChange} />
-                    <input
-                        type="text"
-                        className="sr-tag-search-input"
-                        placeholder={t("FILTER_PLACEHOLDER")}
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                    {selectedTags.size > 0 && (
-                        <button className="sr-clear-tags-btn" onClick={onClearTags}>
-                            ✕
-                        </button>
-                    )}
+                    <div className="sr-filter-bar-search-group">
+                        <input
+                            type="text"
+                            className="sr-tag-search-input"
+                            placeholder={t("FILTER_PLACEHOLDER")}
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                        {selectedTags.size > 0 && (
+                            <button className="sr-clear-tags-btn" onClick={onClearTags}>
+                                ✕
+                            </button>
+                        )}
+                    </div>
 
                     {/* 移动端菜单触发区域 - 浮现在搜索框上层 */}
                     {isDragging && (
@@ -557,6 +607,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
             <div
                 className="sr-tag-scroll-container"
                 ref={scrollRef}
+                style={isPhoneMobileDrawer ? { maxHeight: `${Math.max(0, height)}px` } : undefined}
                 onDragOver={(e) => {
                     e.preventDefault(); // 必须阻止默认行为才能接收 drop 事件
                 }}
@@ -681,22 +732,40 @@ const ResizableDivider: React.FC<{
     // 移动端触摸支持
     const handleTouchStart = useCallback(
         (e: React.TouchEvent) => {
-            let lastY = e.touches[0].clientY;
+            const startTouch = e.changedTouches[0] ?? e.touches[0];
+            if (!startTouch) {
+                return;
+            }
+
+            e.preventDefault();
+            let lastY = startTouch.clientY;
 
             const handleTouchMove = (moveEvent: TouchEvent) => {
-                const delta = moveEvent.touches[0].clientY - lastY;
-                lastY = moveEvent.touches[0].clientY;
+                const activeTouch = moveEvent.changedTouches[0] ?? moveEvent.touches[0];
+                if (!activeTouch) {
+                    return;
+                }
+
+                moveEvent.preventDefault();
+                const delta = activeTouch.clientY - lastY;
+                lastY = activeTouch.clientY;
                 onResize(delta);
             };
 
-            const handleTouchEnd = () => {
+            const cleanup = () => {
                 document.removeEventListener("touchmove", handleTouchMove);
                 document.removeEventListener("touchend", handleTouchEnd);
+                document.removeEventListener("touchcancel", handleTouchEnd);
+            };
+
+            const handleTouchEnd = () => {
+                cleanup();
                 onResizeEnd();
             };
 
-            document.addEventListener("touchmove", handleTouchMove);
+            document.addEventListener("touchmove", handleTouchMove, { passive: false });
             document.addEventListener("touchend", handleTouchEnd);
+            document.addEventListener("touchcancel", handleTouchEnd);
         },
         [onResize, onResizeEnd],
     );
@@ -721,6 +790,10 @@ interface TimelinePaneProps {
     enableDurationPrefixSyntax: boolean;
     isOpen: boolean;
     onToggle: () => void;
+    isHeaderDragEnabled?: boolean;
+    isHeaderDragging?: boolean;
+    onHeaderMouseDown?: (event: React.MouseEvent<HTMLDivElement>) => void;
+    onHeaderTouchStart?: (event: React.TouchEvent<HTMLDivElement>) => void;
     selectedItem: NoteReviewItem | null;
     logs: ReviewCommitLog[];
     onCommit: (message: string) => void;
@@ -890,6 +963,10 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
     enableDurationPrefixSyntax,
     isOpen,
     onToggle,
+    isHeaderDragEnabled = false,
+    isHeaderDragging = false,
+    onHeaderMouseDown,
+    onHeaderTouchStart,
     selectedItem,
     logs,
     onCommit,
@@ -952,7 +1029,18 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
     return (
         <div style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%" }}>
             {/* Header */}
-            <div className="sr-timeline-header" onClick={onToggle}>
+            <div
+                className={[
+                    "sr-timeline-header",
+                    isHeaderDragEnabled ? "sr-timeline-header--resizable" : "",
+                    isHeaderDragging ? "sr-timeline-header--dragging" : "",
+                ]
+                    .filter(Boolean)
+                    .join(" ")}
+                onClick={isHeaderDragEnabled ? undefined : onToggle}
+                onMouseDown={isHeaderDragEnabled ? onHeaderMouseDown : undefined}
+                onTouchStart={isHeaderDragEnabled ? onHeaderTouchStart : undefined}
+            >
                 <div className="sr-timeline-header-icon">
                     <svg
                         className={`sr-timeline-header-chevron ${isOpen ? "open" : ""}`}
@@ -1125,11 +1213,12 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
 // ==========================================
 interface SectionGroupModernProps {
     section: NoteReviewSection;
-    activeFilePath?: string;
+    activeItemPath?: string;
     ignoredTags: string[];
     showSidebarProgressIndicator: boolean;
     progressIndicatorMode: SidebarProgressIndicatorMode;
     progressRingDirection: SidebarProgressRingDirection;
+    pathTooltipHoverEnabled: boolean;
     filePathTooltipEnabled: boolean;
     filePathTooltipDelayMs: number;
     onNoteClick: (item: NoteReviewItem) => void;
@@ -1141,11 +1230,12 @@ interface SectionGroupModernProps {
 
 const SectionGroupModern: React.FC<SectionGroupModernProps> = ({
     section,
-    activeFilePath,
+    activeItemPath,
     ignoredTags,
     showSidebarProgressIndicator,
     progressIndicatorMode,
     progressRingDirection,
+    pathTooltipHoverEnabled,
     filePathTooltipEnabled,
     filePathTooltipDelayMs,
     onNoteClick,
@@ -1194,11 +1284,12 @@ const SectionGroupModern: React.FC<SectionGroupModernProps> = ({
                     <NoteItemModern
                         key={item.id}
                         item={item}
-                        isActive={activeFilePath === item.path}
+                        isActive={activeItemPath === item.path}
                         ignoredTags={ignoredTags}
                         showSidebarProgressIndicator={showSidebarProgressIndicator}
                         progressIndicatorMode={progressIndicatorMode}
                         progressRingDirection={progressRingDirection}
+                        pathTooltipHoverEnabled={pathTooltipHoverEnabled}
                         filePathTooltipEnabled={filePathTooltipEnabled}
                         filePathTooltipDelayMs={filePathTooltipDelayMs}
                         onClick={() => onNoteClick(item)}
@@ -1223,6 +1314,7 @@ interface NoteItemModernProps {
     showSidebarProgressIndicator: boolean;
     progressIndicatorMode: SidebarProgressIndicatorMode;
     progressRingDirection: SidebarProgressRingDirection;
+    pathTooltipHoverEnabled: boolean;
     filePathTooltipEnabled: boolean;
     filePathTooltipDelayMs: number;
     onClick: () => void;
@@ -1450,6 +1542,7 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
     showSidebarProgressIndicator,
     progressIndicatorMode,
     progressRingDirection,
+    pathTooltipHoverEnabled,
     filePathTooltipEnabled,
     filePathTooltipDelayMs,
     onClick,
@@ -1548,22 +1641,13 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
         }
     }, []);
 
-    const showPathTooltip = useCallback(() => {
-        if (!filePathTooltipEnabled || !item.path) {
-            return;
-        }
-
-        clearPathTooltipTimer();
-        setIsPathTooltipVisible(true);
-    }, [clearPathTooltipTimer, filePathTooltipEnabled, item.path]);
-
     const hidePathTooltip = useCallback(() => {
         clearPathTooltipTimer();
         setIsPathTooltipVisible(false);
     }, [clearPathTooltipTimer]);
 
     const queuePathTooltip = useCallback(() => {
-        if (!filePathTooltipEnabled || !item.path) {
+        if (!pathTooltipHoverEnabled || !filePathTooltipEnabled || !item.path) {
             return;
         }
 
@@ -1579,36 +1663,19 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
             pathTooltipTimerRef.current = null;
             setIsPathTooltipVisible(true);
         }, delayMs);
-    }, [clearPathTooltipTimer, filePathTooltipDelayMs, filePathTooltipEnabled, item.path]);
-
-    const handleFocus = useCallback(
-        (e: React.FocusEvent<HTMLDivElement>) => {
-            if (e.target instanceof HTMLInputElement) {
-                return;
-            }
-
-            showPathTooltip();
-        },
-        [showPathTooltip],
-    );
-
-    const handleBlur = useCallback(
-        (e: React.FocusEvent<HTMLDivElement>) => {
-            const nextTarget = e.relatedTarget;
-            if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) {
-                return;
-            }
-
-            hidePathTooltip();
-        },
-        [hidePathTooltip],
-    );
+    }, [
+        clearPathTooltipTimer,
+        filePathTooltipDelayMs,
+        filePathTooltipEnabled,
+        item.path,
+        pathTooltipHoverEnabled,
+    ]);
 
     useEffect(() => {
-        if (!filePathTooltipEnabled || !item.path) {
+        if (!pathTooltipHoverEnabled || !filePathTooltipEnabled || !item.path) {
             hidePathTooltip();
         }
-    }, [filePathTooltipEnabled, hidePathTooltip, item.path]);
+    }, [filePathTooltipEnabled, hidePathTooltip, item.path, pathTooltipHoverEnabled]);
 
     useEffect(() => {
         return () => {
@@ -1630,8 +1697,6 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
                 onDrop={handleDrop}
                 onMouseEnter={queuePathTooltip}
                 onMouseLeave={hidePathTooltip}
-                onFocus={handleFocus}
-                onBlur={handleBlur}
                 tabIndex={0}
             >
                 {/* Left: Priority Badge (可编辑) */}
@@ -1732,6 +1797,7 @@ interface NoteReviewSidebarProps {
     progressRingDirection?: SidebarProgressRingDirection;
     filePathTooltipEnabled?: boolean;
     filePathTooltipDelayMs?: number;
+    isForegroundDrawerView?: boolean;
 }
 
 export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
@@ -1777,11 +1843,27 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     progressRingDirection = "counterclockwise",
     filePathTooltipEnabled = true,
     filePathTooltipDelayMs = 1000,
+    isForegroundDrawerView = false,
 }) => {
     const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
     const [currentHeight, setCurrentHeight] = useState(filterBarHeight);
     const [, setDraggedTag] = useState<string | null>(null);
     const sidebarRef = useRef<HTMLDivElement>(null);
+    const [isInMobileDrawer, setIsInMobileDrawer] = useState(false);
+    const [pathTooltipHoverEnabled, setPathTooltipHoverEnabled] = useState(() =>
+        canUseHoverPathTooltips(),
+    );
+    const isPhoneMobileDrawer = isInMobileDrawer && isPhoneMobileDrawerLayout();
+    const shouldUseTapToSelectOpen = isPhoneMobileDrawer;
+    const isTimelinePinnedOpen = isInMobileDrawer;
+    const effectiveTimelineOpen = isTimelinePinnedOpen || isTimelineOpen;
+    const timelineMinHeightPx = isTimelinePinnedOpen
+        ? MOBILE_TIMELINE_MIN_HEIGHT_PX
+        : TIMELINE_MIN_HEIGHT_PX;
+    const [isTimelineResizeActive, setIsTimelineResizeActive] = useState(false);
+    const [isTimelineGestureBlocked, setIsTimelineGestureBlocked] = useState(false);
+    const activeTimelineSessionCleanupRef = useRef<(() => void) | null>(null);
+    const timelineTouchBlockCooldownRef = useRef<number | null>(null);
 
     // 同步外部高度变化
     useEffect(() => {
@@ -1825,6 +1907,178 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
             if (observer) observer.disconnect();
         };
     }, []);
+
+    useEffect(() => {
+        if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+            setPathTooltipHoverEnabled(false);
+            return;
+        }
+
+        const mediaQueries = [
+            window.matchMedia("(any-hover: hover) and (any-pointer: fine)"),
+            window.matchMedia("(hover: hover) and (pointer: fine)"),
+        ];
+        const updateHoverCapability = () => {
+            setPathTooltipHoverEnabled(mediaQueries.some((query) => query.matches));
+        };
+        const cleanups = mediaQueries.map((query) => {
+            if (typeof query.addEventListener === "function") {
+                query.addEventListener("change", updateHoverCapability);
+                return () => query.removeEventListener("change", updateHoverCapability);
+            }
+
+            query.addListener(updateHoverCapability);
+            return () => query.removeListener(updateHoverCapability);
+        });
+
+        updateHoverCapability();
+
+        return () => {
+            cleanups.forEach((cleanup) => cleanup());
+        };
+    }, []);
+
+    useEffect(() => {
+        const sidebar = sidebarRef.current;
+        if (!sidebar) {
+            return;
+        }
+
+        let frameId = 0;
+        let observedDrawerShell: HTMLElement | null = null;
+        let observedDrawerInner: HTMLElement | null = null;
+        let resizeObserver: ResizeObserver | null = null;
+        let mutationObserver: MutationObserver | null = null;
+
+        const syncDrawerHostClass = (drawerInner: HTMLElement | null, enabled: boolean) => {
+            if (!drawerInner) {
+                return;
+            }
+
+            drawerInner.classList.toggle(MOBILE_DRAWER_HOST_CLASS, enabled);
+        };
+
+        const syncDrawerShellClass = (drawerShell: HTMLElement | null, enabled: boolean) => {
+            if (!drawerShell) {
+                return;
+            }
+
+            drawerShell.classList.toggle(MOBILE_DRAWER_SHELL_CLASS, enabled);
+        };
+
+        const observeTargets = (
+            drawerInner: HTMLElement | null,
+            activeTabContent: HTMLElement | null,
+        ) => {
+            resizeObserver?.disconnect();
+
+            const statusBar = document.querySelector(".status-bar");
+            const targets = [sidebar, statusBar, drawerInner, activeTabContent].filter(
+                (value): value is HTMLElement => value instanceof HTMLElement,
+            );
+
+            Array.from(new Set(targets)).forEach((target) => resizeObserver?.observe(target));
+
+            mutationObserver?.disconnect();
+            if (drawerInner) {
+                mutationObserver?.observe(drawerInner, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ["class"],
+                });
+            }
+        };
+
+        const updateSidebarChromeMetrics = () => {
+            const currentSidebar = sidebarRef.current;
+            if (!currentSidebar) {
+                return;
+            }
+
+            const statusBar = document.querySelector(".status-bar");
+            const nextDrawerShell = currentSidebar.closest(".workspace-drawer");
+            const nextDrawerInner = currentSidebar.closest(".workspace-drawer-inner");
+            const nextActiveTabContent = currentSidebar.closest(".workspace-drawer-active-tab-content");
+            const drawerShell = nextDrawerShell instanceof HTMLElement ? nextDrawerShell : null;
+            const drawerInner = nextDrawerInner instanceof HTMLElement ? nextDrawerInner : null;
+            const activeTabContent =
+                nextActiveTabContent instanceof HTMLElement ? nextActiveTabContent : null;
+            const isMobileDrawer = drawerInner !== null && activeTabContent !== null;
+
+            setIsInMobileDrawer((previousValue) =>
+                previousValue === isMobileDrawer ? previousValue : isMobileDrawer,
+            );
+
+            if (observedDrawerShell !== drawerShell) {
+                syncDrawerShellClass(observedDrawerShell, false);
+                observedDrawerShell = drawerShell;
+            }
+
+            if (observedDrawerInner !== drawerInner) {
+                syncDrawerHostClass(observedDrawerInner, false);
+                observedDrawerInner = drawerInner;
+            }
+
+            if (statusBar instanceof HTMLElement) {
+                const sidebarRect = currentSidebar.getBoundingClientRect();
+                const statusBarRect = statusBar.getBoundingClientRect();
+                const isOverlapping =
+                    sidebarRect.bottom > statusBarRect.top &&
+                    sidebarRect.right > statusBarRect.left &&
+                    sidebarRect.left < statusBarRect.right;
+
+                currentSidebar.setCssProps({
+                    "--sr-statusbar-offset": isOverlapping ? `${statusBarRect.height}px` : "0px",
+                });
+            } else {
+                currentSidebar.setCssProps({ "--sr-statusbar-offset": "0px" });
+            }
+
+            const shouldDecorateDrawer = Boolean(drawerShell && drawerInner && activeTabContent && isForegroundDrawerView);
+            syncDrawerShellClass(drawerShell, shouldDecorateDrawer);
+            syncDrawerHostClass(drawerInner, shouldDecorateDrawer);
+            observeTargets(drawerInner, activeTabContent);
+        };
+
+        const scheduleSidebarChromeMetricsUpdate = () => {
+            if (frameId) {
+                cancelAnimationFrame(frameId);
+            }
+
+            frameId = requestAnimationFrame(() => {
+                frameId = 0;
+                updateSidebarChromeMetrics();
+            });
+        };
+
+        if (typeof ResizeObserver !== "undefined") {
+            resizeObserver = new ResizeObserver(() => {
+                scheduleSidebarChromeMetricsUpdate();
+            });
+        }
+
+        mutationObserver = new MutationObserver(() => {
+            scheduleSidebarChromeMetricsUpdate();
+        });
+
+        scheduleSidebarChromeMetricsUpdate();
+        window.addEventListener("resize", scheduleSidebarChromeMetricsUpdate);
+        window.addEventListener("orientationchange", scheduleSidebarChromeMetricsUpdate);
+
+        return () => {
+            if (frameId) {
+                cancelAnimationFrame(frameId);
+            }
+
+            window.removeEventListener("resize", scheduleSidebarChromeMetricsUpdate);
+            window.removeEventListener("orientationchange", scheduleSidebarChromeMetricsUpdate);
+            resizeObserver?.disconnect();
+            mutationObserver?.disconnect();
+            syncDrawerShellClass(observedDrawerShell, false);
+            syncDrawerHostClass(observedDrawerInner, false);
+        };
+    }, [isForegroundDrawerView]);
 
     // 1. 提取所有标签并计数 (排除忽略的标签)
     const allTags = useMemo(() => {
@@ -1901,58 +2155,337 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     }, [currentHeight, onFilterBarHeightChange]);
 
     // --- Timeline 抽屉拖拽逻辑 ---
-    const [localTimelineHeight, setLocalTimelineHeight] = useState(timelineHeight);
-    const isDraggingTimelineRef = useRef(false);
-    const startYTimelineRef = useRef(0);
-    const startHeightTimelineRef = useRef(0);
+    const clampTimelineHeight = useCallback((height: number) => {
+        return Math.max(
+            timelineMinHeightPx,
+            Math.min(height, window.innerHeight * TIMELINE_MAX_HEIGHT_VIEWPORT_RATIO),
+        );
+    }, [timelineMinHeightPx]);
+
+    const [localTimelineHeight, setLocalTimelineHeight] = useState(() =>
+        clampTimelineHeight(timelineHeight),
+    );
+    const currentTimelineHeightRef = useRef(clampTimelineHeight(timelineHeight));
 
     useEffect(() => {
-        setLocalTimelineHeight(timelineHeight);
-    }, [timelineHeight]);
+        const clampedHeight = clampTimelineHeight(timelineHeight);
+        currentTimelineHeightRef.current = clampedHeight;
+        setLocalTimelineHeight(clampedHeight);
+    }, [clampTimelineHeight, timelineHeight]);
 
-    const handleTimelineSashMouseDown = useCallback(
-        (e: React.MouseEvent) => {
-            e.preventDefault();
-            isDraggingTimelineRef.current = true;
-            startYTimelineRef.current = e.clientY;
-            startHeightTimelineRef.current = localTimelineHeight;
-            document.body.setCssProps({ cursor: "row-resize" });
+    useEffect(() => {
+        currentTimelineHeightRef.current = localTimelineHeight;
+    }, [localTimelineHeight]);
 
-            const handleMouseMove = (moveEvent: MouseEvent) => {
-                if (!isDraggingTimelineRef.current) return;
-                const deltaY = startYTimelineRef.current - moveEvent.clientY;
-                const newHeight = startHeightTimelineRef.current + deltaY;
-                const clamped = Math.max(100, Math.min(newHeight, window.innerHeight * 0.8));
-                setLocalTimelineHeight(clamped);
-            };
+    const requestTimelineToggle = useCallback(() => {
+        if (isTimelinePinnedOpen) {
+            return;
+        }
 
-            const handleMouseUp = () => {
-                isDraggingTimelineRef.current = false;
-                document.body.setCssProps({ cursor: "" });
-                document.removeEventListener("mousemove", handleMouseMove);
-                document.removeEventListener("mouseup", handleMouseUp);
-                if (onTimelineHeightChange) {
-                    onTimelineHeightChange(localTimelineHeight);
+        onTimelineToggle?.();
+    }, [isTimelinePinnedOpen, onTimelineToggle]);
+
+    const clearTimelineTouchBlockCooldown = useCallback(() => {
+        if (timelineTouchBlockCooldownRef.current !== null) {
+            window.clearTimeout(timelineTouchBlockCooldownRef.current);
+            timelineTouchBlockCooldownRef.current = null;
+        }
+    }, []);
+
+    const activateTimelineGestureBlock = useCallback(() => {
+        clearTimelineTouchBlockCooldown();
+        setIsTimelineGestureBlocked(true);
+    }, [clearTimelineTouchBlockCooldown]);
+
+    const releaseTimelineGestureBlock = useCallback(
+        (cooldownMs: number) => {
+            clearTimelineTouchBlockCooldown();
+
+            if (cooldownMs <= 0) {
+                setIsTimelineGestureBlocked(false);
+                return;
+            }
+
+            timelineTouchBlockCooldownRef.current = window.setTimeout(() => {
+                timelineTouchBlockCooldownRef.current = null;
+                setIsTimelineGestureBlocked(false);
+            }, cooldownMs);
+        },
+        [clearTimelineTouchBlockCooldown],
+    );
+
+    const cleanupTimelineResizeSession = useCallback(() => {
+        activeTimelineSessionCleanupRef.current?.();
+        activeTimelineSessionCleanupRef.current = null;
+        document.body.classList.remove(TIMELINE_RESIZE_BODY_CLASS);
+        setIsTimelineResizeActive(false);
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            activeTimelineSessionCleanupRef.current?.();
+            activeTimelineSessionCleanupRef.current = null;
+            document.body.classList.remove(TIMELINE_RESIZE_BODY_CLASS);
+            clearTimelineTouchBlockCooldown();
+        };
+    }, [clearTimelineTouchBlockCooldown]);
+
+    const applyTimelineHeight = useCallback(
+        (nextHeight: number) => {
+            const clamped = clampTimelineHeight(nextHeight);
+            currentTimelineHeightRef.current = clamped;
+            setLocalTimelineHeight(clamped);
+            return clamped;
+        },
+        [clampTimelineHeight],
+    );
+
+    const startTimelineResizeSession = useCallback(
+        ({
+            startY,
+            inputType,
+            toggleOnTap,
+            dragThreshold,
+            touchId,
+        }: {
+            startY: number;
+            inputType: "mouse" | "touch";
+            toggleOnTap: boolean;
+            dragThreshold: number;
+            touchId?: number;
+        }) => {
+            cleanupTimelineResizeSession();
+
+            if (inputType === "touch") {
+                activateTimelineGestureBlock();
+            } else {
+                releaseTimelineGestureBlock(0);
+            }
+
+            const startHeight = currentTimelineHeightRef.current;
+            let didResize = false;
+
+            const promoteToResize = () => {
+                if (didResize) {
+                    return;
+                }
+
+                didResize = true;
+                setIsTimelineResizeActive(true);
+                if (inputType === "mouse") {
+                    document.body.classList.add(TIMELINE_RESIZE_BODY_CLASS);
                 }
             };
 
-            document.addEventListener("mousemove", handleMouseMove);
-            document.addEventListener("mouseup", handleMouseUp);
+            const updateFromClientY = (clientY: number, nativeEvent?: Event) => {
+                const movedDistance = Math.abs(clientY - startY);
+                if (!didResize) {
+                    if (toggleOnTap && movedDistance < dragThreshold) {
+                        if (inputType === "touch") {
+                            nativeEvent?.preventDefault();
+                        }
+                        return;
+                    }
+
+                    promoteToResize();
+                }
+
+                if (inputType === "touch") {
+                    nativeEvent?.preventDefault();
+                }
+
+                applyTimelineHeight(startHeight + (startY - clientY));
+            };
+
+            const finishSession = (shouldToggleOnTap: boolean) => {
+                cleanup();
+                activeTimelineSessionCleanupRef.current = null;
+                document.body.classList.remove(TIMELINE_RESIZE_BODY_CLASS);
+                setIsTimelineResizeActive(false);
+                releaseTimelineGestureBlock(
+                    inputType === "touch" ? TIMELINE_TOUCH_BLOCK_COOLDOWN_MS : 0,
+                );
+
+                if (didResize) {
+                    onTimelineHeightChange?.(currentTimelineHeightRef.current);
+                } else if (shouldToggleOnTap && toggleOnTap) {
+                    requestTimelineToggle();
+                }
+            };
+
+            const cancelSession = () => {
+                cleanup();
+                activeTimelineSessionCleanupRef.current = null;
+                document.body.classList.remove(TIMELINE_RESIZE_BODY_CLASS);
+                setIsTimelineResizeActive(false);
+                releaseTimelineGestureBlock(
+                    inputType === "touch" ? TIMELINE_TOUCH_BLOCK_COOLDOWN_MS : 0,
+                );
+            };
+
+            let cleanup = () => {};
+
+            if (inputType === "mouse") {
+                const handleMouseMove = (moveEvent: MouseEvent) => {
+                    updateFromClientY(moveEvent.clientY, moveEvent);
+                };
+
+                const handleMouseUp = () => {
+                    finishSession(true);
+                };
+
+                cleanup = () => {
+                    document.removeEventListener("mousemove", handleMouseMove);
+                    document.removeEventListener("mouseup", handleMouseUp);
+                };
+
+                document.addEventListener("mousemove", handleMouseMove);
+                document.addEventListener("mouseup", handleMouseUp);
+            } else {
+                const activeTouchId = touchId ?? -1;
+
+                const handleTouchMove = (moveEvent: TouchEvent) => {
+                    const activeTouch =
+                        findTouchByIdentifier(moveEvent.touches, activeTouchId) ??
+                        findTouchByIdentifier(moveEvent.changedTouches, activeTouchId);
+
+                    if (!activeTouch) {
+                        return;
+                    }
+
+                    updateFromClientY(activeTouch.clientY, moveEvent);
+                };
+
+                const handleTouchEnd = (endEvent: TouchEvent) => {
+                    const activeTouch = findTouchByIdentifier(endEvent.changedTouches, activeTouchId);
+                    if (!activeTouch) {
+                        return;
+                    }
+
+                    finishSession(true);
+                };
+
+                const handleTouchCancel = () => {
+                    cancelSession();
+                };
+
+                cleanup = () => {
+                    document.removeEventListener("touchmove", handleTouchMove);
+                    document.removeEventListener("touchend", handleTouchEnd);
+                    document.removeEventListener("touchcancel", handleTouchCancel);
+                };
+
+                document.addEventListener("touchmove", handleTouchMove, { passive: false });
+                document.addEventListener("touchend", handleTouchEnd);
+                document.addEventListener("touchcancel", handleTouchCancel);
+            }
+
+            activeTimelineSessionCleanupRef.current = cleanup;
         },
-        [localTimelineHeight, onTimelineHeightChange],
+        [
+            activateTimelineGestureBlock,
+            applyTimelineHeight,
+            cleanupTimelineResizeSession,
+            onTimelineHeightChange,
+            requestTimelineToggle,
+            releaseTimelineGestureBlock,
+        ],
+    );
+
+    const handleTimelineSashMouseDown = useCallback(
+        (event: React.MouseEvent<HTMLDivElement>) => {
+            event.preventDefault();
+            event.stopPropagation();
+            startTimelineResizeSession({
+                startY: event.clientY,
+                inputType: "mouse",
+                toggleOnTap: false,
+                dragThreshold: 0,
+            });
+        },
+        [startTimelineResizeSession],
+    );
+
+    const handleTimelineSashTouchStart = useCallback(
+        (event: React.TouchEvent<HTMLDivElement>) => {
+            const touch = event.changedTouches[0] ?? event.touches[0];
+            if (!touch) {
+                return;
+            }
+
+            event.stopPropagation();
+            startTimelineResizeSession({
+                startY: touch.clientY,
+                inputType: "touch",
+                toggleOnTap: false,
+                dragThreshold: 0,
+                touchId: touch.identifier,
+            });
+        },
+        [startTimelineResizeSession],
+    );
+
+    const handleTimelineHeaderMouseDown = useCallback(
+        (event: React.MouseEvent<HTMLDivElement>) => {
+            if (!isInMobileDrawer || !effectiveTimelineOpen) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            startTimelineResizeSession({
+                startY: event.clientY,
+                inputType: "mouse",
+                toggleOnTap: false,
+                dragThreshold: TIMELINE_HEADER_DRAG_THRESHOLD_PX,
+            });
+        },
+        [effectiveTimelineOpen, isInMobileDrawer, startTimelineResizeSession],
+    );
+
+    const handleTimelineHeaderTouchStart = useCallback(
+        (event: React.TouchEvent<HTMLDivElement>) => {
+            if (!isInMobileDrawer || !effectiveTimelineOpen) {
+                return;
+            }
+
+            const touch = event.changedTouches[0] ?? event.touches[0];
+            if (!touch) {
+                return;
+            }
+
+            event.stopPropagation();
+            startTimelineResizeSession({
+                startY: touch.clientY,
+                inputType: "touch",
+                toggleOnTap: false,
+                dragThreshold: TIMELINE_HEADER_DRAG_THRESHOLD_PX,
+                touchId: touch.identifier,
+            });
+        },
+        [effectiveTimelineOpen, isInMobileDrawer, startTimelineResizeSession],
     );
 
     // 单击 = 展开 Timeline + 打开文件
+    const effectiveActiveItemPath =
+        shouldUseTapToSelectOpen && selectedItem ? selectedItem.path : activeFilePath;
+
     const handleNoteSingleClick = useCallback(
         (item: NoteReviewItem) => {
-            if (onNoteSelect) {
-                onNoteSelect(item);
+            if (shouldUseTapToSelectOpen) {
+                if (selectedItem?.path === item.path) {
+                    onNoteClick?.(item);
+                    return;
+                }
+
+                onNoteSelect?.(item);
+                return;
             }
-            if (onNoteClick) {
-                onNoteClick(item);
-            }
+
+            onNoteSelect?.(item);
+            onNoteClick?.(item);
         },
-        [onNoteSelect, onNoteClick],
+        [onNoteClick, onNoteSelect, selectedItem, shouldUseTapToSelectOpen],
     );
 
     // 双击保持原样或留空 (单击已处理打开文件)
@@ -1971,7 +2504,13 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
 
     return (
         <div
-            className="sr-note-sidebar"
+            className={[
+                "sr-note-sidebar",
+                isInMobileDrawer ? "sr-note-sidebar--mobile-drawer" : "",
+                isPhoneMobileDrawer ? "sr-note-sidebar--phone-mobile-drawer" : "",
+            ]
+                .filter(Boolean)
+                .join(" ")}
             ref={sidebarRef}
             style={{
                 ["--sr-sidebar-progress-ring-color" as string]: progressRingColor,
@@ -1997,6 +2536,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                         onIgnoreTag={onIgnoreTag}
                         onShowTagContextMenu={onShowTagContextMenu}
                         hideHeader={hideFilterBarHeader}
+                        isPhoneMobileDrawer={isPhoneMobileDrawer}
                         onMobileTagDrop={(notePath, tag) => {
                             if (onTagDrop) {
                                 for (const section of filteredSections) {
@@ -2016,7 +2556,14 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
             )}
 
             {/* List Content */}
-            <div className="sr-note-sidebar__content">
+            <div
+                className={[
+                    "sr-note-sidebar__content",
+                    isTimelineGestureBlocked ? "sr-note-sidebar__content--timeline-gesture-blocked" : "",
+                ]
+                    .filter(Boolean)
+                    .join(" ")}
+            >
                 {filteredSections.length === 0 ? (
                     <div className="sr-note-sidebar__empty">
                         {selectedTags.size > 0 ? (
@@ -2029,11 +2576,12 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                             <SectionGroupModern
                                 key={section.id}
                                 section={section}
-                                activeFilePath={activeFilePath}
+                                activeItemPath={effectiveActiveItemPath}
                                 ignoredTags={ignoredTags}
                                 showSidebarProgressIndicator={showSidebarProgressIndicator}
                                 progressIndicatorMode={progressIndicatorMode}
                                 progressRingDirection={progressRingDirection}
+                                pathTooltipHoverEnabled={pathTooltipHoverEnabled}
                                 filePathTooltipEnabled={filePathTooltipEnabled}
                                 filePathTooltipDelayMs={filePathTooltipDelayMs}
                                 onNoteClick={handleNoteSingleClick}
@@ -2048,8 +2596,17 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
             </div>
 
             {/* Bottom Timeline Drawer */}
-            {isTimelineOpen && (
-                <div className="sr-timeline-sash" onMouseDown={handleTimelineSashMouseDown}>
+            {effectiveTimelineOpen && (
+                <div
+                    className={[
+                        "sr-timeline-sash",
+                        isTimelineResizeActive ? "sr-timeline-sash--dragging" : "",
+                    ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    onMouseDown={handleTimelineSashMouseDown}
+                    onTouchStart={handleTimelineSashTouchStart}
+                >
                     <div className="sr-timeline-sash-handle" />
                 </div>
             )}
@@ -2057,14 +2614,18 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
             <div
                 className="sr-timeline-container"
                 style={{
-                    height: isTimelineOpen ? `${localTimelineHeight}px` : "auto",
+                    height: effectiveTimelineOpen ? `${localTimelineHeight}px` : "auto",
                 }}
             >
                 <TimelinePane
                     app={app}
                     enableDurationPrefixSyntax={enableDurationPrefixSyntax}
-                    isOpen={isTimelineOpen}
-                    onToggle={onTimelineToggle || (() => {})}
+                    isOpen={effectiveTimelineOpen}
+                    onToggle={requestTimelineToggle}
+                    isHeaderDragEnabled={isInMobileDrawer && effectiveTimelineOpen}
+                    isHeaderDragging={isTimelineResizeActive}
+                    onHeaderMouseDown={handleTimelineHeaderMouseDown}
+                    onHeaderTouchStart={handleTimelineHeaderTouchStart}
                     selectedItem={selectedItem}
                     logs={commitLogs}
                     onCommit={handleCommitMessage}

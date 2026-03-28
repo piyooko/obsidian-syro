@@ -7,7 +7,10 @@ import { ItemView, WorkspaceLeaf, Menu, TFile, Notice, Scope, type Modifier } fr
 import { createRoot, Root } from "react-dom/client";
 import React from "react";
 import type SRPlugin from "src/main";
-import { NoteReviewSidebar } from "src/ui/components/NoteReviewSidebar";
+import {
+    MOBILE_TIMELINE_MIN_HEIGHT_PX,
+    NoteReviewSidebar,
+} from "src/ui/components/NoteReviewSidebar";
 import { reviewDecksToSidebarState } from "src/ui/adapters/noteReviewAdapter";
 import { NoteReviewItem } from "src/ui/types/noteReview";
 import {
@@ -24,13 +27,34 @@ import { captureTimelineContext } from "src/ui/timeline/timelineContext";
 // Stable view type id used when registering the sidebar view.
 export const REACT_REVIEW_QUEUE_VIEW_TYPE = "react-review-queue-list-view";
 
+function isPhoneMobileLayout(): boolean {
+    if (typeof document === "undefined") {
+        return false;
+    }
+
+    const hasMobileClass =
+        document.body.classList.contains("is-mobile") ||
+        document.documentElement.classList.contains("is-mobile");
+    const hasTabletClass =
+        document.body.classList.contains("is-tablet") ||
+        document.documentElement.classList.contains("is-tablet");
+
+    return hasMobileClass && !hasTabletClass;
+}
+
 /**
  * React item view for the note review queue.
  */
 
 export class ReactNoteReviewView extends ItemView {
+    private static hasInitializedPhoneDrawerTimelineHeightThisSession = false;
+    private static phoneDrawerTimelineHeightThisSession: number | null = null;
+
     private plugin: SRPlugin;
     private root: Root | null = null;
+    private drawerChromeObserver: MutationObserver | null = null;
+    private observedDrawerInner: HTMLElement | null = null;
+    private scheduledDrawerChromeSyncFrame: number | null = null;
 
     // Timeline state
     private commitStore: ReviewCommitStore | null = null;
@@ -47,6 +71,110 @@ export class ReactNoteReviewView extends ItemView {
         void task.catch((error: unknown) => {
             console.error(`[ReactNoteReviewView] ${label} failed`, error);
         });
+    }
+
+    private getLeafContainer(): HTMLElement | null {
+        const leafWithContainer = this.leaf as WorkspaceLeaf & {
+            containerEl?: HTMLElement;
+        };
+        return leafWithContainer.containerEl instanceof HTMLElement
+            ? leafWithContainer.containerEl
+            : null;
+    }
+
+    private getDrawerInner(): HTMLElement | null {
+        const leafContainer = this.getLeafContainer();
+        const drawerInner = leafContainer?.closest(".workspace-drawer-inner");
+        return drawerInner instanceof HTMLElement ? drawerInner : null;
+    }
+
+    private isForegroundDrawerView(): boolean {
+        const leafContainer = this.getLeafContainer();
+        const activeTabContent = leafContainer?.closest(".workspace-drawer-active-tab-content");
+
+        return (
+            leafContainer instanceof HTMLElement &&
+            activeTabContent instanceof HTMLElement &&
+            this.app.workspace.activeLeaf === this.leaf &&
+            this.leaf.view.getViewType() === REACT_REVIEW_QUEUE_VIEW_TYPE &&
+            leafContainer.classList.contains("mod-active") &&
+            activeTabContent.contains(leafContainer)
+        );
+    }
+
+    private disconnectDrawerChromeObserver(): void {
+        this.drawerChromeObserver?.disconnect();
+        this.drawerChromeObserver = null;
+        this.observedDrawerInner = null;
+    }
+
+    private bindDrawerChromeObserver(): void {
+        const drawerInner = this.getDrawerInner();
+        if (drawerInner === this.observedDrawerInner) {
+            return;
+        }
+
+        this.disconnectDrawerChromeObserver();
+        if (!drawerInner) {
+            return;
+        }
+
+        this.observedDrawerInner = drawerInner;
+        this.drawerChromeObserver = new MutationObserver(() => {
+            this.scheduleDrawerChromeSync();
+        });
+        this.drawerChromeObserver.observe(drawerInner, {
+            attributes: true,
+            attributeFilter: ["class"],
+            childList: true,
+            subtree: true,
+        });
+    }
+
+    private scheduleDrawerChromeSync(): void {
+        if (this.scheduledDrawerChromeSyncFrame !== null) {
+            return;
+        }
+
+        this.scheduledDrawerChromeSyncFrame = window.requestAnimationFrame(() => {
+            this.scheduledDrawerChromeSyncFrame = null;
+            this.syncDrawerChromeInterception();
+        });
+    }
+
+    private syncDrawerChromeInterception(): void {
+        if (!this.root) {
+            this.clearDrawerChromeInterception();
+            return;
+        }
+
+        this.bindDrawerChromeObserver();
+        this.redraw();
+    }
+
+    private clearDrawerChromeInterception(): void {
+        if (this.scheduledDrawerChromeSyncFrame !== null) {
+            window.cancelAnimationFrame(this.scheduledDrawerChromeSyncFrame);
+            this.scheduledDrawerChromeSyncFrame = null;
+        }
+
+        this.disconnectDrawerChromeObserver();
+    }
+
+    private getTimelineHeightForRender(isPhoneMobileDrawerView: boolean): number {
+        if (!isPhoneMobileDrawerView) {
+            return this.timelineHeight;
+        }
+
+        if (!ReactNoteReviewView.hasInitializedPhoneDrawerTimelineHeightThisSession) {
+            ReactNoteReviewView.hasInitializedPhoneDrawerTimelineHeightThisSession = true;
+            ReactNoteReviewView.phoneDrawerTimelineHeightThisSession =
+                MOBILE_TIMELINE_MIN_HEIGHT_PX;
+        }
+
+        return (
+            ReactNoteReviewView.phoneDrawerTimelineHeightThisSession ?? MOBILE_TIMELINE_MIN_HEIGHT_PX
+        );
     }
 
     constructor(leaf: WorkspaceLeaf, plugin: SRPlugin) {
@@ -75,6 +203,22 @@ export class ReactNoteReviewView extends ItemView {
                 this.redraw();
             }),
         );
+        this.registerEvent(
+            this.app.workspace.on("active-leaf-change", () => {
+                this.scheduleDrawerChromeSync();
+            }),
+        );
+        this.registerEvent(
+            this.app.workspace.on("layout-change", () => {
+                this.scheduleDrawerChromeSync();
+            }),
+        );
+        this.registerDomEvent(window, "resize", () => {
+            this.scheduleDrawerChromeSync();
+        });
+        this.registerDomEvent(window, "orientationchange", () => {
+            this.scheduleDrawerChromeSync();
+        });
     }
 
     /** View type id. */
@@ -118,7 +262,7 @@ export class ReactNoteReviewView extends ItemView {
 
         // Mount the React tree.
         this.root = createRoot(contentEl);
-        this.redraw();
+        this.syncDrawerChromeInterception();
 
         // Ensure this view has a scope instance for keyboard bindings.
         if (!this.scope) {
@@ -154,6 +298,8 @@ export class ReactNoteReviewView extends ItemView {
             this.root = null;
         }
 
+        this.clearDrawerChromeInterception();
+
         return Promise.resolve();
     }
 
@@ -162,6 +308,11 @@ export class ReactNoteReviewView extends ItemView {
      */
     public redraw(): void {
         if (!this.root) return;
+
+        this.bindDrawerChromeObserver();
+        const isMobileDrawerView = this.getDrawerInner() !== null;
+        const isPhoneMobileDrawerView = isMobileDrawerView && isPhoneMobileLayout();
+        const timelineHeight = this.getTimelineHeightForRender(isPhoneMobileDrawerView);
 
         const activeFile = this.app.workspace.getActiveFile();
         const data = reviewDecksToSidebarState(this.plugin);
@@ -200,9 +351,13 @@ export class ReactNoteReviewView extends ItemView {
                 onCommit: (path, message) => {
                     this.runAsync(this.handleCommit(path, message), "create timeline commit");
                 },
-                isTimelineOpen: this.isTimelineOpen,
-                onTimelineToggle: () => this.handleTimelineToggle(),
-                timelineHeight: this.timelineHeight,
+                isTimelineOpen: isMobileDrawerView ? true : this.isTimelineOpen,
+                onTimelineToggle: () => {
+                    if (!isMobileDrawerView) {
+                        this.handleTimelineToggle();
+                    }
+                },
+                timelineHeight,
                 onTimelineHeightChange: (height) => this.handleTimelineHeightChange(height),
                 onNoteSelect: (item) => this.handleNoteSelect(item),
                 onNoteDoubleClick: (item) => {
@@ -231,6 +386,7 @@ export class ReactNoteReviewView extends ItemView {
                     this.plugin.data.settings.sidebarFilePathTooltipEnabled ?? true,
                 filePathTooltipDelayMs:
                     this.plugin.data.settings.sidebarFilePathTooltipDelayMs ?? 1000,
+                isForegroundDrawerView: this.isForegroundDrawerView(),
             }),
         );
     }
@@ -715,6 +871,9 @@ export class ReactNoteReviewView extends ItemView {
      */
     private handleTimelineHeightChange(height: number): void {
         this.timelineHeight = height;
+        if (ReactNoteReviewView.hasInitializedPhoneDrawerTimelineHeightThisSession) {
+            ReactNoteReviewView.phoneDrawerTimelineHeightThisSession = height;
+        }
         const sidebarSettings = this.plugin.data.settings as typeof this.plugin.data.settings & {
             sidebarTimelineHeight?: number;
         };

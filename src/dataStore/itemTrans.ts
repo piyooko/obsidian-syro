@@ -33,7 +33,6 @@ import { Card } from "src/Card";
 import { Tags } from "src/tags";
 import { SRSettings } from "src/settings";
 import { INoteEaseList } from "src/NoteEaseList";
-import { algorithmNames } from "src/algorithms/algorithms";
 import { DEFAULT_DECKNAME } from "src/constants";
 
 export class ItemTrans {
@@ -90,18 +89,11 @@ export class ItemTrans {
                     store.trackFile(note.path, deckname, false);
                     noteItem = store.getNoteItem(note.path);
                 }
-                const algorithm = String(settings.algorithm);
-                if (
-                    algorithm === String(algorithmNames.Anki) ||
-                    algorithm === String(algorithmNames.Default) ||
-                    algorithm === String(algorithmNames.SM2)
-                ) {
-                    const sched = noteItem?.getSched() ?? null;
-                    if (sched != null) {
-                        const ease: number = parseFloat(sched[3]);
-                        if (!isNaN(ease)) {
-                            easeByPath.setEaseForPath(note.path, ease);
-                        }
+                const sched = noteItem?.getSched() ?? null;
+                if (sched != null) {
+                    const ease = parseFloat(sched[3]);
+                    if (!isNaN(ease)) {
+                        easeByPath.setEaseForPath(note.path, ease);
                     }
                 }
                 ItemTrans._toRevDeck(reviewDecks[deckname], note);

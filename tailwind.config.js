@@ -1,12 +1,10 @@
 /** @type {import('tailwindcss').Config} */
 export default {
     content: ["./src/**/*.{js,ts,jsx,tsx}"],
-    // 使用 prefix 避免与 Obsidian 内置样式冲突
     prefix: "sr-",
     darkMode: "class",
     theme: {
         extend: {
-            // Linear 风格配色 (与 UIsandbox 保持一致)
             colors: {
                 background: "#0B0C0E",
                 surface: "#141517",
@@ -27,8 +25,7 @@ export default {
         },
     },
     plugins: [],
-    // 关键：确保 Tailwind 在 Obsidian 环境中正确工作
     corePlugins: {
-        preflight: false, // 禁用 Tailwind 的全局重置，避免破坏 Obsidian 样式
+        preflight: false,
     },
 };

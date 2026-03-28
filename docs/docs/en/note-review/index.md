@@ -12,7 +12,7 @@ Unlike flashcard review, which tests small knowledge units, note review works at
 
 To implement incremental reading inside Obsidian, Syro provides a toolset built around the ideas of a queue and a preserved context:
 
--   **Build a reading queue**: run the `Track` action on notes to hand them over to the underlying scheduling algorithm, such as WMS.
+-   **Build a reading queue**: run the `Track` action on notes to hand them over to the built-in WMS scheduler.
 -   **Allocate reading energy**: use the review-queue sidebar on the right, where the system ranks the notes most worth reading today.
 -   **Preserve reading state**: with the Timeline mechanism, the system records your scroll position when you interrupt reading so the next session can resume seamlessly.
 

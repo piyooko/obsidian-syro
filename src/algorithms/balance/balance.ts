@@ -9,8 +9,8 @@
  * 1. src/dataStore/repetitionItem.ts
  *
  * 哪些文件会用到它：
- * 1. src/algorithms/scheduling_default.ts
- * 2. src/algorithms/anki.ts (可能被调用)
+ * 1. src/algorithms/fsrs.ts
+ * 2. src/algorithms/weightedMultiplier.ts
  */
 /**
  * [辅助] 负载均衡逻辑，防止某一天的复习量过大。

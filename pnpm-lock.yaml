@@ -14,6 +14,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.38.6
         version: 6.39.17
+      '@emotion/is-prop-valid':
+        specifier: ^1.4.0
+        version: 1.4.0
       chart.js:
         specifier: ^4.4.8
         version: 4.5.0
@@ -22,7 +25,7 @@ importers:
         version: 0.4.0
       framer-motion:
         specifier: ^12.23.26
-        version: 12.35.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+        version: 12.35.2(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       lucide-react:
         specifier: ^0.562.0
         version: 0.562.0(react@19.2.4)
@@ -345,6 +348,12 @@ packages:
 
   '@emnapi/wasi-threads@1.1.0':
     resolution: {integrity: sha512-WI0DdZ8xFSbgMjR1sFsKABJ/C5OnRrjT06JXbZKexJGrDuPTzZdDYfFlsgcCXCyf+suG5QU2e/y1Wo2V/OapLQ==}
+
+  '@emotion/is-prop-valid@1.4.0':
+    resolution: {integrity: sha512-QgD4fyscGcbbKwJmqNvUMSE02OsHUa+lAWKdEUIJKgqe5IwRSKd7+KhibEWdaKwgjLj0DRSHA9biAIqGBk05lw==}
+
+  '@emotion/memoize@0.9.0':
+    resolution: {integrity: sha512-30FAj7/EoJ5mwVPOWhAyCX+FPfMDrVecJAM+Iw9NRoSl4BBAQeqj4cApHHUXOVvIPgLVDsCFoz/hGD+5QQD1GQ==}
 
   '@esbuild/aix-ppc64@0.19.12':
     resolution: {integrity: sha512-bmoCYyWdEL3wDQIVbcyzRyeKLgk2WtWLTWz1ZIAZF/EGbNOwSA6ew3PftJ1PqMiOOGu0OyFMzG53L0zqIpPeNA==}
@@ -3744,6 +3753,12 @@ snapshots:
       tslib: 2.6.1
     optional: true
 
+  '@emotion/is-prop-valid@1.4.0':
+    dependencies:
+      '@emotion/memoize': 0.9.0
+
+  '@emotion/memoize@0.9.0': {}
+
   '@esbuild/aix-ppc64@0.19.12':
     optional: true
 
@@ -5549,12 +5564,13 @@ snapshots:
 
   fraction.js@5.3.4: {}
 
-  framer-motion@12.35.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
+  framer-motion@12.35.2(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
     dependencies:
       motion-dom: 12.35.2
       motion-utils: 12.29.2
       tslib: 2.6.1
     optionalDependencies:
+      '@emotion/is-prop-valid': 1.4.0
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
 

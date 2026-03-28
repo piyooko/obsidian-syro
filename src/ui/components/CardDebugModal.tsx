@@ -14,7 +14,7 @@
  * 1. src/ui/components/LinearCard.tsx — 卡片复习界面，用户在那里点击“详情”就会弹出这个窗口
  */
 
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { FC } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AlertCircle, Save } from "lucide-react";
@@ -100,7 +100,41 @@ interface CardDebugModalProps {
 export const CardDebugModal: FC<CardDebugModalProps> = ({ isOpen, onClose, data }) => {
     if (!data) return null;
 
-    const algorithmData = getAlgorithmDebugData(data.data);
+    const algorithmData = useMemo(() => getAlgorithmDebugData(data.data), [data.data]);
+    const rawDataSource = data.data ?? data;
+    const [isRawExpanded, setIsRawExpanded] = useState(false);
+    const [rawJson, setRawJson] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!isOpen) {
+            setIsRawExpanded(false);
+            setRawJson(null);
+        }
+    }, [isOpen, data]);
+
+    useEffect(() => {
+        if (!isOpen || !isRawExpanded) {
+            return;
+        }
+
+        let cancelled = false;
+        const timeoutId = window.setTimeout(() => {
+            if (cancelled) {
+                return;
+            }
+
+            try {
+                setRawJson(JSON.stringify(rawDataSource, null, 2));
+            } catch {
+                setRawJson("[unserializable object]");
+            }
+        }, 0);
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timeoutId);
+        };
+    }, [isOpen, isRawExpanded, rawDataSource]);
 
     return (
         <AnimatePresence>
@@ -117,10 +151,10 @@ export const CardDebugModal: FC<CardDebugModalProps> = ({ isOpen, onClose, data 
 
                     {/* 模态框本体 */}
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                        transition={{ duration: 0.15, ease: "easeOut" }}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 6 }}
+                        transition={{ duration: 0.12, ease: "easeOut" }}
                         className="sr-debug-modal"
                     >
                         {/* Header */}
@@ -242,12 +276,25 @@ export const CardDebugModal: FC<CardDebugModalProps> = ({ isOpen, onClose, data 
                             )}
 
                             {/* Raw JSON Preview */}
-                            <div className="sr-debug-raw">
-                                <div className="sr-debug-raw-title">{t("DEBUG_SECTION_RAW")}</div>
-                                <pre className="sr-debug-raw-content">
-                                    {JSON.stringify(data.data || data, null, 2)}
-                                </pre>
-                            </div>
+                            <details
+                                className="sr-debug-raw"
+                                open={isRawExpanded}
+                                onToggle={(event) => {
+                                    setIsRawExpanded(event.currentTarget.open);
+                                }}
+                            >
+                                <summary className="sr-debug-raw-summary">
+                                    <span className="sr-debug-raw-title">
+                                        {t("DEBUG_SECTION_RAW")}
+                                    </span>
+                                    <span className="sr-debug-raw-toggle" aria-hidden="true">
+                                        {isRawExpanded ? "-" : "+"}
+                                    </span>
+                                </summary>
+                                {isRawExpanded && (
+                                    <pre className="sr-debug-raw-content">{rawJson ?? "..."}</pre>
+                                )}
+                            </details>
                         </div>
 
                         {/* Footer */}

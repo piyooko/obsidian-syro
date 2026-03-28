@@ -5,8 +5,11 @@ import { RepetitionItem } from "src/dataStore/repetitionItem";
 import { globalDateProvider } from "src/util/DateProvider";
 import { DateUtils, debug } from "src/util/utils_recall";
 import { FsrsData } from "../fsrs";
-import { AnkiData } from "../anki";
 import { WMSData } from "../weightedMultiplier";
+
+type LegacyScheduleData = {
+    lastInterval: number;
+};
 
 export function postponeItems(items: RepetitionItem[], days?: number): RepetitionItem[] {
     const now = Date.now();
@@ -56,7 +59,7 @@ function manualPostpone(items: RepetitionItem[], days: number) {
             const data = item.data as WMSData;
             data.currentInterval = days;
         } else {
-            const data = item.data as AnkiData;
+            const data = item.data as LegacyScheduleData;
             data.lastInterval = days;
         }
     });

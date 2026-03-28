@@ -98,6 +98,7 @@ export class TabView extends ItemView {
                     this.app,
                     this.plugin,
                     this.reviewSequencer,
+                    this.leaf,
                     this.viewContentEl,
                     this,
                 );

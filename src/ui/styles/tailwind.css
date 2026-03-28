@@ -17,6 +17,9 @@
 @import "./settings-panel.css";
 @import "./editor.css";
 @import "./latex-popover.css";
+@import "./modal-utilities.css";
+@import "./reviewer-fixes.css";
+@import "./status-bar.css";
 @import "./sync-progress-tip.css";
 
 /* ==========================================

@@ -1,20 +1,11 @@
-/**
- * [核心 UI] 新版牌组树状列表。
- */
-/**
- * React DeckTree 组件
- *
- * 显示牌组树状结构，支持折叠/展开、点击进入复习
- * 采用嵌套 DOM + 左侧边框实现树状导引线 (Obsidian 风格)
- */
 /** @jsxImportSource react */
 import React, { useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Platform } from "obsidian";
 import { DeckState } from "../types/deckTypes";
 import "../styles/deck-tree.css";
 import { t } from "src/lang/helpers";
 
-// 内联 SVG 图标 (使用 framer-motion 实现旋转动画)
 const CollapseIcon: React.FC<{ isCollapsed: boolean; className?: string }> = ({
     isCollapsed,
     className,
@@ -32,7 +23,6 @@ const CollapseIcon: React.FC<{ isCollapsed: boolean; className?: string }> = ({
         transition={{ duration: 0.2, ease: "easeInOut" }}
         className={className}
     >
-        {/* V形箭头 (Chevron Right)，旋转90度变成向下 */}
         <path
             d="M9 18L15 12L9 6"
             fill="none"
@@ -44,7 +34,6 @@ const CollapseIcon: React.FC<{ isCollapsed: boolean; className?: string }> = ({
     </motion.svg>
 );
 
-// 齿轮图标
 const SettingsIcon: React.FC = () => (
     <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -63,7 +52,6 @@ const SettingsIcon: React.FC = () => (
     </svg>
 );
 
-// 鍚屾鍥炬爣
 const SyncIcon: React.FC<{ isSyncing?: boolean }> = ({ isSyncing = false }) => (
     <motion.svg
         xmlns="http://www.w3.org/2000/svg"
@@ -92,7 +80,6 @@ const SyncIcon: React.FC<{ isSyncing?: boolean }> = ({ isSyncing = false }) => (
 );
 
 // ==========================================
-// 表头组件
 // ==========================================
 interface DeckHeaderProps {
     totalNew: number;
@@ -100,6 +87,7 @@ interface DeckHeaderProps {
     totalDue: number;
     onSync?: () => void;
     isSyncing?: boolean;
+    compact?: boolean;
 }
 
 const DeckHeader: React.FC<DeckHeaderProps> = ({
@@ -108,9 +96,29 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
     totalDue,
     onSync,
     isSyncing = false,
+    compact = false,
 }) => (
-    <div className="sr-deck-header sr-deck-header-desktop">
-        <div className="sr-deck-header-name">DECK</div>
+    <div
+        className={`sr-deck-header sr-deck-header-desktop ${compact ? "sr-deck-header-compact" : ""}`}
+    >
+        {compact ? (
+            <div className="sr-deck-header-name sr-deck-header-name-compact">
+                {onSync && (
+                    <button
+                        type="button"
+                        className={`sr-deck-sync-btn sr-deck-sync-btn--compact-header ${isSyncing ? "is-syncing" : ""}`}
+                        onClick={onSync}
+                        disabled={isSyncing}
+                        aria-label={t("DECK_TREE_FULL_SYNC_TITLE")}
+                    >
+                        <SyncIcon isSyncing={isSyncing} />
+                    </button>
+                )}
+                <span className="sr-deck-header-name-label">DECK</span>
+            </div>
+        ) : (
+            <div className="sr-deck-header-name">DECK</div>
+        )}
         <div className={`sr-deck-header-stat new ${totalNew === 0 ? "dimmed" : ""}`}>
             {t("DECK_TREE_HEADER_NEW")}
         </div>
@@ -120,24 +128,25 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
         <div className={`sr-deck-header-stat due ${totalDue === 0 ? "dimmed" : ""}`}>
             {t("DECK_TREE_HEADER_DUE")}
         </div>
-        <div className="sr-deck-header-action">
-            {onSync && (
-                <button
-                    type="button"
-                    className={`sr-deck-sync-btn ${isSyncing ? "is-syncing" : ""}`}
-                    onClick={onSync}
-                    disabled={isSyncing}
-                    aria-label={t("DECK_TREE_FULL_SYNC_TITLE")}
-                >
-                    <SyncIcon isSyncing={isSyncing} />
-                </button>
-            )}
-        </div>
+        {!compact && (
+            <div className="sr-deck-header-action">
+                {onSync && (
+                    <button
+                        type="button"
+                        className={`sr-deck-sync-btn ${isSyncing ? "is-syncing" : ""}`}
+                        onClick={onSync}
+                        disabled={isSyncing}
+                        aria-label={t("DECK_TREE_FULL_SYNC_TITLE")}
+                    >
+                        <SyncIcon isSyncing={isSyncing} />
+                    </button>
+                )}
+            </div>
+        )}
     </div>
 );
 
 // ==========================================
-// 辅助函数：计算总计统计数据
 // ==========================================
 function calculateTotalStats(decks: DeckState[]): { new: number; learn: number; due: number } {
     const stats = { new: 0, learn: 0, due: 0 };
@@ -156,24 +165,20 @@ function calculateTotalStats(decks: DeckState[]): { new: number; learn: number; 
 }
 
 // ==========================================
-// 排序函数：文件夹优先，文件在后
 // ==========================================
 function sortDecksWithFoldersFirst(decks: DeckState[]): DeckState[] {
     return [...decks].sort((a, b) => {
         const aHasChildren = a.subdecks && a.subdecks.length > 0;
         const bHasChildren = b.subdecks && b.subdecks.length > 0;
 
-        // 文件夹优先
         if (aHasChildren && !bHasChildren) return -1;
         if (!aHasChildren && bHasChildren) return 1;
 
-        // 同类型按名称排序
         return a.deckName.localeCompare(b.deckName);
     });
 }
 
 // ==========================================
-// 单行牌组组件 (递归核心 - 嵌套 DOM 结构)
 // ==========================================
 interface DeckRowProps {
     deck: DeckState;
@@ -182,6 +187,7 @@ interface DeckRowProps {
     onCollapseChange?: (fullPath: string, isCollapsed: boolean) => void;
     onSync?: () => void;
     recentDeckPath?: string | null;
+    compact?: boolean;
 }
 
 const DeckRow: React.FC<DeckRowProps> = ({
@@ -190,12 +196,12 @@ const DeckRow: React.FC<DeckRowProps> = ({
     onSettingsClick,
     onCollapseChange,
     recentDeckPath,
+    compact = false,
 }) => {
     const [isCollapsed, setIsCollapsed] = useState(deck.isCollapsed);
     const hasChildren = deck.subdecks && deck.subdecks.length > 0;
     const isRecentlyReviewed = !!recentDeckPath && deck.fullPath === recentDeckPath;
 
-    // 排序后的子牌组
     const sortedSubdecks = useMemo(() => {
         if (!hasChildren) return [];
         return sortDecksWithFoldersFirst(deck.subdecks);
@@ -227,14 +233,14 @@ const DeckRow: React.FC<DeckRowProps> = ({
 
     return (
         <div className="sr-deck-node">
-            {/* 行内容 */}
             <div
-                onClick={handleRowClick}
-                className={`sr-deck-row ${isRecentlyReviewed ? "sr-deck-row-recent" : ""}`}
+                onClick={compact ? undefined : handleRowClick}
+                className={`sr-deck-row ${compact ? "sr-deck-row-compact" : ""} ${isRecentlyReviewed ? "sr-deck-row-recent" : ""}`}
             >
-                {/* 牌组名称列 */}
-                <div className="sr-deck-name-col">
-                    {/* 折叠箭头区域 - 固定宽度占位 */}
+                <div
+                    onClick={compact ? handleRowClick : undefined}
+                    className={`sr-deck-name-col ${compact ? "sr-deck-name-col-clickable" : ""}`}
+                >
                     <span
                         onClick={hasChildren ? toggleCollapse : undefined}
                         className={`sr-deck-collapse-btn ${hasChildren ? (isCollapsed ? "sr-collapsed" : "sr-expanded") : "sr-no-children"}`}
@@ -242,37 +248,56 @@ const DeckRow: React.FC<DeckRowProps> = ({
                         {hasChildren && <CollapseIcon isCollapsed={isCollapsed} />}
                     </span>
 
-                    {/* 牌组名 */}
                     <span className="sr-deck-name">{deck.deckName}</span>
                 </div>
 
-                {/* 统计数字 */}
-                <div className="sr-deck-stats-group">
-                    <div className={`sr-deck-stat new ${deck.newCount === 0 ? "zero" : ""}`}>
-                        {deck.newCount}
-                    </div>
-                    <div
-                        className={`sr-deck-stat learning ${deck.learningCount === 0 ? "zero" : ""}`}
+                {compact ? (
+                    <button
+                        type="button"
+                        onClick={handleSettingsClick}
+                        className="sr-deck-stats-group sr-deck-stats-trigger"
+                        aria-label={t("DECK_TREE_OPTIONS_TITLE")}
                     >
-                        {deck.learningCount}
+                        <span className={`sr-deck-stat new ${deck.newCount === 0 ? "zero" : ""}`}>
+                            {deck.newCount}
+                        </span>
+                        <span
+                            className={`sr-deck-stat learning ${deck.learningCount === 0 ? "zero" : ""}`}
+                        >
+                            {deck.learningCount}
+                        </span>
+                        <span className={`sr-deck-stat due ${deck.dueCount === 0 ? "zero" : ""}`}>
+                            {deck.dueCount}
+                        </span>
+                    </button>
+                ) : (
+                    <div className="sr-deck-stats-group">
+                        <span className={`sr-deck-stat new ${deck.newCount === 0 ? "zero" : ""}`}>
+                            {deck.newCount}
+                        </span>
+                        <span
+                            className={`sr-deck-stat learning ${deck.learningCount === 0 ? "zero" : ""}`}
+                        >
+                            {deck.learningCount}
+                        </span>
+                        <span className={`sr-deck-stat due ${deck.dueCount === 0 ? "zero" : ""}`}>
+                            {deck.dueCount}
+                        </span>
                     </div>
-                    <div className={`sr-deck-stat due ${deck.dueCount === 0 ? "zero" : ""}`}>
-                        {deck.dueCount}
-                    </div>
-                </div>
+                )}
 
-                {/* 设置齿轮 */}
-                <button
-                    type="button"
-                    onClick={handleSettingsClick}
-                    className="sr-deck-settings-btn"
-                    aria-label={t("DECK_TREE_OPTIONS_TITLE")}
-                >
-                    <SettingsIcon />
-                </button>
+                {!compact && (
+                    <button
+                        type="button"
+                        onClick={handleSettingsClick}
+                        className="sr-deck-settings-btn"
+                        aria-label={t("DECK_TREE_OPTIONS_TITLE")}
+                    >
+                        <SettingsIcon />
+                    </button>
+                )}
             </div>
 
-            {/* 子牌组容器 - 嵌套结构 + 左侧导引线 */}
             <AnimatePresence initial={false}>
                 {!isCollapsed && hasChildren && (
                     <motion.div
@@ -290,6 +315,7 @@ const DeckRow: React.FC<DeckRowProps> = ({
                                 onSettingsClick={onSettingsClick}
                                 onCollapseChange={onCollapseChange}
                                 recentDeckPath={recentDeckPath}
+                                compact={compact}
                             />
                         ))}
                     </motion.div>
@@ -300,16 +326,11 @@ const DeckRow: React.FC<DeckRowProps> = ({
 };
 
 // ==========================================
-// 主容器组件
 // ==========================================
 interface DeckTreeProps {
-    /** 牌组列表 */
     decks: DeckState[];
-    /** 点击牌组回调 */
     onDeckClick?: (deck: DeckState) => void;
-    /** 点击设置按钮回调 */
     onSettingsClick?: (deck: DeckState, anchorEl: HTMLElement) => void;
-    /** 折叠状态变化回调 (用于持久化) */
     onCollapseChange?: (fullPath: string, isCollapsed: boolean) => void;
     onSync?: () => void;
     isSyncing?: boolean;
@@ -325,10 +346,10 @@ export const DeckTree: React.FC<DeckTreeProps> = ({
     isSyncing = false,
     recentDeckPath,
 }) => {
-    // 排序：文件夹优先
+    const isPhoneLayout = Platform.isPhone;
+
     const sortedDecks = useMemo(() => sortDecksWithFoldersFirst(decks), [decks]);
 
-    // 计算总计统计数据 (用于表头颜色控制)
     const totalStats = useMemo(() => calculateTotalStats(decks), [decks]);
 
     return (
@@ -339,6 +360,7 @@ export const DeckTree: React.FC<DeckTreeProps> = ({
                 totalDue={totalStats.due}
                 onSync={onSync}
                 isSyncing={isSyncing}
+                compact={isPhoneLayout}
             />
             <div className="sr-deck-list">
                 {sortedDecks.map((deck) => (
@@ -349,6 +371,7 @@ export const DeckTree: React.FC<DeckTreeProps> = ({
                         onSettingsClick={onSettingsClick}
                         onCollapseChange={onCollapseChange}
                         recentDeckPath={recentDeckPath}
+                        compact={isPhoneLayout}
                     />
                 ))}
             </div>

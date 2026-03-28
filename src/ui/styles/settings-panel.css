@@ -429,13 +429,19 @@
     margin-top: 0;
     margin-left: auto;
     flex: 0 0 auto;
-    width: 38px;
-    min-width: 38px;
-    max-width: 38px;
+    width: 30px;
+    min-width: 30px;
+    max-width: 30px;
 }
 
 .sr-settings-panel .setting-item.setting-item--color .setting-item-control > * {
     flex-shrink: 0;
+}
+
+body:not(.is-mobile) .sr-settings-panel .setting-item.setting-item--color .setting-item-control {
+    width: 30px;
+    min-width: 30px;
+    max-width: 30px;
 }
 
 /* ==========================================
@@ -460,6 +466,14 @@
     border-color: var(--background-modifier-border-hover);
 }
 
+.theme-light .sr-settings-panel .setting-items select,
+.theme-light .sr-settings-panel .setting-items input[type="text"],
+.theme-light .sr-settings-panel .setting-items input[type="number"],
+.theme-light .sr-settings-panel .setting-items textarea,
+.theme-light .sr-settings-panel input.sr-input-compact {
+    background-color: #f6f6f6;
+}
+
 .sr-settings-panel .setting-item-control > textarea {
     width: 100%;
     min-height: 104px;
@@ -482,12 +496,12 @@
 }
 
 .is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container:focus-visible,
-.is-mobile .sr-deck-options-anchor-panel .mod-toggle .checkbox-container:focus-visible {
+.sr-deck-options-anchor-panel .mod-toggle .checkbox-container:focus-visible {
     outline: var(--toggle-border-width) solid var(--background-modifier-border-focus);
 }
 
 .is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container:after,
-.is-mobile .sr-deck-options-anchor-panel .mod-toggle .checkbox-container:after {
+.sr-deck-options-anchor-panel .mod-toggle .checkbox-container:after {
     width: var(--toggle-thumb-width);
     height: var(--toggle-thumb-height);
     margin: var(--toggle-border-width) 0 0 0;
@@ -495,7 +509,7 @@
 }
 
 .is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container.is-enabled:after,
-.is-mobile .sr-deck-options-anchor-panel .mod-toggle .checkbox-container.is-enabled:after {
+.sr-deck-options-anchor-panel .mod-toggle .checkbox-container.is-enabled:after {
     transform: translate3d(
         calc(var(--toggle-width) - var(--toggle-thumb-width) - var(--toggle-border-width)),
         0,
@@ -508,15 +522,14 @@
     .sr-settings-panel
     .mod-toggle
     .checkbox-container.is-enabled:active:after,
-.is-mobile
-    .sr-deck-options-anchor-panel
+.sr-deck-options-anchor-panel
     .mod-toggle
     .checkbox-container.is-enabled:active:after {
     left: -4px;
 }
 
 .is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container:active:after,
-.is-mobile .sr-deck-options-anchor-panel .mod-toggle .checkbox-container:active:after {
+.sr-deck-options-anchor-panel .mod-toggle .checkbox-container:active:after {
     opacity: var(--toggle-thumb-opacity-active);
     width: calc(var(--toggle-thumb-width) + var(--toggle-border-width) * 4);
     height: calc(var(--toggle-thumb-height) + var(--toggle-border-width) * 4);
@@ -541,14 +554,58 @@
 }
 
 .sr-settings-panel .setting-items input[type="color"] {
-    width: 38px;
-    height: 38px;
+    width: 30px;
+    height: 30px;
+    display: block;
+    box-sizing: border-box;
     padding: 0;
     border: none;
     border-radius: var(--sr-settings-color-radius);
     background: transparent;
     box-shadow: none;
     cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    overflow: hidden;
+}
+
+.sr-settings-panel .setting-items .sr-color-input-shell {
+    position: relative;
+    display: block;
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    max-width: 30px;
+    border-radius: var(--sr-settings-color-radius);
+    overflow: hidden;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.sr-settings-panel .setting-items .sr-color-input-shell > .sr-color-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    max-width: none;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.sr-settings-panel .setting-items .sr-color-input-swatch {
+    display: block;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: inherit;
+    background-color: transparent;
+}
+
+.sr-settings-panel .setting-items .sr-color-input-shell:focus-within .sr-color-input-swatch {
+    outline: 2px solid var(--background-modifier-border-focus);
+    outline-offset: -2px;
 }
 
 .sr-settings-panel .setting-items input[type="color"]::-webkit-color-swatch-wrapper {
@@ -563,6 +620,36 @@
 .sr-settings-panel .setting-items input[type="color"]::-moz-color-swatch {
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--sr-settings-color-radius);
+}
+
+body:not(.is-mobile) .sr-settings-panel .setting-items input[type="color"] {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    max-width: 30px;
+    line-height: 0;
+}
+
+body:not(.is-mobile) .sr-settings-panel .setting-items .sr-color-input-shell {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    max-width: 30px;
+}
+
+body:not(.is-mobile) .sr-settings-panel .setting-items input[type="color"]::-webkit-color-swatch-wrapper {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+}
+
+body:not(.is-mobile) .sr-settings-panel .setting-items input[type="color"]::-webkit-color-swatch,
+body:not(.is-mobile) .sr-settings-panel .setting-items input[type="color"]::-moz-color-swatch {
+    display: block;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    border-width: 2px;
 }
 
 .sr-settings-panel .sr-license-key-input {
@@ -719,15 +806,18 @@ body:not(.is-mobile) .sr-settings-container .sr-settings-panel {
     padding-bottom: 0;
 }
 
-body:not(.is-mobile) .sr-settings-container .sr-settings-panel .setting-items > .setting-item.mod-toggle {
+body:not(.is-mobile) .sr-settings-container .sr-settings-panel .setting-items > .setting-item.mod-toggle,
+body:not(.is-mobile) .sr-deck-options-anchor-panel .setting-items > .setting-item.mod-toggle {
     align-items: center !important;
 }
 
-body:not(.is-mobile) .sr-settings-container .sr-settings-panel .setting-item.mod-toggle .setting-item-control {
+body:not(.is-mobile) .sr-settings-container .sr-settings-panel .setting-item.mod-toggle .setting-item-control,
+body:not(.is-mobile) .sr-deck-options-anchor-panel .setting-item.mod-toggle .setting-item-control {
     align-self: center !important;
 }
 
-body:not(.is-mobile) .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container {
+body:not(.is-mobile) .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container,
+body:not(.is-mobile) .sr-deck-options-anchor-panel .mod-toggle .checkbox-container {
     line-height: normal;
     min-width: auto;
     max-width: none;
@@ -735,12 +825,14 @@ body:not(.is-mobile) .sr-settings-container .sr-settings-panel .mod-toggle .chec
     max-height: none;
 }
 
-body:not(.is-mobile) .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container input {
+body:not(.is-mobile) .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container input,
+body:not(.is-mobile) .sr-deck-options-anchor-panel .mod-toggle .checkbox-container input {
     appearance: auto;
     -webkit-appearance: auto;
 }
 
-body:not(.is-mobile) .sr-settings-container .sr-settings-panel .mod-toggle .setting-item-control > .checkbox-container {
+body:not(.is-mobile) .sr-settings-container .sr-settings-panel .mod-toggle .setting-item-control > .checkbox-container,
+body:not(.is-mobile) .sr-deck-options-anchor-panel .mod-toggle .setting-item-control > .checkbox-container {
     min-width: auto;
     max-width: none;
 }
@@ -907,8 +999,15 @@ body.is-phone .modal.mod-settings .vertical-tab-content.sr-settings-container {
 }
 
 .is-mobile .sr-settings-container .sr-settings-panel .setting-items input[type="color"] {
-    width: 44px;
-    height: 44px;
+    width: 30px;
+    height: 30px;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .setting-items .sr-color-input-shell {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    max-width: 30px;
 }
 
 .is-mobile .sr-settings-container .sr-settings-panel .setting-items input[type="color"]::-webkit-color-swatch,
@@ -1135,9 +1234,9 @@ body.is-mobile
     margin-top: 0;
     margin-left: auto;
     flex: 0 0 auto;
-    width: 44px;
-    min-width: 44px;
-    max-width: 44px;
+    width: 30px;
+    min-width: 30px;
+    max-width: 30px;
 }
 
 body.is-mobile
@@ -1588,7 +1687,7 @@ body.is-mobile
     gap: var(--size-4-3);
     padding: var(--size-4-3) var(--size-4-6);
     border-top: 1px solid var(--background-modifier-border);
-    background-color: var(--background-primary);
+    background-color: var(--background-secondary);
     flex-shrink: 0;
 }
 
@@ -1607,4 +1706,156 @@ body.is-mobile
 .is-mobile .modal.sr-folder-tracking-modal-shell {
     width: calc(100vw - 16px);
     max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+}
+
+.is-mobile .modal.sr-folder-tracking-modal-shell .modal-close-button {
+    top: var(--size-4-3);
+    right: var(--size-4-3);
+}
+
+.is-mobile .sr-folder-tracking-panel {
+    min-height: 0;
+    max-height: none;
+}
+
+.is-mobile .sr-folder-tracking-panel .sr-style-setting-header {
+    padding: var(--size-4-6) calc(var(--size-4-6) + var(--touch-size-l)) var(--size-4-2)
+        var(--size-4-6);
+}
+
+.is-mobile .sr-folder-tracking-path {
+    padding: 0 calc(var(--size-4-6) + var(--touch-size-l)) var(--size-4-4) var(--size-4-6);
+}
+
+.is-mobile .sr-folder-tracking-body {
+    min-height: 0;
+    padding: 0 8px var(--size-4-4);
+}
+
+.is-mobile .sr-folder-tracking-body .sr-setting-section {
+    margin-bottom: 18px;
+}
+
+.is-mobile .sr-folder-tracking-body .setting-item-heading {
+    padding: 0 8px;
+    margin-bottom: 8px;
+}
+
+.is-mobile .sr-folder-tracking-body .setting-items {
+    padding: 14px 16px;
+}
+
+.is-mobile .sr-folder-tracking-body .setting-item {
+    flex-wrap: nowrap;
+    gap: 12px 14px;
+    min-height: 0;
+    padding: 12px 0;
+}
+
+.is-mobile .sr-folder-tracking-body .setting-item-info {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-right: 12px;
+}
+
+.is-mobile .sr-folder-tracking-body .setting-item-name {
+    font-size: 16px;
+    line-height: 1.28;
+    font-weight: 600;
+}
+
+.is-mobile .sr-folder-tracking-body .setting-item-description {
+    margin-top: 7px;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.is-mobile .sr-folder-tracking-body .setting-item-control {
+    flex: 0 1 auto;
+    width: auto;
+    margin-left: auto;
+    min-width: 0;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.is-mobile .sr-folder-tracking-body .setting-item-control > * {
+    max-width: 100%;
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+.is-mobile .sr-folder-tracking-body .setting-item.mod-toggle {
+    flex-wrap: nowrap;
+}
+
+.is-mobile .sr-folder-tracking-body .mod-toggle .setting-item-control {
+    align-self: center;
+    margin-top: 2px;
+    margin-left: auto;
+    flex: 0 0 auto;
+    width: var(--toggle-width);
+    min-width: var(--toggle-width);
+    max-width: var(--toggle-width);
+}
+
+.is-mobile .sr-folder-tracking-body .mod-toggle .setting-item-control > * {
+    flex-shrink: 0;
+}
+
+.is-mobile .sr-folder-tracking-body .sr-folder-tracking-tags-setting {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.is-mobile .sr-folder-tracking-body .sr-folder-tracking-tags-setting .setting-item-info {
+    width: 100%;
+    padding-right: 0;
+}
+
+.is-mobile .sr-folder-tracking-body .sr-folder-tracking-tags-setting .setting-item-control {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+}
+
+.is-mobile .sr-folder-tracking-textarea {
+    min-width: 0;
+    min-height: 120px;
+}
+
+.is-mobile .sr-folder-tracking-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--size-4-3);
+    padding: var(--size-4-3) var(--size-4-4) max(var(--size-4-3), var(--safe-area-inset-bottom));
+}
+
+.is-mobile .sr-folder-tracking-footer-note {
+    width: 100%;
+    max-width: none;
+}
+
+.is-mobile .sr-folder-tracking-actions {
+    width: 100%;
+    margin-left: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--size-4-2);
+}
+
+.is-mobile .sr-folder-tracking-actions > button {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+}
+
+.is-mobile .sr-folder-tracking-actions > button:first-child {
+    grid-column: 1 / -1;
+    min-height: var(--input-height);
+    height: auto;
+    white-space: normal;
+    line-height: 1.35;
 }
