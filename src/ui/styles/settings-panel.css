@@ -445,8 +445,12 @@
     flex-shrink: 0;
     margin: 0;
     line-height: 0;
+    width: var(--toggle-width);
     min-width: var(--toggle-width);
+    max-width: var(--toggle-width);
+    height: calc(var(--toggle-thumb-height) + var(--toggle-border-width) * 2);
     min-height: calc(var(--toggle-thumb-height) + var(--toggle-border-width) * 2);
+    max-height: calc(var(--toggle-thumb-height) + var(--toggle-border-width) * 2);
 }
 
 .sr-settings-panel .mod-toggle .checkbox-container input {
@@ -771,6 +775,14 @@
     align-self: start;
     margin-top: 2px;
     margin-left: auto;
+    flex: 0 0 auto;
+    width: var(--toggle-width);
+    min-width: var(--toggle-width);
+    max-width: var(--toggle-width);
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .setting-item-control > * {
+    flex-shrink: 0;
 }
 
 .is-mobile .sr-settings-container .sr-settings-panel .setting-item.setting-item--textarea .setting-item-control,
