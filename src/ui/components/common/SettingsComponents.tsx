@@ -305,7 +305,9 @@ export const ActionRow: React.FC<ActionRowProps> = ({
         label={label}
         desc={desc}
         tooltip={tooltip}
-        className={["setting-item--action", className].filter(Boolean).join(" ")}
+        className={["setting-item--action", "setting-item--mobile-inline", className]
+            .filter(Boolean)
+            .join(" ")}
     >
         {children}
     </BaseComponent>

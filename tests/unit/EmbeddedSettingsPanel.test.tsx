@@ -3,14 +3,25 @@ import { createRoot } from "react-dom/client";
 import { EmbeddedSettingsPanel } from "src/ui/components/EmbeddedSettingsPanel";
 import type { UISettingsState } from "src/ui/types/settingsTypes";
 
-jest.mock("obsidian", () => ({
-    Notice: class Notice {
-        constructor(_message?: string) {}
-    },
-    moment: {
-        locale: () => "en",
-    },
-}));
+jest.mock("obsidian", () => {
+    const platform = {
+        isMobile: false,
+    };
+
+    return {
+        Notice: class Notice {
+            constructor(_message?: string) {}
+        },
+        Platform: platform,
+        moment: {
+            locale: () => "en",
+        },
+    };
+});
+
+const { Platform: platformMock } = jest.requireMock("obsidian") as {
+    Platform: { isMobile: boolean };
+};
 
 (
     globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -113,7 +124,9 @@ function renderPanel(settings: UISettingsState, options: { mobile?: boolean } = 
     const container = document.createElement("div");
     container.classList.add("sr-settings-container");
     document.body.appendChild(container);
-    document.body.classList.toggle("is-mobile", options.mobile === true);
+    const isMobile = options.mobile === true;
+    document.body.classList.toggle("is-mobile", isMobile);
+    platformMock.isMobile = isMobile;
     const root = createRoot(container);
 
     act(() => {
@@ -132,6 +145,7 @@ function renderPanel(settings: UISettingsState, options: { mobile?: boolean } = 
         cleanup: () => {
             act(() => root.unmount());
             document.body.classList.remove("is-mobile");
+            platformMock.isMobile = false;
             container.remove();
         },
     };
@@ -189,6 +203,7 @@ function swipeElement(
 describe("EmbeddedSettingsPanel", () => {
     afterEach(() => {
         document.body.classList.remove("is-mobile");
+        platformMock.isMobile = false;
         document.body.innerHTML = "";
     });
 
@@ -462,6 +477,29 @@ describe("EmbeddedSettingsPanel", () => {
             expect(toggleControl).not.toBeNull();
             expect(toggleContainer).not.toBeNull();
             expect(toggleContainer?.querySelector('input[type="checkbox"]')).not.toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("keeps mobile action rows inline with their button in the control cell", () => {
+        const view = renderPanel(createSettings({ isPro: false }), { mobile: true });
+
+        try {
+            openTab(view.container, "License");
+
+            const actionItem = view.container.querySelector(
+                ".setting-item.setting-item--action",
+            ) as HTMLElement | null;
+            const actionControl = actionItem?.querySelector(".setting-item-control");
+            const actionButton = actionControl?.querySelector("button") as HTMLButtonElement | null;
+
+            expect(actionItem).not.toBeNull();
+            expect(actionItem?.className).toContain("setting-item--mobile-inline");
+            expect(actionControl).not.toBeNull();
+            expect(actionButton).not.toBeNull();
+            expect(actionButton?.closest(".setting-item-control")).toBe(actionControl);
+            expect(actionButton?.getAttribute("style")).toBeNull();
         } finally {
             view.cleanup();
         }
