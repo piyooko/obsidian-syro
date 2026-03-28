@@ -481,6 +481,48 @@
     max-height: calc(var(--toggle-thumb-height) + var(--toggle-border-width) * 2);
 }
 
+.is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container:focus-visible,
+.is-mobile .sr-deck-options-anchor-panel .mod-toggle .checkbox-container:focus-visible {
+    outline: var(--toggle-border-width) solid var(--background-modifier-border-focus);
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container:after,
+.is-mobile .sr-deck-options-anchor-panel .mod-toggle .checkbox-container:after {
+    width: var(--toggle-thumb-width);
+    height: var(--toggle-thumb-height);
+    margin: var(--toggle-border-width) 0 0 0;
+    transform: translate3d(var(--toggle-border-width), 0, 0);
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container.is-enabled:after,
+.is-mobile .sr-deck-options-anchor-panel .mod-toggle .checkbox-container.is-enabled:after {
+    transform: translate3d(
+        calc(var(--toggle-width) - var(--toggle-thumb-width) - var(--toggle-border-width)),
+        0,
+        0
+    );
+}
+
+.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .mod-toggle
+    .checkbox-container.is-enabled:active:after,
+.is-mobile
+    .sr-deck-options-anchor-panel
+    .mod-toggle
+    .checkbox-container.is-enabled:active:after {
+    left: -4px;
+}
+
+.is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container:active:after,
+.is-mobile .sr-deck-options-anchor-panel .mod-toggle .checkbox-container:active:after {
+    opacity: var(--toggle-thumb-opacity-active);
+    width: calc(var(--toggle-thumb-width) + var(--toggle-border-width) * 4);
+    height: calc(var(--toggle-thumb-height) + var(--toggle-border-width) * 4);
+    margin-top: calc(var(--toggle-border-width) * -1);
+}
+
 .is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container input,
 .sr-deck-options-anchor-panel .mod-toggle .checkbox-container input {
     position: absolute;
@@ -1360,7 +1402,7 @@ body.is-mobile
 }
 
 .is-mobile .sr-deck-options-anchor-panel .mod-toggle .setting-item-control {
-    align-self: start;
+    align-self: center;
     margin-top: 2px;
     margin-left: auto;
     flex: 0 0 auto;
