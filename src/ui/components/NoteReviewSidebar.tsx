@@ -38,10 +38,7 @@ import {
     getTimelineReviewResponsePrefixText,
     materializeTimelineReviewResponseEditMessage,
 } from "src/ui/timeline/reviewResponseTimeline";
-import type {
-    SidebarProgressIndicatorMode,
-    SidebarProgressRingDirection,
-} from "src/settings";
+import type { SidebarProgressIndicatorMode, SidebarProgressRingDirection } from "src/settings";
 
 const TIMELINE_MIN_HEIGHT_PX = 100;
 export const MOBILE_TIMELINE_MIN_HEIGHT_PX = 64;
@@ -1467,16 +1464,14 @@ const NotePathTooltip: React.FC<{
             tooltipWidth - NOTE_PATH_TOOLTIP_ARROW_PADDING - NOTE_PATH_TOOLTIP_ARROW_SIZE,
         );
         const arrowLeft = Math.min(
-            Math.max(
-                anchorCenterX - left - NOTE_PATH_TOOLTIP_ARROW_SIZE / 2,
-                minArrowLeft,
-            ),
+            Math.max(anchorCenterX - left - NOTE_PATH_TOOLTIP_ARROW_SIZE / 2, minArrowLeft),
             maxArrowLeft,
         );
         const aboveTop = rect.top - tooltipHeight - gap;
         const belowTop = rect.bottom + gap;
         const placeAbove =
-            aboveTop >= viewportPadding || belowTop + tooltipHeight > window.innerHeight - viewportPadding;
+            aboveTop >= viewportPadding ||
+            belowTop + tooltipHeight > window.innerHeight - viewportPadding;
         const top = placeAbove
             ? Math.max(viewportPadding, aboveTop)
             : Math.min(window.innerHeight - viewportPadding - tooltipHeight, belowTop);
@@ -1922,13 +1917,8 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
             setPathTooltipHoverEnabled(mediaQueries.some((query) => query.matches));
         };
         const cleanups = mediaQueries.map((query) => {
-            if (typeof query.addEventListener === "function") {
-                query.addEventListener("change", updateHoverCapability);
-                return () => query.removeEventListener("change", updateHoverCapability);
-            }
-
-            query.addListener(updateHoverCapability);
-            return () => query.removeListener(updateHoverCapability);
+            query.addEventListener("change", updateHoverCapability);
+            return () => query.removeEventListener("change", updateHoverCapability);
         });
 
         updateHoverCapability();
@@ -1999,7 +1989,9 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
             const statusBar = document.querySelector(".status-bar");
             const nextDrawerShell = currentSidebar.closest(".workspace-drawer");
             const nextDrawerInner = currentSidebar.closest(".workspace-drawer-inner");
-            const nextActiveTabContent = currentSidebar.closest(".workspace-drawer-active-tab-content");
+            const nextActiveTabContent = currentSidebar.closest(
+                ".workspace-drawer-active-tab-content",
+            );
             const drawerShell = nextDrawerShell instanceof HTMLElement ? nextDrawerShell : null;
             const drawerInner = nextDrawerInner instanceof HTMLElement ? nextDrawerInner : null;
             const activeTabContent =
@@ -2035,7 +2027,9 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                 currentSidebar.setCssProps({ "--sr-statusbar-offset": "0px" });
             }
 
-            const shouldDecorateDrawer = Boolean(drawerShell && drawerInner && activeTabContent && isForegroundDrawerView);
+            const shouldDecorateDrawer = Boolean(
+                drawerShell && drawerInner && activeTabContent && isForegroundDrawerView,
+            );
             syncDrawerShellClass(drawerShell, shouldDecorateDrawer);
             syncDrawerHostClass(drawerInner, shouldDecorateDrawer);
             observeTargets(drawerInner, activeTabContent);
@@ -2155,12 +2149,15 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     }, [currentHeight, onFilterBarHeightChange]);
 
     // --- Timeline 抽屉拖拽逻辑 ---
-    const clampTimelineHeight = useCallback((height: number) => {
-        return Math.max(
-            timelineMinHeightPx,
-            Math.min(height, window.innerHeight * TIMELINE_MAX_HEIGHT_VIEWPORT_RATIO),
-        );
-    }, [timelineMinHeightPx]);
+    const clampTimelineHeight = useCallback(
+        (height: number) => {
+            return Math.max(
+                timelineMinHeightPx,
+                Math.min(height, window.innerHeight * TIMELINE_MAX_HEIGHT_VIEWPORT_RATIO),
+            );
+        },
+        [timelineMinHeightPx],
+    );
 
     const [localTimelineHeight, setLocalTimelineHeight] = useState(() =>
         clampTimelineHeight(timelineHeight),
@@ -2357,7 +2354,10 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                 };
 
                 const handleTouchEnd = (endEvent: TouchEvent) => {
-                    const activeTouch = findTouchByIdentifier(endEvent.changedTouches, activeTouchId);
+                    const activeTouch = findTouchByIdentifier(
+                        endEvent.changedTouches,
+                        activeTouchId,
+                    );
                     if (!activeTouch) {
                         return;
                     }
@@ -2559,7 +2559,9 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
             <div
                 className={[
                     "sr-note-sidebar__content",
-                    isTimelineGestureBlocked ? "sr-note-sidebar__content--timeline-gesture-blocked" : "",
+                    isTimelineGestureBlocked
+                        ? "sr-note-sidebar__content--timeline-gesture-blocked"
+                        : "",
                 ]
                     .filter(Boolean)
                     .join(" ")}

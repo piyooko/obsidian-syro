@@ -1,7 +1,11 @@
 import { CachedMetadata, getAllTags } from "obsidian";
 import type SRPlugin from "src/main";
 import type { ReviewDeck, SchedNote } from "src/ReviewDeck";
-import type { NoteReviewSection, NoteReviewItem, NoteReviewSidebarState } from "../types/noteReview";
+import type {
+    NoteReviewSection,
+    NoteReviewItem,
+    NoteReviewSidebarState,
+} from "../types/noteReview";
 import { globalDateProvider } from "src/util/DateProvider";
 import { t } from "src/lang/helpers";
 

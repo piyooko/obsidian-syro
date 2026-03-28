@@ -92,7 +92,9 @@ function createSettings(overrides: Partial<UISettingsState> = {}): UISettingsSta
 
 function findSettingItemByName(container: HTMLElement, names: string[]): HTMLElement | null {
     return (
-        Array.from(container.querySelectorAll<HTMLElement>(".setting-item:not(.setting-item-heading)")).find((item) =>
+        Array.from(
+            container.querySelectorAll<HTMLElement>(".setting-item:not(.setting-item-heading)"),
+        ).find((item) =>
             names.some((name) => {
                 const itemName = item
                     .querySelector(".setting-item-name")
@@ -153,7 +155,12 @@ function getActiveTabText(container: HTMLElement): string {
     return container.querySelector<HTMLElement>(".sr-style-tab-active")?.textContent ?? "";
 }
 
-function dispatchTouchEvent(target: HTMLElement, type: "touchstart" | "touchmove" | "touchend", x: number, y: number) {
+function dispatchTouchEvent(
+    target: HTMLElement,
+    type: "touchstart" | "touchmove" | "touchend",
+    x: number,
+    y: number,
+) {
     const event = new Event(type, { bubbles: true, cancelable: true });
     const touch = { clientX: x, clientY: y, target };
 
@@ -220,7 +227,9 @@ describe("EmbeddedSettingsPanel", () => {
             expect(
                 findSettingItemByName(view.container, ["Sidebar Progress Ring Direction"]),
             ).not.toBeNull();
-            expect(findSettingItemByName(view.container, ["Show File Path Tooltip"])).not.toBeNull();
+            expect(
+                findSettingItemByName(view.container, ["Show File Path Tooltip"]),
+            ).not.toBeNull();
             expect(
                 findSettingItemByName(view.container, ["File Path Tooltip Delay"]),
             ).not.toBeNull();
@@ -359,11 +368,15 @@ describe("EmbeddedSettingsPanel", () => {
 
         try {
             const inlineRows = Array.from(
-                view.container.querySelectorAll<HTMLElement>(".setting-item.setting-item--mobile-inline"),
+                view.container.querySelectorAll<HTMLElement>(
+                    ".setting-item.setting-item--mobile-inline",
+                ),
             );
 
             expect(inlineRows).toHaveLength(2);
-            expect(inlineRows.every((row) => row.querySelector('input[type="text"]') !== null)).toBe(true);
+            expect(
+                inlineRows.every((row) => row.querySelector('input[type="text"]') !== null),
+            ).toBe(true);
         } finally {
             view.cleanup();
         }
@@ -393,7 +406,9 @@ describe("EmbeddedSettingsPanel", () => {
             openTab(view.container, "Algorithm");
 
             expect(view.container.querySelector(".sr-wms-simulator")).toBeNull();
-            expect(findSettingItemByName(view.container, ["Random due drift", "Fuzzing"])).not.toBeNull();
+            expect(
+                findSettingItemByName(view.container, ["Random due drift", "Fuzzing"]),
+            ).not.toBeNull();
             expect(view.container.textContent ?? "").toContain("Base multiplier configuration");
         } finally {
             view.cleanup();
@@ -437,7 +452,9 @@ describe("EmbeddedSettingsPanel", () => {
         const view = renderPanel(createSettings(), { mobile: true });
 
         try {
-            const toggleItem = view.container.querySelector(".setting-item.mod-toggle") as HTMLElement | null;
+            const toggleItem = view.container.querySelector(
+                ".setting-item.mod-toggle",
+            ) as HTMLElement | null;
             const toggleControl = toggleItem?.querySelector(".setting-item-control");
             const toggleContainer = toggleControl?.querySelector(".checkbox-container");
 
@@ -486,8 +503,12 @@ describe("EmbeddedSettingsPanel", () => {
 
             const textareaItem = findSettingItemByName(view.container, ["Ignored tags"]);
             const numberItem = findSettingItemByName(view.container, ["File Path Tooltip Delay"]);
-            const selectItem = findSettingItemByName(view.container, ["Sidebar Progress Ring Direction"]);
-            const numberInput = numberItem?.querySelector('input[type="number"]') as HTMLInputElement | null;
+            const selectItem = findSettingItemByName(view.container, [
+                "Sidebar Progress Ring Direction",
+            ]);
+            const numberInput = numberItem?.querySelector(
+                'input[type="number"]',
+            ) as HTMLInputElement | null;
             const selectInput = selectItem?.querySelector("select") as HTMLSelectElement | null;
             const textarea = textareaItem?.querySelector("textarea") as HTMLTextAreaElement | null;
 
@@ -523,7 +544,9 @@ describe("EmbeddedSettingsPanel", () => {
             openTab(view.container, "License");
 
             expect(view.container.querySelector(".sr-settings-support-card")).toBeNull();
-            expect(view.container.querySelector(".sr-settings-license-note")?.textContent).toBeTruthy();
+            expect(
+                view.container.querySelector(".sr-settings-license-note")?.textContent,
+            ).toBeTruthy();
         } finally {
             view.cleanup();
         }
@@ -535,9 +558,9 @@ describe("EmbeddedSettingsPanel", () => {
         try {
             openTab(view.container, "License");
 
-            const licenseRow = view.container.querySelector(
-                ".sr-license-key-input",
-            )?.closest(".setting-item") as HTMLElement | null;
+            const licenseRow = view.container
+                .querySelector(".sr-license-key-input")
+                ?.closest(".setting-item") as HTMLElement | null;
             const licenseInput = view.container.querySelector(
                 ".sr-license-key-input",
             ) as HTMLInputElement | null;
@@ -555,7 +578,9 @@ describe("EmbeddedSettingsPanel", () => {
         const view = renderPanel(createSettings());
 
         try {
-            const header = view.container.querySelector(".sr-style-setting-header") as HTMLElement | null;
+            const header = view.container.querySelector(
+                ".sr-style-setting-header",
+            ) as HTMLElement | null;
             const incrementalTab = Array.from(
                 view.container.querySelectorAll<HTMLElement>(".sr-style-tab"),
             ).find((tab) => tab.textContent?.includes("Incremental"));
@@ -580,10 +605,13 @@ describe("EmbeddedSettingsPanel", () => {
         const view = renderPanel(createSettings());
 
         try {
-            const content = view.container.querySelector(".sr-style-setting-content") as HTMLElement | null;
+            const content = view.container.querySelector(
+                ".sr-style-setting-content",
+            ) as HTMLElement | null;
             expect(content).not.toBeNull();
             expect(
-                view.container.querySelectorAll(".sr-style-setting-content-pane[data-pane-role]").length,
+                view.container.querySelectorAll(".sr-style-setting-content-pane[data-pane-role]")
+                    .length,
             ).toBe(3);
             expect(
                 view.container.querySelectorAll(".sr-style-setting-content-pane-body").length,
@@ -681,7 +709,9 @@ describe("EmbeddedSettingsPanel", () => {
         const view = renderPanel(createSettings());
 
         try {
-            const content = view.container.querySelector(".sr-style-setting-content") as HTMLElement | null;
+            const content = view.container.querySelector(
+                ".sr-style-setting-content",
+            ) as HTMLElement | null;
             const currentScroll = view.container.querySelector(
                 '.sr-style-setting-content-pane[data-pane-role="current"] .sr-style-setting-content-pane-scroll',
             ) as HTMLDivElement | null;
@@ -720,7 +750,9 @@ describe("EmbeddedSettingsPanel", () => {
         try {
             openTab(view.container, "License");
 
-            const content = view.container.querySelector(".sr-style-setting-content") as HTMLElement | null;
+            const content = view.container.querySelector(
+                ".sr-style-setting-content",
+            ) as HTMLElement | null;
             expect(content).not.toBeNull();
 
             dispatchTouchEvent(content as HTMLElement, "touchstart", 110, 620);
@@ -742,7 +774,9 @@ describe("EmbeddedSettingsPanel", () => {
         const view = renderPanel(createSettings());
 
         try {
-            const textInput = view.container.querySelector('input[type="text"]') as HTMLElement | null;
+            const textInput = view.container.querySelector(
+                'input[type="text"]',
+            ) as HTMLElement | null;
             const select = view.container.querySelector("select") as HTMLElement | null;
             const toggleInput = view.container.querySelector(
                 '.mod-toggle input[type="checkbox"]',
@@ -769,8 +803,12 @@ describe("EmbeddedSettingsPanel", () => {
             expect(getActiveTabText(view.container)).toContain("Incremental");
 
             openTab(view.container, "Interface");
-            const rangeInput = view.container.querySelector('input[type="range"]') as HTMLElement | null;
-            const colorInput = view.container.querySelector('input[type="color"]') as HTMLElement | null;
+            const rangeInput = view.container.querySelector(
+                'input[type="range"]',
+            ) as HTMLElement | null;
+            const colorInput = view.container.querySelector(
+                'input[type="color"]',
+            ) as HTMLElement | null;
 
             expect(rangeInput).not.toBeNull();
             expect(colorInput).not.toBeNull();
@@ -783,7 +821,7 @@ describe("EmbeddedSettingsPanel", () => {
 
             openTab(view.container, "License");
             const actionButton = view.container.querySelector(
-                '.setting-item--action button',
+                ".setting-item--action button",
             ) as HTMLElement | null;
 
             expect(actionButton).not.toBeNull();

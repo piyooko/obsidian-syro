@@ -246,7 +246,9 @@ function scanExportedInitializer(initializer, exportName, report) {
     }
 
     if (ts.isArrayLiteralExpression(initializer)) {
-        initializer.elements.forEach((element) => scanExportedInitializer(element, exportName, report));
+        initializer.elements.forEach((element) =>
+            scanExportedInitializer(element, exportName, report),
+        );
     }
 }
 
@@ -329,10 +331,14 @@ function scanI18nFile(filePath, options = {}) {
         }
 
         if (ts.isVariableStatement(node)) {
-            const isExported = node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+            const isExported = node.modifiers?.some(
+                (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+            );
             if (isExported) {
                 for (const declaration of node.declarationList.declarations) {
-                    const exportName = ts.isIdentifier(declaration.name) ? declaration.name.text : "";
+                    const exportName = ts.isIdentifier(declaration.name)
+                        ? declaration.name.text
+                        : "";
                     if (EXPORT_NAME_HINT.test(exportName)) {
                         scanExportedInitializer(declaration.initializer, exportName, report);
                     }
@@ -358,8 +364,12 @@ function scanI18nFile(filePath, options = {}) {
 function scanI18nProject(options = {}) {
     const rootDir = options.rootDir ?? process.cwd();
     const allowlist =
-        options.allowlist ?? loadAllowlist(options.allowlistPath ?? path.join(rootDir, "scripts/check-i18n-allowlist.json"));
-    const files = options.files ?? collectSourceFiles(rootDir, options.sourceDir ?? DEFAULT_SOURCE_DIR);
+        options.allowlist ??
+        loadAllowlist(
+            options.allowlistPath ?? path.join(rootDir, "scripts/check-i18n-allowlist.json"),
+        );
+    const files =
+        options.files ?? collectSourceFiles(rootDir, options.sourceDir ?? DEFAULT_SOURCE_DIR);
 
     return files
         .flatMap((filePath) => scanI18nFile(filePath, { rootDir, allowlist }))

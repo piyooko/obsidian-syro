@@ -1,5 +1,4 @@
-﻿
-import { Iadapter } from "./adapter";
+﻿import { Iadapter } from "./adapter";
 import { getStorePath } from "./dataLocation";
 import { SRSettings } from "src/settings";
 import type { TimelineReviewResponse } from "src/ui/timeline/reviewResponseTimeline";

@@ -67,10 +67,7 @@ describe("RepetitionItem FSRS updates", () => {
         item.reviewUpdate(lapse);
 
         expect(item.queue).toBe(CardQueue.Learn);
-        expect((item.data as { scheduled_days: number }).scheduled_days).toBeCloseTo(
-            10 / 1440,
-            6,
-        );
+        expect((item.data as { scheduled_days: number }).scheduled_days).toBeCloseTo(10 / 1440, 6);
     });
 
     test("silently repairs legacy learning items whose queue and FSRS state drifted apart", () => {

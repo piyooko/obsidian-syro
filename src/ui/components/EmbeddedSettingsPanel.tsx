@@ -727,7 +727,9 @@ const AlgoTab: React.FC<TabProps> = ({ settings, onChange }) => {
                                             <MathText>
                                                 <MVar>I</MVar>
                                                 <sub>next</sub> ={" "}
-                                                <MNum highlight={activeParam === "wmsAgainInterval"}>
+                                                <MNum
+                                                    highlight={activeParam === "wmsAgainInterval"}
+                                                >
                                                     {settings.wmsAgainInterval || 1}
                                                 </MNum>{" "}
                                                 <MFunc>d</MFunc>
@@ -746,224 +748,230 @@ const AlgoTab: React.FC<TabProps> = ({ settings, onChange }) => {
                                         </div>
                                     </div>
 
-                                {/* Row: Hard */}
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "space-between",
-                                    }}
-                                >
+                                    {/* Row: Hard */}
                                     <div
                                         style={{
                                             display: "flex",
                                             alignItems: "center",
-                                            gap: "12px",
+                                            justifyContent: "space-between",
                                         }}
                                     >
                                         <div
                                             style={{
-                                                color: "var(--text-muted)",
-                                                fontWeight: "600",
-                                                width: "50px",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: "12px",
                                             }}
                                         >
-                                            {t("HARD")}
-                                        </div>
-                                        <MathText>
-                                            <MVar>I</MVar>
-                                            <sub>next</sub> = <MFunc>Round</MFunc>(
-                                            <MVar highlight={activeParam === "simInterval"}>I</MVar>
-                                            <sub>curr</sub> ×{" "}
-                                            <MNum highlight={activeParam === "wmsHardFactor"}>
-                                                {settings.wmsHardFactor || 0.7}
-                                            </MNum>
-                                            )
-                                        </MathText>
-                                    </div>
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            opacity: 0.9,
-                                        }}
-                                    >
-                                        <span style={{ color: "var(--color-orange)" }}>
-                                            {resHard} d
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* Row: Good */}
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "space-between",
-                                    }}
-                                >
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: "12px",
-                                        }}
-                                    >
-                                        <div
-                                            style={{
-                                                color: "var(--text-muted)",
-                                                fontWeight: "600",
-                                                width: "50px",
-                                            }}
-                                        >
-                                            {t("GOOD")}
-                                        </div>
-                                        <MathText>
-                                            <MVar>I</MVar>
-                                            <sub>next</sub> = <MFunc>Round</MFunc>(
-                                            <MVar highlight={activeParam === "simInterval"}>I</MVar>
-                                            <sub>curr</sub> ×{" "}
-                                            <MNum highlight={activeParam === "wmsGoodFactor"}>
-                                                {settings.wmsGoodFactor || 1.3}
-                                            </MNum>{" "}
-                                            ×{" "}
-                                            <MVar
-                                                highlight={
-                                                    activeParam === "simPriority" ||
-                                                    activeParam === "wmsImpMin" ||
-                                                    activeParam === "wmsImpMax"
-                                                }
+                                            <div
+                                                style={{
+                                                    color: "var(--text-muted)",
+                                                    fontWeight: "600",
+                                                    width: "50px",
+                                                }}
                                             >
-                                                F
-                                            </MVar>
-                                            <sub>imp</sub>)
-                                        </MathText>
+                                                {t("HARD")}
+                                            </div>
+                                            <MathText>
+                                                <MVar>I</MVar>
+                                                <sub>next</sub> = <MFunc>Round</MFunc>(
+                                                <MVar highlight={activeParam === "simInterval"}>
+                                                    I
+                                                </MVar>
+                                                <sub>curr</sub> ×{" "}
+                                                <MNum highlight={activeParam === "wmsHardFactor"}>
+                                                    {settings.wmsHardFactor || 0.7}
+                                                </MNum>
+                                                )
+                                            </MathText>
+                                        </div>
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                opacity: 0.9,
+                                            }}
+                                        >
+                                            <span style={{ color: "var(--color-orange)" }}>
+                                                {resHard} d
+                                            </span>
+                                        </div>
                                     </div>
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            opacity: 0.9,
-                                        }}
-                                    >
-                                        <span style={{ color: "var(--color-green)" }}>
-                                            {resGood} d
-                                        </span>
-                                    </div>
-                                </div>
 
-                                {/* Row: Easy */}
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "space-between",
-                                    }}
-                                >
+                                    {/* Row: Good */}
                                     <div
                                         style={{
                                             display: "flex",
                                             alignItems: "center",
-                                            gap: "12px",
+                                            justifyContent: "space-between",
                                         }}
                                     >
                                         <div
                                             style={{
-                                                color: "var(--text-muted)",
-                                                fontWeight: "600",
-                                                width: "50px",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: "12px",
                                             }}
                                         >
-                                            {t("EASY")}
-                                        </div>
-                                        <MathText>
-                                            <MVar>I</MVar>
-                                            <sub>next</sub> = <MFunc>Round</MFunc>(
-                                            <MVar highlight={activeParam === "simInterval"}>I</MVar>
-                                            <sub>curr</sub> ×{" "}
-                                            <MNum highlight={activeParam === "wmsEasyFactor"}>
-                                                {settings.wmsEasyFactor || 2.0}
-                                            </MNum>{" "}
-                                            ×{" "}
-                                            <MVar
-                                                highlight={
-                                                    activeParam === "simPriority" ||
-                                                    activeParam === "wmsImpMin" ||
-                                                    activeParam === "wmsImpMax"
-                                                }
+                                            <div
+                                                style={{
+                                                    color: "var(--text-muted)",
+                                                    fontWeight: "600",
+                                                    width: "50px",
+                                                }}
                                             >
-                                                F
-                                            </MVar>
-                                            <sub>imp</sub>)
-                                        </MathText>
+                                                {t("GOOD")}
+                                            </div>
+                                            <MathText>
+                                                <MVar>I</MVar>
+                                                <sub>next</sub> = <MFunc>Round</MFunc>(
+                                                <MVar highlight={activeParam === "simInterval"}>
+                                                    I
+                                                </MVar>
+                                                <sub>curr</sub> ×{" "}
+                                                <MNum highlight={activeParam === "wmsGoodFactor"}>
+                                                    {settings.wmsGoodFactor || 1.3}
+                                                </MNum>{" "}
+                                                ×{" "}
+                                                <MVar
+                                                    highlight={
+                                                        activeParam === "simPriority" ||
+                                                        activeParam === "wmsImpMin" ||
+                                                        activeParam === "wmsImpMax"
+                                                    }
+                                                >
+                                                    F
+                                                </MVar>
+                                                <sub>imp</sub>)
+                                            </MathText>
+                                        </div>
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                opacity: 0.9,
+                                            }}
+                                        >
+                                            <span style={{ color: "var(--color-green)" }}>
+                                                {resGood} d
+                                            </span>
+                                        </div>
                                     </div>
+
+                                    {/* Row: Easy */}
                                     <div
                                         style={{
                                             display: "flex",
                                             alignItems: "center",
-                                            opacity: 0.9,
+                                            justifyContent: "space-between",
                                         }}
                                     >
-                                        <span style={{ color: "var(--color-cyan)" }}>
-                                            {resEasy} d
-                                        </span>
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: "12px",
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    color: "var(--text-muted)",
+                                                    fontWeight: "600",
+                                                    width: "50px",
+                                                }}
+                                            >
+                                                {t("EASY")}
+                                            </div>
+                                            <MathText>
+                                                <MVar>I</MVar>
+                                                <sub>next</sub> = <MFunc>Round</MFunc>(
+                                                <MVar highlight={activeParam === "simInterval"}>
+                                                    I
+                                                </MVar>
+                                                <sub>curr</sub> ×{" "}
+                                                <MNum highlight={activeParam === "wmsEasyFactor"}>
+                                                    {settings.wmsEasyFactor || 2.0}
+                                                </MNum>{" "}
+                                                ×{" "}
+                                                <MVar
+                                                    highlight={
+                                                        activeParam === "simPriority" ||
+                                                        activeParam === "wmsImpMin" ||
+                                                        activeParam === "wmsImpMax"
+                                                    }
+                                                >
+                                                    F
+                                                </MVar>
+                                                <sub>imp</sub>)
+                                            </MathText>
+                                        </div>
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                opacity: 0.9,
+                                            }}
+                                        >
+                                            <span style={{ color: "var(--color-cyan)" }}>
+                                                {resEasy} d
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            {/* Summary Line for F_imp */}
-                            <div
-                                style={{
-                                    marginTop: "16px",
-                                    paddingTop: "12px",
-                                    borderTop: "1px dashed var(--background-modifier-border)",
-                                    color: "var(--text-muted)",
-                                    fontSize: "0.9em",
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                }}
-                            >
-                                <MathText>
-                                    <MVar
-                                        highlight={
-                                            activeParam === "simPriority" ||
-                                            activeParam === "wmsImpMin" ||
-                                            activeParam === "wmsImpMax"
-                                        }
-                                    >
-                                        F
-                                    </MVar>
-                                    <sub>imp</sub> ={" "}
-                                    <MNum highlight={activeParam === "wmsImpMin"}>
-                                        {settings.wmsImpMin}
-                                    </MNum>{" "}
-                                    + (
-                                    <MNum highlight={activeParam === "simPriority"}>
-                                        {simPriority}
-                                    </MNum>{" "}
-                                    - 1) × (
-                                    <MNum highlight={activeParam === "wmsImpMax"}>
-                                        {settings.wmsImpMax}
-                                    </MNum>{" "}
-                                    -{" "}
-                                    <MNum highlight={activeParam === "wmsImpMin"}>
-                                        {settings.wmsImpMin}
-                                    </MNum>
-                                    ) / 9
-                                </MathText>
-                                <span
+                                {/* Summary Line for F_imp */}
+                                <div
                                     style={{
-                                        backgroundColor: "var(--background-secondary)",
-                                        padding: "2px 8px",
-                                        borderRadius: "4px",
-                                        fontFamily: "var(--font-monospace)",
-                                        color: "var(--text-accent)",
+                                        marginTop: "16px",
+                                        paddingTop: "12px",
+                                        borderTop: "1px dashed var(--background-modifier-border)",
+                                        color: "var(--text-muted)",
+                                        fontSize: "0.9em",
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
                                     }}
                                 >
-                                    = {fImp.toFixed(2)}x
-                                </span>
-                            </div>
+                                    <MathText>
+                                        <MVar
+                                            highlight={
+                                                activeParam === "simPriority" ||
+                                                activeParam === "wmsImpMin" ||
+                                                activeParam === "wmsImpMax"
+                                            }
+                                        >
+                                            F
+                                        </MVar>
+                                        <sub>imp</sub> ={" "}
+                                        <MNum highlight={activeParam === "wmsImpMin"}>
+                                            {settings.wmsImpMin}
+                                        </MNum>{" "}
+                                        + (
+                                        <MNum highlight={activeParam === "simPriority"}>
+                                            {simPriority}
+                                        </MNum>{" "}
+                                        - 1) × (
+                                        <MNum highlight={activeParam === "wmsImpMax"}>
+                                            {settings.wmsImpMax}
+                                        </MNum>{" "}
+                                        -{" "}
+                                        <MNum highlight={activeParam === "wmsImpMin"}>
+                                            {settings.wmsImpMin}
+                                        </MNum>
+                                        ) / 9
+                                    </MathText>
+                                    <span
+                                        style={{
+                                            backgroundColor: "var(--background-secondary)",
+                                            padding: "2px 8px",
+                                            borderRadius: "4px",
+                                            fontFamily: "var(--font-monospace)",
+                                            color: "var(--text-accent)",
+                                        }}
+                                    >
+                                        = {fImp.toFixed(2)}x
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -1531,7 +1539,9 @@ const LicenseTab: React.FC<LicenseTabProps> = ({ settings, onChange }) => {
         <div className="sr-settings-sections">
             {/* 状态卡片 */}
             <p className="sr-settings-license-note">
-                {settings.isPro ? t("SETTINGS_SUPPORTER_DESC_PRO") : t("SETTINGS_SUPPORTER_DESC_FREE")}
+                {settings.isPro
+                    ? t("SETTINGS_SUPPORTER_DESC_PRO")
+                    : t("SETTINGS_SUPPORTER_DESC_FREE")}
             </p>
 
             <Section title={t("SETTINGS_SECTION_LICENSE")}>
@@ -1546,19 +1556,14 @@ const LicenseTab: React.FC<LicenseTabProps> = ({ settings, onChange }) => {
                             placeholder={t("SETTINGS_LICENSE_PLACEHOLDER")}
                             disabled={loading}
                         />
-                        <ActionRow
-                            label={t("SETTINGS_VERIFY")}
-                            desc={t("SETTINGS_VERIFY_DESC")}
-                        >
+                        <ActionRow label={t("SETTINGS_VERIFY")} desc={t("SETTINGS_VERIFY_DESC")}>
                             <button
                                 onClick={() => {
                                     void handleActivate();
                                 }}
                                 disabled={loading || !inputKey.trim()}
                             >
-                                {loading
-                                    ? t("SETTINGS_BTN_VERIFYING")
-                                    : t("SETTINGS_BTN_ACTIVATE")}
+                                {loading ? t("SETTINGS_BTN_VERIFYING") : t("SETTINGS_BTN_ACTIVATE")}
                             </button>
                         </ActionRow>
                     </>
@@ -1734,11 +1739,7 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
             resetSwipePresentation();
             resetContentSwipeState();
         },
-        [
-            clearContentSwipeAnimationTimer,
-            resetContentSwipeState,
-            resetSwipePresentation,
-        ],
+        [clearContentSwipeAnimationTimer, resetContentSwipeState, resetSwipePresentation],
     );
 
     const handleContentTouchStart = useCallback(
@@ -1761,12 +1762,7 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
                 isSwiping: false,
             };
         },
-        [
-            activeTab,
-            clearContentSwipeAnimationTimer,
-            resetContentSwipeState,
-            setContentTrackOffset,
-        ],
+        [activeTab, clearContentSwipeAnimationTimer, resetContentSwipeState, setContentTrackOffset],
     );
 
     const handleContentTouchMove = useCallback(

@@ -906,10 +906,7 @@ body.sr-timeline-resize-active {
 /* 抽屉容器 */
 .sr-timeline-container {
     --sr-timeline-accent: var(--interactive-accent);
-    --sr-timeline-accent-hover: var(
-        --interactive-accent-hover,
-        var(--interactive-accent)
-    );
+    --sr-timeline-accent-hover: var(--interactive-accent-hover, var(--interactive-accent));
     flex-shrink: 0;
     border-top: 1px solid var(--background-modifier-border);
     background: var(--background-secondary);

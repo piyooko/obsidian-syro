@@ -65,18 +65,9 @@ interface ToggleRowProps {
     onChange: (v: boolean) => void;
 }
 
-export const ToggleRow: React.FC<ToggleRowProps> = ({
-    label,
-    desc,
-    tooltip,
-    value,
-    onChange,
-}) => (
+export const ToggleRow: React.FC<ToggleRowProps> = ({ label, desc, tooltip, value, onChange }) => (
     <BaseComponent label={label} desc={desc} tooltip={tooltip} className="mod-toggle">
-        <label
-            className={`checkbox-container ${value ? "is-enabled" : ""}`}
-            tabIndex={0}
-        >
+        <label className={`checkbox-container ${value ? "is-enabled" : ""}`} tabIndex={0}>
             <input
                 type="checkbox"
                 tabIndex={0}
@@ -155,7 +146,12 @@ export const TextAreaRow: React.FC<TextAreaRowProps> = ({
     rows = 3,
 }) => (
     <BaseComponent label={label} desc={desc} tooltip={tooltip} className="setting-item--textarea">
-        <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={rows} spellCheck={false} />
+        <textarea
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            rows={rows}
+            spellCheck={false}
+        />
     </BaseComponent>
 );
 

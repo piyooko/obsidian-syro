@@ -499,10 +499,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
             if (resolvedItem.queue === CardQueue.Learn && !deck.learningFlashcards.includes(card)) {
                 deck.learningFlashcards.push(card);
-            } else if (
-                resolvedItem.queue === CardQueue.New &&
-                !deck.newFlashcards.includes(card)
-            ) {
+            } else if (resolvedItem.queue === CardQueue.New && !deck.newFlashcards.includes(card)) {
                 deck.newFlashcards.push(card);
             }
         }
@@ -606,9 +603,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             this.cardSequencer.moveCurrentCardToEndOfList();
             this.cardSequencer.nextCard();
         }
-        this.logRuntimeDebug(
-            "[SR-DynSync] processReview_CramMode: preparing stats recalculation",
-        );
+        this.logRuntimeDebug("[SR-DynSync] processReview_CramMode: preparing stats recalculation");
         DeckStatsService.getInstance().recalculateDeck(
             this.currentDeck,
             this.getLearnAheadMillis(),

@@ -1439,7 +1439,6 @@ function preprocessMathCloze(
     return result;
 }
 
-
 const CODE_LINE_HTML_OPTIONS = {
     allowedTags: ["span"],
     allowedAttributes: {
@@ -1789,7 +1788,6 @@ const ClozeContent = ({
         });
 
         observer.observe(activeHost, { childList: true, subtree: true, characterData: true });
-
 
         return () => {
             observer.disconnect();

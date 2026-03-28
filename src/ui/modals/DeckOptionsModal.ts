@@ -300,10 +300,10 @@ export class DeckOptionsModal extends Modal {
                 createDefaultDeckOptionsPreset(this.plugin.data.settings.fsrsSettings),
             ];
         }
-        this.plugin.data.settings.deckOptionsPresets = this.plugin.data.settings.deckOptionsPresets.map(
-            (preset) =>
+        this.plugin.data.settings.deckOptionsPresets =
+            this.plugin.data.settings.deckOptionsPresets.map((preset) =>
                 normalizeDeckOptionsPreset(preset, this.plugin.data.settings.fsrsSettings),
-        );
+            );
         syncFsrsSettingsCompatibilityMirror(this.plugin.data.settings);
         return this.plugin.data.settings.deckOptionsPresets;
     }

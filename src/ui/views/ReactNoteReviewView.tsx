@@ -95,7 +95,6 @@ export class ReactNoteReviewView extends ItemView {
         return (
             leafContainer instanceof HTMLElement &&
             activeTabContent instanceof HTMLElement &&
-            this.app.workspace.activeLeaf === this.leaf &&
             this.leaf.view.getViewType() === REACT_REVIEW_QUEUE_VIEW_TYPE &&
             leafContainer.classList.contains("mod-active") &&
             activeTabContent.contains(leafContainer)
@@ -173,7 +172,8 @@ export class ReactNoteReviewView extends ItemView {
         }
 
         return (
-            ReactNoteReviewView.phoneDrawerTimelineHeightThisSession ?? MOBILE_TIMELINE_MIN_HEIGHT_PX
+            ReactNoteReviewView.phoneDrawerTimelineHeightThisSession ??
+            MOBILE_TIMELINE_MIN_HEIGHT_PX
         );
     }
 

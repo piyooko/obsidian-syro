@@ -9,7 +9,7 @@
 ## Core Features
 
 -   **Context-Aware Flashcards (No More "Island Effect")**
-    Create flashcards directly inline using native Markdown (like `==highlights==` or `::`). When reviewing, if you forget a card, one click teleports you back to the exact paragraph in your original note. You memorize in the full context, not in isolated fragments. 
+    Create flashcards directly inline using native Markdown (like `==highlights==` or `::`). When reviewing, if you forget a card, one click teleports you back to the exact paragraph in your original note. You memorize in the full context, not in isolated fragments.
 
 -   **Incremental Reading Queue**
     Toss dozens of heavy books, long web clips, or dense articles into the right-sidebar queue. Filter them by tags, and let the FSRS algorithm decide what you should read today. It breaks massive reading backlogs into stress-free daily micro-tasks.
@@ -20,7 +20,6 @@
 -   **Modern UI & Advanced FSRS Algorithm**
     Built with a clean, modern interface that looks native to Obsidian (with Style Settings support coming). Under the hood, it’s powered by the cutting-edge **FSRS** algorithm to ensure you achieve maximum retention with minimum review time.
 
-
 ## When Your Knowledge Vault Becomes a Collection Graveyard
 
 Many of us face a common dilemma: we meticulously collect a vast library of web pages, articles, and notes in Obsidian, only for these valuable resources to sink into oblivion after being saved. Traditional note-taking methods like passive re-reading and highlighting are often ineffective for long-term retention, trapping our knowledge bases in a "write-and-forget" cycle.
@@ -29,25 +28,22 @@ Syro aims to provide a solution. It is not designed to replace your existing not
 
 ## Who Is This For?
 
-- *Digital Hoarders*: Turn your read-it-later graveyard into a daily digestible feed.
-  
-- *Students & Professionals*: Memorize complex terms in their original context, not in isolated Anki decks.
-  
-- *Zettelkasten Users*: Resurface fleeting notes naturally over time to build deeper connections.
+-   _Digital Hoarders_: Turn your read-it-later graveyard into a daily digestible feed.
+-   _Students & Professionals_: Memorize complex terms in their original context, not in isolated Anki decks.
+-   _Zettelkasten Users_: Resurface fleeting notes naturally over time to build deeper connections.
 
-
-##  Explore the Documentation
+## Explore the Documentation
 
 To dive deeper into Syro's potential, start with the documentation hub below. The English and Chinese documentation trees now mirror each other.
 
--    **[Syro Documentation Hub](./docs/docs/en/index.md)**
--    **[Core Concepts](./docs/docs/en/getting-started/introduction.md)**
--    **[5-Minute Quick Start](./docs/docs/en/getting-started/quick-start.md)**
--    **[Flashcards Overview](./docs/docs/en/flashcards/index.md)**
--    **[Note Review Overview](./docs/docs/en/note-review/index.md)**
--    **[Advanced & FAQ](./docs/docs/en/advanced-and-faq/data-and-sync.md)**
+-   **[Syro Documentation Hub](./docs/docs/en/index.md)**
+-   **[Core Concepts](./docs/docs/en/getting-started/introduction.md)**
+-   **[5-Minute Quick Start](./docs/docs/en/getting-started/quick-start.md)**
+-   **[Flashcards Overview](./docs/docs/en/flashcards/index.md)**
+-   **[Note Review Overview](./docs/docs/en/note-review/index.md)**
+-   **[Advanced & FAQ](./docs/docs/en/advanced-and-faq/data-and-sync.md)**
 
-##  Installation Guide
+## Installation Guide
 
 ### Via BRAT
 

@@ -959,8 +959,7 @@ export default normalizeSentenceCaseLocale({
     FOLDER_TRACKING_TAGS_DESC:
         "Enter any tags, separated by spaces, commas, or new lines. Only tags added by this rule will be removed later.",
     FOLDER_TRACKING_TAGS_PLACEHOLDER: "Math\nAuthors/Borges",
-    FOLDER_TRACKING_FOOTER_NOTE:
-        "Existing notes are updated on save.",
+    FOLDER_TRACKING_FOOTER_NOTE: "Existing notes are updated on save.",
     FOLDER_TRACKING_SAVE_SUCCESS: "Folder tracking settings saved",
     FOLDER_TRACKING_RESET: "Remove auto-added tags",
     FOLDER_TRACKING_RESET_SUCCESS: "Auto-added tags removed",

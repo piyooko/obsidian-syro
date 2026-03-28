@@ -1,12 +1,12 @@
 {
-  "entries": [
-    {
-      "file": "src/firstRunTutorial.ts",
-      "textIncludes": [
-        "Welcome to Syro: your incremental reading flow starts here",
-        "欢迎来到 Syro"
-      ],
-      "reason": "First-run tutorial content is intentionally generated from bilingual templates."
-    }
-  ]
+    "entries": [
+        {
+            "file": "src/firstRunTutorial.ts",
+            "textIncludes": [
+                "Welcome to Syro: your incremental reading flow starts here",
+                "欢迎来到 Syro"
+            ],
+            "reason": "First-run tutorial content is intentionally generated from bilingual templates."
+        }
+    ]
 }

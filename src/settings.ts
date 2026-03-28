@@ -121,9 +121,19 @@ function normalizeFsrsStepList(
         return [];
     }
 
-    const steps = value
-        .map((entry) => (typeof entry === "string" ? entry.trim() : entry))
-        .filter((entry): entry is tsfsrs.StepUnit => isFsrsStepUnit(entry));
+    const steps: tsfsrs.StepUnit[] = [];
+    for (const entry of value) {
+        if (typeof entry !== "string") {
+            return [...fallback];
+        }
+
+        const trimmedEntry = entry.trim();
+        if (!isFsrsStepUnit(trimmedEntry)) {
+            return [...fallback];
+        }
+
+        steps.push(trimmedEntry);
+    }
 
     return steps.length === value.length ? steps : [...fallback];
 }
@@ -167,9 +177,7 @@ function parseLegacyFsrsSteps(
         : [...fallback];
 }
 
-export function createDefaultFsrsSettings(
-    overrides: Partial<FsrsSettings> = {},
-): FsrsSettings {
+export function createDefaultFsrsSettings(overrides: Partial<FsrsSettings> = {}): FsrsSettings {
     const { revlog_tags, ...parameterOverrides } = overrides;
     const params = tsfsrs.generatorParameters({
         enable_fuzz: true,
@@ -200,13 +208,8 @@ export function cloneFsrsSettings(settings: FsrsSettings): FsrsSettings {
     };
 }
 
-export function normalizeFsrsSettings(
-    value: unknown,
-    fallback?: FsrsSettings,
-): FsrsSettings {
-    const defaultSettings = fallback
-        ? cloneFsrsSettings(fallback)
-        : createDefaultFsrsSettings();
+export function normalizeFsrsSettings(value: unknown, fallback?: FsrsSettings): FsrsSettings {
+    const defaultSettings = fallback ? cloneFsrsSettings(fallback) : createDefaultFsrsSettings();
 
     if (!isRecord(value)) {
         return defaultSettings;
@@ -295,25 +298,26 @@ export function normalizeDeckOptionsPreset(
 
     const normalizedPreset: DeckOptionsPreset = {
         name: getStringProp(rawPreset, "name") ?? DEFAULT_DECK_OPTIONS_PRESET.name,
-        autoAdvance: getBooleanProp(rawPreset, "autoAdvance") ?? DEFAULT_DECK_OPTIONS_PRESET.autoAdvance,
+        autoAdvance:
+            getBooleanProp(rawPreset, "autoAdvance") ?? DEFAULT_DECK_OPTIONS_PRESET.autoAdvance,
         autoAdvanceSeconds:
             getNumberProp(rawPreset, "autoAdvanceSeconds") ??
             DEFAULT_DECK_OPTIONS_PRESET.autoAdvanceSeconds,
         showProgressBar:
             getBooleanProp(rawPreset, "showProgressBar") ??
             DEFAULT_DECK_OPTIONS_PRESET.showProgressBar,
-        maxNewCards: getNumberProp(rawPreset, "maxNewCards") ?? DEFAULT_DECK_OPTIONS_PRESET.maxNewCards,
-        maxReviews: getNumberProp(rawPreset, "maxReviews") ?? DEFAULT_DECK_OPTIONS_PRESET.maxReviews,
+        maxNewCards:
+            getNumberProp(rawPreset, "maxNewCards") ?? DEFAULT_DECK_OPTIONS_PRESET.maxNewCards,
+        maxReviews:
+            getNumberProp(rawPreset, "maxReviews") ?? DEFAULT_DECK_OPTIONS_PRESET.maxReviews,
         learningSteps:
             getStringProp(rawPreset, "learningSteps") ?? DEFAULT_DECK_OPTIONS_PRESET.learningSteps,
-        lapseSteps: getStringProp(rawPreset, "lapseSteps") ?? DEFAULT_DECK_OPTIONS_PRESET.lapseSteps,
+        lapseSteps:
+            getStringProp(rawPreset, "lapseSteps") ?? DEFAULT_DECK_OPTIONS_PRESET.lapseSteps,
         fsrs: normalizeFsrsSettings(rawPresetFsrs ?? defaultFsrs, defaultFsrs),
     };
 
-    if (
-        !rawPresetFsrs ||
-        !Object.prototype.hasOwnProperty.call(rawPresetFsrs, "learning_steps")
-    ) {
+    if (!rawPresetFsrs || !Object.prototype.hasOwnProperty.call(rawPresetFsrs, "learning_steps")) {
         normalizedPreset.fsrs.learning_steps = parseLegacyFsrsSteps(
             normalizedPreset.learningSteps,
             defaultFsrs.learning_steps,
@@ -431,7 +435,9 @@ export function resolveDeckFsrsSettings(
     settings: Pick<SRSettings, "deckOptionsPresets" | "deckPresetAssignment" | "fsrsSettings">,
     deckPath?: string | null,
 ): FsrsSettings {
-    return cloneFsrsSettings(resolveDeckOptionsPreset(settings, deckPath).fsrs ?? DEFAULT_FSRS_SETTINGS);
+    return cloneFsrsSettings(
+        resolveDeckOptionsPreset(settings, deckPath).fsrs ?? DEFAULT_FSRS_SETTINGS,
+    );
 }
 
 export function syncFsrsSettingsCompatibilityMirror(settings: SRSettings): void {
@@ -909,11 +915,12 @@ export function upgradeSettings(settings: SRSettings) {
         settings.sidebarProgressRingColor = "#a0b0a9";
     }
 
-    const legacySidebarProgressIndicatorMode = (settings as {
-        sidebarProgressIndicatorMode?: string;
-    }).sidebarProgressIndicatorMode;
-    const legacyHiddenSidebarProgressIndicator =
-        legacySidebarProgressIndicatorMode === "hidden";
+    const legacySidebarProgressIndicatorMode = (
+        settings as {
+            sidebarProgressIndicatorMode?: string;
+        }
+    ).sidebarProgressIndicatorMode;
+    const legacyHiddenSidebarProgressIndicator = legacySidebarProgressIndicatorMode === "hidden";
 
     if (settings.showSidebarProgressIndicator === undefined) {
         settings.showSidebarProgressIndicator = !legacyHiddenSidebarProgressIndicator;
@@ -992,37 +999,23 @@ export function upgradeSettings(settings: SRSettings) {
 
     settings.weightedMultiplierSettings = {
         ...DEFAULT_WEIGHTED_MULTIPLIER_SETTINGS,
-        ...(isRecord(settings.weightedMultiplierSettings) ? settings.weightedMultiplierSettings : {}),
+        ...(isRecord(settings.weightedMultiplierSettings)
+            ? settings.weightedMultiplierSettings
+            : {}),
     };
 
     settings.flashcardResponseTexts = {
-        again:
-            settings.flashcardResponseTexts?.again ??
-            DEFAULT_FLASHCARD_RESPONSE_TEXTS.again,
-        hard:
-            settings.flashcardResponseTexts?.hard ??
-            DEFAULT_FLASHCARD_RESPONSE_TEXTS.hard,
-        good:
-            settings.flashcardResponseTexts?.good ??
-            DEFAULT_FLASHCARD_RESPONSE_TEXTS.good,
-        easy:
-            settings.flashcardResponseTexts?.easy ??
-            DEFAULT_FLASHCARD_RESPONSE_TEXTS.easy,
+        again: settings.flashcardResponseTexts?.again ?? DEFAULT_FLASHCARD_RESPONSE_TEXTS.again,
+        hard: settings.flashcardResponseTexts?.hard ?? DEFAULT_FLASHCARD_RESPONSE_TEXTS.hard,
+        good: settings.flashcardResponseTexts?.good ?? DEFAULT_FLASHCARD_RESPONSE_TEXTS.good,
+        easy: settings.flashcardResponseTexts?.easy ?? DEFAULT_FLASHCARD_RESPONSE_TEXTS.easy,
     };
 
     settings.noteResponseTexts = {
-        again:
-            settings.noteResponseTexts?.again ??
-            DEFAULT_NOTE_RESPONSE_TEXTS.again,
-        hard:
-            settings.noteResponseTexts?.hard ??
-            DEFAULT_NOTE_RESPONSE_TEXTS.hard,
-        good:
-            settings.noteResponseTexts?.good ??
-            DEFAULT_NOTE_RESPONSE_TEXTS.good,
-        easy:
-            settings.noteResponseTexts?.easy ??
-            DEFAULT_NOTE_RESPONSE_TEXTS.easy,
+        again: settings.noteResponseTexts?.again ?? DEFAULT_NOTE_RESPONSE_TEXTS.again,
+        hard: settings.noteResponseTexts?.hard ?? DEFAULT_NOTE_RESPONSE_TEXTS.hard,
+        good: settings.noteResponseTexts?.good ?? DEFAULT_NOTE_RESPONSE_TEXTS.good,
+        easy: settings.noteResponseTexts?.easy ?? DEFAULT_NOTE_RESPONSE_TEXTS.easy,
     };
 
     // Keep data in the plugin folder; the old track-file mode is no longer supported.

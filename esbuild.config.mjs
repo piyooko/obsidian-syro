@@ -19,7 +19,6 @@ const OBSIDIAN_PLUGIN_DIR = path.join(PROJECT_ROOT, "plugin_test", ".obsidian", 
 const SOURCEMAP_MODE = prod ? false : "inline";
 
 function copyToObsidian() {
-
     try {
         if (!fs.existsSync(OBSIDIAN_PLUGIN_DIR)) {
             fs.mkdirSync(OBSIDIAN_PLUGIN_DIR, { recursive: true });
@@ -104,24 +103,28 @@ const reactJsxPlugin = {
 const framerMotionOptionalPeerPlugin = {
     name: "framer-motion-optional-peer",
     setup(build) {
-        build.onLoad({ filter: /[\\/]framer-motion[\\/].*[\\/]filter-props\.mjs$/ }, async (args) => {
-            const source = await fs.promises.readFile(args.path, "utf8");
-            const requireSnippet = 'loadExternalIsValidProp(require("@emotion/is-prop-valid").default);';
+        build.onLoad(
+            { filter: /[\\/]framer-motion[\\/].*[\\/]filter-props\.mjs$/ },
+            async (args) => {
+                const source = await fs.promises.readFile(args.path, "utf8");
+                const requireSnippet =
+                    'loadExternalIsValidProp(require("@emotion/is-prop-valid").default);';
 
-            if (!source.includes(requireSnippet)) {
-                return null;
-            }
+                if (!source.includes(requireSnippet)) {
+                    return null;
+                }
 
-            const patchedSource =
-                'import isPropValid from "@emotion/is-prop-valid";\n' +
-                source.replace(requireSnippet, "loadExternalIsValidProp(isPropValid);");
+                const patchedSource =
+                    'import isPropValid from "@emotion/is-prop-valid";\n' +
+                    source.replace(requireSnippet, "loadExternalIsValidProp(isPropValid);");
 
-            return {
-                contents: patchedSource,
-                loader: "js",
-                resolveDir: path.dirname(args.path),
-            };
-        });
+                return {
+                    contents: patchedSource,
+                    loader: "js",
+                    resolveDir: path.dirname(args.path),
+                };
+            },
+        );
     },
 };
 
@@ -211,13 +214,7 @@ const context = await esbuild.context({
         ".png": "dataurl",
     },
     bundle: true,
-    external: [
-        "obsidian",
-        "electron",
-        "@codemirror/*",
-        "@lezer/*",
-        ...builtins,
-    ],
+    external: ["obsidian", "electron", "@codemirror/*", "@lezer/*", ...builtins],
     format: "cjs",
     target: "es2018",
     logLevel: "info",

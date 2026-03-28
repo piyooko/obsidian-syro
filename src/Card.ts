@@ -6,7 +6,6 @@ import { globalDateProvider } from "./util/DateProvider";
 import { RepetitionItem, CardQueue } from "./dataStore/repetitionItem";
 import { Queue } from "./dataStore/queue";
 
-
 export class Card {
     question: Question;
     cardIdx: number;

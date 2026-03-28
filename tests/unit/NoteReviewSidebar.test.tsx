@@ -2,10 +2,7 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { NoteReviewSidebar } from "src/ui/components/NoteReviewSidebar";
 import type { NoteReviewItem, NoteReviewSidebarState } from "src/ui/types/noteReview";
-import type {
-    SidebarProgressIndicatorMode,
-    SidebarProgressRingDirection,
-} from "src/settings";
+import type { SidebarProgressIndicatorMode, SidebarProgressRingDirection } from "src/settings";
 
 jest.mock("obsidian", () => {
     const actualMoment = require("moment");
@@ -43,9 +40,11 @@ function setHoverTooltipCapability(enabled: boolean) {
 }
 
 beforeAll(() => {
-    (HTMLElement.prototype as HTMLElement & {
-        setCssProps?: (props: Record<string, string>) => void;
-    }).setCssProps = function setCssProps(props: Record<string, string>) {
+    (
+        HTMLElement.prototype as HTMLElement & {
+            setCssProps?: (props: Record<string, string>) => void;
+        }
+    ).setCssProps = function setCssProps(props: Record<string, string>) {
         for (const [key, value] of Object.entries(props)) {
             this.style.setProperty(key, value);
         }
@@ -286,9 +285,7 @@ describe("NoteReviewSidebar", () => {
 
         try {
             const sidebar = view.container.querySelector(".sr-note-sidebar") as HTMLElement | null;
-            expect(sidebar?.getAttribute("data-progress-ring-direction")).toBe(
-                "counterclockwise",
-            );
+            expect(sidebar?.getAttribute("data-progress-ring-direction")).toBe("counterclockwise");
         } finally {
             view.cleanup();
         }
@@ -339,9 +336,9 @@ describe("NoteReviewSidebar", () => {
             const sidebar = view.container.querySelector(".sr-note-sidebar") as HTMLElement | null;
 
             expect(sidebar?.classList.contains("sr-note-sidebar--mobile-drawer")).toBe(true);
-            expect(view.drawerInner?.classList.contains("sr-note-sidebar--mobile-drawer-host")).toBe(
-                true,
-            );
+            expect(
+                view.drawerInner?.classList.contains("sr-note-sidebar--mobile-drawer-host"),
+            ).toBe(true);
             expect(sidebar?.style.getPropertyValue("--sr-drawer-bottom-gap")).toBe("");
             expect(view.drawerInner?.style.getPropertyValue("--sr-drawer-bottom-gap")).toBe("");
         } finally {
@@ -360,9 +357,9 @@ describe("NoteReviewSidebar", () => {
 
         try {
             const timelineBody = view.container.querySelector(".sr-timeline-body");
-            const timelineHeader = view.container.querySelector(".sr-timeline-header") as
-                | HTMLElement
-                | null;
+            const timelineHeader = view.container.querySelector(
+                ".sr-timeline-header",
+            ) as HTMLElement | null;
 
             expect(timelineBody).not.toBeNull();
             expect(timelineHeader).not.toBeNull();
@@ -386,9 +383,9 @@ describe("NoteReviewSidebar", () => {
         });
 
         try {
-            const timelineContainer = view.container.querySelector(".sr-timeline-container") as
-                | HTMLElement
-                | null;
+            const timelineContainer = view.container.querySelector(
+                ".sr-timeline-container",
+            ) as HTMLElement | null;
 
             expect(timelineContainer).not.toBeNull();
             expect(timelineContainer?.style.height).toBe("64px");
@@ -407,7 +404,9 @@ describe("NoteReviewSidebar", () => {
 
         try {
             const sidebar = view.container.querySelector(".sr-note-sidebar") as HTMLElement | null;
-            const dividerHandle = view.container.querySelector(".sr-resizable-divider .sr-divider-handle");
+            const dividerHandle = view.container.querySelector(
+                ".sr-resizable-divider .sr-divider-handle",
+            );
 
             expect(sidebar?.classList.contains("sr-note-sidebar--mobile-drawer")).toBe(true);
             expect(sidebar?.classList.contains("sr-note-sidebar--phone-mobile-drawer")).toBe(true);
@@ -479,7 +478,9 @@ describe("NoteReviewSidebar", () => {
         });
 
         try {
-            const divider = view.container.querySelector(".sr-resizable-divider") as HTMLElement | null;
+            const divider = view.container.querySelector(
+                ".sr-resizable-divider",
+            ) as HTMLElement | null;
             const tagScrollContainer = view.container.querySelector(
                 ".sr-tag-scroll-container",
             ) as HTMLElement | null;
@@ -488,8 +489,12 @@ describe("NoteReviewSidebar", () => {
             expect(tagScrollContainer?.style.maxHeight).toBe("160px");
 
             act(() => {
-                divider?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientY: 100 }));
-                document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientY: 120 }));
+                divider?.dispatchEvent(
+                    new MouseEvent("mousedown", { bubbles: true, clientY: 100 }),
+                );
+                document.dispatchEvent(
+                    new MouseEvent("mousemove", { bubbles: true, clientY: 120 }),
+                );
                 document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientY: 120 }));
             });
 
@@ -531,12 +536,12 @@ describe("NoteReviewSidebar", () => {
         });
 
         try {
-            const divider = view.container.querySelector(".sr-resizable-divider") as
-                | HTMLElement
-                | null;
-            const dividerHandle = view.container.querySelector(".sr-divider-handle") as
-                | HTMLElement
-                | null;
+            const divider = view.container.querySelector(
+                ".sr-resizable-divider",
+            ) as HTMLElement | null;
+            const dividerHandle = view.container.querySelector(
+                ".sr-divider-handle",
+            ) as HTMLElement | null;
 
             expect(divider).not.toBeNull();
             expect(dividerHandle).not.toBeNull();
@@ -681,7 +686,9 @@ describe("NoteReviewSidebar", () => {
                 jest.advanceTimersByTime(1);
             });
 
-            const tooltip = document.body.querySelector(".sr-note-path-tooltip") as HTMLElement | null;
+            const tooltip = document.body.querySelector(
+                ".sr-note-path-tooltip",
+            ) as HTMLElement | null;
             expect(tooltip).not.toBeNull();
             expect(tooltip?.textContent).toContain(item.path);
         } finally {

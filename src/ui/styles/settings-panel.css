@@ -508,7 +508,11 @@ body:not(.is-mobile) .sr-settings-panel .setting-item.setting-item--color .setti
     transform: translate3d(var(--toggle-border-width), 0, 0);
 }
 
-.is-mobile .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container.is-enabled:after,
+.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .mod-toggle
+    .checkbox-container.is-enabled:after,
 .sr-deck-options-anchor-panel .mod-toggle .checkbox-container.is-enabled:after {
     transform: translate3d(
         calc(var(--toggle-width) - var(--toggle-thumb-width) - var(--toggle-border-width)),
@@ -522,9 +526,7 @@ body:not(.is-mobile) .sr-settings-panel .setting-item.setting-item--color .setti
     .sr-settings-panel
     .mod-toggle
     .checkbox-container.is-enabled:active:after,
-.sr-deck-options-anchor-panel
-    .mod-toggle
-    .checkbox-container.is-enabled:active:after {
+.sr-deck-options-anchor-panel .mod-toggle .checkbox-container.is-enabled:active:after {
     left: -4px;
 }
 
@@ -637,7 +639,10 @@ body:not(.is-mobile) .sr-settings-panel .setting-items .sr-color-input-shell {
     max-width: 30px;
 }
 
-body:not(.is-mobile) .sr-settings-panel .setting-items input[type="color"]::-webkit-color-swatch-wrapper {
+body:not(.is-mobile)
+    .sr-settings-panel
+    .setting-items
+    input[type="color"]::-webkit-color-swatch-wrapper {
     width: 100%;
     height: 100%;
     padding: 0;
@@ -806,12 +811,20 @@ body:not(.is-mobile) .sr-settings-container .sr-settings-panel {
     padding-bottom: 0;
 }
 
-body:not(.is-mobile) .sr-settings-container .sr-settings-panel .setting-items > .setting-item.mod-toggle,
+body:not(.is-mobile)
+    .sr-settings-container
+    .sr-settings-panel
+    .setting-items
+    > .setting-item.mod-toggle,
 body:not(.is-mobile) .sr-deck-options-anchor-panel .setting-items > .setting-item.mod-toggle {
     align-items: center !important;
 }
 
-body:not(.is-mobile) .sr-settings-container .sr-settings-panel .setting-item.mod-toggle .setting-item-control,
+body:not(.is-mobile)
+    .sr-settings-container
+    .sr-settings-panel
+    .setting-item.mod-toggle
+    .setting-item-control,
 body:not(.is-mobile) .sr-deck-options-anchor-panel .setting-item.mod-toggle .setting-item-control {
     align-self: center !important;
 }
@@ -825,14 +838,28 @@ body:not(.is-mobile) .sr-deck-options-anchor-panel .mod-toggle .checkbox-contain
     max-height: none;
 }
 
-body:not(.is-mobile) .sr-settings-container .sr-settings-panel .mod-toggle .checkbox-container input,
+body:not(.is-mobile)
+    .sr-settings-container
+    .sr-settings-panel
+    .mod-toggle
+    .checkbox-container
+    input,
 body:not(.is-mobile) .sr-deck-options-anchor-panel .mod-toggle .checkbox-container input {
     appearance: auto;
     -webkit-appearance: auto;
 }
 
-body:not(.is-mobile) .sr-settings-container .sr-settings-panel .mod-toggle .setting-item-control > .checkbox-container,
-body:not(.is-mobile) .sr-deck-options-anchor-panel .mod-toggle .setting-item-control > .checkbox-container {
+body:not(.is-mobile)
+    .sr-settings-container
+    .sr-settings-panel
+    .mod-toggle
+    .setting-item-control
+    > .checkbox-container,
+body:not(.is-mobile)
+    .sr-deck-options-anchor-panel
+    .mod-toggle
+    .setting-item-control
+    > .checkbox-container {
     min-width: auto;
     max-width: none;
 }
@@ -888,11 +915,19 @@ body.is-phone .modal.mod-settings .vertical-tab-content.sr-settings-container {
     margin-bottom: 0;
 }
 
-.is-mobile .sr-settings-container .sr-settings-sections > .sr-setting-section + .sr-setting-section {
+.is-mobile
+    .sr-settings-container
+    .sr-settings-sections
+    > .sr-setting-section
+    + .sr-setting-section {
     margin-top: 18px;
 }
 
-.is-mobile .sr-settings-container .sr-settings-panel .setting-group > .setting-item.setting-item-heading {
+.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .setting-group
+    > .setting-item.setting-item-heading {
     padding: 0 8px;
     margin-bottom: 8px;
 }
@@ -950,8 +985,16 @@ body.is-phone .modal.mod-settings .vertical-tab-content.sr-settings-container {
     gap: 10px;
 }
 
-.is-mobile .sr-settings-container .sr-settings-panel .setting-item-control input[type="text"]:not(.sr-license-key-input):not(.sr-input-compact),
-.is-mobile .sr-settings-container .sr-settings-panel .setting-item-control input[type="number"]:not(.sr-input-compact) {
+.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .setting-item-control
+    input[type="text"]:not(.sr-license-key-input):not(.sr-input-compact),
+.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .setting-item-control
+    input[type="number"]:not(.sr-input-compact) {
     width: min(100%, 120px);
     max-width: 120px;
 }
@@ -987,8 +1030,16 @@ body.is-phone .modal.mod-settings .vertical-tab-content.sr-settings-container {
     flex-shrink: 0;
 }
 
-.is-mobile .sr-settings-container .sr-settings-panel .setting-item.setting-item--textarea .setting-item-control,
-.is-mobile .sr-settings-container .sr-settings-panel .setting-item.cmdr-slider .setting-item-control {
+.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .setting-item.setting-item--textarea
+    .setting-item-control,
+.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .setting-item.cmdr-slider
+    .setting-item-control {
     flex: 1 0 100%;
     width: 100%;
     margin-left: 0;
@@ -1010,8 +1061,16 @@ body.is-phone .modal.mod-settings .vertical-tab-content.sr-settings-container {
     max-width: 30px;
 }
 
-.is-mobile .sr-settings-container .sr-settings-panel .setting-items input[type="color"]::-webkit-color-swatch,
-.is-mobile .sr-settings-container .sr-settings-panel .setting-items input[type="color"]::-moz-color-swatch {
+.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .setting-items
+    input[type="color"]::-webkit-color-swatch,
+.is-mobile
+    .sr-settings-container
+    .sr-settings-panel
+    .setting-items
+    input[type="color"]::-moz-color-swatch {
     border-width: 2px;
 }
 
@@ -1131,8 +1190,16 @@ body.is-mobile
     max-width: 120px;
 }
 
-body.is-mobile .sr-settings-container .sr-settings-sections .setting-item-control input[type="text"],
-body.is-mobile .sr-settings-container .sr-settings-sections .setting-item-control input[type="number"],
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-sections
+    .setting-item-control
+    input[type="text"],
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-sections
+    .setting-item-control
+    input[type="number"],
 body.is-mobile .sr-settings-container .sr-settings-sections .setting-item-control select,
 body.is-mobile .sr-settings-container .sr-settings-sections .setting-item-control textarea,
 body.is-mobile .sr-settings-container .sr-settings-sections .setting-item-control .slider {
@@ -1140,17 +1207,19 @@ body.is-mobile .sr-settings-container .sr-settings-sections .setting-item-contro
     max-width: 100%;
 }
 
-body.is-mobile .sr-settings-container .sr-settings-sections .cmdr-slider .setting-item-control > div {
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-sections
+    .cmdr-slider
+    .setting-item-control
+    > div {
     display: flex;
     width: 100%;
     align-items: center;
     gap: 12px;
 }
 
-body.is-mobile
-    .sr-settings-container
-    .sr-settings-panel
-    .sr-setting-subgroup {
+body.is-mobile .sr-settings-container .sr-settings-panel .sr-setting-subgroup {
     padding-left: 12px;
 }
 
@@ -1394,7 +1463,8 @@ body.is-mobile
 }
 
 .is-mobile .sr-deck-options-overlay {
-    padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px) + var(--sr-mobile-navbar-offset, 0px));
+    padding: 8px 8px
+        calc(8px + env(safe-area-inset-bottom, 0px) + var(--sr-mobile-navbar-offset, 0px));
 }
 
 .is-mobile .sr-deck-options-anchor-panel {
@@ -1522,7 +1592,11 @@ body.is-mobile
     padding-bottom: 14px;
 }
 
-.is-mobile .sr-deck-options-anchor-panel .setting-items > .setting-item:not(.mod-toggle) .setting-item-info {
+.is-mobile
+    .sr-deck-options-anchor-panel
+    .setting-items
+    > .setting-item:not(.mod-toggle)
+    .setting-item-info {
     width: 100%;
     min-width: 0;
     margin-right: 0;

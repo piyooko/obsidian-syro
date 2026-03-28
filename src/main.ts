@@ -423,8 +423,8 @@ export default class SRPlugin extends Plugin {
 
         this.noteAlgorithm = new WeightedMultiplierAlgorithm();
         this.noteAlgorithm.updateSettings(settings.weightedMultiplierSettings);
-        settings.weightedMultiplierSettings =
-            this.noteAlgorithm.settings as WeightedMultiplierSettings;
+        settings.weightedMultiplierSettings = this.noteAlgorithm
+            .settings as WeightedMultiplierSettings;
 
         if (obsidianJustInstalled) {
             await this.initializeFirstRunTutorialNote();
@@ -737,7 +737,6 @@ export default class SRPlugin extends Plugin {
             },
         });
 
-
         this.addCommand({
             id: "srs-cloze-same-level",
             name: t("CMD_CREATE_CLOZE_SAME_LEVEL"),
@@ -838,7 +837,6 @@ export default class SRPlugin extends Plugin {
         }
         return max;
     }
-
 
     public getRolloverDate(): string {
         return window
@@ -2247,7 +2245,6 @@ export default class SRPlugin extends Plugin {
         if (debugScheduling) {
             console.debug("[SR Debug] saveReviewResponse completed successfully");
         }
-
     }
 
     // return false if is ignored

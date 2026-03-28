@@ -645,7 +645,6 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         const clozeInfos = this.extractClozeInfos(questionText);
 
         if (isCodeBlock) {
-
             const groups = new Map<number, Map<number, typeof clozeInfos>>();
 
             clozeInfos.forEach((info) => {
@@ -763,7 +762,6 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         }
 
         return result;
-
     }
 
     private isCodeBlockQuestion(text: string): boolean {

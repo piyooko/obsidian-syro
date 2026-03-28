@@ -67,7 +67,7 @@ function isTranslationKey(value: string): value is TranslationKey {
 
 export function t(str: string, params?: Record<string, unknown>): string {
     const locale = localeMap[resolveSupportedLocale(moment.locale())];
-    const result = isTranslationKey(str) ? locale[str] ?? en[str] : str;
+    const result = isTranslationKey(str) ? (locale[str] ?? en[str]) : str;
 
     if (params) {
         return interpolate(result, params);

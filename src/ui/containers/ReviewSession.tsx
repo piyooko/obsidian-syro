@@ -265,33 +265,36 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         }
     }, [hostLeafId]);
 
-    const syncReviewMobileNavbarCover = useCallback((blockingMobileNavbar = hasBlockingMobileNavbar) => {
-        if (!Platform.isMobile || typeof document === "undefined") {
+    const syncReviewMobileNavbarCover = useCallback(
+        (blockingMobileNavbar = hasBlockingMobileNavbar) => {
+            if (!Platform.isMobile || typeof document === "undefined") {
+                clearReviewMobileNavbarCover();
+                return;
+            }
+
+            const activeLeaf = plugin.app.workspace.getMostRecentLeaf();
+            const shouldCover =
+                view === "review" &&
+                blockingMobileNavbar &&
+                activeLeaf === hostLeaf &&
+                hostLeaf.view.getViewType() === SR_TAB_VIEW;
+
+            if (shouldCover) {
+                applyReviewMobileNavbarCover();
+                return;
+            }
+
             clearReviewMobileNavbarCover();
-            return;
-        }
-
-        const activeLeaf = plugin.app.workspace.getMostRecentLeaf();
-        const shouldCover =
-            view === "review" &&
-            blockingMobileNavbar &&
-            activeLeaf === hostLeaf &&
-            hostLeaf.view.getViewType() === SR_TAB_VIEW;
-
-        if (shouldCover) {
-            applyReviewMobileNavbarCover();
-            return;
-        }
-
-        clearReviewMobileNavbarCover();
-    }, [
-        applyReviewMobileNavbarCover,
-        clearReviewMobileNavbarCover,
-        hostLeaf,
-        hasBlockingMobileNavbar,
-        plugin.app.workspace,
-        view,
-    ]);
+        },
+        [
+            applyReviewMobileNavbarCover,
+            clearReviewMobileNavbarCover,
+            hostLeaf,
+            hasBlockingMobileNavbar,
+            plugin.app.workspace,
+            view,
+        ],
+    );
 
     useEffect(() => {
         if (!Platform.isMobile) {
@@ -803,7 +806,7 @@ const DeckListView: React.FC<DeckListViewProps> = ({
                     deckPath={openDeckOptions.deckPath}
                     containerElement={panelHostRef.current}
                     preferredWidth={Math.min(
-                        isPhoneLayout ? panelHostRef.current?.clientWidth ?? 420 : treeWidth,
+                        isPhoneLayout ? (panelHostRef.current?.clientWidth ?? 420) : treeWidth,
                         760,
                     )}
                     onClose={() => setOpenDeckOptions(null)}

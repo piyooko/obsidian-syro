@@ -1,8 +1,5 @@
 import { CardListType, Deck } from "src/Deck";
-import {
-    FlashcardReviewMode,
-    FlashcardReviewSequencer,
-} from "src/FlashcardReviewSequencer";
+import { FlashcardReviewMode, FlashcardReviewSequencer } from "src/FlashcardReviewSequencer";
 import { TopicPath } from "src/TopicPath";
 import { createDefaultFsrsSettings, DEFAULT_SETTINGS, SRSettings } from "src/settings";
 import { ReviewResponse } from "src/scheduling";
@@ -115,7 +112,13 @@ function createNewReviewItem(settings: SRSettings): RepetitionItem {
     const algorithm = new FsrsAlgorithm();
     algorithm.updateSettings(settings.fsrsSettings);
 
-    const item = new RepetitionItem(1, "file-1", RPITEMTYPE.CARD, "#flashcards", algorithm.defaultData());
+    const item = new RepetitionItem(
+        1,
+        "file-1",
+        RPITEMTYPE.CARD,
+        "#flashcards",
+        algorithm.defaultData(),
+    );
     item.queue = CardQueue.New;
     item.nextReview = 0;
     item.learningStep = null;

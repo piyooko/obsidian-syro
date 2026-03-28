@@ -1,5 +1,4 @@
-﻿
-import { SRSettings } from "src/settings";
+﻿import { SRSettings } from "src/settings";
 import { CardType, QuestionText } from "src/Question";
 import { parse, ParsedQuestionInfo } from "src/parser";
 import { RPITEMTYPE } from "./repetitionItem";

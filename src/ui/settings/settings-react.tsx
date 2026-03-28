@@ -22,7 +22,6 @@ function isRedrawableView(view: unknown): view is RedrawableView {
     );
 }
 
-
 export class SRSettingTab extends PluginSettingTab {
     private plugin: SRPlugin;
     private root: Root | null = null;
