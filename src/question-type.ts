@@ -9,7 +9,10 @@ import {
     restoreCodeContextMask,
     type StandardClozeType,
 } from "src/util/codeAwareCloze";
-import { resolveClozeReviewContext } from "src/util/cloze-review-context";
+import {
+    resolveClozeReviewContextDetails,
+    type ResolvedClozeReviewContext,
+} from "src/util/cloze-review-context";
 import { findLineIndexOfSearchStringIgnoringWs } from "src/util/utils";
 
 export class CardFrontBack {
@@ -52,6 +55,20 @@ export interface CardExpansionContext {
     noteText?: string;
     firstLineNum?: number;
     lastLineNum?: number;
+}
+
+interface AnkiClozeInfo {
+    id: number;
+    content: string;
+    start: number;
+    end: number;
+    lineNum: number;
+}
+
+interface AnkiClozeLineGroup {
+    id: number;
+    lineNum: number;
+    infos: AnkiClozeInfo[];
 }
 
 export class CardFrontBackUtil {
@@ -700,19 +717,37 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                 });
             });
         } else {
-            const uniqueIds = [...new Set(clozeInfos.map((info) => info.id))].sort((a, b) => a - b);
-            uniqueIds.forEach((activeId) => {
-                const activeInfos = clozeInfos.filter((info) => info.id === activeId);
-                const contextText = this.resolveTextContext(
+            const lineScopedGroups = this.groupLineScopedClozes(clozeInfos);
+            lineScopedGroups.forEach((group) => {
+                const contextInfo = this.resolveTextContext(
                     questionText,
-                    activeInfos.map((info) => info.lineNum),
+                    [group.lineNum],
                     settings,
                     context,
                 );
-                const contextInfos = this.extractClozeInfos(contextText);
-                const front = this.generateFront(contextText, contextInfos, activeId, settings);
-                const back = this.generateBack(contextText, contextInfos, activeId, settings);
-                const review = this.generateReview(contextText, contextInfos, activeId, settings);
+                const contextInfos = this.extractClozeInfos(contextInfo.text);
+                const activeGroup = {
+                    id: group.id,
+                    lineNum: contextInfo.activeLinesInText[0] ?? group.lineNum,
+                };
+                const front = this.generateFront(
+                    contextInfo.text,
+                    contextInfos,
+                    activeGroup,
+                    settings,
+                );
+                const back = this.generateBack(
+                    contextInfo.text,
+                    contextInfos,
+                    activeGroup,
+                    settings,
+                );
+                const review = this.generateReview(
+                    contextInfo.text,
+                    contextInfos,
+                    activeGroup,
+                    settings,
+                );
                 result.push(new CardFrontBack(front, back, review));
             });
         }
@@ -720,12 +755,13 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         if (!isCodeBlock) {
             const standardModel = createStandardClozeModel(questionText, settings);
             standardModel.ranges.forEach((range) => {
-                const contextText = this.resolveTextContext(
+                const contextInfo = this.resolveTextContext(
                     questionText,
                     [range.lineNum],
                     settings,
                     context,
                 );
+                const contextText = contextInfo.text;
                 const contextModel = createStandardClozeModel(contextText, settings);
                 const occurrenceIndex = getStandardClozeOccurrenceIndex(
                     standardModel.ranges,
@@ -801,16 +837,8 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         return { windowedText, startSliceIndex: startSlice, activeLineRelative };
     }
 
-    private extractClozeInfos(
-        text: string,
-    ): { id: number; content: string; start: number; end: number; lineNum: number }[] {
-        const infos: {
-            id: number;
-            content: string;
-            start: number;
-            end: number;
-            lineNum: number;
-        }[] = [];
+    private extractClozeInfos(text: string): AnkiClozeInfo[] {
+        const infos: AnkiClozeInfo[] = [];
 
         const regex = /\{\{c(\d+)(?:::|：：)/gi;
 
@@ -855,13 +883,32 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         return infos;
     }
 
+    private groupLineScopedClozes(clozeInfos: AnkiClozeInfo[]): AnkiClozeLineGroup[] {
+        const groups = new Map<string, AnkiClozeLineGroup>();
+
+        clozeInfos.forEach((info) => {
+            const key = `${info.lineNum}:${info.id}`;
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    id: info.id,
+                    lineNum: info.lineNum,
+                    infos: [],
+                });
+            }
+
+            groups.get(key)?.infos.push(info);
+        });
+
+        return Array.from(groups.values());
+    }
+
     private resolveTextContext(
         questionText: string,
         activeLines: number[],
         settings: SRSettings,
         context?: CardExpansionContext,
-    ): string {
-        return resolveClozeReviewContext({
+    ): ResolvedClozeReviewContext {
+        return resolveClozeReviewContextDetails({
             noteText: context?.noteText,
             questionText,
             firstLineNum: context?.firstLineNum,
@@ -878,10 +925,17 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         return text.replace(/\{\{c\d+::(.*?)(?:::.*)?\}\}/gi, "$1");
     }
 
+    private isActiveCloze(
+        info: Pick<AnkiClozeInfo, "id" | "lineNum">,
+        active: { id: number; lineNum: number },
+    ): boolean {
+        return info.id === active.id && info.lineNum === active.lineNum;
+    }
+
     private generateFront(
         text: string,
-        infos: { id: number; content: string; start: number; end: number }[],
-        activeId: number,
+        infos: AnkiClozeInfo[],
+        active: { id: number; lineNum: number },
         settings: SRSettings,
     ): string {
         let result = "";
@@ -889,7 +943,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
 
         for (const info of infos) {
             result += text.substring(lastEnd, info.start);
-            if (info.id === activeId) {
+            if (this.isActiveCloze(info, active)) {
                 result += encodeHiddenMarker("[...]");
             } else {
                 result += this.shouldKeepOtherAnkiClozeVisual(settings)
@@ -905,8 +959,8 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
 
     private generateBack(
         text: string,
-        infos: { id: number; content: string; start: number; end: number }[],
-        activeId: number,
+        infos: AnkiClozeInfo[],
+        active: { id: number; lineNum: number },
         settings: SRSettings,
     ): string {
         let result = "";
@@ -914,7 +968,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
 
         for (const info of infos) {
             result += text.substring(lastEnd, info.start);
-            if (info.id === activeId) {
+            if (this.isActiveCloze(info, active)) {
                 result += encodeShownMarker(info.content);
             } else {
                 result += this.shouldKeepOtherAnkiClozeVisual(settings)
@@ -930,8 +984,8 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
 
     private generateReview(
         text: string,
-        infos: { id: number; content: string; start: number; end: number }[],
-        activeId: number,
+        infos: AnkiClozeInfo[],
+        active: { id: number; lineNum: number },
         settings: SRSettings,
     ): string {
         let result = "";
@@ -939,7 +993,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
 
         for (const info of infos) {
             result += text.substring(lastEnd, info.start);
-            if (info.id === activeId) {
+            if (this.isActiveCloze(info, active)) {
                 result += encodeUnifiedMarker("[...]", info.content);
             } else {
                 result += this.shouldKeepOtherAnkiClozeVisual(settings)

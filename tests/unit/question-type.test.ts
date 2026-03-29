@@ -186,6 +186,82 @@ test("CardType.AnkiCloze keeps fenced code blocks in Anki-only mode", () => {
     expect(result[0].front).toContain('typeof from === "object"');
     expect(result[0].front).not.toContain("SR_C:");
 });
+
+test("CardType.AnkiCloze only links same-number clozes on the current line even with full note context", () => {
+    const clozeFormatter = new QuestionTypeClozeFormatter();
+    const reviewFormatter = new QuestionTypeReviewFormatter();
+    const settings: SRSettings = {
+        ...DEFAULT_SETTINGS,
+        convertAnkiClozesToClozes: true,
+        clozeContextMode: "full",
+    };
+    const questionText = "{{c2::alpha}} and {{c2::beta}}\ncarry {{c2::gamma}}";
+    const noteText = `Intro line\n${questionText}\nOutro line`;
+
+    const result = CardFrontBackUtil.expand(
+        CardType.AnkiCloze,
+        questionText,
+        settings,
+        1,
+        {
+            noteText,
+            firstLineNum: 1,
+            lastLineNum: 2,
+        },
+    );
+
+    expect(result).toEqual([
+        new CardFrontBack(
+            `Intro line\n${clozeFormatter.asking()} and ${clozeFormatter.asking()}\ncarry gamma\nOutro line`,
+            `Intro line\n${clozeFormatter.showingAnswer("alpha")} and ${clozeFormatter.showingAnswer("beta")}\ncarry gamma\nOutro line`,
+            `Intro line\n${reviewFormatter.asking("alpha")} and ${reviewFormatter.asking("beta")}\ncarry gamma\nOutro line`,
+        ),
+        new CardFrontBack(
+            `Intro line\nalpha and beta\ncarry ${clozeFormatter.asking()}\nOutro line`,
+            `Intro line\nalpha and beta\ncarry ${clozeFormatter.showingAnswer("gamma")}\nOutro line`,
+            `Intro line\nalpha and beta\ncarry ${reviewFormatter.asking("gamma")}\nOutro line`,
+        ),
+    ]);
+});
+
+test("CardType.AnkiCloze safe trim keeps the current line but does not preserve distant same-number lines", () => {
+    const clozeFormatter = new QuestionTypeClozeFormatter();
+    const settings: SRSettings = {
+        ...DEFAULT_SETTINGS,
+        convertAnkiClozesToClozes: true,
+        clozeContextMode: "full",
+        clozeContextPerformanceMode: "safe-trim",
+        clozeContextSoftLimitLines: 1,
+    };
+    const questionText = [
+        "lead 1",
+        "{{c2::alpha}} and {{c2::beta}}",
+        "lead 2",
+        "lead 3",
+        "lead 4",
+        "carry {{c2::gamma}}",
+        "tail",
+    ].join("\n");
+
+    const result = CardFrontBackUtil.expand(
+        CardType.AnkiCloze,
+        questionText,
+        settings,
+        0,
+        {
+            noteText: questionText,
+            firstLineNum: 0,
+            lastLineNum: 6,
+        },
+    );
+
+    expect(result).toHaveLength(2);
+    expect(result[0].front).toContain(`\n${clozeFormatter.asking()} and ${clozeFormatter.asking()}\n`);
+    expect(result[0].front).not.toContain("carry {{c2::gamma}}");
+    expect(result[0].front).not.toContain("carry gamma");
+    expect(result[1].front).toContain(`carry ${clozeFormatter.asking()}`);
+    expect(result[1].front).not.toContain("alpha");
+});
 describe.skip("Nested standard clozes", () => {
     const clozeFormatter = new QuestionTypeClozeFormatter();
     const reviewFormatter = new QuestionTypeReviewFormatter();

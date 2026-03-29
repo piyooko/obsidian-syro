@@ -33,9 +33,21 @@ interface ExtractedContext {
     endLine: number;
     activeStartLine: number;
     activeEndLine: number;
+    activeAbsoluteLines: number[];
+}
+
+export interface ResolvedClozeReviewContext {
+    text: string;
+    activeLinesInText: number[];
 }
 
 export function resolveClozeReviewContext(input: ClozeReviewContextInput): string {
+    return resolveClozeReviewContextDetails(input).text;
+}
+
+export function resolveClozeReviewContextDetails(
+    input: ClozeReviewContextInput,
+): ResolvedClozeReviewContext {
     const mode = input.settings.clozeContextMode ?? "single";
     const performanceMode = input.settings.clozeContextPerformanceMode ?? "off";
     const softLimitLines = Math.max(
@@ -48,7 +60,7 @@ export function resolveClozeReviewContext(input: ClozeReviewContextInput): strin
 
     const extracted = extractContextByMode(input, mode);
     if (performanceMode === "off") {
-        return extracted.text;
+        return buildResolvedContext(extracted.text, extracted.startLine, 0, extracted);
     }
 
     return applySafeTrim(extracted, softLimitLines);
@@ -103,6 +115,7 @@ function extractContextByMode(
         endLine: range.end,
         activeStartLine: Math.min(...activeAbsoluteLines),
         activeEndLine: Math.max(...activeAbsoluteLines),
+        activeAbsoluteLines,
     };
 }
 
@@ -117,6 +130,7 @@ function buildFallbackContext(input: ClozeReviewContextInput): ExtractedContext 
         endLine: startLine + Math.max(0, questionLines.length - 1),
         activeStartLine: startLine + Math.max(0, Math.min(...activeLines) - 1),
         activeEndLine: startLine + Math.max(0, Math.max(...activeLines) - 1),
+        activeAbsoluteLines: activeLines.map((line) => startLine + Math.max(0, line - 1)),
     };
 }
 
@@ -233,10 +247,13 @@ function clampRange(lines: string[], range: LineRange): LineRange {
     return { start, end };
 }
 
-function applySafeTrim(context: ExtractedContext, softLimitLines: number): string {
+function applySafeTrim(
+    context: ExtractedContext,
+    softLimitLines: number,
+): ResolvedClozeReviewContext {
     const lines = splitLines(context.text);
     if (lines.length === 0) {
-        return context.text;
+        return buildResolvedContext(context.text, context.startLine, 0, context);
     }
 
     const activeStart = Math.max(0, context.activeStartLine - context.startLine);
@@ -245,7 +262,7 @@ function applySafeTrim(context: ExtractedContext, softLimitLines: number): strin
     const preferredEnd = Math.min(lines.length - 1, activeEnd + softLimitLines);
 
     if (preferredStart === 0 && preferredEnd === lines.length - 1) {
-        return context.text;
+        return buildResolvedContext(context.text, context.startLine, 0, context);
     }
 
     let trimStart = preferredStart;
@@ -267,6 +284,7 @@ function applySafeTrim(context: ExtractedContext, softLimitLines: number): strin
     }
 
     const trimmedLines: string[] = [];
+    const leadingInsertedLineCount = trimStart > 0 ? 2 : 0;
     if (trimStart > 0) {
         trimmedLines.push(TRIMMED_TOP_MARKER);
         trimmedLines.push("");
@@ -279,7 +297,26 @@ function applySafeTrim(context: ExtractedContext, softLimitLines: number): strin
         trimmedLines.push(TRIMMED_BOTTOM_MARKER);
     }
 
-    return trimmedLines.join("\n");
+    return buildResolvedContext(
+        trimmedLines.join("\n"),
+        context.startLine + trimStart,
+        leadingInsertedLineCount,
+        context,
+    );
+}
+
+function buildResolvedContext(
+    text: string,
+    sourceStartLine: number,
+    leadingInsertedLineCount: number,
+    context: ExtractedContext,
+): ResolvedClozeReviewContext {
+    return {
+        text,
+        activeLinesInText: context.activeAbsoluteLines.map(
+            (line) => line - sourceStartLine + 1 + leadingInsertedLineCount,
+        ),
+    };
 }
 
 function expandStartForFences(lines: string[], start: number): number {

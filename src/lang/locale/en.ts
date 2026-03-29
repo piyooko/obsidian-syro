@@ -778,16 +778,16 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_CLOZE_CONTEXT_MODE_TOOLTIP: "Choose how much review context to show.",
     SETTINGS_CLOZE_CONTEXT_SINGLE: "Single Segment",
     SETTINGS_CLOZE_CONTEXT_SINGLE_DESC:
-        "Only show the current paragraph separated by one blank line.",
+        "Only show the current paragraph separated by one blank line. This affects display only; same-number Anki clozes still link only within the current line.",
     SETTINGS_CLOZE_CONTEXT_DOUBLE_BREAK: "Enhanced Segment",
     SETTINGS_CLOZE_CONTEXT_DOUBLE_BREAK_DESC:
-        "Keep a larger block and stop only at two consecutive blank lines.",
+        "Keep a larger block and stop only at two consecutive blank lines. This affects display only; same-number Anki clozes still link only within the current line.",
     SETTINGS_CLOZE_CONTEXT_EXPANDED: "Expanded",
     SETTINGS_CLOZE_CONTEXT_EXPANDED_DESC:
-        "Show the current paragraph plus the previous and next paragraphs.",
+        "Show the current paragraph plus the previous and next paragraphs. This affects display only; same-number Anki clozes still link only within the current line.",
     SETTINGS_CLOZE_CONTEXT_FULL: "Full Note (Not Recommended)",
     SETTINGS_CLOZE_CONTEXT_FULL_DESC:
-        "Show the full note during review. This may be slow for long notes.",
+        "Show the full note during review. This may be slow for long notes, and it does not make same-number Anki clozes on other lines link together.",
     SETTINGS_CLOZE_CONTEXT_PERFORMANCE: "Long Context Optimization",
     SETTINGS_CLOZE_CONTEXT_PERFORMANCE_TOOLTIP: "Safely trim long context to reduce lag.",
     SETTINGS_CLOZE_CONTEXT_PERFORMANCE_DESC:

@@ -350,6 +350,23 @@ describe("EmbeddedSettingsPanel", () => {
         }
     });
 
+    it("explains that cloze context range only changes display context, not same-line Anki linkage", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            const clozeContextItem = findSettingItemByName(view.container, ["Cloze context range"]);
+            expect(clozeContextItem).not.toBeNull();
+            expect(
+                clozeContextItem?.querySelector(".setting-item-description")?.textContent ?? "",
+            ).toContain("same-number Anki clozes");
+            expect(
+                clozeContextItem?.querySelector(".setting-item-description")?.textContent ?? "",
+            ).toContain("current line");
+        } finally {
+            view.cleanup();
+        }
+    });
+
     it("renders trim lines as a separate indented block directly below long context optimization", () => {
         const view = renderPanel(createSettings({ clozeContextPerformanceMode: "safe-trim" }));
 

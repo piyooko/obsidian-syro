@@ -199,6 +199,7 @@ export class ItemTrans {
             );
             for (let i = 0; i < count; i++) {
                 const cardObj = question.cards[i];
+                let targetLineNo = lineNo;
 
                 // 尝试用 parser 里的真实 cloze 名（如果存在，比如 "c1", "c12"）
                 // 既然旧版没有给 Card 对象直接挂载 clozeId，我们基于文本和类型进行推断：
@@ -207,24 +208,21 @@ export class ItemTrans {
                     question.questionType === CardType.AnkiCloze &&
                     orderedFingerprintKeys.length === 0
                 ) {
-                    // 正则提取当前问题文本中所有的 Anki 挖空标志，如 {{c1::}}, {{c13::}}
-                    const Qtext = question.questionText.actualQuestion;
-                    const clozeMatches = Array.from(Qtext.matchAll(/{{(c\d+)::/g)).map((m) => m[1]);
-                    // 去重，因为同一个编号可能在问题中被挖空多次（同一个 Card）
-                    const uniqueClozes = Array.from(new Set(clozeMatches)).sort(
-                        (a, b) => parseInt(a.slice(1)) - parseInt(b.slice(1)),
+                    const lineScopedTargets = getLineScopedAnkiTargets(
+                        question.questionText.actualQuestion,
                     );
-                    if (i < uniqueClozes.length) {
-                        targetClozeId = uniqueClozes[i];
+                    if (i < lineScopedTargets.length) {
+                        targetClozeId = lineScopedTargets[i].clozeId;
+                        targetLineNo = lineNo + lineScopedTargets[i].lineOffset;
                     }
                 } else if (
                     question.questionType !== CardType.Cloze &&
                     question.questionType !== CardType.AnkiCloze
                 ) {
-                    targetClozeId = "c1"; // 问答题统一为 c1
+                    targetClozeId = "c1"; // Non-cloze cards use the default tracked slot.
                 }
 
-                const trackedItem = trackedFile.getTrackedItem(lineNo, targetClozeId);
+                const trackedItem = trackedFile.getTrackedItem(targetLineNo, targetClozeId);
 
                 if (trackedItem) {
                     // 同步存储与对象
@@ -254,6 +252,30 @@ export class ItemTrans {
             }
         }
     }
+}
+
+
+function getLineScopedAnkiTargets(
+    questionText: string,
+): Array<{ clozeId: string; lineOffset: number }> {
+    const targets = new Map<string, { clozeId: string; lineOffset: number }>();
+    const regex = /{{(c\d+)(?:::|\uFF1A\uFF1A)/g;
+
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(questionText)) !== null) {
+        const prefix = questionText.substring(0, match.index);
+        const lineOffset = prefix.split("\n").length - 1;
+        const key = `${lineOffset}:${match[1]}`;
+
+        if (!targets.has(key)) {
+            targets.set(key, {
+                clozeId: match[1],
+                lineOffset,
+            });
+        }
+    }
+
+    return Array.from(targets.values());
 }
 
 function updateCardObjs(cards: Card[], scheduling: RegExpMatchArray[]) {
