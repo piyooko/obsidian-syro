@@ -787,6 +787,7 @@ interface TimelinePaneProps {
     enableDurationPrefixSyntax: boolean;
     isOpen: boolean;
     onToggle: () => void;
+    onHeaderClick?: (event: React.MouseEvent<HTMLDivElement>) => void;
     isHeaderDragEnabled?: boolean;
     isHeaderDragging?: boolean;
     onHeaderMouseDown?: (event: React.MouseEvent<HTMLDivElement>) => void;
@@ -955,6 +956,7 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
     enableDurationPrefixSyntax,
     isOpen,
     onToggle,
+    onHeaderClick,
     isHeaderDragEnabled = false,
     isHeaderDragging = false,
     onHeaderMouseDown,
@@ -1029,7 +1031,7 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
                 ]
                     .filter(Boolean)
                     .join(" ")}
-                onClick={isHeaderDragEnabled ? undefined : onToggle}
+                onClick={onHeaderClick ?? onToggle}
                 onMouseDown={isHeaderDragEnabled ? onHeaderMouseDown : undefined}
                 onTouchStart={isHeaderDragEnabled ? onHeaderTouchStart : undefined}
             >
@@ -1854,6 +1856,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     const [isTimelineGestureBlocked, setIsTimelineGestureBlocked] = useState(false);
     const activeTimelineSessionCleanupRef = useRef<(() => void) | null>(null);
     const timelineTouchBlockCooldownRef = useRef<number | null>(null);
+    const suppressNextTimelineHeaderClickRef = useRef(false);
 
     // 同步外部高度变化
     useEffect(() => {
@@ -2299,6 +2302,10 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                 );
 
                 if (didResize) {
+                    suppressNextTimelineHeaderClickRef.current = true;
+                    window.setTimeout(() => {
+                        suppressNextTimelineHeaderClickRef.current = false;
+                    }, 0);
                     onTimelineHeightChange?.(currentTimelineHeightRef.current);
                 } else if (shouldToggleOnTap && toggleOnTap) {
                     requestTimelineToggle();
@@ -2461,6 +2468,20 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
         [effectiveTimelineOpen, startTimelineResizeSession],
     );
 
+    const handleTimelineHeaderClick = useCallback(
+        (event: React.MouseEvent<HTMLDivElement>) => {
+            if (suppressNextTimelineHeaderClickRef.current) {
+                suppressNextTimelineHeaderClickRef.current = false;
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+
+            requestTimelineToggle();
+        },
+        [requestTimelineToggle],
+    );
+
     // 单击 = 展开 Timeline + 打开文件
     const effectiveActiveItemPath =
         shouldUseTapToSelectOpen && selectedItem ? selectedItem.path : activeFilePath;
@@ -2619,6 +2640,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                     enableDurationPrefixSyntax={enableDurationPrefixSyntax}
                     isOpen={effectiveTimelineOpen}
                     onToggle={requestTimelineToggle}
+                    onHeaderClick={handleTimelineHeaderClick}
                     isHeaderDragEnabled={effectiveTimelineOpen}
                     isHeaderDragging={isTimelineResizeActive}
                     onHeaderMouseDown={handleTimelineHeaderMouseDown}
