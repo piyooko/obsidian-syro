@@ -8,7 +8,7 @@
         "dev": "node esbuild.config.mjs",
         "format": "pnpm prettier --write . && pnpm eslint src/ tests/ --fix",
         "lint": "pnpm prettier --check . && pnpm eslint src/ tests/",
-        "lint:review": "pnpm dlx eslint@9 --no-config-lookup --config eslint.review.config.mjs --report-unused-disable-directives src",
+        "lint:review": "pnpm dlx eslint@9.30.1 --no-config-lookup --config eslint.review.config.mjs --report-unused-disable-directives src",
         "lint:obsidian": "pnpm run lint:review",
         "check:mojibake": "node scripts/detect-mojibake.mjs",
         "check:i18n": "node scripts/check-i18n.mjs",
@@ -39,8 +39,8 @@
         "@types/react": "^19.2.7",
         "@types/react-dom": "^19.2.3",
         "@types/vhtml": "^2.2.9",
-        "@typescript-eslint/eslint-plugin": "^8.35.1",
-        "@typescript-eslint/parser": "^8.35.1",
+        "@typescript-eslint/eslint-plugin": "8.57.1",
+        "@typescript-eslint/parser": "8.57.1",
         "auto-changelog": "^2.5.0",
         "autoprefixer": "^10.4.23",
         "builtin-modules": "^3.3.0",
@@ -63,7 +63,7 @@
         "ts-jest": "^29.2.5",
         "tslib": "2.6.1",
         "typescript": "5.1.6",
-        "typescript-eslint": "8.35.1",
+        "typescript-eslint": "8.57.1",
         "vhtml": "^2.2.0"
     },
     "dependencies": {

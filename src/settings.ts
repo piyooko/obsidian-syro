@@ -172,9 +172,8 @@ function parseLegacyFsrsSteps(
         return [];
     }
 
-    return entries.every((entry) => isFsrsStepUnit(entry))
-        ? (entries as tsfsrs.StepUnit[])
-        : [...fallback];
+    const validSteps = entries.filter(isFsrsStepUnit);
+    return validSteps.length === entries.length ? validSteps : [...fallback];
 }
 
 export function createDefaultFsrsSettings(overrides: Partial<FsrsSettings> = {}): FsrsSettings {

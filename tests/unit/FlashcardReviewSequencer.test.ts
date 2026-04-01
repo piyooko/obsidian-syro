@@ -135,6 +135,17 @@ function createLearningReviewItem(settings: SRSettings): RepetitionItem {
     return item;
 }
 
+function createCardForDeck(topicPath: TopicPath, id: number = 1) {
+    return {
+        Id: id,
+        question: {
+            topicPathList: {
+                list: [topicPath],
+            },
+        },
+    } as any;
+}
+
 describe("FlashcardReviewSequencer", () => {
     beforeEach(() => {
         jest.clearAllMocks();
@@ -201,5 +212,55 @@ describe("FlashcardReviewSequencer", () => {
             1,
             6,
         );
+    });
+
+    test("syncGlobalRemainingDeckTree refreshes status bar after removing a card from today's queue", () => {
+        const settings = createSettings();
+        const sequencer = createSequencer(settings);
+        const topicPath = new TopicPath(["DeckA"]);
+        const root = new Deck("root", null);
+        const deck = root.getOrCreateDeck(topicPath);
+        const card = createCardForDeck(topicPath, 42);
+
+        deck.dueFlashcards.push(card);
+        (sequencer as any).globalRemainingDeckTree = root;
+        (sequencer as any)._currentCard = card;
+
+        const updateStatusBar = jest.fn();
+        (SRPlugin as any)._instance = {
+            ...(SRPlugin as any)._instance,
+            updateStatusBar,
+        };
+
+        (sequencer as any).syncGlobalRemainingDeckTree(card, CardQueue.Review);
+
+        expect(deck.dueFlashcards).toHaveLength(0);
+        expect(updateStatusBar).toHaveBeenCalledTimes(1);
+    });
+
+    test("restoreGlobalRemainingDeckTree refreshes status bar after undo restores a due card", () => {
+        const settings = createSettings();
+        const sequencer = createSequencer(settings);
+        const topicPath = new TopicPath(["DeckA"]);
+        const root = new Deck("root", null);
+        const deck = root.getOrCreateDeck(topicPath);
+        const card = createCardForDeck(topicPath, 77);
+
+        (sequencer as any).globalRemainingDeckTree = root;
+
+        const updateStatusBar = jest.fn();
+        (SRPlugin as any)._instance = {
+            ...(SRPlugin as any)._instance,
+            updateStatusBar,
+        };
+
+        (sequencer as any).restoreGlobalRemainingDeckTree(card, {
+            originalDeck: deck,
+            wasNew: false,
+            fromLearningQueue: false,
+        });
+
+        expect(deck.dueFlashcards).toContain(card);
+        expect(updateStatusBar).toHaveBeenCalledTimes(1);
     });
 });

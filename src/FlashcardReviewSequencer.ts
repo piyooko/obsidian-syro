@@ -143,6 +143,10 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         });
     }
 
+    private refreshGlobalStatusBar(): void {
+        SRPlugin.getInstance()?.updateStatusBar?.();
+    }
+
     constructor(
         reviewMode: FlashcardReviewMode,
         cardSequencer: IDeckTreeIterator,
@@ -541,11 +545,13 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
         const topicPath = card.question?.topicPathList?.list[0] || this.currentDeck?.getTopicPath();
         if (!topicPath) {
+            this.refreshGlobalStatusBar();
             return;
         }
 
         const globalDeck = this.globalRemainingDeckTree.getDeck(topicPath);
         if (!globalDeck) {
+            this.refreshGlobalStatusBar();
             return;
         }
 
@@ -554,6 +560,8 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         } else if (targetQueue === CardQueue.New && !globalDeck.newFlashcards.includes(card)) {
             globalDeck.newFlashcards.push(card);
         }
+
+        this.refreshGlobalStatusBar();
     }
 
     private restoreGlobalRemainingDeckTree(card: Card, historyItem: ReviewHistoryItem) {
@@ -563,10 +571,16 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
         const topicPath =
             card.question?.topicPathList?.list[0] || historyItem.originalDeck?.getTopicPath();
-        if (!topicPath) return;
+        if (!topicPath) {
+            this.refreshGlobalStatusBar();
+            return;
+        }
 
         const globalDeck = this.globalRemainingDeckTree.getDeck(topicPath);
-        if (!globalDeck) return;
+        if (!globalDeck) {
+            this.refreshGlobalStatusBar();
+            return;
+        }
 
         if (historyItem.fromLearningQueue) {
             globalDeck.learningFlashcards.unshift(card);
@@ -575,6 +589,8 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         } else {
             globalDeck.dueFlashcards.unshift(card);
         }
+
+        this.refreshGlobalStatusBar();
     }
 
     private _processReviewbyAlgo(
@@ -775,6 +791,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             deckToRecalculate,
             this.getLearnAheadMillis(),
         );
+        this.refreshGlobalStatusBar();
         this.advanceToNextCard();
     }
 }

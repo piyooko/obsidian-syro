@@ -2067,6 +2067,7 @@ export default class SRPlugin extends Plugin {
             fbar.notetotalCB = () => {
                 return this.noteStats.getTotalCount();
             };
+            this.updateStatusBar();
 
             // Broadcast the sync completion event so open UI surfaces can refresh.
             this.logRuntimeDebug(
@@ -2590,15 +2591,31 @@ export default class SRPlugin extends Plugin {
         if (this.statusBarFlashcard) this.statusBarFlashcard.setCssProps({ display });
     }
 
+    private getStatusBarReviewableCardCount(): number {
+        if (!this.remainingDeckTree?.subdecks?.length) {
+            return 0;
+        }
+
+        const learnAheadMillis = Math.max(0, this.data.settings.learnAheadMinutes ?? 0) * 60 * 1000;
+        let totalReviewableCards = 0;
+
+        for (const deck of this.remainingDeckTree.subdecks) {
+            const simulatedDeck = DeckTreeFilter.filterByDailyLimits(deck, this);
+            totalReviewableCards +=
+                simulatedDeck.getDistinctCardCount(CardListType.NewCard, true) +
+                simulatedDeck.getDistinctCardCount(CardListType.DueCard, true) +
+                simulatedDeck.getAvailableLearningCardCount(true, learnAheadMillis);
+        }
+
+        return totalReviewableCards;
+    }
+
     updateStatusBar() {
         this.updateStatusBarVisibility();
         if (this.data.settings.showStatusBar === false) return;
         if (!this.statusBarNote || !this.statusBarFlashcard) return;
-        if (!this.noteStats) return;
-        const dueNotesCount = this.noteStats.onDueCount;
-        const dueFlashcardsCount = this.remainingDeckTree
-            ? this.remainingDeckTree.getDistinctCardCount(CardListType.All, true)
-            : 0;
+        const dueNotesCount = this.noteStats?.onDueCount ?? 0;
+        const dueFlashcardsCount = this.getStatusBarReviewableCardCount();
 
         this.statusBarNote.empty();
         const noteSpan = this.statusBarNote.createSpan({
