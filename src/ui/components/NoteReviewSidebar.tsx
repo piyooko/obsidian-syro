@@ -848,7 +848,6 @@ const TimelineRenderedMessage: React.FC<{
         [displayDuration, enableDurationPrefixSyntax, renderedMessage, reviewResponsePillText],
     );
     const hasBody = renderModel.body.length > 0;
-    const shouldRenderEmptyPlaceholder = !hasBody && !reviewResponsePillText;
     const durationChip = renderModel.duration ? (
         <span className="sr-timeline-duration-pill" title={`${renderModel.duration.totalDays}d`}>
             {renderModel.duration.raw}
@@ -861,15 +860,13 @@ const TimelineRenderedMessage: React.FC<{
         if (!container) return;
 
         container.replaceChildren();
-        if (!hasBody && !shouldRenderEmptyPlaceholder) return;
+        if (!hasBody) return;
         const renderComponent = new Component();
         renderComponent.load();
         let cancelled = false;
 
         const render = async () => {
-            const lines = shouldRenderEmptyPlaceholder
-                ? [""]
-                : normalizeTimelineInlineLines(renderModel.body);
+            const lines = normalizeTimelineInlineLines(renderModel.body);
 
             for (const line of lines) {
                 if (cancelled) return;
@@ -901,7 +898,7 @@ const TimelineRenderedMessage: React.FC<{
             cancelled = true;
             renderComponent.unload();
         };
-    }, [app, hasBody, renderModel.body, shouldRenderEmptyPlaceholder]);
+    }, [app, hasBody, renderModel.body]);
 
     return (
         <div className="sr-timeline-message-rendered">
@@ -913,13 +910,11 @@ const TimelineRenderedMessage: React.FC<{
                     </span>
                 </div>
             )}
-            {(hasBody ||
-                shouldRenderEmptyPlaceholder ||
-                durationPlacement === "inline-after-label") && (
+            {(hasBody || durationPlacement === "inline-after-label") && (
                 <div
                     className={`sr-timeline-message-content ${isInlineDuration ? "is-inline-duration" : ""}`}
                 >
-                    {(hasBody || shouldRenderEmptyPlaceholder) && (
+                    {hasBody && (
                         <div
                             className={`sr-timeline-message-content-text ${isInlineDuration ? "is-inline-duration" : ""}`}
                             ref={containerRef}
@@ -2427,7 +2422,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
 
     const handleTimelineHeaderMouseDown = useCallback(
         (event: React.MouseEvent<HTMLDivElement>) => {
-            if (!isInMobileDrawer || !effectiveTimelineOpen) {
+            if (!effectiveTimelineOpen) {
                 return;
             }
 
@@ -2440,12 +2435,12 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                 dragThreshold: TIMELINE_HEADER_DRAG_THRESHOLD_PX,
             });
         },
-        [effectiveTimelineOpen, isInMobileDrawer, startTimelineResizeSession],
+        [effectiveTimelineOpen, startTimelineResizeSession],
     );
 
     const handleTimelineHeaderTouchStart = useCallback(
         (event: React.TouchEvent<HTMLDivElement>) => {
-            if (!isInMobileDrawer || !effectiveTimelineOpen) {
+            if (!effectiveTimelineOpen) {
                 return;
             }
 
@@ -2463,7 +2458,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                 touchId: touch.identifier,
             });
         },
-        [effectiveTimelineOpen, isInMobileDrawer, startTimelineResizeSession],
+        [effectiveTimelineOpen, startTimelineResizeSession],
     );
 
     // 单击 = 展开 Timeline + 打开文件
@@ -2624,7 +2619,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                     enableDurationPrefixSyntax={enableDurationPrefixSyntax}
                     isOpen={effectiveTimelineOpen}
                     onToggle={requestTimelineToggle}
-                    isHeaderDragEnabled={isInMobileDrawer && effectiveTimelineOpen}
+                    isHeaderDragEnabled={effectiveTimelineOpen}
                     isHeaderDragging={isTimelineResizeActive}
                     onHeaderMouseDown={handleTimelineHeaderMouseDown}
                     onHeaderTouchStart={handleTimelineHeaderTouchStart}

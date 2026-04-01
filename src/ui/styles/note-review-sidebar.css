@@ -903,7 +903,7 @@ body.sr-timeline-resize-active {
     --sr-syro-timeline-title-font-size: var(--syro-desktop-sidebar-timeline-title-font-size, 11px);
     --sr-syro-timeline-message-font-size: var(--syro-desktop-sidebar-timeline-message-font-size, 13px);
     --sr-syro-timeline-time-font-size: var(--syro-desktop-sidebar-timeline-time-font-size, 11px);
-    --sr-syro-timeline-padding-x: var(--syro-desktop-sidebar-timeline-padding-x, 12px);
+    --sr-syro-timeline-padding-x: 12px;
     --sr-syro-timeline-padding-y: var(--syro-desktop-sidebar-timeline-padding-y, 12px);
     --sr-syro-timeline-commit-height: var(--syro-desktop-sidebar-timeline-commit-height, 26px);
     --sr-syro-timeline-commit-font-size: var(--syro-desktop-sidebar-timeline-commit-font-size, 11px);
@@ -913,7 +913,7 @@ body.sr-timeline-resize-active {
     --sr-syro-timeline-title-font-size: var(--syro-mobile-sidebar-timeline-title-font-size, 11px);
     --sr-syro-timeline-message-font-size: var(--syro-mobile-sidebar-timeline-message-font-size, 13px);
     --sr-syro-timeline-time-font-size: var(--syro-mobile-sidebar-timeline-time-font-size, 11px);
-    --sr-syro-timeline-padding-x: var(--syro-mobile-sidebar-timeline-padding-x, 12px);
+    --sr-syro-timeline-padding-x: 12px;
     --sr-syro-timeline-padding-y: var(--syro-mobile-sidebar-timeline-padding-y, 12px);
     --sr-syro-timeline-commit-height: var(--syro-mobile-sidebar-timeline-commit-height, 26px);
     --sr-syro-timeline-commit-font-size: var(--syro-mobile-sidebar-timeline-commit-font-size, 11px);
@@ -997,7 +997,7 @@ body.sr-timeline-resize-active {
 }
 
 .sr-timeline-header--resizable {
-    cursor: row-resize;
+    cursor: pointer;
 }
 
 .sr-timeline-header--dragging {

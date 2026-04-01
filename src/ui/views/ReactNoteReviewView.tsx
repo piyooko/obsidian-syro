@@ -23,6 +23,7 @@ import { ContextAnchorService } from "src/util/ContextAnchor";
 import { MarkdownView } from "obsidian";
 import { LicenseManager } from "src/services/LicenseManager";
 import { captureTimelineContext } from "src/ui/timeline/timelineContext";
+import { parseTimelineMessage } from "src/ui/timeline/timelineMessage";
 
 // Stable view type id used when registering the sidebar view.
 export const REACT_REVIEW_QUEUE_VIEW_TYPE = "react-review-queue-list-view";
@@ -854,6 +855,7 @@ export class ReactNoteReviewView extends ItemView {
             context.contextAnchor,
             context.scrollPercentage,
         );
+        await this.applyManualTimelineDurationSchedule(path, message);
         this.commitLogs = this.commitStore.getCommits(path);
         this.redraw();
     }
@@ -1000,9 +1002,40 @@ export class ReactNoteReviewView extends ItemView {
     ): Promise<void> {
         if (!this.commitStore || !this.selectedItem) return;
         await this.commitStore.editCommit(this.selectedItem.path, commitId, payload);
+        if (payload.entryType === "manual") {
+            await this.applyManualTimelineDurationSchedule(this.selectedItem.path, payload.message);
+        }
         this.commitLogs = this.commitStore.getCommits(this.selectedItem.path);
         this.editingId = null;
         this.redraw();
+    }
+
+    private async applyManualTimelineDurationSchedule(
+        notePath: string,
+        message: string,
+    ): Promise<boolean> {
+        if (!this.plugin.data.settings.timelineEnableDurationPrefixSyntax) {
+            return false;
+        }
+
+        const parsed = parseTimelineMessage(message);
+        if (!parsed.durationPrefix) {
+            return false;
+        }
+
+        const item = this.plugin.noteReviewStore.getItem(notePath);
+        if (!item) {
+            return false;
+        }
+
+        item.applyManualTimelineSchedule(parsed.durationPrefix.totalDays);
+        await this.plugin.noteReviewStore.save();
+
+        this.plugin.reviewDecks = this.plugin.noteReviewStore.buildReviewDecks(this.app.vault);
+        this.plugin.updateAndSortDueNotes();
+        this.plugin.syncEvents.emit("note-review-updated");
+
+        return true;
     }
 
     /**

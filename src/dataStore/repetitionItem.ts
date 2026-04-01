@@ -443,6 +443,32 @@ export class RepetitionItem {
         this.nextReview = newdue;
     }
 
+    applyManualTimelineSchedule(intervalDays: number, baseTime: number = Date.now()) {
+        const safeBaseTime = Number.isFinite(baseTime) ? baseTime : Date.now();
+        const safeIntervalDays = Math.max(0, Number(intervalDays) || 0);
+        const due = safeBaseTime + safeIntervalDays * DateUtils.DAYS_TO_MILLIS;
+
+        if (this.isFsrs) {
+            const data = this.data as FsrsData;
+            data.last_review = new Date(safeBaseTime);
+            data.due = new Date(due);
+            data.scheduled_days = safeIntervalDays;
+            data.state = State.Review;
+        } else if (isRecord(this.data)) {
+            const data = this.data as Record<string, unknown>;
+            if ("currentInterval" in data || this.itemType === RPITEMTYPE.NOTE) {
+                data.currentInterval = Math.max(1, Math.round(safeIntervalDays));
+            }
+            if ("lastInterval" in data) {
+                data.lastInterval = safeIntervalDays;
+            }
+        }
+
+        this.learningStep = null;
+        this.queue = CardQueue.Review;
+        this.nextReview = due;
+    }
+
     get ease(): number {
         const sched = this.getSched();
         return sched ? Number(sched[3]) : 0;

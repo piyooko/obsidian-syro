@@ -219,11 +219,20 @@ export const TimelineCodeMirror: FC<TimelineCodeMirrorProps> = ({
         const currentValue = view.state.doc.toString();
         if (value === currentValue) return;
 
+        const nextDocLength = value.length;
+        const currentSelection = view.state.selection.main;
+        const nextAnchor = Math.min(currentSelection.anchor, nextDocLength);
+        const nextHead = Math.min(currentSelection.head, nextDocLength);
+
         view.dispatch({
             changes: {
                 from: 0,
                 to: currentValue.length,
                 insert: value,
+            },
+            selection: {
+                anchor: nextAnchor,
+                head: nextHead,
             },
         });
     }, [value]);
