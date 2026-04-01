@@ -21,6 +21,7 @@ import { Notice } from "obsidian";
 import SRPlugin from "./main";
 import { DeckStatsService } from "./dataStore/deckStatsService";
 import { t } from "src/lang/helpers";
+import { stripPlainCurlyClozeSyntax } from "src/util/curlyCloze";
 
 interface CardScheduleSnapshot {
     dueDate: number | null;
@@ -734,7 +735,9 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
 
         if (settings.convertHighlightsToClozes) text = text.replace(/==(.*?)==/gm, "$1");
         if (settings.convertBoldTextToClozes) text = text.replace(/\*\*(.*?)\*\*/gm, "$1");
-        if (settings.convertCurlyBracketsToClozes) text = text.replace(/{{(.*?)}}/gm, "$1");
+        if (settings.convertCurlyBracketsToClozes) {
+            text = stripPlainCurlyClozeSyntax(text);
+        }
 
         const newText = text.trim();
         const noteFile = question.note.file;

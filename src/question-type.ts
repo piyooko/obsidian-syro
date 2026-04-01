@@ -13,6 +13,7 @@ import {
     resolveClozeReviewContextDetails,
     type ResolvedClozeReviewContext,
 } from "src/util/cloze-review-context";
+import { extractPlainCurlyClozeMatches, stripPlainCurlyClozeSyntax } from "src/util/curlyCloze";
 import { findLineIndexOfSearchStringIgnoringWs } from "src/util/utils";
 
 export class CardFrontBack {
@@ -191,6 +192,14 @@ interface StandardClozeRange {
 interface StandardClozeModel {
     ranges: StandardClozeRange[];
     roots: StandardClozeRange[];
+}
+
+interface PlainCurlyClozeRange {
+    start: number;
+    end: number;
+    fullMatch: string;
+    innerText: string;
+    lineNum: number;
 }
 
 function shouldKeepStandardClozeVisual(type: StandardClozeType, settings: SRSettings): boolean {
@@ -386,6 +395,122 @@ function createStandardClozeModel(text: string, settings: SRSettings): StandardC
     const ranges = flattenStandardClozeRanges(roots);
 
     return { ranges, roots };
+}
+
+function createPlainCurlyClozeRanges(text: string): PlainCurlyClozeRange[] {
+    return extractPlainCurlyClozeMatches(text).map((match) => ({
+        start: match.start,
+        end: match.end,
+        fullMatch: match.fullMatch,
+        innerText: match.innerText,
+        lineNum: getLineNumberFromIndex(text, match.start),
+    }));
+}
+
+function getPlainCurlyClozeOccurrenceIndex(
+    ranges: PlainCurlyClozeRange[],
+    targetRange: PlainCurlyClozeRange,
+): number {
+    let occurrenceIndex = 0;
+
+    for (const range of ranges) {
+        if (range.fullMatch === targetRange.fullMatch) {
+            if (range === targetRange) {
+                return occurrenceIndex;
+            }
+
+            occurrenceIndex++;
+        }
+    }
+
+    return 0;
+}
+
+function findPlainCurlyClozeRangeInContext(
+    contextRanges: PlainCurlyClozeRange[],
+    questionText: string,
+    contextText: string,
+    originalRange: PlainCurlyClozeRange,
+    occurrenceIndex: number,
+): PlainCurlyClozeRange | null {
+    const questionOffset = contextText.indexOf(questionText);
+    if (questionOffset !== -1) {
+        const exactStart = questionOffset + originalRange.start;
+        const exactEnd = questionOffset + originalRange.end;
+        const exactMatch = contextRanges.find((range) => {
+            return (
+                range.start === exactStart &&
+                range.end === exactEnd &&
+                range.fullMatch === originalRange.fullMatch
+            );
+        });
+
+        if (exactMatch) {
+            return exactMatch;
+        }
+    }
+
+    const exactCandidates = contextRanges.filter((range) => {
+        return range.fullMatch === originalRange.fullMatch;
+    });
+    if (exactCandidates.length > occurrenceIndex) {
+        return exactCandidates[occurrenceIndex];
+    }
+
+    return (
+        exactCandidates[0] ??
+        contextRanges.find((range) => {
+            return range.innerText === originalRange.innerText;
+        }) ??
+        null
+    );
+}
+
+function renderPlainCurlyClozeSegment(
+    text: string,
+    ranges: PlainCurlyClozeRange[],
+    activeRange: PlainCurlyClozeRange,
+    mode: StandardClozeRenderMode,
+): string {
+    let result = "";
+    let cursor = 0;
+
+    for (const range of ranges) {
+        if (range.start < cursor) {
+            continue;
+        }
+
+        result += text.substring(cursor, range.start);
+
+        if (range === activeRange) {
+            if (mode === "front") {
+                result += encodeHiddenMarker(buildClozePlaceholder());
+            } else if (mode === "back") {
+                result += encodeShownMarker(range.innerText);
+            } else {
+                result += encodeUnifiedMarker(buildClozePlaceholder(), range.innerText);
+            }
+        } else {
+            result += range.innerText;
+        }
+
+        cursor = range.end;
+    }
+
+    result += text.substring(cursor);
+    return result;
+}
+
+function createPlainCurlyClozeCardFrontBack(
+    text: string,
+    ranges: PlainCurlyClozeRange[],
+    activeRange: PlainCurlyClozeRange,
+): CardFrontBack {
+    return new CardFrontBack(
+        renderPlainCurlyClozeSegment(text, ranges, activeRange, "front"),
+        renderPlainCurlyClozeSegment(text, ranges, activeRange, "back"),
+        renderPlainCurlyClozeSegment(text, ranges, activeRange, "review"),
+    );
 }
 
 function renderStandardClozeSegment(
@@ -784,13 +909,46 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                     activeRange,
                     settings,
                 );
+                card.front = this.applyOtherClozeVisibility(card.front, settings);
+                card.back = this.applyOtherClozeVisibility(card.back, settings);
+                if (card.review) {
+                    card.review = this.applyOtherClozeVisibility(card.review, settings);
+                }
 
-                if (!this.shouldKeepOtherAnkiClozeVisual(settings)) {
-                    card.front = this.stripOtherAnkiClozeVisual(card.front);
-                    card.back = this.stripOtherAnkiClozeVisual(card.back);
-                    if (card.review) {
-                        card.review = this.stripOtherAnkiClozeVisual(card.review);
-                    }
+                result.push(card);
+            });
+
+            const plainCurlyRanges = createPlainCurlyClozeRanges(questionText);
+            plainCurlyRanges.forEach((range) => {
+                const contextInfo = this.resolveTextContext(
+                    questionText,
+                    [range.lineNum],
+                    settings,
+                    context,
+                );
+                const contextText = contextInfo.text;
+                const contextRanges = createPlainCurlyClozeRanges(contextText);
+                const occurrenceIndex = getPlainCurlyClozeOccurrenceIndex(plainCurlyRanges, range);
+                const activeRange = findPlainCurlyClozeRangeInContext(
+                    contextRanges,
+                    questionText,
+                    contextText,
+                    range,
+                    occurrenceIndex,
+                );
+                if (!activeRange) {
+                    return;
+                }
+
+                const card = createPlainCurlyClozeCardFrontBack(
+                    contextText,
+                    contextRanges,
+                    activeRange,
+                );
+                card.front = this.applyOtherClozeVisibility(card.front, settings);
+                card.back = this.applyOtherClozeVisibility(card.back, settings);
+                if (card.review) {
+                    card.review = this.applyOtherClozeVisibility(card.review, settings);
                 }
 
                 result.push(card);
@@ -954,7 +1112,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         }
 
         result += text.substring(lastEnd);
-        return result;
+        return this.applyOtherClozeVisibility(result, settings);
     }
 
     private generateBack(
@@ -979,7 +1137,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         }
 
         result += text.substring(lastEnd);
-        return result;
+        return this.applyOtherClozeVisibility(result, settings);
     }
 
     private generateReview(
@@ -1004,7 +1162,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         }
 
         result += text.substring(lastEnd);
-        return result;
+        return this.applyOtherClozeVisibility(result, settings);
     }
 
     private shouldKeepOtherHighlightClozeVisual(settings: SRSettings): boolean {
@@ -1028,6 +1186,10 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
 
         if (!this.shouldKeepOtherBoldClozeVisual(settings)) {
             result = result.replace(/\*\*(.*?)\*\*/g, "$1");
+        }
+
+        if (settings.convertCurlyBracketsToClozes) {
+            result = stripPlainCurlyClozeSyntax(result);
         }
 
         return result;

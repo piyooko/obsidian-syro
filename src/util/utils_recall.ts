@@ -1,6 +1,7 @@
 ﻿import { Notice, Platform } from "obsidian";
 import { cyrb53 } from "src/util/utils";
 import { SRSettings } from "src/settings";
+import { extractPlainCurlyClozeMatches } from "src/util/curlyCloze";
 
 export class DateUtils {
     /**
@@ -65,6 +66,11 @@ export class BlockUtils {
             });
         }
 
+        if (settings.convertCurlyBracketsToClozes) {
+            const plainCurlyMatches = extractPlainCurlyClozeMatches(text);
+            plainCurlyMatches.forEach((_, i) => keys.push(`cb${i}`));
+        }
+
         if (settings.convertHighlightsToClozes) {
             const highlights = [...text.matchAll(/==(.*?)==/g)];
             highlights.forEach((_, i) => keys.push(`hl${i}`));
@@ -115,6 +121,11 @@ export class BlockUtils {
             fingerprintParts.push(...clozes.map((c) => c.content));
         }
 
+        if (settings.convertCurlyBracketsToClozes) {
+            const plainCurlyMatches = extractPlainCurlyClozeMatches(text);
+            fingerprintParts.push(...plainCurlyMatches.map((match) => match.innerText));
+        }
+
         if (settings.convertHighlightsToClozes) {
             const highlights = [...text.matchAll(/==(.*?)==/g)];
             fingerprintParts.push(...highlights.map((m) => m[1]));
@@ -162,6 +173,13 @@ export class BlockUtils {
                 }
             });
 
+        if (settings.convertCurlyBracketsToClozes) {
+            const plainCurlyMatches = extractPlainCurlyClozeMatches(text);
+            plainCurlyMatches.forEach((match, i) => {
+                result[`cb${i}`] = match.innerText;
+            });
+        }
+
         if (settings.convertHighlightsToClozes) {
             const highlights = [...text.matchAll(/==(.*?)==/g)];
             highlights.forEach((m, i) => {
@@ -204,6 +222,24 @@ export class BlockUtils {
                 context: before + after,
             };
         });
+
+        if (settings.convertCurlyBracketsToClozes) {
+            const plainCurlyMatches = extractPlainCurlyClozeMatches(text);
+            plainCurlyMatches.forEach((match, i) => {
+                const before = text.substring(
+                    Math.max(0, match.start - CONTEXT_RADIUS),
+                    match.start,
+                );
+                const after = text.substring(
+                    match.end,
+                    Math.min(text.length, match.end + CONTEXT_RADIUS),
+                );
+                result[`cb${i}`] = {
+                    content: match.innerText,
+                    context: before + after,
+                };
+            });
+        }
 
         if (settings.convertHighlightsToClozes) {
             const highlights = [...text.matchAll(/==(.*?)==/g)];

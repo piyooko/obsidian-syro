@@ -5,7 +5,7 @@ import {
     QuestionTypeClozeFormatter,
     QuestionTypeReviewFormatter,
 } from "src/question-type";
-import { DEFAULT_SETTINGS, SRSettings } from "src/settings";
+import { DEFAULT_SETTINGS, SRSettings, syncDefaultClozePatterns } from "src/settings";
 
 test("CardType.SingleLineBasic", () => {
     expect(CardFrontBackUtil.expand(CardType.SingleLineBasic, "A::B", DEFAULT_SETTINGS)).toEqual([
@@ -198,17 +198,11 @@ test("CardType.AnkiCloze only links same-number clozes on the current line even 
     const questionText = "{{c2::alpha}} and {{c2::beta}}\ncarry {{c2::gamma}}";
     const noteText = `Intro line\n${questionText}\nOutro line`;
 
-    const result = CardFrontBackUtil.expand(
-        CardType.AnkiCloze,
-        questionText,
-        settings,
-        1,
-        {
-            noteText,
-            firstLineNum: 1,
-            lastLineNum: 2,
-        },
-    );
+    const result = CardFrontBackUtil.expand(CardType.AnkiCloze, questionText, settings, 1, {
+        noteText,
+        firstLineNum: 1,
+        lastLineNum: 2,
+    });
 
     expect(result).toEqual([
         new CardFrontBack(
@@ -243,24 +237,88 @@ test("CardType.AnkiCloze safe trim keeps the current line but does not preserve 
         "tail",
     ].join("\n");
 
-    const result = CardFrontBackUtil.expand(
-        CardType.AnkiCloze,
-        questionText,
-        settings,
-        0,
-        {
-            noteText: questionText,
-            firstLineNum: 0,
-            lastLineNum: 6,
-        },
-    );
+    const result = CardFrontBackUtil.expand(CardType.AnkiCloze, questionText, settings, 0, {
+        noteText: questionText,
+        firstLineNum: 0,
+        lastLineNum: 6,
+    });
 
     expect(result).toHaveLength(2);
-    expect(result[0].front).toContain(`\n${clozeFormatter.asking()} and ${clozeFormatter.asking()}\n`);
+    expect(result[0].front).toContain(
+        `\n${clozeFormatter.asking()} and ${clozeFormatter.asking()}\n`,
+    );
     expect(result[0].front).not.toContain("carry {{c2::gamma}}");
     expect(result[0].front).not.toContain("carry gamma");
     expect(result[1].front).toContain(`carry ${clozeFormatter.asking()}`);
     expect(result[1].front).not.toContain("alpha");
+});
+
+test("CardType.AnkiCloze also expands plain curly clozes on the same line", () => {
+    const clozeFormatter = new QuestionTypeClozeFormatter();
+    const reviewFormatter = new QuestionTypeReviewFormatter();
+    const settings: SRSettings = {
+        ...DEFAULT_SETTINGS,
+        convertCurlyBracketsToClozes: true,
+        convertAnkiClozesToClozes: true,
+    };
+    syncDefaultClozePatterns(settings);
+
+    const result = CardFrontBackUtil.expand(
+        CardType.AnkiCloze,
+        "{{c1::anki}} and {{plain}}",
+        settings,
+        0,
+        undefined,
+    );
+
+    expect(result).toHaveLength(2);
+    expect(result).toContainEqual(
+        new CardFrontBack(
+            `${clozeFormatter.asking()} and plain`,
+            `${clozeFormatter.showingAnswer("anki")} and plain`,
+            `${reviewFormatter.asking("anki")} and plain`,
+        ),
+    );
+    expect(result).toContainEqual(
+        new CardFrontBack(
+            `anki and ${clozeFormatter.asking()}`,
+            `anki and ${clozeFormatter.showingAnswer("plain")}`,
+            `anki and ${reviewFormatter.asking("plain")}`,
+        ),
+    );
+});
+
+test("CardType.AnkiCloze keeps standard and plain curly clozes when mixed", () => {
+    const clozeFormatter = new QuestionTypeClozeFormatter();
+    const settings: SRSettings = {
+        ...DEFAULT_SETTINGS,
+        convertCurlyBracketsToClozes: true,
+        convertAnkiClozesToClozes: true,
+        convertHighlightsToClozes: true,
+    };
+    syncDefaultClozePatterns(settings);
+
+    const result = CardFrontBackUtil.expand(
+        CardType.AnkiCloze,
+        "{{c1::anki}} and ==highlight== and {{plain}}",
+        settings,
+        0,
+        undefined,
+    );
+
+    expect(result).toHaveLength(3);
+    expect(
+        result.some(
+            (card) =>
+                card.back === `anki and ${clozeFormatter.showingAnswer("highlight")} and plain`,
+        ),
+    ).toBe(true);
+    expect(
+        result.some(
+            (card) =>
+                card.back === `anki and highlight and ${clozeFormatter.showingAnswer("plain")}`,
+        ),
+    ).toBe(true);
 });
 describe.skip("Nested standard clozes", () => {
     const clozeFormatter = new QuestionTypeClozeFormatter();

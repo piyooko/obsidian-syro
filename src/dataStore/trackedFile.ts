@@ -3,6 +3,7 @@ import { CardType, QuestionText } from "src/Question";
 import { parse, ParsedQuestionInfo } from "src/parser";
 import { RPITEMTYPE } from "./repetitionItem";
 import { DEFAULT_DECKNAME } from "src/constants";
+import { extractPlainCurlyClozeMatches } from "src/util/curlyCloze";
 
 // ============================================================================
 // ============================================================================
@@ -10,20 +11,20 @@ import { DEFAULT_DECKNAME } from "src/constants";
 // 记录卡片/挖空在整个笔记文件中的绝对位置（字符偏移量）
 export interface TrackedSpan {
     startOffset: number; // 答案的起始位置
-    endOffset: number;   // 答案的结束位置
+    endOffset: number; // 答案的结束位置
     blockStartOffset: number; // 整个题目块的起始位置
-    blockEndOffset: number;   // 整个题目块的结束位置
+    blockEndOffset: number; // 整个题目块的结束位置
 }
 
 // 每张具体的卡片（或单个挖空）的“户口本”
 export class TrackedItem {
     fingerprint: string; // 特征指纹（通常是答案的文本，或用于匹配的唯一标识）
-    reviewId: number;    // 对应的底层复习进度 ID。如果是 -1，说明这是一张新卡，未进入复习系统
-    lineNo: number;      // 该卡片所在的行号
-    context: string;     // 挖空前后的上下文文本（用于在笔记修改后找回这张卡片）
-    cardType: CardType;  // 卡片类型（问答、Anki挖空、普通挖空等）
+    reviewId: number; // 对应的底层复习进度 ID。如果是 -1，说明这是一张新卡，未进入复习系统
+    lineNo: number; // 该卡片所在的行号
+    context: string; // 挖空前后的上下文文本（用于在笔记修改后找回这张卡片）
+    cardType: CardType; // 卡片类型（问答、Anki挖空、普通挖空等）
     clozeId: string | null; // 挖空编号！这是关键！例如 "c1" 或代码块里的 "c1_l0"
-    span: TrackedSpan;   // 偏移量信息
+    span: TrackedSpan; // 偏移量信息
 
     constructor(
         fingerprint: string,
@@ -65,7 +66,7 @@ export interface CardItemSummary {
 export class TrackedFile implements ITrackedFile {
     path: string;
     items: Record<string, number>; // 存笔记级的复习 ID，通常是 { file: 123 }
-    trackedItems?: TrackedItem[];  // 存该文件下所有的闪卡项
+    trackedItems?: TrackedItem[]; // 存该文件下所有的闪卡项
     tags: string[];
 
     // 把 flat 数组形式的 trackedItems 按行号(lineNo)聚合并映射为 { "c1": reviewId } 的形式
@@ -219,7 +220,7 @@ export class TrackedFile implements ITrackedFile {
         const parsedQuestions: ParsedQuestionInfo[] = parse(fileText, settings);
 
         // [DEBUG 建议]: 这里可以 console.log(parsedQuestions) 看看有没有把代码块正确解析为 AnkiCloze
-        
+
         // 2. 将大的题目块展开为一个个具体的挖空候选项 (candidates)
         const candidates = expandToCandidates(parsedQuestions, fileText, settings);
 
@@ -298,7 +299,6 @@ function expandToCandidates(
 
         // 处理挖空题：一个大块里可能有多个挖空
         if (question.cardType === CardType.Cloze || question.cardType === CardType.AnkiCloze) {
-            
             // [关键环节] 这里提取所有挖空的具体位置和内容
             const holes = extractHolesWithOffsets(cleanText, settings);
 
@@ -306,17 +306,17 @@ function expandToCandidates(
                 const startOffset = blockStartOffset + hole.localStart;
                 const endOffset = blockStartOffset + hole.localEnd;
 
-                // [DEBUG 建议]: 这里可以 console.log(hole.clozeId) 
+                // [DEBUG 建议]: 这里可以 console.log(hole.clozeId)
                 // 看看为你的代码块 {{c1::}} 生成的 ID 到底是不是 c1_l0 还是普通的 c1。
                 // 导致复习失效的元凶极有可能就是这里生成的 ID 与 ItemTrans 中需要的不匹配。
                 candidates.push(
                     new TrackedItem(
-                        hole.answerText,         // fingerprint 指纹通常就是挖空内的答案
+                        hole.answerText, // fingerprint 指纹通常就是挖空内的答案
                         question.firstLineNum,
                         extractContext(fileText, startOffset, endOffset),
                         CardType.Cloze,
                         { startOffset, endOffset, blockStartOffset, blockEndOffset },
-                        hole.clozeId,            // 将计算出的 clozeId 塞进去
+                        hole.clozeId, // 将计算出的 clozeId 塞进去
                         -1,
                     ),
                 );
@@ -393,7 +393,7 @@ function matchItems(oldItems: TrackedItem[], candidates: TrackedItem[]): Tracked
             const lineScores = calculateLineScores(oldC.lineNo, newGroup);
             for (const newC of newGroup) {
                 const ctxScore = stringSimilarity(oldC.context, newC.context) * 50; // 上下文相似度权重 50 分
-                const lineScore = lineScores.get(newC) || 0;                        // 行号距离权重 50 分
+                const lineScore = lineScores.get(newC) || 0; // 行号距离权重 50 分
 
                 // [DEBUG 建议]: 如果你发现相同答案的卡片被错乱匹配，可以检查这里的 tieBreaker。
                 // 如果旧卡的 clozeId 是 "c1"，新卡的 clozeId 却是 "c1_l0"，这里就拿不到加分，甚至可能错乱。
@@ -449,7 +449,9 @@ function extractHolesWithOffsets(
     }> = [];
 
     // [修正]: 判断当前提取的是否为代码块，用来给后面添加正确的 _lX 行号后缀
-    const isCodeBlock = (cleanText.startsWith("```") || cleanText.startsWith("~~~")) && settings.parseClozesInCodeBlocks;
+    const isCodeBlock =
+        (cleanText.startsWith("```") || cleanText.startsWith("~~~")) &&
+        settings.parseClozesInCodeBlocks;
 
     const regex = /\{\{c(\d+)(?:::|：：)/gi;
     let match;
@@ -488,7 +490,7 @@ function extractHolesWithOffsets(
             }
 
             const answerOffset = cleanText.substring(startPos, endPos).indexOf(answerText);
-            
+
             // [修正]: 为代码块加上正确的行号标识 (例如 c1_l0)。
             // 因为 `ItemTrans.ts` 和 `utils_recall.ts` 期望代码块里的特征键带有行号以防重名
             const lineIndex = cleanText.substring(0, startPos).split("\n").length - 1;
@@ -529,6 +531,18 @@ function extractHolesWithOffsets(
                 localStart: match.index + 2,
                 localEnd: match.index + 2 + answerText.length,
                 clozeId: `bd${index}`,
+            });
+        });
+    }
+
+    if (settings.convertCurlyBracketsToClozes) {
+        const plainCurlyMatches = extractPlainCurlyClozeMatches(cleanText);
+        plainCurlyMatches.forEach((match, index) => {
+            holes.push({
+                answerText: match.innerText,
+                localStart: match.start + 2,
+                localEnd: match.start + 2 + match.innerText.length,
+                clozeId: `cb${index}`,
             });
         });
     }

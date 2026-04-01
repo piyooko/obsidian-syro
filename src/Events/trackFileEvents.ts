@@ -1,7 +1,20 @@
 import { Menu, TAbstractFile, TFile, TFolder, debounce } from "obsidian";
 import { t } from "src/lang/helpers";
 import SRPlugin from "src/main";
+import { SRSettings } from "src/settings";
 import { FolderTrackingSettingsModal } from "src/ui/modals/FolderTrackingSettingsModal";
+import { hasPlainCurlyCloze } from "src/util/curlyCloze";
+
+export function hasAnkiClozeCandidate(fileText: string): boolean {
+    return fileText.includes("{{c") || fileText.includes("{{C");
+}
+
+export function hasCurlyClozeCandidate(
+    fileText: string,
+    settings: Pick<SRSettings, "convertCurlyBracketsToClozes">,
+): boolean {
+    return settings.convertCurlyBracketsToClozes && hasPlainCurlyCloze(fileText);
+}
 
 export function registerTrackFileEvents(plugin: SRPlugin) {
     const logRuntimeDebug = (...args: unknown[]) => {
@@ -160,8 +173,8 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                 fileText.includes(settings.multilineCardSeparator) ||
                 fileText.includes(settings.multilineReversedCardSeparator);
             const hasCloze =
-                fileText.includes("{{c") ||
-                fileText.includes("{{C") ||
+                hasAnkiClozeCandidate(fileText) ||
+                hasCurlyClozeCandidate(fileText, settings) ||
                 fileText.includes("==") ||
                 fileText.includes("**");
 

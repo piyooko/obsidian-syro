@@ -15,6 +15,7 @@
  */
 import { Card } from "src/Card";
 import { SRSettings } from "src/settings";
+import { extractPlainCurlyClozeMatches, stripPlainCurlyClozeSyntax } from "src/util/curlyCloze";
 
 function getSiblings(questionText: string, settings: SRSettings) {
     const siblings: RegExpMatchArray[] = [];
@@ -25,7 +26,14 @@ function getSiblings(questionText: string, settings: SRSettings) {
         siblings.push(...questionText.matchAll(/\*\*(.*?)\*\*/gm));
     }
     if (settings.convertCurlyBracketsToClozes) {
-        siblings.push(...questionText.matchAll(/{{(.*?)}}/gm));
+        siblings.push(
+            ...extractPlainCurlyClozeMatches(questionText).map((match) => {
+                const groups = [match.fullMatch, match.innerText] as unknown as RegExpMatchArray;
+                groups.index = match.start;
+                groups.input = questionText;
+                return groups;
+            }),
+        );
     }
     siblings.sort((a, b) => {
         if (a.index < b.index) {
@@ -131,7 +139,7 @@ function removeClozeTokens(text: string, settings: SRSettings): string {
     if (settings.convertHighlightsToClozes) result = result.replace(/==/gm, "");
     if (settings.convertBoldTextToClozes) result = result.replace(/\*\*/gm, "");
     if (settings.convertCurlyBracketsToClozes) {
-        result = result.replace(/{{/gm, "").replace(/}}/gm, "");
+        result = stripPlainCurlyClozeSyntax(result);
     }
     return result;
 }
