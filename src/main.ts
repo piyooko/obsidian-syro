@@ -98,6 +98,7 @@ import {
     parseJsonUnknown,
 } from "./util/typeGuards";
 import { SyncProgressTip } from "src/ui/components/SyncProgressTip";
+import { installStyleSettingsHierarchyResetSupport } from "src/styleSettingsHierarchyReset";
 import {
     cloneFolderTrackingRule,
     DEFAULT_FOLDER_TRACKING_RULE,
@@ -193,6 +194,8 @@ const DEFAULT_DATA: PluginData = {
     folderTrackingRules: {},
 };
 
+const STYLE_SETTINGS_BRIDGE_RETRY_DELAYS_MS = [0, 400, 1400, 3200] as const;
+
 // export interface SchedNote {
 //     note: TFile;
 //     dueUnix: number;
@@ -277,6 +280,16 @@ export default class SRPlugin extends Plugin {
     private runAsync(task: Promise<unknown>, label: string): void {
         void task.catch((error: unknown) => {
             console.error(`[SR] ${label} failed`, error);
+        });
+    }
+
+    private scheduleStyleSettingsHierarchyResetBridge(): void {
+        STYLE_SETTINGS_BRIDGE_RETRY_DELAYS_MS.forEach((delayMs) => {
+            this.registerInterval(
+                window.setTimeout(() => {
+                    installStyleSettingsHierarchyResetSupport(this.app);
+                }, delayMs),
+            );
         });
     }
 
@@ -761,6 +774,7 @@ export default class SRPlugin extends Plugin {
 
         this.settingTab = new SRSettingTab(this.app, this);
         this.addSettingTab(this.settingTab);
+        this.scheduleStyleSettingsHierarchyResetBridge();
         this.app.workspace.trigger("parse-style-settings");
 
         this.app.workspace.onLayoutReady(() => {

@@ -27,6 +27,16 @@ body.css-settings-manager
 }
 
 body.css-settings-manager
+    .style-settings-heading[data-id^="syro-"]
+    + .style-settings-container
+    .setting-item:last-of-type,
+.style-settings-heading[data-id^="syro-"]
+    + .style-settings-container
+    .setting-item:last-of-type {
+    padding-bottom: 8px !important;
+}
+
+body.css-settings-manager
     :is(
         .style-settings-heading[data-id="syro-desktop-ui-style"],
         .style-settings-heading[data-id="syro-mobile-ui-style"]
@@ -721,8 +731,8 @@ settings:
     step: 1
   -
     id: syro-desktop-review-style-heading
-    title: Review
-    title.zh: 复习
+    title: Card Review
+    title.zh: 卡片复习
     type: heading
     level: 2
     collapsed: true
@@ -1041,18 +1051,6 @@ settings:
     max: 16
     step: 1
   -
-    id: syro-desktop-sidebar-timeline-padding-x
-    title: Timeline horizontal spacing
-    title.zh: 时间线左右间距
-    description: Controls left and right spacing across timeline sections.
-    description.zh: 控制时间线各区域的左右间距。
-    type: variable-number-slider
-    default: 12
-    format: px
-    min: 4
-    max: 24
-    step: 1
-  -
     id: syro-desktop-sidebar-timeline-padding-y
     title: Timeline vertical spacing
     title.zh: 时间线上下间距
@@ -1208,8 +1206,8 @@ settings:
     step: 1
   -
     id: syro-mobile-review-style-heading
-    title: Review
-    title.zh: 复习
+    title: Card Review
+    title.zh: 卡片复习
     type: heading
     level: 2
     collapsed: true
@@ -1526,18 +1524,6 @@ settings:
     format: px
     min: 9
     max: 16
-    step: 1
-  -
-    id: syro-mobile-sidebar-timeline-padding-x
-    title: Timeline horizontal spacing
-    title.zh: 时间线左右间距
-    description: Controls left and right spacing across phone timeline sections.
-    description.zh: 控制手机时间线各区域的左右间距。
-    type: variable-number-slider
-    default: 12
-    format: px
-    min: 4
-    max: 24
     step: 1
   -
     id: syro-mobile-sidebar-timeline-padding-y
