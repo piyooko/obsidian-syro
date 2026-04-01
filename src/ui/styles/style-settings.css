@@ -1,0 +1,656 @@
+/* ==========================================
+   Syro Style Settings Bridge
+   Non-Willemstad themes fall back to plugin/theme defaults.
+   Willemstad gets a source-matched Syro-scoped layer.
+   ========================================== */
+
+body.theme-willemstad.css-settings-manager {
+    --input-border-width: 0;
+    --toggle-s-border-width: 0px;
+}
+
+body.theme-willemstad.css-settings-manager .style-settings-heading[data-id="syro-deck-tree-style"],
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container {
+    --syro-wms-padding-ss: 0.75em;
+    --syro-wms-divider-color: var(--divider-color, var(--background-modifier-border));
+    --syro-wms-collapse-gap: 0.25rem;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"][data-level="0"]:not(.is-collapsed) {
+    margin-bottom: var(--size-4-3);
+}
+
+body.theme-willemstad.css-settings-manager
+    .setting-item
+    + .style-settings-heading[data-id^="syro-"] {
+    border-top: 1px solid var(--syro-wms-divider-color);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"][data-level="0"]
+    + .style-settings-container {
+    padding-left: var(--size-4-4);
+    padding-bottom: 0;
+}
+
+body.theme-willemstad.is-phone.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"][data-level="0"]
+    + .style-settings-container {
+    padding-left: 0;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"][data-level="0"]
+    + .style-settings-container
+    .style-settings-collapse-indicator {
+    margin-left: -16px;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .setting-item {
+    column-gap: 2%;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .setting-item
+    > .setting-item-info {
+    margin-inline-end: 0;
+    min-width: 0;
+    flex: 1 1 84%;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .setting-item
+    > .setting-item-description,
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .setting-item
+    > .setting-item-control {
+    flex: 1 1 14%;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .setting-item:not(.setting-item-heading) {
+    display: grid;
+    grid-template-columns: 1fr max-content;
+}
+
+body.theme-willemstad.is-phone.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .setting-item:not(.setting-item-heading) {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .setting-item-control
+    input,
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .setting-item-control
+    select {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .setting-item-control
+    input:not(.slider) {
+    font-family: "DM Mono";
+    font-size: var(--font-smallest);
+    letter-spacing: -0.05em;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    > .setting-item:first-child,
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id^="syro-"]
+    + .style-settings-container
+    > .setting-item:first-child {
+    padding-top: 0.35rem;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id^="syro-"][data-level="2"] {
+    margin-bottom: 0;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id^="syro-"][data-level="2"]
+    + .style-settings-container {
+    padding-left: var(--syro-wms-padding-ss);
+    padding-top: var(--syro-wms-padding-ss);
+    padding-bottom: 0;
+    margin-left: 0;
+    margin-bottom: var(--syro-wms-padding-ss);
+    border-left: 1px solid var(--background-modifier-border);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+body.theme-willemstad.is-phone.css-settings-manager
+    .style-settings-heading[data-id^="syro-"][data-level="2"]
+    + .style-settings-container {
+    padding-top: 0;
+}
+
+body.theme-willemstad.is-phone.css-settings-manager
+    .style-settings-heading[data-id^="syro-"][data-level="2"]
+    + .style-settings-container
+    > .setting-item:where(:not(.style-settings-info-text)):first-of-type {
+    padding-top: 0;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id^="syro-"][data-level="2"]
+    + .style-settings-container
+    .setting-item:last-of-type {
+    padding-bottom: 0;
+    margin-bottom: var(--syro-wms-padding-ss);
+}
+
+body.theme-willemstad.css-settings-manager
+    .setting-item
+    + div
+    > .style-settings-heading.setting-item-heading[data-id^="syro-"] {
+    margin-top: 0;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id^="syro-"]
+    .style-settings-collapse-indicator,
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    .style-settings-collapse-indicator {
+    margin-left: var(--syro-wms-collapse-gap);
+    margin-right: var(--syro-wms-collapse-gap);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id^="syro-"][data-level="2"].is-collapsed {
+    margin-bottom: var(--syro-wms-padding-ss);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id^="syro-"][data-level="2"]
+    + .style-settings-container
+    + .style-settings-heading[data-id^="syro-"] {
+    padding-top: 0;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .checkbox-container {
+    width: var(--header-icon-size);
+    height: var(--header-icon-size);
+    background-color: var(--color-base-30);
+    transition: var(--quicker-transition);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .checkbox-container::after {
+    display: none;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .checkbox-container,
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .checkbox-container:hover,
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .checkbox-container:focus {
+    box-shadow: 0 0 0 0 var(--background-modifier-border-focus);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .checkbox-container:hover {
+    background-color: var(--color-base-50);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .checkbox-container.is-enabled:hover {
+    background-color: var(--color-accent-2);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .checkbox-container:focus {
+    background-color: var(--interactive-focus);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .checkbox-container.mod-small {
+    width: calc(var(--toggle-s-thumb-height) + var(--toggle-s-border-width) * 2);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .checkbox-container:focus-within,
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    .checkbox-container.mod-small:focus-within {
+    outline: none;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    :is(select, .dropdown) {
+    box-shadow: 0 0 0 0 var(--background-modifier-border-focus);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    :is(select, .dropdown):hover {
+    box-shadow: 0 0 0 1px var(--background-modifier-border-focus);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    :is(select, .dropdown):focus {
+    background-color: var(--interactive-focus);
+    box-shadow: 0 0 0 1px var(--background-modifier-border-focus);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    textarea:focus,
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="text"]:focus,
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="number"]:focus,
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    textarea:focus-visible,
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="text"]:focus-visible,
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="number"]:focus-visible {
+    box-shadow: none;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="range"] {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex: 1 1 auto;
+    gap: 10px;
+    background-color: transparent;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="range"]::before,
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="range"]::after {
+    display: block;
+    width: 20px;
+    color: var(--text-muted);
+    text-align: center;
+    flex: 0 0 auto;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="range"]::before {
+    content: attr(min);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="range"]::after {
+    content: attr(max);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="range"]::-webkit-slider-thumb {
+    box-shadow: none;
+    transform: translateY(-1.5px);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="range"]::-webkit-slider-thumb:hover,
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="range"]::-webkit-slider-thumb:active {
+    border: calc(var(--slider-thumb-border-width) * (1 + 2 * var(--hover-frac))) solid
+        var(--color-accent-1);
+    box-shadow: none;
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="range"]::-webkit-slider-runnable-track {
+    height: 3px;
+    background-color: var(--slider-track-background);
+}
+
+body.theme-willemstad.css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="range"]:hover::-webkit-slider-runnable-track {
+    background-color: var(--background-modifier-border-hover);
+}
+
+body.theme-willemstad:not(.is-mobile).css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="range"]:focus::-webkit-slider-thumb,
+body.theme-willemstad:not(.is-mobile).css-settings-manager
+    .style-settings-heading[data-id="syro-deck-tree-style"]
+    + .style-settings-container
+    input[type="range"]:focus-visible::-webkit-slider-thumb {
+    box-shadow: none;
+}
+
+/* @settings
+
+name: Syro UI
+id: syro-deck-tree-style
+collapsed: false
+settings:
+  -
+    id: syro-deck-tree-style-heading
+    title: Deck Tree
+    title.zh: 牌组树
+    type: heading
+    level: 2
+    collapsed: true 
+  -
+    id: syro-deck-tree-square-corners
+    title: Square corners
+    title.zh: 直角边框
+    description: Force the deck tree container, rows, and controls to use 0 radius.
+    description.zh: 强制牌组树容器、各行和控制按钮使用 0 圆角。
+    type: class-toggle
+  -
+    id: syro-deck-tree-radius
+    title: Container corner radius
+    title.zh: 容器圆角
+    description: Set to 0 for square corners.
+    description.zh: 设为 0 可变为直角。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 0
+    max: 24
+    step: 1
+  -
+    id: syro-deck-row-radius
+    title: Row corner radius
+    title.zh: 行圆角
+    description: Controls the row and small button corners in the deck tree.
+    description.zh: 控制牌组树中行项目和小按钮的圆角。
+    type: variable-number-slider
+    default: 4
+    format: px
+    min: 0
+    max: 16
+    step: 1
+  -
+    id: syro-deck-row-inline-padding
+    title: Row horizontal padding
+    title.zh: 行水平内边距
+    description: Controls the left and right breathing room inside each deck row.
+    description.zh: 控制每个牌组行内部左右留白。
+    type: variable-number-slider
+    default: 8
+    format: px
+    min: 2
+    max: 20
+    step: 1
+  -
+    id: syro-deck-row-min-height
+    title: Row minimum height
+    title.zh: 行最小高度
+    description: Adjusts how compact or roomy each deck row feels.
+    description.zh: 调整每个牌组行的紧凑或宽松程度。
+    type: variable-number-slider
+    default: 28
+    format: px
+    min: 20
+    max: 44
+    step: 1
+  -
+    id: syro-review-style-heading
+    title: Review
+    title.zh: 复习
+    type: heading
+    level: 2
+    collapsed: true
+  -
+    id: syro-review-card-radius
+    title: Card corner radius
+    title.zh: 卡片圆角
+    description: Controls the main review card rounding.
+    description.zh: 控制主复习卡片的圆角。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 0
+    max: 24
+    step: 1
+  -
+    id: syro-review-header-height
+    title: Header height
+    title.zh: 顶部栏高度
+    description: Adjusts the visual height of the review card header.
+    description.zh: 调整复习卡片顶部栏的视觉高度。
+    type: variable-number-slider
+    default: 48
+    format: px
+    min: 40
+    max: 64
+    step: 1
+  -
+    id: syro-review-content-padding-x
+    title: Content horizontal padding
+    title.zh: 内容水平内边距
+    description: Controls the left and right spacing around review content.
+    description.zh: 控制复习内容左右两侧的留白。
+    type: variable-number-slider
+    default: 40
+    format: px
+    min: 16
+    max: 64
+    step: 1
+  -
+    id: syro-review-content-padding-y
+    title: Content vertical padding
+    title.zh: 内容垂直内边距
+    description: Controls the top and bottom spacing around review content.
+    description.zh: 控制复习内容上下两侧的留白。
+    type: variable-number-slider
+    default: 32
+    format: px
+    min: 16
+    max: 56
+    step: 1
+  -
+    id: syro-review-show-answer-radius
+    title: Show answer button radius
+    title.zh: 显示答案按钮圆角
+    description: Adjusts the rounding for the primary reveal button.
+    description.zh: 调整主显示答案按钮的圆角。
+    type: variable-number-slider
+    default: 8
+    format: px
+    min: 0
+    max: 20
+    step: 1
+  -
+    id: syro-review-action-radius
+    title: Review action button radius
+    title.zh: 评分按钮圆角
+    description: Controls the rounding used by the rating buttons.
+    description.zh: 控制评分按钮使用的圆角。
+    type: variable-number-slider
+    default: 6
+    format: px
+    min: 0
+    max: 20
+    step: 1
+  -
+    id: syro-review-compact-actions
+    title: Compact action buttons
+    title.zh: 紧凑操作按钮
+    description: Makes the reveal and rating buttons denser without changing defaults.
+    description.zh: 在不改变默认布局的前提下，让显示答案和评分按钮更紧凑。
+    type: class-toggle
+  -
+    id: syro-sidebar-style-heading
+    title: Sidebar
+    title.zh: 侧边栏
+    type: heading
+    level: 2
+    collapsed: true
+  -
+    id: syro-sidebar-tag-pill-radius
+    title: Tag pill radius
+    title.zh: 标签胶囊圆角
+    description: Controls the rounding of sidebar tag pills.
+    description.zh: 控制侧边栏标签胶囊的圆角。
+    type: variable-number-slider
+    default: 6
+    format: px
+    min: 0
+    max: 20
+    step: 1
+  -
+    id: syro-sidebar-tag-pill-padding-y
+    title: Tag pill vertical padding
+    title.zh: 标签胶囊垂直内边距
+    description: Adjusts the top and bottom padding inside tag pills.
+    description.zh: 调整标签胶囊内部的上下内边距。
+    type: variable-number-slider
+    default: 4
+    format: px
+    min: 2
+    max: 12
+    step: 1
+  -
+    id: syro-sidebar-tag-pill-padding-x
+    title: Tag pill horizontal padding
+    title.zh: 标签胶囊水平内边距
+    description: Adjusts the left and right padding inside tag pills.
+    description.zh: 调整标签胶囊内部的左右内边距。
+    type: variable-number-slider
+    default: 10
+    format: px
+    min: 6
+    max: 20
+    step: 1
+  -
+    id: syro-sidebar-item-radius
+    title: Note item radius
+    title.zh: 笔记项圆角
+    description: Controls the rounding for note cards and priority badges.
+    description.zh: 控制笔记卡片和优先级徽标的圆角。
+    type: variable-number-slider
+    default: 8
+    format: px
+    min: 0
+    max: 24
+    step: 1
+  -
+    id: syro-sidebar-item-padding
+    title: Note item padding
+    title.zh: 笔记项内边距
+    description: Adjusts the internal spacing of note cards.
+    description.zh: 调整笔记卡片内部间距。
+    type: variable-number-slider
+    default: 10
+    format: px
+    min: 6
+    max: 18
+    step: 1
+  -
+    id: syro-sidebar-section-gap
+    title: Section gap
+    title.zh: 分组间距
+    description: Controls the spacing between note groups in the sidebar.
+    description.zh: 控制侧边栏各笔记分组之间的间距。
+    type: variable-number-slider
+    default: 24
+    format: px
+    min: 12
+    max: 36
+    step: 1
+  -
+    id: syro-sidebar-timeline-radius
+    title: Timeline corner radius
+    title.zh: 时间线圆角
+    description: Rounds the timeline drawer container without changing its height.
+    description.zh: 在不改变高度的前提下，为时间线抽屉容器增加圆角。
+    type: variable-number-slider
+    default: 0
+    format: px
+    min: 0
+    max: 20
+    step: 1
+*/
