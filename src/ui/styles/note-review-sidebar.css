@@ -187,11 +187,11 @@ body.sr-timeline-resize-active {
 
 /* 标签药丸样式 */
 .sr-tag-pill {
-    font-size: 11px;
+    font-size: var(--syro-desktop-sidebar-tag-font-size, 11px);
     font-weight: 500;
-    padding: var(--syro-sidebar-tag-pill-padding-y, 4px)
-        var(--syro-sidebar-tag-pill-padding-x, 10px);
-    border-radius: var(--syro-sidebar-tag-pill-radius, 6px);
+    padding: var(--syro-desktop-sidebar-tag-pill-padding-y, 4px)
+        var(--syro-desktop-sidebar-tag-pill-padding-x, 10px);
+    border-radius: var(--syro-desktop-sidebar-tag-pill-radius, 6px);
     background: var(--background-secondary);
     color: var(--text-muted);
     border: 1px solid var(--background-modifier-border);
@@ -370,7 +370,7 @@ body.sr-timeline-resize-active {
 .sr-sections-container {
     display: flex;
     flex-direction: column;
-    gap: var(--syro-sidebar-section-gap, 24px);
+    gap: var(--syro-desktop-sidebar-section-gap, 24px);
 }
 
 /* ==========================================
@@ -404,8 +404,8 @@ body.sr-timeline-resize-active {
     display: flex;
     align-items: flex-start;
     gap: 12px;
-    padding: var(--syro-sidebar-item-padding, 10px);
-    border-radius: var(--syro-sidebar-item-radius, 8px);
+    padding: var(--syro-desktop-sidebar-item-padding, 10px);
+    border-radius: var(--syro-desktop-sidebar-item-radius, 8px);
     cursor: pointer;
     border: 1px solid transparent;
     transition: all 0.2s;
@@ -438,15 +438,15 @@ body.sr-timeline-resize-active {
 /* 左侧优先级数字 - 恢复方块样式 */
 .sr-new-item-priority-box {
     flex-shrink: 0;
-    width: 24px;
-    height: 24px;
+    width: var(--syro-desktop-sidebar-priority-box-size, 24px);
+    height: var(--syro-desktop-sidebar-priority-box-size, 24px);
     display: flex;
     align-items: center;
     justify-content: center;
     margin-top: 2px;
     background: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
-    border-radius: max(0px, calc(var(--syro-sidebar-item-radius, 8px) - 2px));
+    border-radius: max(0px, calc(var(--syro-desktop-sidebar-item-radius, 8px) - 2px));
     color: var(--text-muted);
     cursor: pointer;
     transition: all 0.2s;
@@ -460,26 +460,26 @@ body.sr-timeline-resize-active {
 .sr-new-item-priority-box.editing {
     background: var(--background-secondary);
     border: 1px solid var(--interactive-accent);
-    border-radius: max(0px, calc(var(--syro-sidebar-item-radius, 8px) - 2px));
-    width: 24px !important;
-    min-width: 24px !important;
-    max-width: 24px !important;
-    height: 24px !important;
+    border-radius: max(0px, calc(var(--syro-desktop-sidebar-item-radius, 8px) - 2px));
+    width: var(--syro-desktop-sidebar-priority-box-size, 24px) !important;
+    min-width: var(--syro-desktop-sidebar-priority-box-size, 24px) !important;
+    max-width: var(--syro-desktop-sidebar-priority-box-size, 24px) !important;
+    height: var(--syro-desktop-sidebar-priority-box-size, 24px) !important;
     padding: 0 !important;
     margin-right: 4px;
     z-index: 10;
 }
 
 .sr-priority-input {
-    width: 24px !important;
-    min-width: 24px !important;
-    max-width: 24px !important;
-    height: 24px !important;
+    width: var(--syro-desktop-sidebar-priority-box-size, 24px) !important;
+    min-width: var(--syro-desktop-sidebar-priority-box-size, 24px) !important;
+    max-width: var(--syro-desktop-sidebar-priority-box-size, 24px) !important;
+    height: var(--syro-desktop-sidebar-priority-box-size, 24px) !important;
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
     text-align: center !important;
-    font-size: 11px !important;
+    font-size: var(--syro-desktop-sidebar-priority-font-size, 11px) !important;
     font-family: var(--font-monospace) !important;
     font-weight: 600 !important;
     color: var(--text-normal) !important;
@@ -492,7 +492,7 @@ body.sr-timeline-resize-active {
 }
 
 .sr-new-item-priority-text {
-    font-size: 11px;
+    font-size: var(--syro-desktop-sidebar-priority-font-size, 11px);
     font-family: var(--font-monospace);
     font-weight: 600;
     color: var(--text-muted);
@@ -527,7 +527,7 @@ body.sr-timeline-resize-active {
 }
 
 .sr-new-item-title {
-    font-size: 14px;
+    font-size: var(--syro-desktop-sidebar-item-title-font-size, 14px);
     font-weight: 500;
     color: var(--text-normal);
     white-space: nowrap;
@@ -602,7 +602,7 @@ body.sr-timeline-resize-active {
     flex: 1;
     min-width: 0;
     display: block;
-    font-size: 12px;
+    font-size: var(--syro-desktop-sidebar-item-meta-font-size, 12px);
     color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -709,8 +709,8 @@ body.sr-timeline-resize-active {
 }
 
 .is-mobile .sr-tag-pill {
-    padding: calc(var(--syro-sidebar-tag-pill-padding-y, 4px) + 4px)
-        calc(var(--syro-sidebar-tag-pill-padding-x, 10px) + 4px);
+    padding: calc(var(--syro-desktop-sidebar-tag-pill-padding-y, 4px) + 4px)
+        calc(var(--syro-desktop-sidebar-tag-pill-padding-x, 10px) + 4px);
     font-size: 13px;
 }
 
@@ -766,11 +766,11 @@ body.sr-timeline-resize-active {
 }
 
 .sr-note-sidebar--phone-mobile-drawer .sr-tag-pill {
-    padding: calc(var(--syro-sidebar-tag-pill-padding-y, 4px) + 3px)
-        calc(var(--syro-sidebar-tag-pill-padding-x, 10px) + 3px);
-    font-size: 12px;
+    padding: var(--syro-mobile-sidebar-tag-padding-y, 7px)
+        var(--syro-mobile-sidebar-tag-padding-x, 13px);
+    font-size: var(--syro-mobile-sidebar-tag-font-size, 12px);
     line-height: 1.15;
-    border-radius: 6px;
+    border-radius: var(--syro-mobile-sidebar-tag-pill-radius, 6px);
 }
 
 .sr-note-sidebar--phone-mobile-drawer .sr-tag-count {
@@ -836,7 +836,7 @@ body.sr-timeline-resize-active {
 }
 
 .is-mobile .sr-new-item {
-    padding: calc(var(--syro-sidebar-item-padding, 10px) + 2px);
+    padding: calc(var(--syro-desktop-sidebar-item-padding, 10px) + 2px);
 }
 
 .is-mobile .sr-new-item-priority-box {
@@ -854,6 +854,69 @@ body.sr-timeline-resize-active {
 
 .is-mobile .sr-new-item-tag {
     font-size: 14px;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-sections-container {
+    gap: var(--syro-mobile-sidebar-section-gap, 24px);
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-new-item {
+    padding: var(--syro-mobile-sidebar-item-padding, 12px);
+    border-radius: var(--syro-mobile-sidebar-item-radius, 8px);
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-new-item-title {
+    font-size: var(--syro-mobile-sidebar-item-title-font-size, 16px);
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-new-item-tag {
+    font-size: var(--syro-mobile-sidebar-item-meta-font-size, 14px);
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-new-item-priority-box {
+    width: var(--syro-mobile-sidebar-priority-box-size, 36px);
+    height: var(--syro-mobile-sidebar-priority-box-size, 36px);
+    border-radius: max(0px, calc(var(--syro-mobile-sidebar-item-radius, 8px) - 2px));
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-new-item-priority-box.editing {
+    width: var(--syro-mobile-sidebar-priority-box-size, 36px) !important;
+    min-width: var(--syro-mobile-sidebar-priority-box-size, 36px) !important;
+    max-width: var(--syro-mobile-sidebar-priority-box-size, 36px) !important;
+    height: var(--syro-mobile-sidebar-priority-box-size, 36px) !important;
+    border-radius: max(0px, calc(var(--syro-mobile-sidebar-item-radius, 8px) - 2px));
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-priority-input {
+    width: var(--syro-mobile-sidebar-priority-box-size, 36px) !important;
+    min-width: var(--syro-mobile-sidebar-priority-box-size, 36px) !important;
+    max-width: var(--syro-mobile-sidebar-priority-box-size, 36px) !important;
+    height: var(--syro-mobile-sidebar-priority-box-size, 36px) !important;
+    font-size: var(--syro-mobile-sidebar-priority-font-size, 13px) !important;
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-new-item-priority-text {
+    font-size: var(--syro-mobile-sidebar-priority-font-size, 13px);
+}
+
+.sr-note-sidebar .sr-timeline-container {
+    --sr-syro-timeline-title-font-size: var(--syro-desktop-sidebar-timeline-title-font-size, 11px);
+    --sr-syro-timeline-message-font-size: var(--syro-desktop-sidebar-timeline-message-font-size, 13px);
+    --sr-syro-timeline-time-font-size: var(--syro-desktop-sidebar-timeline-time-font-size, 11px);
+    --sr-syro-timeline-padding-x: var(--syro-desktop-sidebar-timeline-padding-x, 12px);
+    --sr-syro-timeline-padding-y: var(--syro-desktop-sidebar-timeline-padding-y, 12px);
+    --sr-syro-timeline-commit-height: var(--syro-desktop-sidebar-timeline-commit-height, 26px);
+    --sr-syro-timeline-commit-font-size: var(--syro-desktop-sidebar-timeline-commit-font-size, 11px);
+}
+
+.sr-note-sidebar--phone-mobile-drawer .sr-timeline-container {
+    --sr-syro-timeline-title-font-size: var(--syro-mobile-sidebar-timeline-title-font-size, 11px);
+    --sr-syro-timeline-message-font-size: var(--syro-mobile-sidebar-timeline-message-font-size, 13px);
+    --sr-syro-timeline-time-font-size: var(--syro-mobile-sidebar-timeline-time-font-size, 11px);
+    --sr-syro-timeline-padding-x: var(--syro-mobile-sidebar-timeline-padding-x, 12px);
+    --sr-syro-timeline-padding-y: var(--syro-mobile-sidebar-timeline-padding-y, 12px);
+    --sr-syro-timeline-commit-height: var(--syro-mobile-sidebar-timeline-commit-height, 26px);
+    --sr-syro-timeline-commit-font-size: var(--syro-mobile-sidebar-timeline-commit-font-size, 11px);
 }
 
 /* ==========================================
@@ -910,7 +973,7 @@ body.sr-timeline-resize-active {
     flex-shrink: 0;
     border-top: 1px solid var(--background-modifier-border);
     background: var(--background-secondary);
-    border-radius: var(--syro-sidebar-timeline-radius, 0px);
+    border-radius: 0;
     overflow: hidden;
     /* 动态适配状态栏高度，由 JS 设置 --sr-statusbar-offset */
     padding-bottom: var(--sr-statusbar-offset, 0px);
@@ -922,7 +985,7 @@ body.sr-timeline-resize-active {
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    padding: 0 4px;
+    padding: 0 max(4px, calc(var(--sr-syro-timeline-padding-x, 12px) / 3));
     background: var(--background-secondary);
     cursor: pointer;
     user-select: none;
@@ -969,7 +1032,7 @@ body.sr-timeline-resize-active {
 }
 
 .sr-timeline-header-title {
-    font-size: 11px;
+    font-size: var(--sr-syro-timeline-title-font-size, 11px);
     font-weight: 700;
     color: var(--text-muted);
     text-transform: uppercase;
@@ -993,7 +1056,9 @@ body.sr-timeline-resize-active {
 
 .sr-note-sidebar--mobile-drawer .sr-timeline-header {
     min-height: 32px;
-    padding: 4px 8px;
+    padding:
+        max(4px, calc(var(--sr-syro-timeline-padding-y, 12px) / 3))
+        max(8px, calc(var(--sr-syro-timeline-padding-x, 12px) * 2 / 3));
     touch-action: none;
 }
 
@@ -1022,7 +1087,11 @@ body.sr-timeline-resize-active {
 
 /* 输入区域 */
 .sr-timeline-input-area {
-    padding: 12px 12px 8px 12px;
+    padding:
+        var(--sr-syro-timeline-padding-y, 12px)
+        var(--sr-syro-timeline-padding-x, 12px)
+        max(8px, calc(var(--sr-syro-timeline-padding-y, 12px) - 4px))
+        var(--sr-syro-timeline-padding-x, 12px);
     flex-shrink: 0;
 }
 
@@ -1085,8 +1154,10 @@ body.sr-timeline-resize-active {
 /* 提交按钮 */
 .sr-timeline-commit-btn {
     width: 100%;
-    padding: 4px 0;
-    font-size: 11px;
+    height: var(--sr-syro-timeline-commit-height, 26px);
+    min-height: var(--sr-syro-timeline-commit-height, 26px);
+    padding: 0;
+    font-size: var(--sr-syro-timeline-commit-font-size, 11px);
     border-radius: 2px;
     font-weight: 500;
     color: var(--text-on-accent);
@@ -1117,7 +1188,11 @@ body.sr-timeline-resize-active {
 .sr-timeline-list-scroll {
     flex: 1;
     overflow-y: auto;
-    padding: 4px 12px 12px 12px;
+    padding:
+        max(4px, calc(var(--sr-syro-timeline-padding-y, 12px) / 3))
+        var(--sr-syro-timeline-padding-x, 12px)
+        var(--sr-syro-timeline-padding-y, 12px)
+        var(--sr-syro-timeline-padding-x, 12px);
     scrollbar-width: thin;
     scrollbar-color: var(--background-modifier-border) transparent;
 }
@@ -1139,19 +1214,21 @@ body.sr-timeline-resize-active {
 .sr-timeline-track {
     position: relative;
     border-left: 1px solid var(--background-modifier-border);
-    margin-left: 6px;
-    padding-left: 16px;
-    padding-top: 4px;
+    margin-left: max(4px, calc(var(--sr-syro-timeline-padding-x, 12px) / 2));
+    padding-left: calc(var(--sr-syro-timeline-padding-x, 12px) + 4px);
+    padding-top: max(4px, calc(var(--sr-syro-timeline-padding-y, 12px) / 3));
 }
 
 .sr-timeline-track > * + * {
-    margin-top: 16px;
+    margin-top: max(12px, calc(var(--sr-syro-timeline-padding-y, 12px) + 4px));
 }
 
 /* 时间线单条记录 */
 .sr-timeline-entry {
     position: relative;
-    padding: 4px 6px;
+    padding:
+        max(4px, calc(var(--sr-syro-timeline-padding-y, 12px) / 3))
+        max(6px, calc(var(--sr-syro-timeline-padding-x, 12px) / 2));
     border-radius: 3px;
     cursor: default;
     transition: background 0.1s;
@@ -1178,7 +1255,7 @@ body.sr-timeline-resize-active {
 }
 
 .sr-timeline-message {
-    font-size: 13px;
+    font-size: var(--sr-syro-timeline-message-font-size, 13px);
     color: var(--text-normal);
     line-height: 1.4;
     word-break: break-word;
@@ -1250,7 +1327,7 @@ body.sr-timeline-resize-active {
     align-items: center;
     align-self: flex-start;
     padding: 2px 8px;
-    border-radius: var(--syro-sidebar-tag-pill-radius, 6px);
+    border-radius: var(--syro-desktop-sidebar-tag-pill-radius, 6px);
     background: color-mix(in srgb, var(--sr-timeline-accent) 14%, transparent);
     color: var(--text-muted);
     font-size: 11px;
@@ -1258,10 +1335,14 @@ body.sr-timeline-resize-active {
     border: 1px solid color-mix(in srgb, var(--sr-timeline-accent) 18%, transparent);
 }
 
+.sr-note-sidebar--phone-mobile-drawer .sr-timeline-duration-pill {
+    border-radius: var(--syro-mobile-sidebar-tag-pill-radius, 6px);
+}
+
 .sr-timeline-time {
-    font-size: 11px;
+    font-size: var(--sr-syro-timeline-time-font-size, 11px);
     color: var(--text-faint);
-    margin-top: 4px;
+    margin-top: max(4px, calc(var(--sr-syro-timeline-padding-y, 12px) / 3));
 }
 
 .sr-timeline-no-history {

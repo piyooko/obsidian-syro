@@ -9,9 +9,63 @@ body.theme-willemstad.css-settings-manager {
     --toggle-s-border-width: 0px;
 }
 
-body.theme-willemstad.css-settings-manager .style-settings-heading[data-id="syro-deck-tree-style"],
+body.css-settings-manager.is-phone .style-settings-heading[data-id="syro-desktop-ui-style"],
+body.css-settings-manager.is-phone
+    .style-settings-heading[data-id="syro-desktop-ui-style"]
+    + .style-settings-container,
+body.css-settings-manager:not(.is-phone) .style-settings-heading[data-id="syro-mobile-ui-style"],
+body.css-settings-manager:not(.is-phone)
+    .style-settings-heading[data-id="syro-mobile-ui-style"]
+    + .style-settings-container {
+    display: none;
+}
+
+body.css-settings-manager
+    .style-settings-heading[data-id^="syro-"]
+    + .style-settings-container {
+    padding-top: 12px !important;
+}
+
+body.css-settings-manager
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
+    + .style-settings-container {
+    padding-top: 12px;
+}
+
+body.css-settings-manager
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
+    + .style-settings-container
+    > .setting-item:first-child {
+    padding-top: 8px;
+}
+
+body.is-phone
+    div.style-settings-heading[data-id^="syro-"][data-level="2"]
+    + .style-settings-container
+    > .setting-item:where(:not(.style-settings-info-text)):first-of-type,
+.is-phone
+    div.style-settings-heading[data-id^="syro-"][data-level="2"]
+    + .style-settings-container
+    > .setting-item:where(:not(.style-settings-info-text)):first-of-type {
+    padding-top: 8px !important;
+}
+
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    ),
+body.theme-willemstad.css-settings-manager
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container {
     --syro-wms-padding-ss: 0.75em;
     --syro-wms-divider-color: var(--divider-color, var(--background-modifier-border));
@@ -19,7 +73,10 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"][data-level="0"]:not(.is-collapsed) {
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )[data-level="0"]:not(.is-collapsed) {
     margin-bottom: var(--size-4-3);
 }
 
@@ -30,34 +87,49 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"][data-level="0"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )[data-level="0"]
     + .style-settings-container {
     padding-left: var(--size-4-4);
-    padding-bottom: 0;
+    padding-top: 12px;
 }
 
 body.theme-willemstad.is-phone.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"][data-level="0"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )[data-level="0"]
     + .style-settings-container {
     padding-left: 0;
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"][data-level="0"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )[data-level="0"]
     + .style-settings-container
     .style-settings-collapse-indicator {
     margin-left: -16px;
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .setting-item {
     column-gap: 2%;
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .setting-item
     > .setting-item-info {
@@ -67,12 +139,18 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .setting-item
     > .setting-item-description,
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .setting-item
     > .setting-item-control {
@@ -80,7 +158,10 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .setting-item:not(.setting-item-heading) {
     display: grid;
@@ -88,7 +169,10 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.is-phone.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .setting-item:not(.setting-item-heading) {
     grid-template-columns: 1fr;
@@ -96,12 +180,18 @@ body.theme-willemstad.is-phone.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .setting-item-control
     input,
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .setting-item-control
     select {
@@ -113,7 +203,10 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .setting-item-control
     input:not(.slider) {
@@ -123,14 +216,17 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     > .setting-item:first-child,
 body.theme-willemstad.css-settings-manager
     .style-settings-heading[data-id^="syro-"]
     + .style-settings-container
     > .setting-item:first-child {
-    padding-top: 0.35rem;
+    padding-top: 8px;
 }
 
 body.theme-willemstad.css-settings-manager
@@ -160,7 +256,7 @@ body.theme-willemstad.is-phone.css-settings-manager
     .style-settings-heading[data-id^="syro-"][data-level="2"]
     + .style-settings-container
     > .setting-item:where(:not(.style-settings-info-text)):first-of-type {
-    padding-top: 0;
+    padding-top: 8px;
 }
 
 body.theme-willemstad.css-settings-manager
@@ -182,7 +278,10 @@ body.theme-willemstad.css-settings-manager
     .style-settings-heading[data-id^="syro-"]
     .style-settings-collapse-indicator,
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     .style-settings-collapse-indicator {
     margin-left: var(--syro-wms-collapse-gap);
     margin-right: var(--syro-wms-collapse-gap);
@@ -201,7 +300,10 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .checkbox-container {
     width: var(--header-icon-size);
@@ -211,82 +313,121 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .checkbox-container::after {
     display: none;
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .checkbox-container,
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .checkbox-container:hover,
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .checkbox-container:focus {
     box-shadow: 0 0 0 0 var(--background-modifier-border-focus);
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .checkbox-container:hover {
     background-color: var(--color-base-50);
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .checkbox-container.is-enabled:hover {
     background-color: var(--color-accent-2);
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .checkbox-container:focus {
     background-color: var(--interactive-focus);
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .checkbox-container.mod-small {
     width: calc(var(--toggle-s-thumb-height) + var(--toggle-s-border-width) * 2);
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .checkbox-container:focus-within,
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     .checkbox-container.mod-small:focus-within {
     outline: none;
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     :is(select, .dropdown) {
     box-shadow: 0 0 0 0 var(--background-modifier-border-focus);
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     :is(select, .dropdown):hover {
     box-shadow: 0 0 0 1px var(--background-modifier-border-focus);
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     :is(select, .dropdown):focus {
     background-color: var(--interactive-focus);
@@ -294,34 +435,55 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     textarea:focus,
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="text"]:focus,
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="number"]:focus,
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     textarea:focus-visible,
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="text"]:focus-visible,
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="number"]:focus-visible {
     box-shadow: none;
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="range"] {
     display: flex;
@@ -333,11 +495,17 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="range"]::before,
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="range"]::after {
     display: block;
@@ -348,21 +516,30 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="range"]::before {
     content: attr(min);
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="range"]::after {
     content: attr(max);
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="range"]::-webkit-slider-thumb {
     box-shadow: none;
@@ -370,11 +547,17 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="range"]::-webkit-slider-thumb:hover,
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="range"]::-webkit-slider-thumb:active {
     border: calc(var(--slider-thumb-border-width) * (1 + 2 * var(--hover-frac))) solid
@@ -383,7 +566,10 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="range"]::-webkit-slider-runnable-track {
     height: 3px;
@@ -391,18 +577,27 @@ body.theme-willemstad.css-settings-manager
 }
 
 body.theme-willemstad.css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="range"]:hover::-webkit-slider-runnable-track {
     background-color: var(--background-modifier-border-hover);
 }
 
 body.theme-willemstad:not(.is-mobile).css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="range"]:focus::-webkit-slider-thumb,
 body.theme-willemstad:not(.is-mobile).css-settings-manager
-    .style-settings-heading[data-id="syro-deck-tree-style"]
+    :is(
+        .style-settings-heading[data-id="syro-desktop-ui-style"],
+        .style-settings-heading[data-id="syro-mobile-ui-style"]
+    )
     + .style-settings-container
     input[type="range"]:focus-visible::-webkit-slider-thumb {
     box-shadow: none;
@@ -410,30 +605,30 @@ body.theme-willemstad:not(.is-mobile).css-settings-manager
 
 /* @settings
 
-name: Syro UI
-id: syro-deck-tree-style
+name: Syro Desktop UI
+id: syro-desktop-ui-style
 collapsed: false
 settings:
   -
-    id: syro-deck-tree-style-heading
+    id: syro-desktop-deck-tree-style-heading
     title: Deck Tree
     title.zh: 牌组树
     type: heading
     level: 2
-    collapsed: true 
+    collapsed: true
   -
-    id: syro-deck-tree-square-corners
+    id: syro-desktop-deck-tree-square-corners
     title: Square corners
     title.zh: 直角边框
     description: Force the deck tree container, rows, and controls to use 0 radius.
-    description.zh: 强制牌组树容器、各行和控制按钮使用 0 圆角。
+    description.zh: 强制牌组树容器、行和控制按钮使用 0 圆角。
     type: class-toggle
   -
-    id: syro-deck-tree-radius
+    id: syro-desktop-deck-tree-radius
     title: Container corner radius
     title.zh: 容器圆角
-    description: Set to 0 for square corners.
-    description.zh: 设为 0 可变为直角。
+    description: Controls the deck tree container radius.
+    description.zh: 控制牌组树容器的圆角。
     type: variable-number-slider
     default: 12
     format: px
@@ -441,11 +636,11 @@ settings:
     max: 24
     step: 1
   -
-    id: syro-deck-row-radius
+    id: syro-desktop-deck-row-radius
     title: Row corner radius
     title.zh: 行圆角
-    description: Controls the row and small button corners in the deck tree.
-    description.zh: 控制牌组树中行项目和小按钮的圆角。
+    description: Controls deck row and small button rounding.
+    description.zh: 控制牌组行和小按钮的圆角。
     type: variable-number-slider
     default: 4
     format: px
@@ -453,11 +648,11 @@ settings:
     max: 16
     step: 1
   -
-    id: syro-deck-row-inline-padding
+    id: syro-desktop-deck-row-inline-padding
     title: Row horizontal padding
-    title.zh: 行水平内边距
-    description: Controls the left and right breathing room inside each deck row.
-    description.zh: 控制每个牌组行内部左右留白。
+    title.zh: 行左右内边距
+    description: Controls left and right spacing inside each deck row.
+    description.zh: 控制每个牌组行内部的左右留白。
     type: variable-number-slider
     default: 8
     format: px
@@ -465,11 +660,11 @@ settings:
     max: 20
     step: 1
   -
-    id: syro-deck-row-min-height
+    id: syro-desktop-deck-row-min-height
     title: Row minimum height
     title.zh: 行最小高度
-    description: Adjusts how compact or roomy each deck row feels.
-    description.zh: 调整每个牌组行的紧凑或宽松程度。
+    description: Adjusts how compact or roomy deck rows feel.
+    description.zh: 调整牌组行的紧凑或宽松程度。
     type: variable-number-slider
     default: 28
     format: px
@@ -477,17 +672,65 @@ settings:
     max: 44
     step: 1
   -
-    id: syro-review-style-heading
+    id: syro-desktop-deck-indent
+    title: Child indent
+    title.zh: 子牌组缩进
+    description: Controls the indentation for nested decks.
+    description.zh: 控制子牌组的缩进距离。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 4
+    max: 24
+    step: 1
+  -
+    id: syro-desktop-deck-row-font-size
+    title: Deck row font size
+    title.zh: 牌组字号
+    description: Controls the deck name font size.
+    description.zh: 控制牌组名称的字号。
+    type: variable-number-slider
+    default: 14
+    format: px
+    min: 11
+    max: 18
+    step: 1
+  -
+    id: syro-desktop-deck-stat-font-size
+    title: Deck stats font size
+    title.zh: 统计字号
+    description: Controls the deck stats font size.
+    description.zh: 控制牌组统计数字的字号。
+    type: variable-number-slider
+    default: 13
+    format: px
+    min: 10
+    max: 16
+    step: 1
+  -
+    id: syro-desktop-deck-compact-stat-width
+    title: Compact stats width
+    title.zh: 紧凑统计列宽
+    description: Controls the width used by compact stats columns.
+    description.zh: 控制紧凑统计列的宽度。
+    type: variable-number-slider
+    default: 40
+    format: px
+    min: 30
+    max: 56
+    step: 1
+  -
+    id: syro-desktop-review-style-heading
     title: Review
     title.zh: 复习
     type: heading
     level: 2
     collapsed: true
   -
-    id: syro-review-card-radius
+    id: syro-desktop-review-card-radius
     title: Card corner radius
     title.zh: 卡片圆角
-    description: Controls the main review card rounding.
+    description: Controls the main review card radius.
     description.zh: 控制主复习卡片的圆角。
     type: variable-number-slider
     default: 12
@@ -496,11 +739,11 @@ settings:
     max: 24
     step: 1
   -
-    id: syro-review-header-height
+    id: syro-desktop-review-header-height
     title: Header height
-    title.zh: 顶部栏高度
-    description: Adjusts the visual height of the review card header.
-    description.zh: 调整复习卡片顶部栏的视觉高度。
+    title.zh: 顶栏高度
+    description: Controls the review header height.
+    description.zh: 控制复习顶栏的高度。
     type: variable-number-slider
     default: 48
     format: px
@@ -508,10 +751,10 @@ settings:
     max: 64
     step: 1
   -
-    id: syro-review-content-padding-x
+    id: syro-desktop-review-content-padding-x
     title: Content horizontal padding
-    title.zh: 内容水平内边距
-    description: Controls the left and right spacing around review content.
+    title.zh: 内容左右内边距
+    description: Controls the horizontal padding around review content.
     description.zh: 控制复习内容左右两侧的留白。
     type: variable-number-slider
     default: 40
@@ -520,23 +763,35 @@ settings:
     max: 64
     step: 1
   -
-    id: syro-review-content-padding-y
+    id: syro-desktop-review-content-padding-y
     title: Content vertical padding
-    title.zh: 内容垂直内边距
-    description: Controls the top and bottom spacing around review content.
+    title.zh: 内容上下内边距
+    description: Controls the vertical padding around review content.
     description.zh: 控制复习内容上下两侧的留白。
     type: variable-number-slider
-    default: 32
+    default: 24
     format: px
     min: 16
     max: 56
     step: 1
   -
-    id: syro-review-show-answer-radius
+    id: syro-desktop-review-filename-font-size
+    title: Filename font size
+    title.zh: 文件名字号
+    description: Controls the filename badge text size.
+    description.zh: 控制文件名标签的字号。
+    type: variable-number-slider
+    default: 11
+    format: px
+    min: 9
+    max: 14
+    step: 1
+  -
+    id: syro-desktop-review-show-answer-radius
     title: Show answer button radius
     title.zh: 显示答案按钮圆角
-    description: Adjusts the rounding for the primary reveal button.
-    description.zh: 调整主显示答案按钮的圆角。
+    description: Controls the reveal button radius.
+    description.zh: 控制显示答案按钮的圆角。
     type: variable-number-slider
     default: 8
     format: px
@@ -544,11 +799,11 @@ settings:
     max: 20
     step: 1
   -
-    id: syro-review-action-radius
+    id: syro-desktop-review-action-radius
     title: Review action button radius
     title.zh: 评分按钮圆角
-    description: Controls the rounding used by the rating buttons.
-    description.zh: 控制评分按钮使用的圆角。
+    description: Controls the rating button radius.
+    description.zh: 控制评分按钮的圆角。
     type: variable-number-slider
     default: 6
     format: px
@@ -556,24 +811,72 @@ settings:
     max: 20
     step: 1
   -
-    id: syro-review-compact-actions
+    id: syro-desktop-review-button-height
+    title: Button height
+    title.zh: 按钮高度
+    description: Controls review button height.
+    description.zh: 控制复习按钮的高度。
+    type: variable-number-slider
+    default: 40
+    format: px
+    min: 24
+    max: 56
+    step: 1
+  -
+    id: syro-desktop-review-button-label-font-size
+    title: Button label font size
+    title.zh: 按钮主文字号
+    description: Controls the main label size inside review buttons.
+    description.zh: 控制复习按钮主文字的字号。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 10
+    max: 16
+    step: 1
+  -
+    id: syro-desktop-review-button-sub-font-size
+    title: Button secondary font size
+    title.zh: 按钮副文字号
+    description: Controls the secondary label size inside review buttons.
+    description.zh: 控制复习按钮副文字的字号。
+    type: variable-number-slider
+    default: 10
+    format: px
+    min: 8
+    max: 14
+    step: 1
+  -
+    id: syro-desktop-review-button-gap
+    title: Button gap
+    title.zh: 按钮间距
+    description: Controls spacing between and inside review buttons.
+    description.zh: 控制复习按钮之间及按钮内部的间距。
+    type: variable-number-slider
+    default: 8
+    format: px
+    min: 4
+    max: 16
+    step: 1
+  -
+    id: syro-desktop-review-compact-actions
     title: Compact action buttons
     title.zh: 紧凑操作按钮
-    description: Makes the reveal and rating buttons denser without changing defaults.
-    description.zh: 在不改变默认布局的前提下，让显示答案和评分按钮更紧凑。
+    description: Makes review buttons denser without changing defaults elsewhere.
+    description.zh: 让复习按钮更紧凑，不影响其他默认布局。
     type: class-toggle
   -
-    id: syro-sidebar-style-heading
+    id: syro-desktop-sidebar-style-heading
     title: Sidebar
     title.zh: 侧边栏
     type: heading
     level: 2
     collapsed: true
   -
-    id: syro-sidebar-tag-pill-radius
+    id: syro-desktop-sidebar-tag-pill-radius
     title: Tag pill radius
-    title.zh: 标签胶囊圆角
-    description: Controls the rounding of sidebar tag pills.
+    title.zh: 标签圆角
+    description: Controls tag pill radius in the sidebar.
     description.zh: 控制侧边栏标签胶囊的圆角。
     type: variable-number-slider
     default: 6
@@ -582,11 +885,23 @@ settings:
     max: 20
     step: 1
   -
-    id: syro-sidebar-tag-pill-padding-y
-    title: Tag pill vertical padding
-    title.zh: 标签胶囊垂直内边距
-    description: Adjusts the top and bottom padding inside tag pills.
-    description.zh: 调整标签胶囊内部的上下内边距。
+    id: syro-desktop-sidebar-tag-font-size
+    title: Tag font size
+    title.zh: 标签字号
+    description: Controls tag pill text size.
+    description.zh: 控制标签胶囊文字的字号。
+    type: variable-number-slider
+    default: 11
+    format: px
+    min: 9
+    max: 15
+    step: 1
+  -
+    id: syro-desktop-sidebar-tag-pill-padding-y
+    title: Tag vertical padding
+    title.zh: 标签上下内边距
+    description: Controls top and bottom padding inside tag pills.
+    description.zh: 控制标签胶囊内部上下留白。
     type: variable-number-slider
     default: 4
     format: px
@@ -594,11 +909,11 @@ settings:
     max: 12
     step: 1
   -
-    id: syro-sidebar-tag-pill-padding-x
-    title: Tag pill horizontal padding
-    title.zh: 标签胶囊水平内边距
-    description: Adjusts the left and right padding inside tag pills.
-    description.zh: 调整标签胶囊内部的左右内边距。
+    id: syro-desktop-sidebar-tag-pill-padding-x
+    title: Tag horizontal padding
+    title.zh: 标签左右内边距
+    description: Controls left and right padding inside tag pills.
+    description.zh: 控制标签胶囊内部左右留白。
     type: variable-number-slider
     default: 10
     format: px
@@ -606,10 +921,10 @@ settings:
     max: 20
     step: 1
   -
-    id: syro-sidebar-item-radius
+    id: syro-desktop-sidebar-item-radius
     title: Note item radius
     title.zh: 笔记项圆角
-    description: Controls the rounding for note cards and priority badges.
+    description: Controls note card and priority badge rounding.
     description.zh: 控制笔记卡片和优先级徽标的圆角。
     type: variable-number-slider
     default: 8
@@ -618,11 +933,11 @@ settings:
     max: 24
     step: 1
   -
-    id: syro-sidebar-item-padding
+    id: syro-desktop-sidebar-item-padding
     title: Note item padding
     title.zh: 笔记项内边距
-    description: Adjusts the internal spacing of note cards.
-    description.zh: 调整笔记卡片内部间距。
+    description: Controls the internal spacing of note cards.
+    description.zh: 控制笔记卡片内部间距。
     type: variable-number-slider
     default: 10
     format: px
@@ -630,11 +945,35 @@ settings:
     max: 18
     step: 1
   -
-    id: syro-sidebar-section-gap
+    id: syro-desktop-sidebar-item-title-font-size
+    title: Note title font size
+    title.zh: 标题字号
+    description: Controls note title size.
+    description.zh: 控制笔记标题的字号。
+    type: variable-number-slider
+    default: 14
+    format: px
+    min: 11
+    max: 18
+    step: 1
+  -
+    id: syro-desktop-sidebar-item-meta-font-size
+    title: Note meta font size
+    title.zh: 副文字号
+    description: Controls note meta and tag line size.
+    description.zh: 控制笔记副文和标签行的字号。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 10
+    max: 16
+    step: 1
+  -
+    id: syro-desktop-sidebar-section-gap
     title: Section gap
     title.zh: 分组间距
-    description: Controls the spacing between note groups in the sidebar.
-    description.zh: 控制侧边栏各笔记分组之间的间距。
+    description: Controls spacing between note groups.
+    description.zh: 控制不同笔记分组之间的间距。
     type: variable-number-slider
     default: 24
     format: px
@@ -642,15 +981,598 @@ settings:
     max: 36
     step: 1
   -
-    id: syro-sidebar-timeline-radius
-    title: Timeline corner radius
-    title.zh: 时间线圆角
-    description: Rounds the timeline drawer container without changing its height.
-    description.zh: 在不改变高度的前提下，为时间线抽屉容器增加圆角。
+    id: syro-desktop-sidebar-priority-box-size
+    title: Priority box size
+    title.zh: 重要性方块尺寸
+    description: Controls the width and height of the priority box together.
+    description.zh: 同步控制重要性方块的宽度和高度。
     type: variable-number-slider
-    default: 0
+    default: 24
+    format: px
+    min: 20
+    max: 44
+    step: 1
+  -
+    id: syro-desktop-sidebar-priority-font-size
+    title: Priority font size
+    title.zh: 重要性字号
+    description: Controls the number size inside the priority box.
+    description.zh: 控制重要性方块中数字的字号。
+    type: variable-number-slider
+    default: 11
+    format: px
+    min: 9
+    max: 16
+    step: 1
+  -
+    id: syro-desktop-sidebar-timeline-title-font-size
+    title: Timeline title font size
+    title.zh: 时间线标题字号
+    description: Controls the timeline header title size.
+    description.zh: 控制时间线标题的字号。
+    type: variable-number-slider
+    default: 11
+    format: px
+    min: 9
+    max: 16
+    step: 1
+  -
+    id: syro-desktop-sidebar-timeline-message-font-size
+    title: Timeline message font size
+    title.zh: 时间线正文字号
+    description: Controls the timeline message text size.
+    description.zh: 控制时间线正文的字号。
+    type: variable-number-slider
+    default: 13
+    format: px
+    min: 11
+    max: 18
+    step: 1
+  -
+    id: syro-desktop-sidebar-timeline-time-font-size
+    title: Timeline time font size
+    title.zh: 时间字号
+    description: Controls the timestamp size in the timeline.
+    description.zh: 控制时间线时间戳的字号。
+    type: variable-number-slider
+    default: 11
+    format: px
+    min: 9
+    max: 16
+    step: 1
+  -
+    id: syro-desktop-sidebar-timeline-padding-x
+    title: Timeline horizontal spacing
+    title.zh: 时间线左右间距
+    description: Controls left and right spacing across timeline sections.
+    description.zh: 控制时间线各区域的左右间距。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 4
+    max: 24
+    step: 1
+  -
+    id: syro-desktop-sidebar-timeline-padding-y
+    title: Timeline vertical spacing
+    title.zh: 时间线上下间距
+    description: Controls vertical spacing across timeline sections.
+    description.zh: 控制时间线各区域的上下间距。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 4
+    max: 24
+    step: 1
+  -
+    id: syro-desktop-sidebar-timeline-commit-height
+    title: Timeline commit height
+    title.zh: 提交按钮高度
+    description: Controls the commit button height in the timeline.
+    description.zh: 控制时间线提交按钮的高度。
+    type: variable-number-slider
+    default: 26
+    format: px
+    min: 18
+    max: 40
+    step: 1
+  -
+    id: syro-desktop-sidebar-timeline-commit-font-size
+    title: Timeline commit font size
+    title.zh: 提交按钮字号
+    description: Controls the commit button text size in the timeline.
+    description.zh: 控制时间线提交按钮文字的字号。
+    type: variable-number-slider
+    default: 11
+    format: px
+    min: 9
+    max: 16
+    step: 1
+*/
+
+/* @settings
+
+name: Syro Mobile UI
+id: syro-mobile-ui-style
+collapsed: false
+settings:
+  -
+    id: syro-mobile-deck-style-heading
+    title: Deck Tree
+    title.zh: 牌组树
+    type: heading
+    level: 2
+    collapsed: true
+  -
+    id: syro-mobile-deck-tree-square-corners
+    title: Square corners
+    title.zh: 直角边框
+    description: Force the phone deck tree container, rows, and controls to use 0 radius.
+    description.zh: 强制手机牌组树容器、行和控制按钮使用 0 圆角。
+    type: class-toggle
+  -
+    id: syro-mobile-deck-tree-radius
+    title: Container corner radius
+    title.zh: 容器圆角
+    description: Controls the phone deck tree container radius.
+    description.zh: 控制手机牌组树容器的圆角。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 0
+    max: 24
+    step: 1
+  -
+    id: syro-mobile-deck-row-radius
+    title: Row corner radius
+    title.zh: 行圆角
+    description: Controls phone deck row and small button rounding.
+    description.zh: 控制手机牌组行和小按钮的圆角。
+    type: variable-number-slider
+    default: 4
+    format: px
+    min: 0
+    max: 16
+    step: 1
+  -
+    id: syro-mobile-deck-row-padding-x
+    title: Row horizontal padding
+    title.zh: 行左右内边距
+    description: Controls horizontal padding of phone deck rows.
+    description.zh: 控制手机牌组行的左右内边距。
+    type: variable-number-slider
+    default: 4
+    format: px
+    min: 2
+    max: 10
+    step: 1
+  -
+    id: syro-mobile-deck-row-min-height
+    title: Deck row minimum height
+    title.zh: 行最小高度
+    description: Controls the minimum height of phone deck rows.
+    description.zh: 控制手机牌组行的最小高度。
+    type: variable-number-slider
+    default: 30
+    format: px
+    min: 0
+    max: 38
+    step: 1
+  -
+    id: syro-mobile-deck-indent
+    title: Child indent
+    title.zh: 子牌组缩进
+    description: Controls indentation for nested decks on phone layout.
+    description.zh: 控制手机布局下子牌组的缩进距离。
+    type: variable-number-slider
+    default: 8
+    format: px
+    min: 4
+    max: 20
+    step: 1
+  -
+    id: syro-mobile-deck-row-font-size
+    title: Deck row font size
+    title.zh: 牌组字号
+    description: Controls the deck name font size on phone layout.
+    description.zh: 控制手机布局下牌组名称的字号。
+    type: variable-number-slider
+    default: 13
+    format: px
+    min: 11
+    max: 16
+    step: 1
+  -
+    id: syro-mobile-deck-stat-font-size
+    title: Deck stats font size
+    title.zh: 统计字号
+    description: Controls the deck stats font size on phone layout.
+    description.zh: 控制手机布局下牌组统计数字的字号。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 10
+    max: 14
+    step: 1
+  -
+    id: syro-mobile-deck-compact-stat-width
+    title: Compact stats width
+    title.zh: 紧凑统计列宽
+    description: Controls the width of compact stats columns on phone layout.
+    description.zh: 控制手机布局下紧凑统计列的宽度。
+    type: variable-number-slider
+    default: 38
+    format: px
+    min: 30
+    max: 48
+    step: 1
+  -
+    id: syro-mobile-review-style-heading
+    title: Review
+    title.zh: 复习
+    type: heading
+    level: 2
+    collapsed: true
+  -
+    id: syro-mobile-review-card-radius
+    title: Card corner radius
+    title.zh: 卡片圆角
+    description: Controls the phone review card radius.
+    description.zh: 控制手机复习卡片的圆角。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 0
+    max: 24
+    step: 1
+  -
+    id: syro-mobile-review-header-height
+    title: Header height
+    title.zh: 顶栏高度
+    description: Controls the review header height on phone layout.
+    description.zh: 控制手机布局下复习顶栏的高度。
+    type: variable-number-slider
+    default: 42
+    format: px
+    min: 36
+    max: 56
+    step: 1
+  -
+    id: syro-mobile-review-content-padding-x
+    title: Content horizontal padding
+    title.zh: 内容左右内边距
+    description: Controls horizontal padding around review content on phone layout.
+    description.zh: 控制手机布局下复习内容左右两侧的留白。
+    type: variable-number-slider
+    default: 16
+    format: px
+    min: 8
+    max: 24
+    step: 1
+  -
+    id: syro-mobile-review-content-padding-y
+    title: Content vertical padding
+    title.zh: 内容上下内边距
+    description: Controls vertical padding around review content on phone layout.
+    description.zh: 控制手机布局下复习内容上下两侧的留白。
+    type: variable-number-slider
+    default: 16
+    format: px
+    min: 10
+    max: 28
+    step: 1
+  -
+    id: syro-mobile-review-filename-font-size
+    title: Filename font size
+    title.zh: 文件名字号
+    description: Controls the filename badge text size on phone layout.
+    description.zh: 控制手机布局下文件名标签的字号。
+    type: variable-number-slider
+    default: 10
+    format: px
+    min: 9
+    max: 13
+    step: 1
+  -
+    id: syro-mobile-review-show-answer-radius
+    title: Show answer button radius
+    title.zh: 显示答案按钮圆角
+    description: Controls the reveal button radius on phone layout.
+    description.zh: 控制手机布局下显示答案按钮的圆角。
+    type: variable-number-slider
+    default: 8
     format: px
     min: 0
     max: 20
     step: 1
-*/
+  -
+    id: syro-mobile-review-action-radius
+    title: Review action button radius
+    title.zh: 评分按钮圆角
+    description: Controls the rating button radius on phone layout.
+    description.zh: 控制手机布局下评分按钮的圆角。
+    type: variable-number-slider
+    default: 6
+    format: px
+    min: 0
+    max: 20
+    step: 1
+  -
+    id: syro-mobile-review-button-height
+    title: Button height
+    title.zh: 按钮高度
+    description: Controls review button height on phone layout.
+    description.zh: 控制手机布局下复习按钮的高度。
+    type: variable-number-slider
+    default: 48
+    format: px
+    min: 24
+    max: 56
+    step: 1
+  -
+    id: syro-mobile-review-button-label-font-size
+    title: Button label font size
+    title.zh: 按钮主文字号
+    description: Controls the main label size inside phone review buttons.
+    description.zh: 控制手机复习按钮主文字的字号。
+    type: variable-number-slider
+    default: 11
+    format: px
+    min: 10
+    max: 14
+    step: 1
+  -
+    id: syro-mobile-review-button-sub-font-size
+    title: Button secondary font size
+    title.zh: 按钮副文字号
+    description: Controls the secondary label size inside phone review buttons.
+    description.zh: 控制手机复习按钮副文字的字号。
+    type: variable-number-slider
+    default: 9
+    format: px
+    min: 8
+    max: 12
+    step: 1
+  -
+    id: syro-mobile-review-button-gap
+    title: Button gap
+    title.zh: 按钮间距
+    description: Controls spacing between and inside phone review buttons.
+    description.zh: 控制手机复习按钮之间及按钮内部的间距。
+    type: variable-number-slider
+    default: 6
+    format: px
+    min: 4
+    max: 12
+    step: 1
+  -
+    id: syro-mobile-review-compact-actions
+    title: Compact action buttons
+    title.zh: 紧凑操作按钮
+    description: Makes phone review buttons denser without changing defaults elsewhere.
+    description.zh: 让手机复习按钮更紧凑，不影响其他默认布局。
+    type: class-toggle
+  -
+    id: syro-mobile-sidebar-style-heading
+    title: Sidebar
+    title.zh: 侧边栏
+    type: heading
+    level: 2
+    collapsed: true
+  -
+    id: syro-mobile-sidebar-tag-pill-radius
+    title: Tag pill radius
+    title.zh: 标签圆角
+    description: Controls tag pill radius in the phone sidebar drawer.
+    description.zh: 控制手机侧边栏标签胶囊的圆角。
+    type: variable-number-slider
+    default: 6
+    format: px
+    min: 0
+    max: 20
+    step: 1
+  -
+    id: syro-mobile-sidebar-tag-font-size
+    title: Tag font size
+    title.zh: 标签字号
+    description: Controls tag pill text size in the phone sidebar drawer.
+    description.zh: 控制手机侧边栏标签胶囊文字的字号。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 10
+    max: 15
+    step: 1
+  -
+    id: syro-mobile-sidebar-tag-padding-y
+    title: Tag vertical padding
+    title.zh: 标签上下内边距
+    description: Controls top and bottom padding inside phone tag pills.
+    description.zh: 控制手机标签胶囊内部上下留白。
+    type: variable-number-slider
+    default: 7
+    format: px
+    min: 3
+    max: 14
+    step: 1
+  -
+    id: syro-mobile-sidebar-tag-padding-x
+    title: Tag horizontal padding
+    title.zh: 标签左右内边距
+    description: Controls left and right padding inside phone tag pills.
+    description.zh: 控制手机标签胶囊内部左右留白。
+    type: variable-number-slider
+    default: 13
+    format: px
+    min: 6
+    max: 22
+    step: 1
+  -
+    id: syro-mobile-sidebar-item-radius
+    title: Note item radius
+    title.zh: 笔记项圆角
+    description: Controls note card and priority badge rounding on phone.
+    description.zh: 控制手机笔记卡片和优先级徽标的圆角。
+    type: variable-number-slider
+    default: 8
+    format: px
+    min: 0
+    max: 24
+    step: 1
+  -
+    id: syro-mobile-sidebar-item-padding
+    title: Note item padding
+    title.zh: 笔记项内边距
+    description: Controls note item padding in the phone sidebar drawer.
+    description.zh: 控制手机侧边栏笔记项的内边距。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 6
+    max: 18
+    step: 1
+  -
+    id: syro-mobile-sidebar-item-title-font-size
+    title: Note title font size
+    title.zh: 标题字号
+    description: Controls note title size in the phone sidebar drawer.
+    description.zh: 控制手机侧边栏标题的字号。
+    type: variable-number-slider
+    default: 16
+    format: px
+    min: 12
+    max: 18
+    step: 1
+  -
+    id: syro-mobile-sidebar-item-meta-font-size
+    title: Note meta font size
+    title.zh: 副文字号
+    description: Controls note meta and tag line size in the phone sidebar drawer.
+    description.zh: 控制手机侧边栏副文和标签行的字号。
+    type: variable-number-slider
+    default: 14
+    format: px
+    min: 10
+    max: 16
+    step: 1
+  -
+    id: syro-mobile-sidebar-section-gap
+    title: Section gap
+    title.zh: 分组间距
+    description: Controls spacing between note groups in the phone sidebar drawer.
+    description.zh: 控制手机侧边栏不同笔记分组之间的间距。
+    type: variable-number-slider
+    default: 24
+    format: px
+    min: 8
+    max: 32
+    step: 1
+  -
+    id: syro-mobile-sidebar-priority-box-size
+    title: Priority box size
+    title.zh: 重要性方块尺寸
+    description: Controls the width and height of the phone priority box together.
+    description.zh: 同步控制手机重要性方块的宽度和高度。
+    type: variable-number-slider
+    default: 36
+    format: px
+    min: 20
+    max: 48
+    step: 1
+  -
+    id: syro-mobile-sidebar-priority-font-size
+    title: Priority font size
+    title.zh: 重要性字号
+    description: Controls the number size inside the phone priority box.
+    description.zh: 控制手机重要性方块中数字的字号。
+    type: variable-number-slider
+    default: 13
+    format: px
+    min: 9
+    max: 16
+    step: 1
+  -
+    id: syro-mobile-sidebar-timeline-title-font-size
+    title: Timeline title font size
+    title.zh: 时间线标题字号
+    description: Controls the timeline header title size in the phone drawer.
+    description.zh: 控制手机时间线标题的字号。
+    type: variable-number-slider
+    default: 11
+    format: px
+    min: 9
+    max: 16
+    step: 1
+  -
+    id: syro-mobile-sidebar-timeline-message-font-size
+    title: Timeline message font size
+    title.zh: 时间线正文字号
+    description: Controls the timeline message text size in the phone drawer.
+    description.zh: 控制手机时间线正文的字号。
+    type: variable-number-slider
+    default: 13
+    format: px
+    min: 11
+    max: 18
+    step: 1
+  -
+    id: syro-mobile-sidebar-timeline-time-font-size
+    title: Timeline time font size
+    title.zh: 时间字号
+    description: Controls the timestamp size in the phone timeline.
+    description.zh: 控制手机时间线时间戳的字号。
+    type: variable-number-slider
+    default: 11
+    format: px
+    min: 9
+    max: 16
+    step: 1
+  -
+    id: syro-mobile-sidebar-timeline-padding-x
+    title: Timeline horizontal spacing
+    title.zh: 时间线左右间距
+    description: Controls left and right spacing across phone timeline sections.
+    description.zh: 控制手机时间线各区域的左右间距。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 4
+    max: 24
+    step: 1
+  -
+    id: syro-mobile-sidebar-timeline-padding-y
+    title: Timeline vertical spacing
+    title.zh: 时间线上下间距
+    description: Controls vertical spacing across phone timeline sections.
+    description.zh: 控制手机时间线各区域的上下间距。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 4
+    max: 24
+    step: 1
+  -
+    id: syro-mobile-sidebar-timeline-commit-height
+    title: Timeline commit height
+    title.zh: 提交按钮高度
+    description: Controls the commit button height in the phone timeline.
+    description.zh: 控制手机时间线提交按钮的高度。
+    type: variable-number-slider
+    default: 26
+    format: px
+    min: 18
+    max: 40
+    step: 1
+  -
+    id: syro-mobile-sidebar-timeline-commit-font-size
+    title: Timeline commit font size
+    title.zh: 提交按钮字号
+    description: Controls the commit button text size in the phone timeline.
+    description.zh: 控制手机时间线提交按钮文字的字号。
+    type: variable-number-slider
+    default: 11
+    format: px
+    min: 9
+    max: 16
+    step: 1
+ */
