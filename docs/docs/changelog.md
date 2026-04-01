@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.0.10] - 2026-04-01
+
+### New Features
+
+-   Dedicated Desktop & Mobile Style Settings: Introduced comprehensive Style Settings support for Syro. You can now independently customize the deck tree, card review, sidebar, and timeline using dedicated "Desktop UI" and "Mobile UI" groups.
+-   Device-Aware Settings Display: The Style Settings menu is now context-aware, automatically displaying only the UI group relevant to your active device for a cleaner, more intuitive customization experience.
+-   Group Reset Actions: Added one-click reset buttons to parent Style Settings groups, allowing you to instantly restore entire sections to their default values without toggling individual options.
+
+### Improvements
+
+-   Refined Style Settings Interface: Improved the layout, spacing, and grouping of the Style Settings panel. Section presentation is cleaner, internal padding is optimized, and "Review" has been renamed to "Card Review" for better clarity.
+-   Drag-to-Resize Timeline: When expanded, the timeline panel's height can now be easily adjusted by dragging its header.
+-   Cleaner Timeline UI: Timeline entries consisting only of timestamps or pills will no longer display an unnecessary blank message row.
+
+### Bug Fixes
+
+-   Timeline Prefix Scheduling: Resolved an issue where manual timeline prefixes (e.g., `2d::`) were recognized visually but failed to properly update the note's scheduled review time.
+-   Timeline Collapse Functionality: Restored the ability to collapse the expanded timeline header with a single click, which was temporarily disrupted by the new drag-to-resize feature.
+-   Editor Stability: Fixed a CodeMirror selection-sync bug that triggered `Selection points outside of document` errors after updating timeline text.
+-   Anki Cloze Scope: Corrected Anki-style cloze rendering so that same-ID clozes are properly scoped to the current line, preventing unintended formatting across multiple lines.
+-   Cloze Format Compatibility: Introduced a patch for brace-format clozes to ensure more reliable parsing and reviewing when using mixed cloze formats.
+-   Release Popup Behavior: Plugin installs and version updates no longer auto-open README-based release notes in an Obsidian modal.
+
 ## [0.0.8] - 2026-03-27
 
 ### New Features

@@ -67,7 +67,6 @@ import { WeightedMultiplierAlgorithm } from "src/algorithms/weightedMultiplier";
 
 import { reviewResponseModal } from "src/ui/modals/reviewresponse-modal";
 import { debug, isIgnoredPath, isVersionNewerThanOther } from "./util/utils_recall";
-import { ReleaseNotes } from "src/ui/modals/ReleaseNotes";
 import { DEFAULT_DECKNAME } from "./constants";
 
 import { addFileMenuEvt, registerTrackFileEvents } from "./Events/trackFileEvents";
@@ -424,7 +423,7 @@ export default class SRPlugin extends Plugin {
         const PLUGIN_VERSION = this.manifest.version;
         const obsidianJustInstalled = this.data.settings.previousRelease === "0.0.0";
         if (isVersionNewerThanOther(PLUGIN_VERSION, this.data.settings.previousRelease)) {
-            new ReleaseNotes(this.app, this, obsidianJustInstalled ? null : PLUGIN_VERSION).open();
+            this.data.settings.previousRelease = PLUGIN_VERSION;
         }
 
         upgradeSettings(this.data.settings);
