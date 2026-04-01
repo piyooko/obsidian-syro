@@ -177,7 +177,10 @@ export function installStyleSettingsHierarchyResetSupport(app: App): boolean {
     }
 
     if (!plugin.__syroHierarchyResetPatched) {
-        const originalParseCss = plugin.parseCSS.bind(plugin);
+        const parseCss = plugin.parseCSS;
+        const originalParseCss = (): void => {
+            parseCss.call(plugin);
+        };
         plugin.parseCSS = () => {
             originalParseCss();
             window.setTimeout(() => {
