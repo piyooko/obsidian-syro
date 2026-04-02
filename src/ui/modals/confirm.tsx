@@ -45,11 +45,13 @@ export default class ConfirmModal {
         );
 
         // 创建按钮容器
-        const buttonDiv = contentEl.createDiv("srs-flex-row");
-        buttonDiv.setAttr(
-            "style",
-            "justify-content: flex-end; gap: var(--size-4-2); margin-top: var(--size-4-4);",
-        );
+        const buttonDiv = contentEl.createDiv("srs-flex-row sr-confirm-modal-actions");
+
+        // --- Cancel 按钮 ---
+        new ButtonComponent(buttonDiv).setButtonText(t("CANCEL")).onClick(() => {
+            this.callback(false); // 回调 false
+            this.close();
+        });
 
         // --- Confirm 按钮 ---
         new ButtonComponent(buttonDiv)
@@ -59,12 +61,6 @@ export default class ConfirmModal {
                 this.close();
             })
             .setCta(); // 设置为 Call To Action 样式 (通常是高亮色)
-
-        // --- Cancel 按钮 ---
-        new ButtonComponent(buttonDiv).setButtonText(t("CANCEL")).onClick(() => {
-            this.callback(false); // 回调 false
-            this.close();
-        });
 
         // 显示模态框
         this.modal.open();

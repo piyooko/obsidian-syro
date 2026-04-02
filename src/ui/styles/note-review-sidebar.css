@@ -1113,6 +1113,7 @@ body.sr-timeline-resize-active {
     width: 100%;
     display: block;
     box-sizing: border-box;
+    position: relative;
 }
 
 .sr-timeline-editor-host .cm-editor {
@@ -1140,6 +1141,19 @@ body.sr-timeline-resize-active {
 
 .sr-timeline-editor-host .cm-content {
     word-break: break-word;
+}
+
+.sr-timeline-editor-placeholder {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    color: var(--text-faint);
+    font-family: var(--font-interface);
+    font-size: 13px;
+    line-height: 1.625;
+    pointer-events: none;
+    white-space: pre-wrap;
 }
 
 .sr-timeline-editor-host .cm-focused .cm-selectionBackground,

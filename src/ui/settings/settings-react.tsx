@@ -81,14 +81,19 @@ export class SRSettingTab extends PluginSettingTab {
                             return;
                         }
 
+                        this.plugin.requestReviewSessionReloadAfterNextFullSync();
                         void this.plugin
                             .requestSync({ trigger: "manual", mode: "full" })
                             .then((result) => {
+                                if (result.status !== "executed" && result.status !== "queued") {
+                                    this.plugin.clearPendingReviewSessionReloadAfterNextFullSync();
+                                }
                                 if (result.status === "queued") {
                                     new Notice(t("SETTINGS_CARD_CAPTURE_REBUILD_QUEUED"));
                                 }
                             })
                             .catch((error) => {
+                                this.plugin.clearPendingReviewSessionReloadAfterNextFullSync();
                                 console.error(
                                     "[SR-Settings] Failed to rebuild after card capture setting change:",
                                     error,

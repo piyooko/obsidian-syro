@@ -1,15 +1,9 @@
 /** @jsxImportSource react */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FC } from "react";
 import { EditorState } from "@codemirror/state";
-import {
-    drawSelection,
-    dropCursor,
-    EditorView,
-    keymap,
-    placeholder as placeholderExtension,
-} from "@codemirror/view";
+import { drawSelection, dropCursor, EditorView, keymap } from "@codemirror/view";
 import { App } from "obsidian";
 
 import { createTimelineLivePreviewExtensions } from "src/ui/timeline/timelineLivePreview";
@@ -82,6 +76,7 @@ export const TimelineCodeMirror: FC<TimelineCodeMirrorProps> = ({
     const hostRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
+    const [isEmpty, setIsEmpty] = useState(() => value.length === 0);
     const onChangeRef = useRef(onChange);
     const onSubmitRef = useRef(onSubmit);
     const onCancelRef = useRef(onCancel);
@@ -104,9 +99,11 @@ export const TimelineCodeMirror: FC<TimelineCodeMirrorProps> = ({
             extensions: [
                 EditorView.editable.of(true),
                 EditorView.lineWrapping,
+                EditorView.contentAttributes.of({
+                    "aria-placeholder": placeholder ?? "",
+                }),
                 drawSelection(),
                 dropCursor(),
-                placeholderExtension(placeholder ?? ""),
                 keymap.of([
                     {
                         key: "Escape",
@@ -124,7 +121,9 @@ export const TimelineCodeMirror: FC<TimelineCodeMirrorProps> = ({
                 }),
                 EditorView.updateListener.of((update) => {
                     if (update.docChanged) {
-                        onChangeRef.current(update.state.doc.toString());
+                        const nextValue = update.state.doc.toString();
+                        setIsEmpty(nextValue.length === 0);
+                        onChangeRef.current(nextValue);
                     }
                 }),
                 EditorView.domEventHandlers({
@@ -213,6 +212,10 @@ export const TimelineCodeMirror: FC<TimelineCodeMirrorProps> = ({
     ]);
 
     useEffect(() => {
+        setIsEmpty(value.length === 0);
+    }, [value]);
+
+    useEffect(() => {
         const view = viewRef.current;
         if (!view) return;
 
@@ -240,6 +243,11 @@ export const TimelineCodeMirror: FC<TimelineCodeMirrorProps> = ({
     return (
         <div ref={hostRef} className={`sr-timeline-editor-host ${className ?? ""}`.trim()}>
             <div ref={containerRef} />
+            {isEmpty && placeholder ? (
+                <div className="sr-timeline-editor-placeholder" aria-hidden="true">
+                    {placeholder}
+                </div>
+            ) : null}
         </div>
     );
 };
