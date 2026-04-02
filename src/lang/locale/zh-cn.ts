@@ -637,8 +637,9 @@ export default {
     SETTINGS_SECTION_TIMELINE: "时间线",
     SETTINGS_TIMELINE_SCROLL: "显示阅读进度",
     SETTINGS_TIMELINE_SCROLL_DESC: "在时间线条目中显示该条提交时的阅读进度百分比",
-    SETTINGS_TIMELINE_AUTO_EXPAND: "自动展开时间线",
-    SETTINGS_TIMELINE_AUTO_EXPAND_DESC: "打开复习笔记或在侧边栏点击笔记时，自动弹起时间线面板",
+    SETTINGS_TIMELINE_AUTO_EXPAND: "自动跟随当前笔记",
+    SETTINGS_TIMELINE_AUTO_EXPAND_DESC:
+        "当侧边栏打开，或主编辑区切换到其他笔记时，自动在队列中定位当前笔记并展开它的时间线",
     SETTINGS_TIMELINE_AUTO_COMMIT_REVIEW: "自动记录复习选项",
     SETTINGS_TIMELINE_AUTO_COMMIT_REVIEW_DESC: "笔记复习成功后，自动把所选选项写入时间线",
     SETTINGS_TIMELINE_ENABLE_DURATION_PREFIX: "启用时长前缀语法",

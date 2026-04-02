@@ -845,9 +845,9 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_SECTION_TIMELINE: "Timeline",
     SETTINGS_TIMELINE_SCROLL: "Show Scroll Percentage",
     SETTINGS_TIMELINE_SCROLL_DESC: "Show reading progress percentage in timeline items.",
-    SETTINGS_TIMELINE_AUTO_EXPAND: "Auto Expand Timeline",
+    SETTINGS_TIMELINE_AUTO_EXPAND: "Auto Follow Current Note",
     SETTINGS_TIMELINE_AUTO_EXPAND_DESC:
-        "Automatically expand timeline when opening review notes or clicking sidebar notes.",
+        "When the sidebar opens or the main editor switches notes, automatically locate the current note in the queue and open its timeline.",
     SETTINGS_TIMELINE_AUTO_COMMIT_REVIEW: "Auto Log Review Selection",
     SETTINGS_TIMELINE_AUTO_COMMIT_REVIEW_DESC:
         "Automatically write the selected note review option into Timeline after a successful review.",

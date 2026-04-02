@@ -126,6 +126,11 @@ describe("sync progress display defaults", () => {
         expect(DEFAULT_SETTINGS.sidebarFilePathTooltipDelayMs).toBe(1000);
     });
 
+    test("new installs keep auto-following the current note in the sidebar enabled by default", () => {
+        expect(DEFAULT_SETTINGS.autoExpandTimeline).toBe(true);
+        expect(settingsToUIState(DEFAULT_SETTINGS).autoExpandTimeline).toBe(true);
+    });
+
     test("settings UI normalizes sidebar file path tooltip delay to a non-negative integer", () => {
         const merged = mergeUIStateToSettings(DEFAULT_SETTINGS, {
             sidebarFilePathTooltipDelayMs: -12.6,

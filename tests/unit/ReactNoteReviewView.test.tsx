@@ -3,6 +3,8 @@ import {
     REACT_REVIEW_QUEUE_VIEW_TYPE,
     ReactNoteReviewView,
 } from "src/ui/views/ReactNoteReviewView";
+import { reviewDecksToSidebarState } from "src/ui/adapters/noteReviewAdapter";
+import { MarkdownView } from "obsidian";
 
 jest.mock("src/ui/components/NoteReviewSidebar", () => ({
     MOBILE_TIMELINE_MIN_HEIGHT_PX: 64,
@@ -94,6 +96,29 @@ type RenderRoot = {
     render: jest.Mock;
 };
 
+function createMarkdownLeaf(path?: string, visible = true) {
+    const view = Object.create(MarkdownView.prototype) as MarkdownView & {
+        file?: { path: string } | null;
+        containerEl?: HTMLElement;
+    };
+    const containerEl = document.createElement("div");
+    if (visible) {
+        containerEl.style.width = "240px";
+        containerEl.style.height = "240px";
+        Object.defineProperty(containerEl, "offsetWidth", { configurable: true, value: 240 });
+        Object.defineProperty(containerEl, "offsetHeight", { configurable: true, value: 240 });
+        containerEl.getClientRects = () => [{ width: 240, height: 240 }] as any;
+    }
+    document.body.appendChild(containerEl);
+    view.file = (path ? { path } : null) as any;
+    view.containerEl = containerEl;
+
+    return {
+        view,
+        containerEl,
+    };
+}
+
 function resetPhoneDrawerTimelineSession(): void {
     const testingViewClass = ReactNoteReviewView as any;
     testingViewClass.hasInitializedPhoneDrawerTimelineHeightThisSession = false;
@@ -105,6 +130,10 @@ function createView(options: {
     mountInMobileDrawer?: boolean;
     mobile?: boolean;
     tablet?: boolean;
+    autoExpandTimeline?: boolean;
+    activeMarkdownPath?: string | null;
+    markdownLeaves?: Array<{ view: MarkdownView }>;
+    mostRecentLeaf?: { view: MarkdownView } | null;
 }) {
     if (options.mobile) {
         document.body.classList.add("is-mobile");
@@ -132,7 +161,20 @@ function createView(options: {
     const app = {
         workspace: {
             on: jest.fn(),
-            getActiveFile: jest.fn(() => null),
+            getActiveFile: jest.fn(() =>
+                options.activeMarkdownPath ? { path: options.activeMarkdownPath } : null,
+            ),
+            getActiveViewOfType: jest.fn((viewType: unknown) => {
+                if (viewType !== MarkdownView || !options.activeMarkdownPath) {
+                    return null;
+                }
+
+                return createMarkdownLeaf(options.activeMarkdownPath).view;
+            }),
+            getLeavesOfType: jest.fn((type: string) =>
+                type === "markdown" ? (options.markdownLeaves ?? []) : [],
+            ),
+            getMostRecentLeaf: jest.fn(() => options.mostRecentLeaf ?? null),
             activeLeaf: null as unknown,
         },
         vault: {
@@ -159,6 +201,7 @@ function createView(options: {
                 sidebarFilterBarHeight: 80,
                 hideNoteReviewSidebarFilters: false,
                 showScrollPercentage: true,
+                autoExpandTimeline: options.autoExpandTimeline ?? true,
                 timelineEnableDurationPrefixSyntax: false,
                 showSidebarProgressIndicator: true,
                 sidebarFilePathTooltipEnabled: true,
@@ -181,6 +224,7 @@ function createView(options: {
         plugin,
         root,
         view,
+        leafContainer,
     };
 }
 
@@ -200,6 +244,10 @@ describe("ReactNoteReviewView", () => {
         document.body.className = "";
         document.documentElement.className = "";
         resetPhoneDrawerTimelineSession();
+        jest.mocked(reviewDecksToSidebarState).mockReturnValue({
+            sections: [],
+            totalCount: 0,
+        });
     });
 
     it("starts phone-sized mobile drawers at the minimum timeline height and keeps it across redraws", () => {
@@ -254,5 +302,101 @@ describe("ReactNoteReviewView", () => {
 
         tabletDrawerView.view.redraw();
         expect(getLastSidebarProps(tabletDrawerView.root).timelineHeight).toBe(280);
+    });
+
+    it("auto-follows the current markdown note on file open when enabled", () => {
+        const item = { id: "note-1", path: "notes/focused.md", title: "Focused Note" };
+        jest.mocked(reviewDecksToSidebarState).mockReturnValue({
+            sections: [{ id: "new", items: [item] }],
+            totalCount: 1,
+        } as any);
+        const { root, view } = createView({
+            activeMarkdownPath: item.path,
+            autoExpandTimeline: true,
+        });
+
+        (view as any).handleFileOpen();
+
+        const props = getLastSidebarProps(root);
+        expect(props.activeFilePath).toBe(item.path);
+        expect(props.selectedItem).toEqual(item);
+        expect(props.isTimelineOpen).toBe(true);
+        expect(props.autoRevealTargetPath).toBe(item.path);
+        expect(props.autoRevealRequestKey).toBe(1);
+    });
+
+    it("auto-follows the visible markdown leaf when the sidebar becomes foreground", () => {
+        const item = { id: "note-1", path: "notes/visible.md", title: "Visible Note" };
+        const visibleLeaf = createMarkdownLeaf(item.path).view;
+        jest.mocked(reviewDecksToSidebarState).mockReturnValue({
+            sections: [{ id: "new", items: [item] }],
+            totalCount: 1,
+        } as any);
+        const { root, view, leafContainer } = createView({
+            mountInMobileDrawer: true,
+            activeMarkdownPath: null,
+            markdownLeaves: [{ view: visibleLeaf }],
+            mostRecentLeaf: null,
+            autoExpandTimeline: true,
+        });
+
+        leafContainer.classList.remove("mod-active");
+        view.redraw();
+        expect(getLastSidebarProps(root).selectedItem).toBeNull();
+
+        root.render.mockClear();
+        leafContainer.classList.add("mod-active");
+        view.redraw();
+
+        const props = getLastSidebarProps(root);
+        expect(props.activeFilePath).toBe(item.path);
+        expect(props.selectedItem).toEqual(item);
+        expect(props.isTimelineOpen).toBe(true);
+        expect(props.autoRevealRequestKey).toBe(1);
+    });
+
+    it("does not auto-follow when the setting is disabled", () => {
+        const oldItem = { id: "note-1", path: "notes/original.md", title: "Original" };
+        const newItem = { id: "note-2", path: "notes/new.md", title: "New" };
+        jest.mocked(reviewDecksToSidebarState).mockReturnValue({
+            sections: [{ id: "new", items: [oldItem, newItem] }],
+            totalCount: 2,
+        } as any);
+        const { root, view } = createView({
+            activeMarkdownPath: newItem.path,
+            autoExpandTimeline: false,
+        });
+        (view as any).selectedItem = oldItem;
+        (view as any).isTimelineOpen = false;
+
+        (view as any).handleFileOpen();
+
+        const props = getLastSidebarProps(root);
+        expect(props.activeFilePath).toBe(newItem.path);
+        expect(props.selectedItem).toEqual(oldItem);
+        expect(props.isTimelineOpen).toBe(false);
+        expect(props.autoRevealRequestKey).toBe(0);
+    });
+
+    it("keeps the current selection when the active note is not in the queue", () => {
+        const oldItem = { id: "note-1", path: "notes/original.md", title: "Original" };
+        jest.mocked(reviewDecksToSidebarState).mockReturnValue({
+            sections: [{ id: "new", items: [oldItem] }],
+            totalCount: 1,
+        } as any);
+        const { root, view } = createView({
+            activeMarkdownPath: "notes/missing.md",
+            autoExpandTimeline: true,
+        });
+        (view as any).selectedItem = oldItem;
+        (view as any).isTimelineOpen = true;
+
+        (view as any).handleFileOpen();
+
+        const props = getLastSidebarProps(root);
+        expect(props.activeFilePath).toBe("notes/missing.md");
+        expect(props.selectedItem).toEqual(oldItem);
+        expect(props.isTimelineOpen).toBe(true);
+        expect(props.autoRevealRequestKey).toBe(0);
     });
 });

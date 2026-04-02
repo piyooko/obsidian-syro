@@ -98,6 +98,14 @@ function canUseHoverPathTooltips(): boolean {
     );
 }
 
+function escapeNotePathForSelector(path: string): string {
+    if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+        return CSS.escape(path);
+    }
+
+    return path.replace(/["\\]/g, "\\$&");
+}
+
 // ==========================================
 // 类型定义
 // ==========================================
@@ -1749,6 +1757,8 @@ interface NoteReviewSidebarProps {
     app: App;
     data: NoteReviewSidebarState;
     activeFilePath?: string;
+    autoRevealTargetPath?: string;
+    autoRevealRequestKey?: number;
     onNoteClick: (item: NoteReviewItem) => void;
     onNoteContextMenu: (item: NoteReviewItem, event: MouseEvent) => void;
     onTagDrop?: (item: NoteReviewItem, tag: string) => void;
@@ -1796,6 +1806,8 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     app,
     data,
     activeFilePath,
+    autoRevealTargetPath,
+    autoRevealRequestKey = 0,
     onNoteClick,
     onNoteContextMenu,
     onTagDrop,
@@ -1857,6 +1869,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     const activeTimelineSessionCleanupRef = useRef<(() => void) | null>(null);
     const timelineTouchBlockCooldownRef = useRef<number | null>(null);
     const suppressNextTimelineHeaderClickRef = useRef(false);
+    const contentRef = useRef<HTMLDivElement>(null);
 
     // 同步外部高度变化
     useEffect(() => {
@@ -2116,6 +2129,41 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
 
         return sections;
     }, [data, selectedTags]);
+
+    useLayoutEffect(() => {
+        if (!autoRevealTargetPath || autoRevealRequestKey <= 0) {
+            return;
+        }
+
+        const contentEl = contentRef.current;
+        const sidebarEl = sidebarRef.current;
+        if (!(contentEl instanceof HTMLElement) || !(sidebarEl instanceof HTMLElement)) {
+            return;
+        }
+
+        const noteSelector = `[data-note-path="${escapeNotePathForSelector(autoRevealTargetPath)}"]`;
+        const noteEl = sidebarEl.querySelector(noteSelector);
+        if (!(noteEl instanceof HTMLElement)) {
+            return;
+        }
+
+        const contentRect = contentEl.getBoundingClientRect();
+        const noteRect = noteEl.getBoundingClientRect();
+        const visibilityPadding = 24;
+        const isFullyVisible =
+            noteRect.top >= contentRect.top + visibilityPadding &&
+            noteRect.bottom <= contentRect.bottom - visibilityPadding;
+
+        if (isFullyVisible) {
+            return;
+        }
+
+        noteEl.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+            inline: "nearest",
+        });
+    }, [autoRevealRequestKey, autoRevealTargetPath, filteredSections]);
 
     // 标签切换
     const handleToggleTag = useCallback((tag: string, multiSelect: boolean) => {
@@ -2573,6 +2621,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
 
             {/* List Content */}
             <div
+                ref={contentRef}
                 className={[
                     "sr-note-sidebar__content",
                     isTimelineGestureBlocked

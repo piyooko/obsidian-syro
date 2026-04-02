@@ -102,6 +102,8 @@ function renderSidebar(
         filterBarHeight?: number;
         onTimelineToggle?: jest.Mock;
         activeFilePath?: string;
+        autoRevealTargetPath?: string;
+        autoRevealRequestKey?: number;
         selectedItem?: NoteReviewItem | null;
         onNoteClick?: jest.Mock;
         onNoteSelect?: jest.Mock;
@@ -153,6 +155,8 @@ function renderSidebar(
                 app: {} as never,
                 data,
                 activeFilePath: options.activeFilePath,
+                autoRevealTargetPath: options.autoRevealTargetPath,
+                autoRevealRequestKey: options.autoRevealRequestKey,
                 onNoteClick: options.onNoteClick ?? jest.fn(),
                 onNoteContextMenu: jest.fn(),
                 showSidebarProgressIndicator: options.showSidebarProgressIndicator,
@@ -627,6 +631,122 @@ describe("NoteReviewSidebar", () => {
             expect(onNoteClick).toHaveBeenCalledWith(item);
             expect(onNoteSelect).not.toHaveBeenCalled();
         } finally {
+            view.cleanup();
+        }
+    });
+
+    it("scrolls the auto-follow target into view when it is outside the visible area", () => {
+        const item = createItem();
+        const scrollIntoView = jest.fn();
+        const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+        const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+
+        HTMLElement.prototype.scrollIntoView = scrollIntoView;
+        HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+            if (this.classList.contains("sr-note-sidebar__content")) {
+                return {
+                    top: 0,
+                    bottom: 120,
+                    left: 0,
+                    right: 240,
+                    width: 240,
+                    height: 120,
+                    x: 0,
+                    y: 0,
+                    toJSON: () => null,
+                };
+            }
+
+            if (this.classList.contains("sr-new-item")) {
+                return {
+                    top: 220,
+                    bottom: 280,
+                    left: 0,
+                    right: 240,
+                    width: 240,
+                    height: 60,
+                    x: 0,
+                    y: 220,
+                    toJSON: () => null,
+                };
+            }
+
+            return originalGetBoundingClientRect.call(this);
+        };
+
+        const view = renderSidebar([item], {
+            autoRevealTargetPath: item.path,
+            autoRevealRequestKey: 1,
+        });
+
+        try {
+            expect(scrollIntoView).toHaveBeenCalledTimes(1);
+            expect(scrollIntoView).toHaveBeenCalledWith({
+                behavior: "smooth",
+                block: "center",
+                inline: "nearest",
+            });
+        } finally {
+            HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+            HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+            view.cleanup();
+        }
+    });
+
+    it("skips auto-scroll when the followed note is already visible", () => {
+        const item = createItem();
+        const scrollIntoView = jest.fn();
+        const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+        const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+
+        HTMLElement.prototype.scrollIntoView = scrollIntoView;
+        HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+            if (this.classList.contains("sr-note-sidebar__content")) {
+                return {
+                    top: 0,
+                    bottom: 300,
+                    left: 0,
+                    right: 240,
+                    width: 240,
+                    height: 300,
+                    x: 0,
+                    y: 0,
+                    toJSON: () => null,
+                };
+            }
+
+            if (this.classList.contains("sr-new-item")) {
+                return {
+                    top: 80,
+                    bottom: 140,
+                    left: 0,
+                    right: 240,
+                    width: 240,
+                    height: 60,
+                    x: 0,
+                    y: 80,
+                    toJSON: () => null,
+                };
+            }
+
+            return originalGetBoundingClientRect.call(this);
+        };
+
+        const view = renderSidebar([item], {
+            mountInMobileDrawer: true,
+            isForegroundDrawerView: true,
+            selectedItem: item,
+            autoRevealTargetPath: item.path,
+            autoRevealRequestKey: 1,
+        });
+
+        try {
+            const timelineBody = view.container.querySelector(".sr-timeline-body");
+            expect(timelineBody).not.toBeNull();
+            expect(scrollIntoView).not.toHaveBeenCalled();
+        } finally {
+            HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+            HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
             view.cleanup();
         }
     });

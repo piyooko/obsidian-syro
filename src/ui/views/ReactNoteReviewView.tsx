@@ -67,6 +67,9 @@ export class ReactNoteReviewView extends ItemView {
     private unsubscribeSyncEvent: (() => void) | null = null;
     private isLoading: boolean = false;
     private timelineScopeHandlers: Array<Parameters<Scope["unregister"]>[0]> = [];
+    private autoRevealTargetPath: string | null = null;
+    private autoRevealRequestKey = 0;
+    private wasForegroundDrawerView = false;
 
     private runAsync(task: Promise<void>, label: string): void {
         void task.catch((error: unknown) => {
@@ -176,6 +179,96 @@ export class ReactNoteReviewView extends ItemView {
             ReactNoteReviewView.phoneDrawerTimelineHeightThisSession ??
             MOBILE_TIMELINE_MIN_HEIGHT_PX
         );
+    }
+
+    private isMarkdownLeafVisible(leaf: WorkspaceLeaf): boolean {
+        const viewWithContainer = leaf.view as MarkdownView & {
+            containerEl?: HTMLElement;
+        };
+        const containerEl = viewWithContainer.containerEl;
+
+        if (!(containerEl instanceof HTMLElement)) {
+            return false;
+        }
+
+        return (
+            containerEl.offsetWidth > 0 ||
+            containerEl.offsetHeight > 0 ||
+            containerEl.getClientRects().length > 0
+        );
+    }
+
+    private resolvePrimaryMarkdownPath(): string | null {
+        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (typeof activeView?.file?.path === "string" && activeView.file.path.length > 0) {
+            return activeView.file.path;
+        }
+
+        const markdownLeaves = this.app.workspace.getLeavesOfType("markdown");
+        for (const leaf of markdownLeaves) {
+            if (!(leaf.view instanceof MarkdownView)) {
+                continue;
+            }
+
+            if (!this.isMarkdownLeafVisible(leaf)) {
+                continue;
+            }
+
+            const path = leaf.view.file?.path;
+            if (typeof path === "string" && path.length > 0) {
+                return path;
+            }
+        }
+
+        const mostRecentLeaf = this.app.workspace.getMostRecentLeaf?.();
+        if (mostRecentLeaf?.view instanceof MarkdownView) {
+            const path = mostRecentLeaf.view.file?.path;
+            if (typeof path === "string" && path.length > 0) {
+                return path;
+            }
+        }
+
+        return null;
+    }
+
+    private findSidebarItemByPath(data: ReturnType<typeof reviewDecksToSidebarState>, path: string): NoteReviewItem | null {
+        for (const section of data.sections) {
+            const foundItem = section.items.find((item) => item.path === path);
+            if (foundItem) {
+                return foundItem;
+            }
+        }
+
+        return null;
+    }
+
+    private syncSidebarToPrimaryMarkdownNote(
+        data: ReturnType<typeof reviewDecksToSidebarState>,
+        options: { requestReveal: boolean },
+    ): string | null {
+        const primaryMarkdownPath = this.resolvePrimaryMarkdownPath();
+
+        if (!this.plugin.data.settings.autoExpandTimeline || primaryMarkdownPath == null) {
+            return primaryMarkdownPath;
+        }
+
+        const foundItem = this.findSidebarItemByPath(data, primaryMarkdownPath);
+        if (!foundItem) {
+            return primaryMarkdownPath;
+        }
+
+        this.selectedItem = foundItem;
+        if (this.commitStore) {
+            this.commitLogs = this.commitStore.getCommits(foundItem.path);
+        }
+        this.isTimelineOpen = true;
+
+        if (options.requestReveal) {
+            this.autoRevealTargetPath = foundItem.path;
+            this.autoRevealRequestKey += 1;
+        }
+
+        return primaryMarkdownPath;
     }
 
     constructor(leaf: WorkspaceLeaf, plugin: SRPlugin) {
@@ -313,10 +406,16 @@ export class ReactNoteReviewView extends ItemView {
         this.bindDrawerChromeObserver();
         const isMobileDrawerView = this.getDrawerInner() !== null;
         const isPhoneMobileDrawerView = isMobileDrawerView && isPhoneMobileLayout();
+        const isForegroundDrawerView = this.isForegroundDrawerView();
         const timelineHeight = this.getTimelineHeightForRender(isPhoneMobileDrawerView);
-
-        const activeFile = this.app.workspace.getActiveFile();
         const data = reviewDecksToSidebarState(this.plugin);
+        const activeFilePath =
+            this.plugin.data.settings.autoExpandTimeline &&
+            isForegroundDrawerView &&
+            !this.wasForegroundDrawerView
+                ? this.syncSidebarToPrimaryMarkdownNote(data, { requestReveal: true })
+                : this.resolvePrimaryMarkdownPath();
+        this.wasForegroundDrawerView = isForegroundDrawerView;
         if (this.selectedItem && this.commitStore) {
             this.commitLogs = this.commitStore.getCommits(this.selectedItem.path);
         }
@@ -325,7 +424,9 @@ export class ReactNoteReviewView extends ItemView {
             React.createElement(NoteReviewSidebar, {
                 app: this.app,
                 data,
-                activeFilePath: activeFile?.path,
+                activeFilePath: activeFilePath ?? undefined,
+                autoRevealTargetPath: this.autoRevealTargetPath ?? undefined,
+                autoRevealRequestKey: this.autoRevealRequestKey,
                 onNoteClick: (item) => {
                     this.runAsync(this.handleNoteClick(item), "open note");
                 },
@@ -387,7 +488,7 @@ export class ReactNoteReviewView extends ItemView {
                     this.plugin.data.settings.sidebarFilePathTooltipEnabled ?? true,
                 filePathTooltipDelayMs:
                     this.plugin.data.settings.sidebarFilePathTooltipDelayMs ?? 1000,
-                isForegroundDrawerView: this.isForegroundDrawerView(),
+                isForegroundDrawerView,
             }),
         );
     }
@@ -1042,37 +1143,8 @@ export class ReactNoteReviewView extends ItemView {
      * Auto-select and expand the timeline when a reviewed file opens.
      */
     private handleFileOpen(): void {
-        const activeFile = this.app.workspace.getActiveFile();
-        if (!activeFile) {
-            this.redraw();
-            return;
-        }
-
-        // Only run auto-selection when the feature is enabled.
-        if (this.plugin.data.settings.autoExpandTimeline) {
-            // Check whether the active file exists in the current sidebar data.
-            const data = reviewDecksToSidebarState(this.plugin);
-            let foundItem: NoteReviewItem | null = null;
-
-            for (const section of data.sections) {
-                const item = section.items.find((i) => i.path === activeFile.path);
-                if (item) {
-                    foundItem = item;
-                    break;
-                }
-            }
-
-            if (foundItem) {
-                this.selectedItem = foundItem;
-                if (this.commitStore) {
-                    this.commitLogs = this.commitStore.getCommits(foundItem.path);
-                }
-                if (!this.isTimelineOpen) {
-                    this.isTimelineOpen = true;
-                }
-            }
-        }
-
+        const data = reviewDecksToSidebarState(this.plugin);
+        this.syncSidebarToPrimaryMarkdownNote(data, { requestReveal: true });
         this.redraw();
     }
 }
