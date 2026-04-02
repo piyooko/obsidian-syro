@@ -16,33 +16,37 @@ import {
     type Editor,
 } from "obsidian";
 import { SR_TAB_VIEW } from "src/constants";
+import { DataStore } from "src/dataStore/data";
 import { t } from "src/lang/helpers";
 import { ReviewContext } from "../context/ReviewContext";
 import { DeckOptionsPanel } from "../components/DeckOptionsPanel";
 import { DeckTree } from "../components/DeckTree";
 import { LinearCard, CardState } from "../components/LinearCard";
-import { deckToUIState, findDeckByPath, saveCollapseState } from "../adapters/deckAdapter";
+import { deckToUIState, saveCollapseState } from "../adapters/deckAdapter";
 import { DeckState } from "../types/deckTypes";
+import { activateDeckReviewSession } from "../reviewDeckSession";
 import type SRPlugin from "src/main";
-import { IFlashcardReviewSequencer } from "src/FlashcardReviewSequencer";
-import { Deck, DeckTreeFilter, CardListType } from "src/Deck";
+import { FlashcardReviewMode, IFlashcardReviewSequencer } from "src/FlashcardReviewSequencer";
+import { Deck } from "src/Deck";
 import { ReviewResponse, textInterval } from "src/scheduling";
 import { CardType } from "src/Question";
-import { TopicPath } from "src/TopicPath";
 import { CardFrontBackUtil } from "src/question-type";
 
 // ==========================================
 // Types
 // ==========================================
 
-type ViewType = "deck-list" | "review";
+export type ReviewSessionView = "deck-list" | "review";
+type ReviewEntrySource = "global-deck-list" | "manual-deck-click" | "in-note-auto-enter";
 
 interface ReviewSessionProps {
     plugin: SRPlugin;
     sequencer: IFlashcardReviewSequencer;
+    reviewMode: FlashcardReviewMode;
     hostLeaf: WorkspaceLeaf;
     markdownOwner: Component;
-    initialView?: ViewType;
+    initialView?: ReviewSessionView;
+    initialTargetDeckPath?: string;
     onClose?: () => void;
 }
 
@@ -113,30 +117,6 @@ function detectBlockingMobileNavbar(): boolean {
 // Deck helpers
 // ==========================================
 
-// Rebuild the ancestor chain for an isolated deck so the sequencer keeps the original path.
-function wrapDeckWithRoot(fullPath: string, isolatedDeck: Deck): Deck {
-    const root = new Deck("Root", null);
-    if (!fullPath || fullPath === "root") {
-        return isolatedDeck;
-    }
-
-    const parts = fullPath.split("/").filter(Boolean);
-    let current = root;
-
-    // Rebuild ancestor nodes from the original deck path.
-    for (let i = 0; i < parts.length - 1; i++) {
-        const node = new Deck(parts[i], current);
-        current.subdecks.push(node);
-        current = node;
-    }
-
-    // Attach the filtered deck under the reconstructed parent chain.
-    isolatedDeck.parent = current;
-    current.subdecks.push(isolatedDeck);
-
-    return root;
-}
-
 function resolveNoteFile(noteFile: unknown): TFile | null {
     if (noteFile instanceof TFile) {
         return noteFile;
@@ -162,6 +142,54 @@ function getMobileNavbars(): HTMLElement[] {
     return Array.from(document.querySelectorAll<HTMLElement>(".mobile-navbar"));
 }
 
+function getDeckPath(deck: Deck | null | undefined): string | null {
+    if (!deck) {
+        return null;
+    }
+
+    const topicPath = deck.getTopicPath().path.join("/");
+    if (topicPath.length > 0) {
+        return topicPath;
+    }
+
+    return deck.isRootDeck ? "" : deck.deckName;
+}
+
+function createReviewItemDebugSnapshot(
+    item:
+        | {
+              timesReviewed?: number | null;
+              queue?: number | null;
+              nextReview?: number | null;
+          }
+        | null
+        | undefined,
+) {
+    if (!item) {
+        return null;
+    }
+
+    return {
+        timesReviewed: item.timesReviewed ?? null,
+        queue: item.queue ?? null,
+        nextReview: item.nextReview ?? null,
+    };
+}
+
+function createDeckStatsDebugSnapshot(stats: {
+    newCount: number;
+    learningCount: number;
+    dueCount: number;
+    totalCount: number;
+}) {
+    return {
+        newCount: stats.newCount,
+        learningCount: stats.learningCount,
+        dueCount: stats.dueCount,
+        totalCount: stats.totalCount,
+    };
+}
+
 // ==========================================
 // Review session
 // ==========================================
@@ -169,19 +197,26 @@ function getMobileNavbars(): HTMLElement[] {
 export const ReviewSession: React.FC<ReviewSessionProps> = ({
     plugin,
     sequencer,
+    reviewMode,
     hostLeaf,
     markdownOwner,
     initialView = "deck-list",
+    initialTargetDeckPath,
     onClose: _onClose,
 }) => {
     // View state
-    const [view, setView] = useState<ViewType>(initialView);
+    const [view, setView] = useState<ReviewSessionView>(initialView);
     const [direction, setDirection] = useState(0); // 1 = Push, -1 = Pop
     const [tick, setTick] = useState(0); // Force rerenders after sync or deck updates.
     const [reviewUiResetToken, setReviewUiResetToken] = useState(0);
     const [recentDeckPath, setRecentDeckPath] = useState<string | null>(null);
     const [hasBlockingMobileNavbar, setHasBlockingMobileNavbar] = useState(() =>
         detectBlockingMobileNavbar(),
+    );
+    const handledInitialReviewEntryRef = useRef(false);
+    const handledInitialTargetDeckRef = useRef(false);
+    const reviewEntrySourceRef = useRef<ReviewEntrySource>(
+        initialTargetDeckPath ? "in-note-auto-enter" : "global-deck-list",
     );
     const deckListScrollTopRef = useRef(0);
     const hostLeafId = useMemo(
@@ -199,6 +234,104 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     );
 
     const forceUpdate = useCallback(() => setTick((t) => t + 1), []);
+
+    const enterDeckReview = useCallback(
+        (fullPath: string, source: ReviewEntrySource): boolean => {
+            const isCramMode = reviewMode === FlashcardReviewMode.Cram;
+            const sequencerReviewMode =
+                (sequencer as IFlashcardReviewSequencer & { reviewMode?: FlashcardReviewMode })
+                    .reviewMode ?? null;
+            const sourceDeckTree = isCramMode ? plugin.deckTree : plugin.remainingDeckTree;
+            const globalRemainingDeckTree = isCramMode ? undefined : plugin.remainingDeckTree;
+            const activatedSession = activateDeckReviewSession({
+                plugin,
+                sequencer,
+                fullPath,
+                sourceDeckTree,
+                fullDeckTree: plugin.deckTree,
+                globalRemainingDeckTree,
+                applyDailyLimits: !isCramMode,
+            });
+
+            if (!activatedSession) {
+                logRuntimeDebug("[SR-Debug] enterDeckReview: activation failed", {
+                    source,
+                    reviewMode: FlashcardReviewMode[reviewMode],
+                    sequencerReviewMode:
+                        sequencerReviewMode === null
+                            ? null
+                            : FlashcardReviewMode[sequencerReviewMode],
+                    fullPath,
+                    sourceDeckTreePath: getDeckPath(sourceDeckTree),
+                });
+                new Notice(t("REVIEW_NO_CARDS"));
+                return false;
+            }
+
+            const sessionStats = sequencer.getSessionDeckStats();
+            reviewEntrySourceRef.current = source;
+            if (sequencerReviewMode !== null && sequencerReviewMode !== reviewMode) {
+                console.warn("[SR] enterDeckReview: review mode mismatch between view and sequencer", {
+                    source,
+                    reviewMode: FlashcardReviewMode[reviewMode],
+                    sequencerReviewMode: FlashcardReviewMode[sequencerReviewMode],
+                    fullPath,
+                });
+            }
+
+            logRuntimeDebug("[SR-Debug] enterDeckReview: activation succeeded", {
+                source,
+                reviewMode: FlashcardReviewMode[reviewMode],
+                sequencerReviewMode:
+                    sequencerReviewMode === null
+                        ? null
+                        : FlashcardReviewMode[sequencerReviewMode],
+                fullPath,
+                currentCardId: sequencer.currentCard?.Id ?? null,
+                currentDeckPath: getDeckPath(sequencer.currentDeck),
+                sessionStats: createDeckStatsDebugSnapshot(sessionStats),
+            });
+
+            if (!sequencer.hasCurrentCard) {
+                new Notice(t("REVIEW_NO_CARDS"));
+                return false;
+            }
+
+            setRecentDeckPath(fullPath);
+            setReviewUiResetToken((value) => value + 1);
+            setDirection(1);
+            setView("review");
+            return true;
+        },
+        [logRuntimeDebug, plugin, reviewMode, sequencer],
+    );
+
+    useEffect(() => {
+        if (
+            handledInitialReviewEntryRef.current ||
+            initialView !== "review" ||
+            initialTargetDeckPath
+        ) {
+            return;
+        }
+
+        handledInitialReviewEntryRef.current = true;
+        reviewEntrySourceRef.current = "global-deck-list";
+
+        if (!sequencer.hasCurrentCard) {
+            new Notice(t("REVIEW_NO_CARDS"));
+            setView("deck-list");
+        }
+    }, [initialTargetDeckPath, initialView, sequencer]);
+
+    useEffect(() => {
+        if (handledInitialTargetDeckRef.current || !initialTargetDeckPath) {
+            return;
+        }
+
+        handledInitialTargetDeckRef.current = true;
+        enterDeckReview(initialTargetDeckPath, "in-note-auto-enter");
+    }, [enterDeckReview, initialTargetDeckPath]);
 
     // Refresh when sync or deck stats change underneath the current view.
     useEffect(() => {
@@ -386,46 +519,14 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     // Isolate the clicked deck, rebuild its root path, and enter review when cards remain.
     const handleDeckClick = useCallback(
         (deckState: DeckState) => {
-            const latestRemainingTree = plugin.remainingDeckTree;
-            const latestFullTree = plugin.deckTree;
-
             const fullPath = deckState.fullPath || deckState.deckName;
-            // Find the clicked deck in the latest remaining tree.
-            const rawClickedDeck = findDeckByPath(latestRemainingTree, fullPath);
+            const activatedSession = enterDeckReview(fullPath, "manual-deck-click");
 
-            if (rawClickedDeck) {
-                // Reapply daily limits to the isolated branch.
-                const isolatedContextDeck = DeckTreeFilter.filterByDailyLimits(
-                    rawClickedDeck,
-                    plugin,
-                );
-
-                // Rebuild the ancestor chain so the sequencer keeps the original path.
-                const wrappedDeckTree = wrapDeckWithRoot(fullPath, isolatedContextDeck);
-
-                // Swap the sequencer to the wrapped deck tree.
-                sequencer.setDeckTree(
-                    latestFullTree,
-                    wrappedDeckTree,
-                    latestRemainingTree,
-                    fullPath,
-                );
-                sequencer.setCurrentDeck(TopicPath.emptyPath);
-
-                logRuntimeDebug(
-                    `[V3-Scheduler] Clicked Deck: ${fullPath}, isolated new=${isolatedContextDeck.getCardCount(CardListType.NewCard, true)}, due=${isolatedContextDeck.getCardCount(CardListType.DueCard, true)}`,
-                );
-
-                if (sequencer.hasCurrentCard) {
-                    setRecentDeckPath(fullPath);
-                    setDirection(1);
-                    setView("review");
-                } else {
-                    new Notice(t("REVIEW_NO_CARDS"));
-                }
-            }
+            logRuntimeDebug(
+                `[V3-Scheduler] Clicked Deck: ${fullPath}, activated=${String(activatedSession)}`,
+            );
         },
-        [sequencer, plugin, logRuntimeDebug],
+        [enterDeckReview, logRuntimeDebug],
     );
 
     // Return from card review to the deck list.
@@ -449,14 +550,80 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 ReviewResponse.Good,
                 ReviewResponse.Easy,
             ];
+            const response = responseMap[rating] ?? ReviewResponse.Good;
+            const debugSequencer = sequencer as IFlashcardReviewSequencer & {
+                sessionCounterDeckPath?: string | null;
+                globalRemainingDeckTree?: Deck;
+            };
+            const currentCard = sequencer.currentCard;
+            const sessionStatsBefore = sequencer.getSessionDeckStats();
+            const pluginStoreItemBefore = currentCard
+                ? plugin.store?.getItembyID(currentCard.Id) ?? null
+                : null;
+            const dataStoreItemBefore = currentCard
+                ? DataStore.getInstance().getItembyID(currentCard.Id)
+                : null;
+
+            logRuntimeDebug("[SR-Debug] ReviewSession.handleAnswer before", {
+                source: reviewEntrySourceRef.current,
+                rating,
+                response: ReviewResponse[response],
+                cardId: currentCard?.Id ?? null,
+                currentDeckPath: getDeckPath(sequencer.currentDeck),
+                sessionCounterDeckPath: debugSequencer.sessionCounterDeckPath ?? null,
+                hasGlobalRemainingDeckTree: Boolean(debugSequencer.globalRemainingDeckTree),
+                pluginStoreItemExists: Boolean(pluginStoreItemBefore),
+                dataStoreItemExists: Boolean(dataStoreItemBefore),
+                sharedStoreItemRef:
+                    pluginStoreItemBefore && dataStoreItemBefore
+                        ? pluginStoreItemBefore === dataStoreItemBefore
+                        : null,
+                itemBefore: createReviewItemDebugSnapshot(
+                    pluginStoreItemBefore ?? dataStoreItemBefore,
+                ),
+                sessionStatsBefore: createDeckStatsDebugSnapshot(sessionStatsBefore),
+            });
 
             try {
                 logRuntimeDebug("[SR-DynSync] ReviewSession: calling sequencer.processReview");
-                sequencer.processReview(responseMap[rating] ?? ReviewResponse.Good);
+                sequencer.processReview(response);
                 logRuntimeDebug("[SR-DynSync] ReviewSession: sequencer.processReview completed");
             } catch (e) {
                 console.error("[SR] processReview 鐎殿喖鍊搁悥?", e);
             }
+
+            const pluginStoreItemAfter = currentCard
+                ? plugin.store?.getItembyID(currentCard.Id) ?? null
+                : null;
+            const dataStoreItemAfter = currentCard
+                ? DataStore.getInstance().getItembyID(currentCard.Id)
+                : null;
+            const sessionStatsAfter = sequencer.getSessionDeckStats();
+
+            logRuntimeDebug("[SR-Debug] ReviewSession.handleAnswer after", {
+                source: reviewEntrySourceRef.current,
+                rating,
+                response: ReviewResponse[response],
+                processedCardId: currentCard?.Id ?? null,
+                nextCardId: sequencer.currentCard?.Id ?? null,
+                currentDeckPath: getDeckPath(sequencer.currentDeck),
+                sessionCounterDeckPath: debugSequencer.sessionCounterDeckPath ?? null,
+                hasGlobalRemainingDeckTree: Boolean(debugSequencer.globalRemainingDeckTree),
+                pluginStoreItemExists: Boolean(pluginStoreItemAfter),
+                dataStoreItemExists: Boolean(dataStoreItemAfter),
+                sharedStoreItemRef:
+                    pluginStoreItemAfter && dataStoreItemAfter
+                        ? pluginStoreItemAfter === dataStoreItemAfter
+                        : null,
+                itemBefore: createReviewItemDebugSnapshot(
+                    pluginStoreItemBefore ?? dataStoreItemBefore,
+                ),
+                itemAfter: createReviewItemDebugSnapshot(
+                    pluginStoreItemAfter ?? dataStoreItemAfter,
+                ),
+                sessionStatsBefore: createDeckStatsDebugSnapshot(sessionStatsBefore),
+                sessionStatsAfter: createDeckStatsDebugSnapshot(sessionStatsAfter),
+            });
 
             if (sequencer.hasCurrentCard) {
                 logRuntimeDebug("[SR-DynSync] ReviewSession: current card remains, forceUpdate");
@@ -467,7 +634,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 handleExitReview();
             }
         },
-        [sequencer, forceUpdate, handleExitReview, logRuntimeDebug],
+        [forceUpdate, handleExitReview, logRuntimeDebug, plugin.store, sequencer],
     );
 
     const handleUndo = useCallback(() => {

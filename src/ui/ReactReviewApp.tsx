@@ -3,35 +3,44 @@
 import { createRoot, Root } from "react-dom/client";
 import { App, Component, WorkspaceLeaf } from "obsidian";
 import type SRPlugin from "src/main";
-import { IFlashcardReviewSequencer } from "src/FlashcardReviewSequencer";
-import { ReviewSession } from "./containers/ReviewSession";
+import { FlashcardReviewMode, IFlashcardReviewSequencer } from "src/FlashcardReviewSequencer";
+import { ReviewSession, type ReviewSessionView } from "./containers/ReviewSession";
 
 export class ReactReviewApp {
     private app: App;
     private plugin: SRPlugin;
     private sequencer: IFlashcardReviewSequencer;
+    private reviewMode: FlashcardReviewMode;
     private hostLeaf: WorkspaceLeaf;
     private containerEl: HTMLElement;
     private root: Root | null = null;
     private onCloseCallback?: () => void;
     private markdownOwner: Component;
+    private initialView: ReviewSessionView;
+    private initialTargetDeckPath?: string;
 
     constructor(
         app: App,
         plugin: SRPlugin,
         sequencer: IFlashcardReviewSequencer,
+        reviewMode: FlashcardReviewMode,
         hostLeaf: WorkspaceLeaf,
         containerEl: HTMLElement,
         markdownOwner: Component,
         onClose?: () => void,
+        initialView: ReviewSessionView = "deck-list",
+        initialTargetDeckPath?: string,
     ) {
         this.app = app;
         this.plugin = plugin;
         this.sequencer = sequencer;
+        this.reviewMode = reviewMode;
         this.hostLeaf = hostLeaf;
         this.containerEl = containerEl;
         this.markdownOwner = markdownOwner;
         this.onCloseCallback = onClose;
+        this.initialView = initialView;
+        this.initialTargetDeckPath = initialTargetDeckPath;
     }
 
     mount(): void {
@@ -45,9 +54,12 @@ export class ReactReviewApp {
             <ReviewSession
                 plugin={this.plugin}
                 sequencer={this.sequencer}
+                reviewMode={this.reviewMode}
                 hostLeaf={this.hostLeaf}
                 markdownOwner={this.markdownOwner}
                 onClose={this.onCloseCallback}
+                initialView={this.initialView}
+                initialTargetDeckPath={this.initialTargetDeckPath}
             />,
         );
     }
@@ -60,15 +72,32 @@ export class ReactReviewApp {
         this.containerEl.empty();
     }
 
+    remountSession(
+        sequencer: IFlashcardReviewSequencer,
+        reviewMode: FlashcardReviewMode,
+        initialView: ReviewSessionView,
+        initialTargetDeckPath?: string,
+    ): void {
+        this.sequencer = sequencer;
+        this.reviewMode = reviewMode;
+        this.initialView = initialView;
+        this.initialTargetDeckPath = initialTargetDeckPath;
+        this.unmount();
+        this.mount();
+    }
+
     refresh(): void {
         if (this.root) {
             this.root.render(
                 <ReviewSession
                     plugin={this.plugin}
                     sequencer={this.sequencer}
+                    reviewMode={this.reviewMode}
                     hostLeaf={this.hostLeaf}
                     markdownOwner={this.markdownOwner}
                     onClose={this.onCloseCallback}
+                    initialView={this.initialView}
+                    initialTargetDeckPath={this.initialTargetDeckPath}
                 />,
             );
         }

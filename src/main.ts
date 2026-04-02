@@ -67,7 +67,7 @@ import { WeightedMultiplierAlgorithm } from "src/algorithms/weightedMultiplier";
 
 import { reviewResponseModal } from "src/ui/modals/reviewresponse-modal";
 import { debug, isIgnoredPath, isVersionNewerThanOther } from "./util/utils_recall";
-import { DEFAULT_DECKNAME } from "./constants";
+import { DEFAULT_DECKNAME, SR_TAB_VIEW } from "./constants";
 
 import { addFileMenuEvt, registerTrackFileEvents } from "./Events/trackFileEvents";
 import { SyncEvents } from "./Events/SyncEvents";
@@ -246,6 +246,7 @@ export default class SRPlugin extends Plugin {
     private lastSyncReviewMode: FlashcardReviewMode | null = null;
     private lastSuccessfulCardCaptureSignature = "";
     private pendingCardCapturePromptSignature = "";
+    private pendingReviewSessionReloadAfterFullSync = false;
     private pendingSyncRequest: NormalizedSyncRequest | null = null;
     private lastSemanticChangeAt = 0;
     private noteReviewRefreshLock = false;
@@ -719,7 +720,7 @@ export default class SRPlugin extends Plugin {
                 }
 
                 this.runAsync(
-                    this.tabViewManager.openSRTabView(FlashcardReviewMode.Review, openFile),
+                    this.openFlashcardsInNoteReview(FlashcardReviewMode.Review, openFile),
                     "review flashcards in note",
                 );
             },
@@ -735,7 +736,7 @@ export default class SRPlugin extends Plugin {
                 }
 
                 this.runAsync(
-                    this.tabViewManager.openSRTabView(FlashcardReviewMode.Cram, openFile),
+                    this.openFlashcardsInNoteReview(FlashcardReviewMode.Cram, openFile),
                     "cram flashcards in note",
                 );
             },
@@ -1060,6 +1061,41 @@ export default class SRPlugin extends Plugin {
             this.requestSync({ ...request, force: true }),
             `replay queued ${request.mode} sync`,
         );
+    }
+
+    public requestReviewSessionReloadAfterNextFullSync(): void {
+        this.pendingReviewSessionReloadAfterFullSync = true;
+    }
+
+    public clearPendingReviewSessionReloadAfterNextFullSync(): void {
+        this.pendingReviewSessionReloadAfterFullSync = false;
+    }
+
+    private async reloadOpenReviewSessions(): Promise<void> {
+        const leaves = this.app.workspace.getLeavesOfType(SR_TAB_VIEW);
+        await Promise.all(
+            leaves.map(async (leaf) => {
+                const reloadableView = leaf.view as { reloadSession?: () => Promise<void> };
+                if (typeof reloadableView.reloadSession !== "function") {
+                    return;
+                }
+
+                try {
+                    await reloadableView.reloadSession();
+                } catch (error) {
+                    console.error("[SR] Failed to reload review session after full sync", error);
+                }
+            }),
+        );
+    }
+
+    private async consumePendingReviewSessionReloadAfterSync(syncMode: SyncMode): Promise<void> {
+        if (syncMode !== "full" || !this.pendingReviewSessionReloadAfterFullSync) {
+            return;
+        }
+
+        this.pendingReviewSessionReloadAfterFullSync = false;
+        await this.reloadOpenReviewSessions();
     }
 
     private getNoteCacheStorePath(): string {
@@ -2083,6 +2119,7 @@ export default class SRPlugin extends Plugin {
             ) {
                 this.pendingCardCapturePromptSignature = "";
             }
+            await this.consumePendingReviewSessionReloadAfterSync(syncMode);
             this.syncEvents.emit("sync-complete");
         } catch (error) {
             console.error("[SR-Sync] sync failed:", error);
@@ -2695,27 +2732,99 @@ export default class SRPlugin extends Plugin {
         this.app.workspace.off("active-leaf-change", this.activeLeafChangeHandler);
     }
 
+    public async openFlashcardsInNoteReview(
+        reviewMode: FlashcardReviewMode,
+        file: TFile,
+    ): Promise<void> {
+        this.logRuntimeDebug("[SR-InNoteReview] openFlashcardsInNoteReview:start", {
+            mode: FlashcardReviewMode[reviewMode],
+            filePath: file.path,
+        });
+        await this.requestSync({
+            reviewMode,
+            trigger: "review-entry",
+        });
+
+        const targetDeckTopicPath = TopicPath.getFolderPathFromFilename(
+            this.createSrTFile(file),
+            this.data.settings,
+        );
+        const targetDeckPath = targetDeckTopicPath.path.join("/");
+        if (!targetDeckPath) {
+            new Notice(t("REVIEW_NO_CARDS"));
+            return;
+        }
+
+        this.logRuntimeDebug("[SR-InNoteReview] openFlashcardsInNoteReview:resolved", {
+            mode: FlashcardReviewMode[reviewMode],
+            filePath: file.path,
+            targetDeckPath,
+        });
+
+        await this.tabViewManager.openSRTabView(reviewMode, {
+            targetDeckPath,
+        });
+    }
+
+    private assertPreparedSingleNoteReviewCardsBound(deckTree: Deck, notePath: string): void {
+        const cards = deckTree.getFlattenedCardArray(CardListType.All, true);
+        for (const card of cards) {
+            if (typeof card.Id !== "number" || card.Id < 0) {
+                const error = new Error(
+                    `Single-note review card is missing a tracked review id: ${notePath}`,
+                );
+                console.error("[SR] Failed to prepare note-local review card binding", error, card);
+                new Notice("Syro: failed to prepare note-local review cards. Please sync and try again.");
+                throw error;
+            }
+
+            if (!this.store.getItembyID(card.Id)) {
+                const error = new Error(
+                    `Single-note review card is missing a store item binding: ${notePath}#${card.Id}`,
+                );
+                console.error("[SR] Failed to prepare note-local review store binding", error, card);
+                new Notice("Syro: failed to prepare note-local review cards. Please sync and try again.");
+                throw error;
+            }
+        }
+    }
+
     public async getPreparedDecksForSingleNoteReview(
         file: TFile,
         mode: FlashcardReviewMode,
-    ): Promise<{ deckTree: Deck; remainingDeckTree: Deck; mode: FlashcardReviewMode }> {
+    ): Promise<{
+        deckTree: Deck;
+        remainingDeckTree: Deck;
+        mode: FlashcardReviewMode;
+        globalRemainingDeckTree: Deck;
+        sessionCounterDeckPath: string;
+    }> {
         const note: Note = await this.loadNote(file);
 
         const deckTree = new Deck("root", null);
         note.appendCardsToDeck(deckTree);
+        this.assertPreparedSingleNoteReviewCardsBound(deckTree, file.path);
         const remainingDeckTree = DeckTreeFilter.filterForRemainingCards(
             this.questionPostponementList,
             deckTree,
             mode,
         );
 
-        return { deckTree, remainingDeckTree, mode };
+        return {
+            deckTree,
+            remainingDeckTree,
+            mode,
+            globalRemainingDeckTree: this.remainingDeckTree,
+            sessionCounterDeckPath: "root",
+        };
     }
 
     public getPreparedReviewSequencer(
         fullDeckTree: Deck,
         remainingDeckTree: Deck,
         reviewMode: FlashcardReviewMode,
+        globalRemainingDeckTree?: Deck,
+        sessionCounterDeckPath?: string | null,
     ): { reviewSequencer: IFlashcardReviewSequencer; mode: FlashcardReviewMode } {
         const deckIterator: IDeckTreeIterator = SRPlugin.createDeckTreeIterator(
             this.data.settings,
@@ -2729,7 +2838,12 @@ export default class SRPlugin extends Plugin {
             this.questionPostponementList,
         );
 
-        reviewSequencer.setDeckTree(fullDeckTree, remainingDeckTree);
+        reviewSequencer.setDeckTree(
+            fullDeckTree,
+            remainingDeckTree,
+            globalRemainingDeckTree,
+            sessionCounterDeckPath,
+        );
         return { reviewSequencer, mode: reviewMode };
     }
 

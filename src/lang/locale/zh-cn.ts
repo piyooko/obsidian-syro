@@ -34,7 +34,7 @@ export default {
     CRAM_ALL_CARDS: "选择要集中复习的卡组",
     REVIEW_ALL_CARDS: "复习所有笔记中的卡片",
     REVIEW_CARDS_IN_NOTE: "复习此笔记中的卡片",
-    CRAM_CARDS_IN_NOTE: "集中复习此笔记中的卡片",
+    CRAM_CARDS_IN_NOTE: "使用强记模式复习此笔记中的卡片（将不更新卡片排程）",
     VIEW_STATS: "查看数据",
     OPEN_REVIEW_QUEUE_VIEW: "在侧边栏中打开已追踪笔记",
     STATUS_BAR: "复习: ${dueNotesCount} 笔记, ${dueFlashcardsCount} 卡片已到期",

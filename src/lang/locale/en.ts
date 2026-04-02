@@ -152,7 +152,7 @@ export default normalizeSentenceCaseLocale({
     CRAM_ALL_CARDS: "Select a deck to cram",
     REVIEW_ALL_CARDS: "Review flashcards from all notes",
     REVIEW_CARDS_IN_NOTE: "Review flashcards in this note",
-    CRAM_CARDS_IN_NOTE: "Cram flashcards in this note",
+    CRAM_CARDS_IN_NOTE: "Cram-review flashcards in this note (does not update scheduling)",
     VIEW_STATS: "View statistics",
     OPEN_REVIEW_QUEUE_VIEW: "Open Tracked Notes in sidebar",
     STATUS_BAR: "Review: ${dueNotesCount} note(s), ${dueFlashcardsCount} card(s) due",

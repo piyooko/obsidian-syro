@@ -298,6 +298,27 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         );
     }
 
+    private createDebugDeckStatsSnapshot(stats: DeckStats) {
+        return {
+            dueCount: stats.dueCount,
+            newCount: stats.newCount,
+            totalCount: stats.totalCount,
+            learningCount: stats.learningCount,
+        };
+    }
+
+    private createDebugItemSnapshot(item: RepetitionItem | null | undefined) {
+        if (!item) {
+            return null;
+        }
+
+        return {
+            timesReviewed: item.timesReviewed ?? null,
+            queue: item.queue ?? null,
+            nextReview: item.nextReview ?? null,
+        };
+    }
+
     private resolveReviewCounterDeckPath(card: Card | null, fallbackDeck: Deck | null): string {
         if (this.sessionCounterDeckPath != null) {
             return this.sessionCounterDeckPath;
@@ -430,9 +451,25 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         }
         const store = DataStore.getInstance();
         const item = store.getItembyID(card.Id);
+        const pluginStoreItemBefore = SRPlugin.getInstance()?.store?.getItembyID(card.Id) ?? null;
+        const sessionStatsBefore = this.getSessionDeckStats();
         this.logRuntimeDebug(
             `[SR-Debug] processReview: ID=${card.Id}, isLearning=${String(this._isLearning)}, response=${ReviewResponse[response]}, currentStep=${item?.learningStep}`,
         );
+        this.logRuntimeDebug("[SR-Debug] processReview: before", {
+            reviewMode: FlashcardReviewMode[this.reviewMode],
+            cardId: card.Id,
+            currentDeckPath: this.getDeckPath(this.currentDeck),
+            cardDeckPath: this.resolveCardDeckPath(card),
+            sessionCounterDeckPath: this.sessionCounterDeckPath,
+            hasGlobalRemainingDeckTree: Boolean(this.globalRemainingDeckTree),
+            pluginStoreItemExists: Boolean(pluginStoreItemBefore),
+            dataStoreItemExists: Boolean(item),
+            sharedStoreItemRef:
+                pluginStoreItemBefore && item ? pluginStoreItemBefore === item : null,
+            itemBefore: this.createDebugItemSnapshot(item ?? pluginStoreItemBefore),
+            sessionStatsBefore: this.createDebugDeckStatsSnapshot(sessionStatsBefore),
+        });
         const counterDeckPath =
             this.resolveCardDeckPath(card) ??
             this.resolveReviewCounterDeckPath(card, this.currentDeck);
@@ -477,17 +514,71 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         } else {
             this.processReview_CramMode(response);
         }
+        const itemAfter = store.getItembyID(card.Id);
+        const pluginStoreItemAfter = SRPlugin.getInstance()?.store?.getItembyID(card.Id) ?? null;
+        const sessionStatsAfter = this.getSessionDeckStats();
+        const itemBeforeSnapshot = this.createDebugItemSnapshot(item ?? pluginStoreItemBefore);
+        const itemAfterSnapshot = this.createDebugItemSnapshot(itemAfter ?? pluginStoreItemAfter);
+        this.logRuntimeDebug("[SR-Debug] processReview: after", {
+            reviewMode: FlashcardReviewMode[this.reviewMode],
+            response: ReviewResponse[response],
+            processedCardId: card.Id,
+            nextCardId: this.currentCard?.Id ?? null,
+            currentDeckPath: this.getDeckPath(this.currentDeck),
+            cardDeckPath: this.resolveCardDeckPath(this.currentCard),
+            sessionCounterDeckPath: this.sessionCounterDeckPath,
+            hasGlobalRemainingDeckTree: Boolean(this.globalRemainingDeckTree),
+            pluginStoreItemExists: Boolean(pluginStoreItemAfter),
+            dataStoreItemExists: Boolean(itemAfter),
+            sharedStoreItemRef:
+                pluginStoreItemAfter && itemAfter ? pluginStoreItemAfter === itemAfter : null,
+            itemBefore: itemBeforeSnapshot,
+            itemAfter: itemAfterSnapshot,
+            sessionStatsBefore: this.createDebugDeckStatsSnapshot(sessionStatsBefore),
+            sessionStatsAfter: this.createDebugDeckStatsSnapshot(sessionStatsAfter),
+        });
+        if (
+            this.reviewMode === FlashcardReviewMode.Review &&
+            itemBeforeSnapshot &&
+            itemAfterSnapshot &&
+            itemBeforeSnapshot.timesReviewed === itemAfterSnapshot.timesReviewed &&
+            itemBeforeSnapshot.queue === itemAfterSnapshot.queue &&
+            itemBeforeSnapshot.nextReview === itemAfterSnapshot.nextReview
+        ) {
+            console.warn("[SR] processReview: review completed without observable item changes", {
+                cardId: card.Id,
+                response: ReviewResponse[response],
+                sessionCounterDeckPath: this.sessionCounterDeckPath,
+                currentDeckPath: this.getDeckPath(this.currentDeck),
+            });
+        }
         this.logRuntimeDebug("[SR-DynSync] sequencer.processReview: completed");
     }
 
     processReview_ReviewMode(response: ReviewResponse, item: RepetitionItem | null): void {
         const card = this.currentCard;
         const reviewContext = this.resolveCardReviewContext(card);
+        const reviewResult = this._processReviewbyAlgo(response, reviewContext.fsrsSettings);
         const resolvedItem = item ?? DataStore.getInstance().getItembyID(card.Id);
-        this._processReviewbyAlgo(response, reviewContext.fsrsSettings);
+
+        if (!reviewResult) {
+            console.warn("[SR] processReview_ReviewMode: algorithm returned null", {
+                cardId: card.Id,
+                response: ReviewResponse[response],
+                currentDeckPath: this.getDeckPath(this.currentDeck),
+                sessionCounterDeckPath: this.sessionCounterDeckPath,
+            });
+        }
 
         if (!resolvedItem) {
-            console.warn("[SR] processReview_ReviewMode: item missing after review", card.Id);
+            console.warn("[SR] processReview_ReviewMode: item missing after review", {
+                cardId: card.Id,
+                response: ReviewResponse[response],
+                currentDeckPath: this.getDeckPath(this.currentDeck),
+                sessionCounterDeckPath: this.sessionCounterDeckPath,
+                pluginStoreItemExists: Boolean(SRPlugin.getInstance()?.store?.getItembyID(card.Id)),
+                dataStoreItemExists: Boolean(DataStore.getInstance().getItembyID(card.Id)),
+            });
             this.advanceToNextCard();
             return;
         }
