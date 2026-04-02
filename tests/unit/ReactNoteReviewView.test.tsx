@@ -127,6 +127,8 @@ function resetPhoneDrawerTimelineSession(): void {
 
 function createView(options: {
     savedTimelineHeight?: number;
+    savedTimelineOpen?: boolean;
+    savedSelectedPath?: string | null;
     mountInMobileDrawer?: boolean;
     mobile?: boolean;
     tablet?: boolean;
@@ -195,6 +197,8 @@ function createView(options: {
         data: {
             settings: {
                 sidebarTimelineHeight: options.savedTimelineHeight,
+                sidebarTimelineOpen: options.savedTimelineOpen ?? false,
+                sidebarTimelineSelectedPath: options.savedSelectedPath ?? null,
                 sidebarIgnoredTags: [] as string[],
                 sidebarTagSortMode: "frequency",
                 sidebarCustomTagOrder: [] as string[],
@@ -304,13 +308,32 @@ describe("ReactNoteReviewView", () => {
         expect(getLastSidebarProps(tabletDrawerView.root).timelineHeight).toBe(280);
     });
 
+    it("restores the saved desktop timeline selection and expanded state", () => {
+        const item = { id: "note-1", path: "notes/persisted.md", title: "Persisted Note" };
+        jest.mocked(reviewDecksToSidebarState).mockReturnValue({
+            sections: [{ id: "new", items: [item] }],
+            totalCount: 1,
+        } as any);
+        const { root, view } = createView({
+            savedTimelineOpen: true,
+            savedSelectedPath: item.path,
+            autoExpandTimeline: false,
+        });
+
+        view.redraw();
+
+        const props = getLastSidebarProps(root);
+        expect(props.selectedItem).toEqual(item);
+        expect(props.isTimelineOpen).toBe(true);
+    });
+
     it("auto-follows the current markdown note on file open when enabled", () => {
         const item = { id: "note-1", path: "notes/focused.md", title: "Focused Note" };
         jest.mocked(reviewDecksToSidebarState).mockReturnValue({
             sections: [{ id: "new", items: [item] }],
             totalCount: 1,
         } as any);
-        const { root, view } = createView({
+        const { plugin, root, view } = createView({
             activeMarkdownPath: item.path,
             autoExpandTimeline: true,
         });
@@ -323,6 +346,8 @@ describe("ReactNoteReviewView", () => {
         expect(props.isTimelineOpen).toBe(true);
         expect(props.autoRevealTargetPath).toBe(item.path);
         expect(props.autoRevealRequestKey).toBe(1);
+        expect(plugin.data.settings.sidebarTimelineSelectedPath).toBe(item.path);
+        expect(plugin.data.settings.sidebarTimelineOpen).toBe(true);
     });
 
     it("auto-follows the visible markdown leaf when the sidebar becomes foreground", () => {
@@ -398,5 +423,22 @@ describe("ReactNoteReviewView", () => {
         expect(props.selectedItem).toEqual(oldItem);
         expect(props.isTimelineOpen).toBe(true);
         expect(props.autoRevealRequestKey).toBe(0);
+    });
+
+    it("persists the selected note path and desktop timeline toggle state", () => {
+        const item = { id: "note-1", path: "notes/selected.md", title: "Selected Note" };
+        const { plugin, view } = createView({
+            autoExpandTimeline: true,
+        });
+
+        (view as any).handleNoteSelect(item);
+
+        expect(plugin.data.settings.sidebarTimelineSelectedPath).toBe(item.path);
+        expect(plugin.data.settings.sidebarTimelineOpen).toBe(true);
+
+        (view as any).handleTimelineToggle();
+
+        expect(plugin.data.settings.sidebarTimelineOpen).toBe(false);
+        expect(plugin.savePluginData).toHaveBeenCalled();
     });
 });

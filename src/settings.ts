@@ -622,6 +622,9 @@ export interface SRSettings {
     showStatusBarDueNotification: boolean; // Whether due notifications are enabled in the status bar
 
     // Timeline Settings
+    sidebarTimelineHeight: number; // Persisted timeline panel height in px
+    sidebarTimelineOpen: boolean; // Persisted desktop timeline expanded state
+    sidebarTimelineSelectedPath: string | null; // Persisted selected note path in timeline
     showScrollPercentage: boolean;
     autoExpandTimeline: boolean;
     timelineAutoCommitReviewSelection: boolean;
@@ -772,6 +775,9 @@ export const DEFAULT_SETTINGS: SRSettings = {
     showStatusBarDueNotification: true, // Enabled by default
 
     // Timeline Settings
+    sidebarTimelineHeight: 300,
+    sidebarTimelineOpen: false,
+    sidebarTimelineSelectedPath: null,
     showScrollPercentage: true,
     autoExpandTimeline: true,
     timelineAutoCommitReviewSelection: true,
@@ -961,6 +967,24 @@ export function upgradeSettings(settings: SRSettings) {
 
     if (settings.showRuntimeDebugMessages === undefined) {
         settings.showRuntimeDebugMessages = false;
+    }
+
+    if (
+        typeof settings.sidebarTimelineHeight !== "number" ||
+        !Number.isFinite(settings.sidebarTimelineHeight)
+    ) {
+        settings.sidebarTimelineHeight = 300;
+    }
+
+    if (settings.sidebarTimelineOpen === undefined) {
+        settings.sidebarTimelineOpen = false;
+    }
+
+    if (
+        settings.sidebarTimelineSelectedPath !== null &&
+        typeof settings.sidebarTimelineSelectedPath !== "string"
+    ) {
+        settings.sidebarTimelineSelectedPath = null;
     }
 
     settings.openViewInNewTab = true;

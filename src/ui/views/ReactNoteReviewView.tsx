@@ -77,6 +77,45 @@ export class ReactNoteReviewView extends ItemView {
         });
     }
 
+    private shouldPersistTimelineOpenState(): boolean {
+        return this.getDrawerInner() === null;
+    }
+
+    private persistTimelineUiState(options: {
+        height?: number;
+        isOpen?: boolean;
+        selectedPath?: string | null;
+    }): void {
+        let changed = false;
+
+        if (
+            options.height !== undefined &&
+            this.plugin.data.settings.sidebarTimelineHeight !== options.height
+        ) {
+            this.plugin.data.settings.sidebarTimelineHeight = options.height;
+            changed = true;
+        }
+
+        if (
+            options.selectedPath !== undefined &&
+            this.plugin.data.settings.sidebarTimelineSelectedPath !== options.selectedPath
+        ) {
+            this.plugin.data.settings.sidebarTimelineSelectedPath = options.selectedPath;
+            changed = true;
+        }
+
+        if (options.isOpen !== undefined && this.shouldPersistTimelineOpenState()) {
+            if (this.plugin.data.settings.sidebarTimelineOpen !== options.isOpen) {
+                this.plugin.data.settings.sidebarTimelineOpen = options.isOpen;
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            this.runAsync(this.plugin.savePluginData(), "save timeline ui state");
+        }
+    }
+
     private getLeafContainer(): HTMLElement | null {
         const leafWithContainer = this.leaf as WorkspaceLeaf & {
             containerEl?: HTMLElement;
@@ -242,6 +281,26 @@ export class ReactNoteReviewView extends ItemView {
         return null;
     }
 
+    private restorePersistedTimelineSelection(
+        data: ReturnType<typeof reviewDecksToSidebarState>,
+    ): void {
+        const selectedPath =
+            this.plugin.data.settings.sidebarTimelineSelectedPath ?? this.selectedItem?.path ?? null;
+        if (selectedPath == null) {
+            return;
+        }
+
+        const foundItem = this.findSidebarItemByPath(data, selectedPath);
+        if (!foundItem) {
+            return;
+        }
+
+        this.selectedItem = foundItem;
+        if (this.commitStore) {
+            this.commitLogs = this.commitStore.getCommits(foundItem.path);
+        }
+    }
+
     private syncSidebarToPrimaryMarkdownNote(
         data: ReturnType<typeof reviewDecksToSidebarState>,
         options: { requestReveal: boolean },
@@ -262,6 +321,10 @@ export class ReactNoteReviewView extends ItemView {
             this.commitLogs = this.commitStore.getCommits(foundItem.path);
         }
         this.isTimelineOpen = true;
+        this.persistTimelineUiState({
+            selectedPath: foundItem.path,
+            isOpen: true,
+        });
 
         if (options.requestReveal) {
             this.autoRevealTargetPath = foundItem.path;
@@ -275,11 +338,9 @@ export class ReactNoteReviewView extends ItemView {
         super(leaf);
         this.plugin = plugin;
 
-        // Restore the last saved timeline height.
-        const sidebarSettings = this.plugin.data.settings as typeof this.plugin.data.settings & {
-            sidebarTimelineHeight?: number;
-        };
-        this.timelineHeight = sidebarSettings.sidebarTimelineHeight ?? 300;
+        // Restore persisted timeline UI state.
+        this.timelineHeight = this.plugin.data.settings.sidebarTimelineHeight;
+        this.isTimelineOpen = this.plugin.data.settings.sidebarTimelineOpen;
 
         // Register workspace and vault listeners.
         this.registerEvent(
@@ -293,6 +354,10 @@ export class ReactNoteReviewView extends ItemView {
                 if (this.commitStore && oldPath) {
                     this.commitStore.renameFile(oldPath, file.path);
                     this.runAsync(this.commitStore.save(), "save renamed commit store");
+                }
+                if (oldPath && this.plugin.data.settings.sidebarTimelineSelectedPath === oldPath) {
+                    this.plugin.data.settings.sidebarTimelineSelectedPath = file.path;
+                    this.runAsync(this.plugin.savePluginData(), "save renamed timeline selection");
                 }
                 this.redraw();
             }),
@@ -409,6 +474,7 @@ export class ReactNoteReviewView extends ItemView {
         const isForegroundDrawerView = this.isForegroundDrawerView();
         const timelineHeight = this.getTimelineHeightForRender(isPhoneMobileDrawerView);
         const data = reviewDecksToSidebarState(this.plugin);
+        this.restorePersistedTimelineSelection(data);
         const activeFilePath =
             this.plugin.data.settings.autoExpandTimeline &&
             isForegroundDrawerView &&
@@ -927,9 +993,16 @@ export class ReactNoteReviewView extends ItemView {
         }
 
         // Auto-expand the timeline if the setting allows it.
+        let persistOpenState: boolean | undefined;
         if (this.plugin.data.settings.autoExpandTimeline && !this.isTimelineOpen) {
             this.isTimelineOpen = true;
+            persistOpenState = true;
         }
+
+        this.persistTimelineUiState({
+            selectedPath: item.path,
+            isOpen: persistOpenState,
+        });
 
         this.redraw();
     }
@@ -966,6 +1039,7 @@ export class ReactNoteReviewView extends ItemView {
      */
     private handleTimelineToggle(): void {
         this.isTimelineOpen = !this.isTimelineOpen;
+        this.persistTimelineUiState({ isOpen: this.isTimelineOpen });
         this.redraw();
     }
 
@@ -977,11 +1051,7 @@ export class ReactNoteReviewView extends ItemView {
         if (ReactNoteReviewView.hasInitializedPhoneDrawerTimelineHeightThisSession) {
             ReactNoteReviewView.phoneDrawerTimelineHeightThisSession = height;
         }
-        const sidebarSettings = this.plugin.data.settings as typeof this.plugin.data.settings & {
-            sidebarTimelineHeight?: number;
-        };
-        sidebarSettings.sidebarTimelineHeight = height;
-        this.runAsync(this.plugin.savePluginData(), "save timeline height");
+        this.persistTimelineUiState({ height });
     }
 
     /**
