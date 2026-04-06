@@ -15,8 +15,34 @@ const PROJECT_ROOT =
     path.basename(PARENT_DIR) === ".worktrees"
         ? path.resolve(CURRENT_DIR, "..", "..")
         : CURRENT_DIR;
-const OBSIDIAN_PLUGIN_DIR = path.join(PROJECT_ROOT, "plugin_test", ".obsidian", "plugins", "syro");
+const LOCAL_CONFIG_PATH = path.join(PROJECT_ROOT, "esbuild.config.local.json");
+const DEFAULT_OBSIDIAN_PLUGIN_DIR = path.join(
+    PROJECT_ROOT,
+    "plugin_test",
+    ".obsidian",
+    "plugins",
+    "syro",
+);
+const localConfig = loadLocalConfig();
+const OBSIDIAN_VAULT_DIR =
+    process.env.SYRO_OBSIDIAN_VAULT_DIR || localConfig.obsidianVaultDir || null;
+const OBSIDIAN_PLUGIN_DIR = OBSIDIAN_VAULT_DIR
+    ? path.join(OBSIDIAN_VAULT_DIR, ".obsidian", "plugins", "syro")
+    : DEFAULT_OBSIDIAN_PLUGIN_DIR;
 const SOURCEMAP_MODE = prod ? false : "inline";
+
+function loadLocalConfig() {
+    if (!fs.existsSync(LOCAL_CONFIG_PATH)) {
+        return {};
+    }
+
+    try {
+        return JSON.parse(fs.readFileSync(LOCAL_CONFIG_PATH, "utf8"));
+    } catch (err) {
+        console.warn(`[config] Failed to parse ${LOCAL_CONFIG_PATH}: ${err.message}`);
+        return {};
+    }
+}
 
 function copyToObsidian() {
     try {

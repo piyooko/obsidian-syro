@@ -37,6 +37,7 @@ docs/docs/en/media/~*
 
 # env
 env.sh
+esbuild.config.local.json
 
 # plugin test
 plugin_test/
