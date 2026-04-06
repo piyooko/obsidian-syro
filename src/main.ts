@@ -622,7 +622,6 @@ export default class SRPlugin extends Plugin {
                                                     await this.noteReviewStore.save();
                                                     this.updateAndSortDueNotes();
                                                     this.syncEvents.emit("note-review-updated");
-                                                    new Notice(`${t("PRIORITY")}: ${newPriority}`);
                                                 })(),
                                                 "save note priority",
                                             );
@@ -839,7 +838,6 @@ export default class SRPlugin extends Plugin {
         const replacement = `{{c${nextId}::${selection}}}`;
         editor.replaceSelection(replacement);
 
-        new Notice(t("NOTICE_CLOZE_CREATED", { nextId: nextId.toString() }));
     }
 
     private getMaxClozeIdFromText(text: string): number {

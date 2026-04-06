@@ -63,7 +63,6 @@ const insertCloze = (view: EditorView, type: "same" | "new"): void => {
         selection: { anchor: selection.from + replacement.length },
     });
 
-    new Notice(t("NOTICE_CLOZE_CREATED", { nextId }));
 };
 
 // ==========================================

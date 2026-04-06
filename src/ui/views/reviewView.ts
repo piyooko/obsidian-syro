@@ -1,5 +1,3 @@
-import { Notice } from "obsidian";
-import { t } from "src/lang/helpers";
 import SRPlugin from "src/main";
 import { SRSettings } from "src/settings";
 
@@ -31,15 +29,7 @@ export class ReviewView {
     }
 
     static nextReviewNotice(minNextView: number, laterSize: number) {
-        if (minNextView > 0 && laterSize > 0) {
-            const now = Date.now();
-            const interval = Math.round((minNextView - now) / 1000 / 60);
-
-            if (interval < 60) {
-                new Notice(t("NEXT_REVIEW_MINUTES", { interval: interval }));
-            } else if (interval < 60 * 5) {
-                new Notice(t("NEXT_REVIEW_HOURS", { interval: Math.round(interval / 60) }));
-            }
-        }
+        void minNextView;
+        void laterSize;
     }
 }

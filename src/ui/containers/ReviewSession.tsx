@@ -1160,7 +1160,6 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
 
     // Postpone the current card without opening the note.
     const handlePostpone = () => {
-        new Notice(t("REVIEW_POSTPONED"));
         onAnswer(0);
     };
 

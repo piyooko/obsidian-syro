@@ -922,7 +922,6 @@ export class ReactNoteReviewView extends ItemView {
                 await this.plugin.noteReviewStore.save();
                 this.plugin.updateAndSortDueNotes();
                 this.plugin.syncEvents.emit("note-review-updated");
-                new Notice(`${t("PRIORITY")}: ${newPriority}`);
             } else {
                 new Notice(t("SIDEBAR_NOTE_DATA_NOT_FOUND"));
             }
