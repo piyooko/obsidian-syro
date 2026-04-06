@@ -832,7 +832,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                     const { windowedText, startSliceIndex, activeLineRelative } =
                         this.getWindowedCode(processedFullText, activeClozes, contextSize);
 
-                    const realStartLine = lineOffset + 1 + startSliceIndex + 1;
+                    const realStartLine = lineOffset + 1 + startSliceIndex;
 
                     const meta = `<!--SR_CODE_CLOZE:${activeLineRelative}:${realStartLine}-->\n`;
 

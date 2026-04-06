@@ -38,13 +38,13 @@ describe("clozeScrollPosition", () => {
         expect(getMixedCenterScrollTop(input)).toBe(380);
     });
 
-    test("short or edge-adjacent context falls back to simple visibility instead of fake centering", () => {
+    test("top-edge clamping keeps the target as close to center as the content boundary allows", () => {
         const input = createInput({
             scrollTop: 0,
-            scrollHeight: 500,
+            scrollHeight: 1200,
             clientHeight: 400,
-            targetTop: 60,
-            targetHeight: 30,
+            targetTop: 110,
+            targetHeight: 20,
         });
 
         expect(getMixedCenterScrollTop(input)).toBe(0);
@@ -63,16 +63,15 @@ describe("clozeScrollPosition", () => {
         expect(getMixedCenterScrollTop(input)).toBe(0);
     });
 
-    test("clamped centering falls back to ensure-visible instead of pretending to center", () => {
+    test("bottom-edge clamping keeps the target as close to center as the content boundary allows", () => {
         const input = createInput({
-            scrollTop: 0,
             scrollHeight: 1200,
             clientHeight: 400,
-            targetTop: 110,
+            targetTop: 1090,
             targetHeight: 20,
         });
 
-        expect(getMixedCenterScrollTop(input)).toBe(0);
+        expect(getMixedCenterScrollTop(input)).toBe(800);
     });
 
     test("buildScrollPositionInput converts DOM geometry into scroll metrics for mixed centering", () => {

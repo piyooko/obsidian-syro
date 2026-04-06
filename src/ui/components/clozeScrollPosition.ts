@@ -87,30 +87,18 @@ export function getEnsureVisibleScrollTop(input: ScrollPositionInput): number {
 }
 
 export function getMixedCenterScrollTop(input: ScrollPositionInput): number {
-    const ensuredScrollTop = getEnsureVisibleScrollTop(input);
     const maxScrollTop = getMaxScrollTop(input);
-    const availableViewportHeight = getAvailableViewportHeight(input);
-    if (maxScrollTop <= EPSILON || availableViewportHeight <= EPSILON) {
-        return ensuredScrollTop;
+    if (maxScrollTop <= EPSILON || input.scrollHeight <= input.clientHeight + 1) {
+        return clampScrollTop(input.scrollTop, maxScrollTop);
     }
 
-    const contextThreshold = availableViewportHeight / 3;
-    const contextAbove = input.targetTop;
-    const contextBelow = Math.max(0, input.scrollHeight - (input.targetTop + input.targetHeight));
-    const hasEnoughContext = contextAbove >= contextThreshold && contextBelow >= contextThreshold;
-
-    if (!hasEnoughContext) {
-        return ensuredScrollTop;
+    const availableViewportHeight = getAvailableViewportHeight(input);
+    if (availableViewportHeight <= EPSILON) {
+        return getEnsureVisibleScrollTop(input);
     }
 
     const { top: safeTopInset } = getSafeInsets(input);
     const desiredCenteredScrollTop =
         input.targetTop + input.targetHeight / 2 - safeTopInset - availableViewportHeight / 2;
-    const centeredScrollTop = clampScrollTop(desiredCenteredScrollTop, maxScrollTop);
-
-    if (Math.abs(centeredScrollTop - desiredCenteredScrollTop) > EPSILON) {
-        return ensuredScrollTop;
-    }
-
-    return centeredScrollTop;
+    return clampScrollTop(desiredCenteredScrollTop, maxScrollTop);
 }

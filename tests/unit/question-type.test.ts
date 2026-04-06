@@ -7,6 +7,18 @@ import {
 } from "src/question-type";
 import { DEFAULT_SETTINGS, SRSettings, syncDefaultClozePatterns } from "src/settings";
 
+function extractCodeClozeMeta(front: string): { activeLineRelative: number; startLine: number } {
+    const match = front.match(/<!--SR_CODE_CLOZE:(\d+):(\d+)-->/);
+    if (!match) {
+        throw new Error("Missing SR_CODE_CLOZE metadata");
+    }
+
+    return {
+        activeLineRelative: Number(match[1]),
+        startLine: Number(match[2]),
+    };
+}
+
 test("CardType.SingleLineBasic", () => {
     expect(CardFrontBackUtil.expand(CardType.SingleLineBasic, "A::B", DEFAULT_SETTINGS)).toEqual([
         new CardFrontBack("A", "B"),
@@ -185,6 +197,56 @@ test("CardType.AnkiCloze keeps fenced code blocks in Anki-only mode", () => {
     expect(result[0].front).toContain("SR_CLOZE:");
     expect(result[0].front).toContain('typeof from === "object"');
     expect(result[0].front).not.toContain("SR_C:");
+});
+
+test("CardType.AnkiCloze starts displayed code lines at 1 when the fenced block begins on note line 0", () => {
+    const settings: SRSettings = {
+        ...DEFAULT_SETTINGS,
+        convertAnkiClozesToClozes: true,
+        parseClozesInCodeBlocks: true,
+    };
+
+    const result = CardFrontBackUtil.expand(
+        CardType.AnkiCloze,
+        '```ts\nconst alpha = 1;\nconst beta = {{c1::2}};\n```',
+        settings,
+        0,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(extractCodeClozeMeta(result[0].front)).toEqual({
+        activeLineRelative: 3,
+        startLine: 1,
+    });
+});
+
+test("CardType.AnkiCloze keeps note-absolute line numbers when windowing trimmed code context", () => {
+    const settings: SRSettings = {
+        ...DEFAULT_SETTINGS,
+        convertAnkiClozesToClozes: true,
+        parseClozesInCodeBlocks: true,
+        codeContextLines: 1,
+    };
+
+    const questionText = [
+        "```ts",
+        "const line1 = 1;",
+        "const line2 = 2;",
+        "const line3 = 3;",
+        "const line4 = 4;",
+        "const line5 = {{c1::5}};",
+        "const line6 = 6;",
+        "const line7 = 7;",
+        "```",
+    ].join("\n");
+
+    const result = CardFrontBackUtil.expand(CardType.AnkiCloze, questionText, settings, 40);
+
+    expect(result).toHaveLength(1);
+    expect(extractCodeClozeMeta(result[0].front)).toEqual({
+        activeLineRelative: 4,
+        startLine: 44,
+    });
 });
 
 test("CardType.AnkiCloze only links same-number clozes on the current line even with full note context", () => {

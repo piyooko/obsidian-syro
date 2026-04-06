@@ -289,6 +289,165 @@ function createCrossBoundaryMarkdownRender() {
     });
 }
 
+function createStaticClozeRenderMarkdown() {
+    return jest.fn(async (_content: string, el: HTMLElement) => {
+        el.innerHTML = `
+            <div class="sr-test-cloze-layout">
+                <p>Intro</p>
+                <p>
+                    <span class="sr-cloze-wrapper">
+                        <span class="sr-cloze-placeholder">[...]</span>
+                        <span class="sr-cloze-answer">answer</span>
+                    </span>
+                </p>
+                <p>Outro</p>
+            </div>
+        `;
+    });
+}
+
+async function flushAnimationFrame() {
+    await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+}
+
+function installScrollableClozeGeometry(
+    container: HTMLElement,
+    options: {
+        scrollTop?: number;
+        scrollHeight?: number;
+        clientHeight?: number;
+        scrollContainerTop?: number;
+        safeTopInset?: number;
+        safeBottomInset?: number;
+        placeholderTop?: number;
+        answerTop?: number;
+        targetHeight?: number;
+    } = {},
+) {
+    const scrollContainer = container.querySelector<HTMLElement>(".sr-card-content-scroll");
+    const placeholder = container.querySelector<HTMLElement>(".sr-cloze-placeholder");
+    const answer = container.querySelector<HTMLElement>(".sr-cloze-answer");
+
+    if (!scrollContainer || !placeholder || !answer) {
+        throw new Error("Missing cloze scroll test elements");
+    }
+
+    let scrollHeight = options.scrollHeight ?? 2000;
+    const clientHeight = options.clientHeight ?? 400;
+    const scrollContainerTop = options.scrollContainerTop ?? 100;
+    const safeTopInset = options.safeTopInset ?? 50;
+    const safeBottomInset = options.safeBottomInset ?? 50;
+    let placeholderTop = options.placeholderTop ?? 830;
+    let answerTop = options.answerTop ?? placeholderTop;
+    const targetHeight = options.targetHeight ?? 40;
+
+    scrollContainer.scrollTop = options.scrollTop ?? 500;
+    scrollContainer.style.scrollPaddingTop = `${safeTopInset}px`;
+    scrollContainer.style.scrollPaddingBottom = `${safeBottomInset}px`;
+
+    Object.defineProperty(scrollContainer, "scrollHeight", {
+        configurable: true,
+        get: () => scrollHeight,
+    });
+    Object.defineProperty(scrollContainer, "clientHeight", {
+        configurable: true,
+        get: () => clientHeight,
+    });
+
+    scrollContainer.getBoundingClientRect = jest.fn(() => ({
+        top: scrollContainerTop,
+        left: 0,
+        right: 320,
+        bottom: scrollContainerTop + clientHeight,
+        width: 320,
+        height: clientHeight,
+        x: 0,
+        y: scrollContainerTop,
+        toJSON: () => undefined,
+    }));
+
+    const assignTargetRect = (element: HTMLElement, getAbsoluteTop: () => number) => {
+        element.getBoundingClientRect = jest.fn(() => {
+            const top = scrollContainerTop + (getAbsoluteTop() - scrollContainer.scrollTop);
+            return {
+                top,
+                left: 0,
+                right: 240,
+                bottom: top + targetHeight,
+                width: 240,
+                height: targetHeight,
+                x: 0,
+                y: top,
+                toJSON: () => undefined,
+            };
+        });
+    };
+
+    assignTargetRect(placeholder, () => placeholderTop);
+    assignTargetRect(answer, () => answerTop);
+
+    return {
+        scrollContainer,
+        setPlaceholderTop(nextTop: number) {
+            placeholderTop = nextTop;
+        },
+        setAnswerTop(nextTop: number) {
+            answerTop = nextTop;
+        },
+        setScrollHeight(nextHeight: number) {
+            scrollHeight = nextHeight;
+        },
+    };
+}
+
+function installMockResizeObserver() {
+    const originalResizeObserver = globalThis.ResizeObserver;
+
+    class MockResizeObserver {
+        static instances: MockResizeObserver[] = [];
+        private readonly callback: ResizeObserverCallback;
+
+        constructor(callback: ResizeObserverCallback) {
+            this.callback = callback;
+            MockResizeObserver.instances.push(this);
+        }
+
+        observe() {}
+
+        unobserve() {}
+
+        disconnect() {}
+
+        trigger() {
+            this.callback([], this as unknown as ResizeObserver);
+        }
+    }
+
+    Object.defineProperty(globalThis, "ResizeObserver", {
+        configurable: true,
+        value: MockResizeObserver,
+    });
+
+    return {
+        MockResizeObserver,
+        restore() {
+            if (originalResizeObserver) {
+                Object.defineProperty(globalThis, "ResizeObserver", {
+                    configurable: true,
+                    value: originalResizeObserver,
+                });
+                return;
+            }
+
+            delete (
+                globalThis as typeof globalThis & { ResizeObserver?: typeof ResizeObserver }
+            ).ResizeObserver;
+        },
+    };
+}
+
 function createReviewerSettings(source: ReviewerClozeSource): {
     questionType: CardType;
     settings: SRSettings;
@@ -556,6 +715,241 @@ describe("LinearCard math cloze rendering", () => {
             act(() => root.unmount());
         } finally {
             debugSpy.mockRestore();
+        }
+    });
+
+    test("sizes the code line-number gutter for five-digit rows and keeps ellipsis rows blank", async () => {
+        const encodedAnswer = encodeURIComponent("return 42;");
+        const renderMarkdown = createCodeBlockRenderMarkdown();
+        const debugSpy = jest.spyOn(console, "debug").mockImplementation(() => {});
+
+        try {
+            const { container, root } = mountCard(
+                {
+                    front:
+                        "<!--SR_CODE_CLOZE:3:10000-->\n" +
+                        "```ts\n" +
+                        "// ...\n" +
+                        "const alpha = 1;\n" +
+                        `const beta = \u82a6\u82a6SR_CLOZE:${encodedAnswer}\u7984\u7984;\n` +
+                        "```",
+                    back:
+                        "<!--SR_CODE_CLOZE:3:10000-->\n" +
+                        "```ts\n" +
+                        "// ...\n" +
+                        "const alpha = 1;\n" +
+                        `const beta = \u82a6\u82a6SR_CLOZE:${encodedAnswer}\u7984\u7984;\n` +
+                        "```",
+                },
+                renderMarkdown,
+                "basic",
+            );
+
+            await flushEffects();
+
+            const codeBlock = container.querySelector<HTMLElement>(".sr-code-block-card");
+            const lineNumbers = Array.from(
+                container.querySelectorAll<HTMLElement>(".sr-code-line-number"),
+            ).map((node) => node.textContent ?? "");
+
+            expect(codeBlock).not.toBeNull();
+            expect(lineNumbers).toEqual(["", "10000", "10001"]);
+            expect(codeBlock?.style.getPropertyValue("--sr-code-line-number-digits")).toBe("5");
+            expect(codeBlock?.querySelector(".sr-code-ellipsis .sr-code-line-number")?.textContent).toBe(
+                "",
+            );
+
+            act(() => root.unmount());
+        } finally {
+            debugSpy.mockRestore();
+        }
+    });
+
+    test("recenters standard cloze placeholders and answers whenever scrolling room exists", async () => {
+        const resizeObserver = installMockResizeObserver();
+        const renderMarkdown = createStaticClozeRenderMarkdown();
+        const { container, root } = mountCard(
+            {
+                front: "placeholder",
+                back: "answer",
+                review: "review",
+            },
+            renderMarkdown,
+            "cloze",
+        );
+
+        try {
+            await flushEffects();
+            const geometry = installScrollableClozeGeometry(container, {
+                scrollTop: 500,
+                scrollHeight: 2000,
+                placeholderTop: 830,
+                answerTop: 830,
+            });
+
+            act(() => {
+                resizeObserver.MockResizeObserver.instances.forEach((observer) => observer.trigger());
+            });
+            await flushAnimationFrame();
+
+            expect(geometry.scrollContainer.scrollTop).toBe(650);
+
+            geometry.scrollContainer.scrollTop = 200;
+
+            const showAnswerButton =
+                container.querySelector<HTMLButtonElement>(".sr-show-answer-btn");
+            expect(showAnswerButton).not.toBeNull();
+
+            act(() => {
+                showAnswerButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            await flushEffects();
+            await flushAnimationFrame();
+
+            expect(geometry.scrollContainer.scrollTop).toBe(200);
+        } finally {
+            act(() => root.unmount());
+            resizeObserver.restore();
+        }
+    });
+
+    test("switches footer actions immediately when revealing the answer", async () => {
+        const renderMarkdown = createStaticClozeRenderMarkdown();
+        const { container, root } = mountCard(
+            {
+                front: "placeholder",
+                back: "answer",
+                review: "review",
+            },
+            renderMarkdown,
+            "cloze",
+        );
+
+        try {
+            await flushEffects();
+
+            const footer = container.querySelector<HTMLElement>(".sr-card-footer");
+            const showAnswerButton =
+                footer?.querySelector<HTMLButtonElement>(".sr-show-answer-btn");
+            expect(showAnswerButton).not.toBeNull();
+            expect(footer?.querySelector(".sr-rating-buttons")).toBeNull();
+
+            act(() => {
+                showAnswerButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            expect(footer?.querySelector(".sr-show-answer-btn")).toBeNull();
+            expect(footer?.querySelector(".sr-rating-buttons")).not.toBeNull();
+        } finally {
+            act(() => root.unmount());
+        }
+    });
+
+    test("repositions standard cloze after resize-driven layout changes and clamps at content edges", async () => {
+        const resizeObserver = installMockResizeObserver();
+        const renderMarkdown = createStaticClozeRenderMarkdown();
+        const { container, root } = mountCard(
+            {
+                front: "placeholder",
+                back: "answer",
+                review: "review",
+            },
+            renderMarkdown,
+            "cloze",
+        );
+
+        try {
+            await flushEffects();
+            const geometry = installScrollableClozeGeometry(container, {
+                scrollTop: 500,
+                scrollHeight: 1200,
+                placeholderTop: 830,
+                answerTop: 830,
+            });
+
+            act(() => {
+                resizeObserver.MockResizeObserver.instances.forEach((observer) => observer.trigger());
+            });
+            await flushAnimationFrame();
+
+            expect(geometry.scrollContainer.scrollTop).toBe(650);
+
+            geometry.scrollContainer.scrollTop = 500;
+            geometry.setPlaceholderTop(1090);
+            geometry.setAnswerTop(1090);
+            geometry.setScrollHeight(1200);
+
+            act(() => {
+                resizeObserver.MockResizeObserver.instances.forEach((observer) =>
+                    observer.trigger(),
+                );
+            });
+
+            await flushAnimationFrame();
+
+            expect(geometry.scrollContainer.scrollTop).toBe(800);
+        } finally {
+            act(() => root.unmount());
+            resizeObserver.restore();
+        }
+    });
+
+    test("card reset shows the front-side footer and hides back-side content on the next card frame", async () => {
+        const container = document.createElement("div");
+        document.body.appendChild(container);
+        const root = createRoot(container);
+        const renderMarkdown = jest.fn();
+        const firstCard: CardState = {
+            front: "First question",
+            back: "First answer",
+        };
+        const secondCard: CardState = {
+            front: "Second question",
+            back: "Second answer",
+        };
+
+        try {
+            act(() => {
+                root.render(
+                    React.createElement(LinearCard, {
+                        autoAdvanceSeconds: 0,
+                        card: firstCard,
+                        renderMarkdown,
+                        type: "basic",
+                        uiResetToken: 1,
+                    }),
+                );
+            });
+
+            const showAnswerButton =
+                container.querySelector<HTMLButtonElement>(".sr-show-answer-btn");
+            expect(showAnswerButton).not.toBeNull();
+
+            act(() => {
+                showAnswerButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            expect(container.querySelector(".sr-rating-buttons")).not.toBeNull();
+            expect(container.querySelector(".sr-answer-section")).not.toBeNull();
+
+            act(() => {
+                root.render(
+                    React.createElement(LinearCard, {
+                        autoAdvanceSeconds: 0,
+                        card: secondCard,
+                        renderMarkdown,
+                        type: "basic",
+                        uiResetToken: 2,
+                    }),
+                );
+            });
+
+            expect(container.querySelector(".sr-show-answer-btn")).not.toBeNull();
+            expect(container.querySelector(".sr-rating-buttons")).toBeNull();
+            expect(container.querySelector(".sr-answer-section")).toBeNull();
+        } finally {
+            act(() => root.unmount());
         }
     });
 

@@ -1984,9 +1984,13 @@ body.syro-mobile-review-compact-actions .sr-linear-card-wrapper.sr-phone-layout 
 }
 
 /* 行号样式 */
+.sr-code-block-card {
+    --sr-code-line-number-digits: 3;
+}
+
 .sr-code-line-number {
-    width: 40px;
-    min-width: 40px;
+    width: calc(var(--sr-code-line-number-digits) * 1ch + 16px);
+    min-width: calc(var(--sr-code-line-number-digits) * 1ch + 16px);
     padding: 0 8px;
     text-align: right;
     color: var(--text-muted);
@@ -1994,6 +1998,10 @@ body.syro-mobile-review-compact-actions .sr-linear-card-wrapper.sr-phone-layout 
     user-select: none;
     flex-shrink: 0;
     opacity: 0.5;
+    white-space: nowrap;
+    word-break: normal;
+    overflow-wrap: normal;
+    font-variant-numeric: tabular-nums;
 }
 
 .sr-code-cloze-line .sr-code-line-number {

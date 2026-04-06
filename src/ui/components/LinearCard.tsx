@@ -240,6 +240,7 @@ export const LinearCard: FC<LinearCardProps> = ({
     const headerRef = useRef<HTMLDivElement>(null);
     const regularHeaderMeasureRef = useRef<HTMLDivElement>(null);
     const compactHeaderMeasureRef = useRef<HTMLDivElement>(null);
+    const contentScrollRef = useRef<HTMLDivElement>(null);
     const sizeRef = useRef({ width, height });
     const isResizingRef = useRef(false);
 
@@ -462,12 +463,23 @@ export const LinearCard: FC<LinearCardProps> = ({
     const [toasts, setToasts] = useState<ToastMsg[]>([]);
     const [isDeleted, setIsDeleted] = useState(false);
     const [timeExpired, setTimeExpired] = useState(false);
+    const [preservedFlipScrollTop, setPreservedFlipScrollTop] = useState<number | null>(null);
 
     useEffect(() => {
-        if (!isFlipped) {
+        if (!renderIsFlipped) {
             setTimeExpired(false);
         }
-    }, [isFlipped]);
+    }, [renderIsFlipped]);
+
+    const revealAnswer = useCallback(() => {
+        if (renderIsFlipped) {
+            return;
+        }
+
+        setPreservedFlipScrollTop(contentScrollRef.current?.scrollTop ?? null);
+        setIsFlipped(true);
+        onShowAnswer?.();
+    }, [onShowAnswer, renderIsFlipped]);
 
     useEffect(() => {
         if (renderIsFlipped || autoAdvanceSeconds <= 0) {
@@ -476,12 +488,32 @@ export const LinearCard: FC<LinearCardProps> = ({
 
         const timeoutId = window.setTimeout(() => {
             setTimeExpired(true);
-            setIsFlipped(true);
-            onShowAnswer?.();
+            revealAnswer();
         }, autoAdvanceSeconds * 1000);
 
         return () => window.clearTimeout(timeoutId);
-    }, [autoAdvanceSeconds, onShowAnswer, renderIsFlipped]);
+    }, [autoAdvanceSeconds, renderIsFlipped, revealAnswer]);
+
+    useLayoutEffect(() => {
+        if (!renderIsFlipped || preservedFlipScrollTop === null) {
+            return;
+        }
+
+        const applyPreservedScroll = () => {
+            if (contentScrollRef.current) {
+                contentScrollRef.current.scrollTop = preservedFlipScrollTop;
+            }
+        };
+
+        applyPreservedScroll();
+
+        const frameId = window.requestAnimationFrame(() => {
+            applyPreservedScroll();
+            setPreservedFlipScrollTop(null);
+        });
+
+        return () => window.cancelAnimationFrame(frameId);
+    }, [preservedFlipScrollTop, renderIsFlipped]);
 
     useLayoutEffect(() => {
         if (lastCardUiResetKeyRef.current === cardUiResetKey) {
@@ -496,6 +528,7 @@ export const LinearCard: FC<LinearCardProps> = ({
         setToasts([]);
         setIsDeleted(false);
         setTimeExpired(false);
+        setPreservedFlipScrollTop(null);
     }, [cardUiResetKey]);
 
     useEffect(() => {
@@ -586,9 +619,8 @@ export const LinearCard: FC<LinearCardProps> = ({
             switch (e.key.toLowerCase()) {
                 case " ":
                     e.preventDefault();
-                    if (!isFlipped) {
-                        setIsFlipped(true);
-                        onShowAnswer?.();
+                    if (!renderIsFlipped) {
+                        revealAnswer();
                     } else {
                         handleAnswerInternal(2);
                     }
@@ -600,16 +632,16 @@ export const LinearCard: FC<LinearCardProps> = ({
                     }
                     break;
                 case "1":
-                    if (isFlipped) handleAnswerInternal(0);
+                    if (renderIsFlipped) handleAnswerInternal(0);
                     break;
                 case "2":
-                    if (isFlipped) handleAnswerInternal(1);
+                    if (renderIsFlipped) handleAnswerInternal(1);
                     break;
                 case "3":
-                    if (isFlipped) handleAnswerInternal(2);
+                    if (renderIsFlipped) handleAnswerInternal(2);
                     break;
                 case "4":
-                    if (isFlipped) handleAnswerInternal(3);
+                    if (renderIsFlipped) handleAnswerInternal(3);
                     break;
                 case "o":
                     handleMenuAction("OPEN");
@@ -633,11 +665,11 @@ export const LinearCard: FC<LinearCardProps> = ({
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [
-        isFlipped,
         isEditing,
         handleAnswerInternal,
         handleMenuAction,
-        onShowAnswer,
+        renderIsFlipped,
+        revealAnswer,
         showInfo,
         showMenu,
     ]);
@@ -955,7 +987,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                     plugin={plugin}
                                 />
                             ) : (
-                                <div className="sr-card-content-scroll">
+                                <div className="sr-card-content-scroll" ref={contentScrollRef}>
                                     {shouldInlineBreadcrumbs && (
                                         <InlineBreadcrumbs breadcrumbs={breadcrumbs} />
                                     )}
@@ -980,15 +1012,16 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                           .showOtherHighlightClozeVisual
                                                     : false
                                             }
-                                            showOtherBoldClozeVisual={
-                                                plugin
-                                                    ? !plugin.data.settings
-                                                          .convertBoldTextToClozes ||
-                                                      plugin.data.settings.showOtherBoldClozeVisual
-                                                    : false
-                                            }
-                                        />
-                                    ) : (
+                                             showOtherBoldClozeVisual={
+                                                 plugin
+                                                     ? !plugin.data.settings
+                                                           .convertBoldTextToClozes ||
+                                                       plugin.data.settings.showOtherBoldClozeVisual
+                                                     : false
+                                             }
+                                             preserveScrollOnFlip={preservedFlipScrollTop !== null}
+                                         />
+                                     ) : (
                                         <BasicContent
                                             key={cardUiResetKey}
                                             isFlipped={renderIsFlipped}
@@ -1001,93 +1034,59 @@ export const LinearCard: FC<LinearCardProps> = ({
                         </div>
 
                         <div className="sr-card-footer">
-                            <AnimatePresence initial={false}>
-                                {isEditing ? (
-                                    <motion.div
-                                        key="edit-footer"
-                                        initial={{ opacity: 0, y: 5 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -5 }}
-                                        transition={{ duration: 0.1 }}
-                                    >
-                                        <button
-                                            onClick={toggleEditMode}
-                                            className="sr-show-answer-btn sr-exit-edit-btn"
-                                        >
-                                            <Save size={16} /> {t("UI_FINISH_EDITING")}{" "}
-                                            <span className="sr-kbd">ESC</span>
-                                        </button>
-                                    </motion.div>
-                                ) : !renderIsFlipped ? (
-                                    <motion.div
-                                        key="show-answer"
-                                        initial={{ opacity: 0, y: 5 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -5 }}
-                                        transition={{ duration: 0.1 }}
-                                    >
-                                        <button
-                                            onClick={() => {
-                                                setIsFlipped(true);
-                                                onShowAnswer?.();
-                                            }}
-                                            className="sr-show-answer-btn"
-                                        >
-                                            <Eye size={16} /> {t("SHOW_ANSWER")}{" "}
-                                            <span className="sr-kbd">SPACE</span>
-                                        </button>
-                                    </motion.div>
-                                ) : (
-                                    <motion.div
-                                        key="rating-buttons"
-                                        initial={{ opacity: 0, y: 5 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ duration: 0.1 }}
-                                        className="sr-rating-buttons"
-                                    >
-                                        {
-                                            <>
-                                                <LinearButton
-                                                    icon={<RotateCcw size={12} />}
-                                                    label={t("UI_RESET")}
-                                                    sub={card?.responseButtonLabels?.[0] || "1m"}
-                                                    shortcut="1"
-                                                    className="is-reset"
-                                                    variant="reset"
-                                                    onClick={() => handleAnswerInternal(0)}
-                                                />
-                                                <LinearButton
-                                                    icon={<ThumbsDown size={12} />}
-                                                    label={t("UI_HARD")}
-                                                    sub={card?.responseButtonLabels?.[1] || "10m"}
-                                                    shortcut="2"
-                                                    className="is-hard"
-                                                    variant="hard"
-                                                    onClick={() => handleAnswerInternal(1)}
-                                                />
-                                                <LinearButton
-                                                    icon={<Check size={12} />}
-                                                    label={t("UI_GOOD")}
-                                                    sub={card?.responseButtonLabels?.[2] || "3d"}
-                                                    shortcut="3"
-                                                    className="is-good"
-                                                    variant="good"
-                                                    onClick={() => handleAnswerInternal(2)}
-                                                />
-                                                <LinearButton
-                                                    icon={<Zap size={12} />}
-                                                    label={t("UI_EASY")}
-                                                    sub={card?.responseButtonLabels?.[3] || "7d"}
-                                                    shortcut="4"
-                                                    className="is-easy"
-                                                    variant="easy"
-                                                    onClick={() => handleAnswerInternal(3)}
-                                                />
-                                            </>
-                                        }
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
+                            {isEditing ? (
+                                <button
+                                    onClick={toggleEditMode}
+                                    className="sr-show-answer-btn sr-exit-edit-btn"
+                                >
+                                    <Save size={16} /> {t("UI_FINISH_EDITING")}{" "}
+                                    <span className="sr-kbd">ESC</span>
+                                </button>
+                            ) : !renderIsFlipped ? (
+                                <button onClick={revealAnswer} className="sr-show-answer-btn">
+                                    <Eye size={16} /> {t("SHOW_ANSWER")}{" "}
+                                    <span className="sr-kbd">SPACE</span>
+                                </button>
+                            ) : (
+                                <div className="sr-rating-buttons">
+                                    <LinearButton
+                                        icon={<RotateCcw size={12} />}
+                                        label={t("UI_RESET")}
+                                        sub={card?.responseButtonLabels?.[0] || "1m"}
+                                        shortcut="1"
+                                        className="is-reset"
+                                        variant="reset"
+                                        onClick={() => handleAnswerInternal(0)}
+                                    />
+                                    <LinearButton
+                                        icon={<ThumbsDown size={12} />}
+                                        label={t("UI_HARD")}
+                                        sub={card?.responseButtonLabels?.[1] || "10m"}
+                                        shortcut="2"
+                                        className="is-hard"
+                                        variant="hard"
+                                        onClick={() => handleAnswerInternal(1)}
+                                    />
+                                    <LinearButton
+                                        icon={<Check size={12} />}
+                                        label={t("UI_GOOD")}
+                                        sub={card?.responseButtonLabels?.[2] || "3d"}
+                                        shortcut="3"
+                                        className="is-good"
+                                        variant="good"
+                                        onClick={() => handleAnswerInternal(2)}
+                                    />
+                                    <LinearButton
+                                        icon={<Zap size={12} />}
+                                        label={t("UI_EASY")}
+                                        sub={card?.responseButtonLabels?.[3] || "7d"}
+                                        shortcut="4"
+                                        className="is-easy"
+                                        variant="easy"
+                                        onClick={() => handleAnswerInternal(3)}
+                                    />
+                                </div>
+                            )}
                         </div>
                     </>
                 }
@@ -1552,6 +1551,7 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
         wrapper.className = "sr-code-block-card";
 
         let currentRealLine = startLine;
+        let maxLineNumberDigits = 1;
         let firstClozeDiv: HTMLElement | null = null;
 
         lines.forEach((lineContent, index) => {
@@ -1585,6 +1585,7 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
             const lineNumSpan = document.createElement("span");
             lineNumSpan.className = "sr-code-line-number";
             lineNumSpan.textContent = String(currentRealLine);
+            maxLineNumberDigits = Math.max(maxLineNumberDigits, lineNumSpan.textContent.length);
 
             const lineContentSpan = document.createElement("span");
             lineContentSpan.className = "sr-code-line-content";
@@ -1601,14 +1602,18 @@ function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startL
             currentRealLine++;
         });
 
+        wrapper.style.setProperty("--sr-code-line-number-digits", String(maxLineNumberDigits));
+
         pre.parentNode?.replaceChild(wrapper, pre);
 
         if (firstClozeDiv) {
             setTimeout(() => {
-                firstClozeDiv.scrollIntoView({
-                    block: "center",
-                    behavior: "auto",
-                });
+                if (typeof firstClozeDiv.scrollIntoView === "function") {
+                    firstClozeDiv.scrollIntoView({
+                        block: "center",
+                        behavior: "auto",
+                    });
+                }
             }, 10);
         }
     });
@@ -1704,6 +1709,7 @@ const ClozeContent = ({
     showOtherAnkiClozeVisual = false,
     showOtherHighlightClozeVisual = false,
     showOtherBoldClozeVisual = false,
+    preserveScrollOnFlip = false,
 }: {
     isFlipped: boolean;
     card?: CardState;
@@ -1711,9 +1717,12 @@ const ClozeContent = ({
     showOtherAnkiClozeVisual?: boolean;
     showOtherHighlightClozeVisual?: boolean;
     showOtherBoldClozeVisual?: boolean;
+    preserveScrollOnFlip?: boolean;
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const frameRef = useRef<number | null>(null);
+    const preserveScrollOnFlipRef = useRef(preserveScrollOnFlip);
+    preserveScrollOnFlipRef.current = preserveScrollOnFlip;
     const isCodeBlockCloze = (card?.front || "").includes("««SR_CLOZE:");
     const frontContent = card?.front || "";
     const backContent = card?.back || frontContent;
@@ -1750,6 +1759,9 @@ const ClozeContent = ({
 
     const schedulePositionActiveCloze = useCallback(
         (face?: ClozeRenderFace) => {
+            if (preserveScrollOnFlipRef.current) {
+                return;
+            }
             if (face && face !== activeFace) {
                 return;
             }
@@ -1780,17 +1792,36 @@ const ClozeContent = ({
 
     useEffect(() => {
         const activeHost = getClozeFaceHost(containerRef.current, activeFace);
+        const scrollContainer = getScrollContainer(containerRef.current);
         if (!activeHost) return;
-        schedulePositionActiveCloze(activeFace);
+        if (!preserveScrollOnFlipRef.current) {
+            schedulePositionActiveCloze(activeFace);
+        }
 
-        const observer = new MutationObserver(() => {
+        const mutationObserver = new MutationObserver(() => {
             schedulePositionActiveCloze(activeFace);
         });
 
-        observer.observe(activeHost, { childList: true, subtree: true, characterData: true });
+        mutationObserver.observe(activeHost, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+        });
+
+        let resizeObserver: ResizeObserver | null = null;
+        if (typeof ResizeObserver !== "undefined") {
+            resizeObserver = new ResizeObserver(() => {
+                schedulePositionActiveCloze(activeFace);
+            });
+            resizeObserver.observe(activeHost);
+            if (scrollContainer && scrollContainer !== activeHost) {
+                resizeObserver.observe(scrollContainer);
+            }
+        }
 
         return () => {
-            observer.disconnect();
+            mutationObserver.disconnect();
+            resizeObserver?.disconnect();
             if (frameRef.current !== null) {
                 cancelAnimationFrame(frameRef.current);
                 frameRef.current = null;
