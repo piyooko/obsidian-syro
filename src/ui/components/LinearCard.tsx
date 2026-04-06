@@ -1350,16 +1350,16 @@ const MarkdownDisplay = ({
                 return;
             }
 
-            const buffer = document.createElement("div");
+            let buffer = document.createElement("div");
 
             try {
-                await renderMarkdown(tokenizedContent, buffer);
+                await renderMarkdown(tokenizedContent.content, buffer);
 
                 if (!isRenderCurrent()) {
                     return;
                 }
 
-                await postProcessMarkers(buffer, renderMarkdown);
+                await postProcessMarkers(buffer, renderMarkdown, tokenizedContent.tokens);
 
                 if (!isRenderCurrent()) {
                     return;
@@ -1815,6 +1815,15 @@ const ClozeContent = ({
         const container = containerRef.current;
         if (!container) return;
 
+        const wrapsActiveClozeNode = (element: Element): boolean => {
+            return (
+                element.matches(".sr-cloze-wrapper, .sr-cloze-answer, .sr-cloze-placeholder") ||
+                element.querySelector(
+                    ".sr-cloze-wrapper, .sr-cloze-answer, .sr-cloze-placeholder",
+                ) !== null
+            );
+        };
+
         const cleanup = () => {
             if (!showOtherAnkiClozeVisual) {
                 const highlights = container.querySelectorAll(".sr-cloze-highlight");
@@ -1828,6 +1837,9 @@ const ClozeContent = ({
             if (!showOtherHighlightClozeVisual) {
                 const marks = container.querySelectorAll("mark");
                 marks.forEach((mark) => {
+                    if (wrapsActiveClozeNode(mark)) {
+                        return;
+                    }
                     const text = mark.textContent || "";
                     const textNode = document.createTextNode(text);
                     mark.parentNode?.replaceChild(textNode, mark);
@@ -1837,6 +1849,9 @@ const ClozeContent = ({
             if (!showOtherBoldClozeVisual) {
                 const bolds = container.querySelectorAll("strong, b");
                 bolds.forEach((bold) => {
+                    if (wrapsActiveClozeNode(bold)) {
+                        return;
+                    }
                     const text = bold.textContent || "";
                     const textNode = document.createTextNode(text);
                     bold.parentNode?.replaceChild(textNode, bold);

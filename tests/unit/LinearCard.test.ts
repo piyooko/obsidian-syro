@@ -280,6 +280,15 @@ function createSplitMarkerFormulaRenderMarkdown() {
     });
 }
 
+function createCrossBoundaryMarkdownRender() {
+    return jest.fn(async (content: string, el: HTMLElement) => {
+        const buffer = document.createElement("div");
+        buffer.textContent = content;
+        applyReviewerMarkdownFormatting(buffer);
+        el.replaceChildren(...Array.from(buffer.childNodes));
+    });
+}
+
 function createReviewerSettings(source: ReviewerClozeSource): {
     questionType: CardType;
     settings: SRSettings;
@@ -597,4 +606,76 @@ describe("LinearCard math cloze rendering", () => {
             }
         },
     );
+
+    test("renders crossed disabled markdown around the active cloze marker without leaking raw placeholders", async () => {
+        const renderMarkdown = createCrossBoundaryMarkdownRender();
+        const settings: SRSettings = {
+            ...DEFAULT_SETTINGS,
+            convertHighlightsToClozes: true,
+            convertBoldTextToClozes: false,
+            clozePatterns: ["==[123;;]answer[;;hint]=="],
+        };
+        const sourceText = "**\u542c==\u7235\u58eb\u4e50\u6216\u8005\u4e00\u4e9b OST**==";
+        const [card] = CardFrontBackUtil.expand(CardType.Cloze, sourceText, settings);
+
+        if (!card) {
+            throw new Error("Failed to build crossed cloze reviewer card");
+        }
+
+        const { container, root } = mountCard(
+            {
+                front: card.front,
+                back: card.back,
+                review: card.review,
+            },
+            renderMarkdown,
+            "cloze",
+        );
+
+        try {
+            await flushEffects();
+
+            expect(
+                renderMarkdown.mock.calls.some(([content]) => content.includes("SR_SENTINEL_")),
+            ).toBe(true);
+            expect(
+                renderMarkdown.mock.calls.some(([content]) => content.includes("**\u542c")),
+            ).toBe(true);
+
+            let activeFace = getActiveFace(container);
+            let contentRoot = activeFace?.querySelector<HTMLElement>(".sr-markdown-content");
+            expect(contentRoot?.querySelector("strong .sr-cloze-wrapper")).not.toBeNull();
+            expect(contentRoot?.querySelector(".sr-cloze-placeholder")?.textContent).toBe("[...]");
+            expect(contentRoot?.textContent).toContain("\u542c");
+            expect(contentRoot?.textContent).not.toContain("SR_C:");
+            expect(contentRoot?.textContent).not.toContain("SR_SENTINEL_");
+            expect(contentRoot?.textContent).not.toContain("**");
+
+            const showAnswerButton =
+                container.querySelector<HTMLButtonElement>(".sr-show-answer-btn");
+            expect(showAnswerButton).not.toBeNull();
+
+            act(() => {
+                showAnswerButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            await flushEffects();
+
+            activeFace = getActiveFace(container);
+            contentRoot = activeFace?.querySelector<HTMLElement>(".sr-markdown-content");
+            expect(contentRoot?.querySelector("strong .sr-cloze-wrapper")).not.toBeNull();
+            expect(contentRoot?.querySelector(".sr-cloze-answer")?.textContent).toBe(
+                "\u7235\u58eb\u4e50\u6216\u8005\u4e00\u4e9b OST",
+            );
+            expect(contentRoot?.textContent).toContain("\u542c");
+            expect(contentRoot?.textContent).toContain(
+                "\u7235\u58eb\u4e50\u6216\u8005\u4e00\u4e9b OST",
+            );
+            expect(contentRoot?.textContent).not.toContain("SR_C:");
+            expect(contentRoot?.textContent).not.toContain("SR_SENTINEL_");
+            expect(contentRoot?.textContent).not.toContain("**");
+        } finally {
+            act(() => root.unmount());
+        }
+    });
 });

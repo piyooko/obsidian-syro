@@ -78,10 +78,32 @@ describe("linearCardMarkers", () => {
         const payload = `${encodeURIComponent("[...]")}:${encodeURIComponent("$x^2$ and **bold**")}`;
         const tokenized = preTokenizeSrMarkers(`Lead \u00ab\u00abSR_C:${payload}\u00bb\u00bb tail`);
 
-        expect(tokenized).toContain('class="sr-cloze-wrapper"');
-        expect(tokenized).toContain('class="sr-cloze-placeholder"');
-        expect(tokenized).toContain('data-sr-markdown-encoded="');
-        expect(tokenized).not.toContain("SR_C:");
+        expect(tokenized.tokens).toHaveLength(1);
+        expect(tokenized.tokens[0]).toMatchObject({
+            type: "C",
+            placeholderText: "[...]",
+            answerText: "$x^2$ and **bold**",
+        });
+        expect(tokenized.content).toContain(tokenized.tokens[0].sentinel);
+        expect(tokenized.content).not.toContain("SR_C:");
+    });
+
+    test("lets surrounding markdown wrap a sentinel before the cloze DOM is restored", async () => {
+        const payload = `${encodeURIComponent("[...]")}:${encodeURIComponent("answer**")}`;
+        const tokenized = preTokenizeSrMarkers(
+            `**Lead \u00ab\u00abSR_C:${payload}\u00bb\u00bb tail`,
+        );
+        const container = document.createElement("div");
+
+        await mockRenderMarkdown(tokenized.content, container);
+        await postProcessMarkers(container, mockRenderMarkdown, tokenized.tokens);
+
+        const strong = container.querySelector("strong");
+        expect(strong).not.toBeNull();
+        expect(strong?.querySelector(".sr-cloze-wrapper")).not.toBeNull();
+        expect(strong?.querySelector(".sr-cloze-answer")?.textContent).toBe("answer");
+        expect(container.textContent).not.toContain("SR_SENTINEL_");
+        expect(container.textContent).not.toContain("SR_C:");
     });
 
     test("does not pre-tokenize markers inside math or code contexts", () => {
@@ -91,8 +113,10 @@ describe("linearCardMarkers", () => {
             `Math $\u00ab\u00abSR_C:${unified}\u00bb\u00bb$ \`\u00ab\u00abSR_S:${shown}\u00bb\u00bb\` Plain \u00ab\u00abSR_S:${shown}\u00bb\u00bb`,
         );
 
-        expect(tokenized).toContain("$\u00ab\u00abSR_C:");
-        expect(tokenized).toContain("`\u00ab\u00abSR_S:");
-        expect(tokenized).toContain('class="sr-cloze-shown sr-is-active"');
+        expect(tokenized.content).toContain("$\u00ab\u00abSR_C:");
+        expect(tokenized.content).toContain("`\u00ab\u00abSR_S:");
+        expect(tokenized.tokens).toHaveLength(1);
+        expect(tokenized.tokens[0].type).toBe("S");
+        expect(tokenized.content).toContain(tokenized.tokens[0].sentinel);
     });
 });

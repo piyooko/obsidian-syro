@@ -14,12 +14,55 @@ const SR_CODE_CLOZE_REGEX = /\u00ab\u00abSR_CLOZE:([^\u00bb]+)\u00bb\u00bb/g;
 const SR_HIDDEN_REGEX = /\u00ab\u00abSR_H:([^\u00bb]+)\u00bb\u00bb/g;
 const SR_SHOWN_REGEX = /\u00ab\u00abSR_S:([^\u00bb]+)\u00bb\u00bb/g;
 const SR_MARKDOWN_ENCODED_ATTRIBUTE = "data-sr-markdown-encoded";
+const SR_SENTINEL_PREFIX = "SR_SENTINEL_";
+const SR_SENTINEL_SUFFIX = "_TOKEN";
+const SUPPORTED_MARKDOWN_BOUNDARY_DELIMITERS = ["**", "=="] as const;
 
 type SrMarkerType = "H" | "S" | "C";
 
 interface TextRange {
     start: number;
     end: number;
+}
+
+interface BoundaryMarkdownExtraction {
+    leadingMarkdown: string;
+    content: string;
+    trailingMarkdown: string;
+}
+
+interface MarkerBoundaryContext {
+    prefixText: string;
+    suffixText: string;
+}
+
+interface PreTokenizedHiddenMarkerToken {
+    sentinel: string;
+    type: "H";
+    content: string;
+}
+
+interface PreTokenizedShownMarkerToken {
+    sentinel: string;
+    type: "S";
+    content: string;
+}
+
+interface PreTokenizedUnifiedMarkerToken {
+    sentinel: string;
+    type: "C";
+    placeholderText: string;
+    answerText: string;
+}
+
+type PreTokenizedMarkerToken =
+    | PreTokenizedHiddenMarkerToken
+    | PreTokenizedShownMarkerToken
+    | PreTokenizedUnifiedMarkerToken;
+
+export interface PreTokenizedSrMarkers {
+    content: string;
+    tokens: PreTokenizedMarkerToken[];
 }
 
 function escapeRegExp(text: string): string {
@@ -141,18 +184,110 @@ function createMarkerElement(type: SrMarkerType, encoded: string): HTMLElement |
     return createSingleMarkerElement(type, content);
 }
 
-function buildUnifiedMarkerHtml(placeholderText: string, answerText: string): string {
-    return `<span class="sr-cloze-wrapper"><span class="sr-cloze-placeholder">${escapeHtml(placeholderText)}</span><span class="sr-cloze-answer" ${SR_MARKDOWN_ENCODED_ATTRIBUTE}="${escapeHtml(encodeURIComponent(answerText))}">${escapeHtml(answerText)}</span></span>`;
+function createMarkerElementFromToken(token: PreTokenizedMarkerToken): HTMLElement {
+    if (token.type === "C") {
+        return createUnifiedMarkerElement(token.placeholderText, token.answerText);
+    }
+
+    return createSingleMarkerElement(token.type, token.content);
 }
 
-function buildMarkerHtml(type: SrMarkerType, encoded: string): string | null {
+function countDelimiterOccurrences(text: string, delimiter: string): number {
+    const matches = text.match(new RegExp(escapeRegExp(delimiter), "g"));
+    return matches?.length ?? 0;
+}
+
+function extractBoundaryMarkdown(
+    text: string,
+    context: MarkerBoundaryContext,
+): BoundaryMarkdownExtraction {
+    let content = text;
+    let leadingMarkdown = "";
+    let trailingMarkdown = "";
+    const availableLeadingDelimiters = new Set(
+        SUPPORTED_MARKDOWN_BOUNDARY_DELIMITERS.filter(
+            (delimiter) => countDelimiterOccurrences(context.suffixText, delimiter) % 2 === 1,
+        ),
+    );
+    const availableTrailingDelimiters = new Set(
+        SUPPORTED_MARKDOWN_BOUNDARY_DELIMITERS.filter(
+            (delimiter) => countDelimiterOccurrences(context.prefixText, delimiter) % 2 === 1,
+        ),
+    );
+    let matched = true;
+
+    while (matched) {
+        matched = false;
+        for (const delimiter of SUPPORTED_MARKDOWN_BOUNDARY_DELIMITERS) {
+            if (availableLeadingDelimiters.has(delimiter) && content.startsWith(delimiter)) {
+                leadingMarkdown += delimiter;
+                content = content.slice(delimiter.length);
+                availableLeadingDelimiters.delete(delimiter);
+                matched = true;
+                break;
+            }
+        }
+    }
+
+    matched = true;
+    while (matched) {
+        matched = false;
+        for (const delimiter of SUPPORTED_MARKDOWN_BOUNDARY_DELIMITERS) {
+            if (availableTrailingDelimiters.has(delimiter) && content.endsWith(delimiter)) {
+                trailingMarkdown = `${delimiter}${trailingMarkdown}`;
+                content = content.slice(0, -delimiter.length);
+                availableTrailingDelimiters.delete(delimiter);
+                matched = true;
+                break;
+            }
+        }
+    }
+
+    return {
+        leadingMarkdown,
+        content,
+        trailingMarkdown,
+    };
+}
+
+function createUniqueSentinel(normalizedText: string, tokens: PreTokenizedMarkerToken[]): string {
+    let attempt = tokens.length;
+    let sentinel = "";
+
+    do {
+        sentinel = `${SR_SENTINEL_PREFIX}${attempt}${SR_SENTINEL_SUFFIX}`;
+        attempt++;
+    } while (
+        normalizedText.includes(sentinel) ||
+        tokens.some((token) => token.sentinel === sentinel)
+    );
+
+    return sentinel;
+}
+
+function buildPreTokenizedMarkerReplacement(
+    type: SrMarkerType,
+    encoded: string,
+    normalizedText: string,
+    tokens: PreTokenizedMarkerToken[],
+    context: MarkerBoundaryContext,
+): string | null {
+    const sentinel = createUniqueSentinel(normalizedText, tokens);
+
     if (type === "C") {
         const unifiedMarker = decodeUnifiedMarkerPayload(encoded);
         if (!unifiedMarker) {
             return null;
         }
 
-        return buildUnifiedMarkerHtml(unifiedMarker.placeholderText, unifiedMarker.answerText);
+        const boundaryMarkdown = extractBoundaryMarkdown(unifiedMarker.answerText, context);
+        tokens.push({
+            sentinel,
+            type,
+            placeholderText: unifiedMarker.placeholderText,
+            answerText: boundaryMarkdown.content,
+        });
+        return `${boundaryMarkdown.leadingMarkdown}${sentinel}${boundaryMarkdown.trailingMarkdown}`;
     }
 
     const content = tryDecodeSrMarkerText(encoded);
@@ -161,10 +296,21 @@ function buildMarkerHtml(type: SrMarkerType, encoded: string): string | null {
     }
 
     if (type === "H") {
-        return `<span class="sr-cloze-hidden">${escapeHtml(content)}</span>`;
+        tokens.push({
+            sentinel,
+            type,
+            content,
+        });
+        return sentinel;
     }
 
-    return `<span class="sr-cloze-shown sr-is-active" ${SR_MARKDOWN_ENCODED_ATTRIBUTE}="${escapeHtml(encodeURIComponent(content))}">${escapeHtml(content)}</span>`;
+    const boundaryMarkdown = extractBoundaryMarkdown(content, context);
+    tokens.push({
+        sentinel,
+        type,
+        content: boundaryMarkdown.content,
+    });
+    return `${boundaryMarkdown.leadingMarkdown}${sentinel}${boundaryMarkdown.trailingMarkdown}`;
 }
 
 function mergeTextRanges(ranges: TextRange[]): TextRange[] {
@@ -219,18 +365,35 @@ function findMathSegments(text: string): TextRange[] {
     return segments;
 }
 
-function tokenizeSrMarkersOutsideProtectedRanges(text: string): string {
+function tokenizeSrMarkersOutsideProtectedRanges(
+    text: string,
+    normalizedText: string,
+    tokens: PreTokenizedMarkerToken[],
+): string {
     const tokenRegex = new RegExp(SR_MARKER_REGEX.source, "g");
-    return text.replace(tokenRegex, (match: string, type: SrMarkerType, encoded: string) => {
-        return buildMarkerHtml(type, encoded) ?? match;
-    });
+    return text.replace(
+        tokenRegex,
+        (match: string, type: SrMarkerType, encoded: string, offset: number, wholeText: string) => {
+            return (
+                buildPreTokenizedMarkerReplacement(type, encoded, normalizedText, tokens, {
+                    prefixText: wholeText.slice(0, offset),
+                    suffixText: wholeText.slice(offset + match.length),
+                }) ?? match
+            );
+        },
+    );
 }
 
-export function preTokenizeSrMarkers(content: string): string {
+export function preTokenizeSrMarkers(content: string): PreTokenizedSrMarkers {
     const normalized = normalizeSrMarkers(content);
     if (!normalized.includes(`${SR_MARKER_OPEN}SR_`)) {
-        return normalized;
+        return {
+            content: normalized,
+            tokens: [],
+        };
     }
+
+    const tokens: PreTokenizedMarkerToken[] = [];
 
     const protectedRanges = mergeTextRanges([
         ...findCodeContextSegments(normalized).map((segment) => ({
@@ -241,7 +404,10 @@ export function preTokenizeSrMarkers(content: string): string {
     ]);
 
     if (protectedRanges.length === 0) {
-        return tokenizeSrMarkersOutsideProtectedRanges(normalized);
+        return {
+            content: tokenizeSrMarkersOutsideProtectedRanges(normalized, normalized, tokens),
+            tokens,
+        };
     }
 
     let result = "";
@@ -251,6 +417,8 @@ export function preTokenizeSrMarkers(content: string): string {
         if (cursor < range.start) {
             result += tokenizeSrMarkersOutsideProtectedRanges(
                 normalized.slice(cursor, range.start),
+                normalized,
+                tokens,
             );
         }
 
@@ -259,10 +427,83 @@ export function preTokenizeSrMarkers(content: string): string {
     }
 
     if (cursor < normalized.length) {
-        result += tokenizeSrMarkersOutsideProtectedRanges(normalized.slice(cursor));
+        result += tokenizeSrMarkersOutsideProtectedRanges(
+            normalized.slice(cursor),
+            normalized,
+            tokens,
+        );
     }
 
-    return result;
+    return {
+        content: result,
+        tokens,
+    };
+}
+
+function replacePreTokenizedMarkerSentinels(
+    container: HTMLElement,
+    tokens: PreTokenizedMarkerToken[],
+): void {
+    if (tokens.length === 0) {
+        return;
+    }
+
+    const tokenMap = new Map(tokens.map((token) => [token.sentinel, token]));
+    const sentinelRegex = new RegExp(
+        tokens.map((token) => escapeRegExp(token.sentinel)).join("|"),
+        "g",
+    );
+    const walk = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+    let node: Text | null;
+    const nodesToReplace: { node: Text; fragments: (Text | HTMLElement)[] }[] = [];
+
+    while ((node = walk.nextNode() as Text | null)) {
+        const text = node.textContent ?? "";
+        if (!sentinelRegex.test(text)) {
+            sentinelRegex.lastIndex = 0;
+            continue;
+        }
+        sentinelRegex.lastIndex = 0;
+
+        const fragments: (Text | HTMLElement)[] = [];
+        let lastEnd = 0;
+        let match: RegExpExecArray | null;
+
+        while ((match = sentinelRegex.exec(text)) !== null) {
+            if (match.index > lastEnd) {
+                fragments.push(document.createTextNode(text.substring(lastEnd, match.index)));
+            }
+
+            const token = tokenMap.get(match[0]);
+            if (token) {
+                fragments.push(createMarkerElementFromToken(token));
+            } else {
+                fragments.push(document.createTextNode(match[0]));
+            }
+
+            lastEnd = sentinelRegex.lastIndex;
+        }
+
+        sentinelRegex.lastIndex = 0;
+
+        if (lastEnd < text.length) {
+            fragments.push(document.createTextNode(text.substring(lastEnd)));
+        }
+
+        if (fragments.length > 0) {
+            nodesToReplace.push({ node, fragments });
+        }
+    }
+
+    nodesToReplace.forEach(({ node: textNode, fragments }) => {
+        const parent = textNode.parentNode;
+        if (!parent) {
+            return;
+        }
+
+        fragments.forEach((fragment) => parent.insertBefore(fragment, textNode));
+        parent.removeChild(textNode);
+    });
 }
 
 function unwrapRenderedInlineNodes(buffer: HTMLElement): Node[] {
@@ -300,8 +541,9 @@ async function renderMarkdownInsideMarkerNode(
     const buffer = document.createElement("div");
 
     try {
-        await renderMarkdown(markdown, buffer);
-        await postProcessMarkers(buffer, renderMarkdown);
+        const tokenized = preTokenizeSrMarkers(markdown);
+        await renderMarkdown(tokenized.content, buffer);
+        await postProcessMarkers(buffer, renderMarkdown, tokenized.tokens);
 
         const renderedNodes = unwrapRenderedInlineNodes(buffer);
         if (renderedNodes.length > 0) {
@@ -366,7 +608,10 @@ export function toFallbackText(content: string, options?: { showAnswer?: boolean
 export async function postProcessMarkers(
     container: HTMLElement,
     renderMarkdown?: MarkdownRenderer,
+    tokens: PreTokenizedMarkerToken[] = [],
 ): Promise<void> {
+    replacePreTokenizedMarkerSentinels(container, tokens);
+
     const walk = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
     let node: Text | null;
     const nodesToReplace: { node: Text; fragments: (Text | HTMLElement)[] }[] = [];
