@@ -577,16 +577,16 @@ export default {
     SETTINGS_CLOZE_CONTEXT_MODE_TOOLTIP: "选择复习时显示多少上下文。",
     SETTINGS_CLOZE_CONTEXT_SINGLE: "当前段落",
     SETTINGS_CLOZE_CONTEXT_SINGLE_DESC:
-        "只显示当前所在段落，以单个空行为分隔。这个选项只影响显示范围，不会改变 Anki 同编号 cloze 仅在当前行内联动的规则。",
+        "只显示当前所在段落，以单个空行为分隔。",
     SETTINGS_CLOZE_CONTEXT_DOUBLE_BREAK: "当前小节",
     SETTINGS_CLOZE_CONTEXT_DOUBLE_BREAK_DESC:
-        "显示更大的连续内容，直到遇到两个连续空行为止。这个选项只影响显示范围，不会改变 Anki 同编号 cloze 仅在当前行内联动的规则。",
+        "显示更大的连续内容，直到遇到两个连续空行为止。",
     SETTINGS_CLOZE_CONTEXT_EXPANDED: "附带相邻段落",
     SETTINGS_CLOZE_CONTEXT_EXPANDED_DESC:
-        "显示当前段落，以及上一个和下一个相邻段落。这个选项只影响显示范围，不会改变 Anki 同编号 cloze 仅在当前行内联动的规则。",
+        "显示当前段落，以及上一个和下一个相邻段落。",
     SETTINGS_CLOZE_CONTEXT_FULL: "完整笔记（不推荐）",
     SETTINGS_CLOZE_CONTEXT_FULL_DESC:
-        "复习时显示整篇笔记。长文下可能影响性能，但不会让其他行里同编号的 Anki cloze 一起联动。",
+        "复习时显示整篇笔记。长文下可能影响性能，强烈建议搭配设置选项“长上下文性能优化”来使用",
     SETTINGS_CLOZE_CONTEXT_PERFORMANCE: "长上下文性能优化",
     SETTINGS_CLOZE_CONTEXT_PERFORMANCE_TOOLTIP: "长文本时自动安全截断，减少卡顿。",
     SETTINGS_CLOZE_CONTEXT_PERFORMANCE_DESC: "在上下文很长时自动截断，降低复习渲染压力。",
