@@ -722,9 +722,15 @@
 
 body.syro-desktop-deck-tree-square-corners .sr-deck-list-view:not(.sr-phone-layout) .sr-deck-tree,
 body.syro-desktop-deck-tree-square-corners .sr-deck-list-view:not(.sr-phone-layout) .sr-deck-row,
-body.syro-desktop-deck-tree-square-corners .sr-deck-list-view:not(.sr-phone-layout) .sr-deck-sync-btn,
-body.syro-desktop-deck-tree-square-corners .sr-deck-list-view:not(.sr-phone-layout) .sr-deck-collapse-btn,
-body.syro-desktop-deck-tree-square-corners .sr-deck-list-view:not(.sr-phone-layout) .sr-deck-settings-btn,
+body.syro-desktop-deck-tree-square-corners
+    .sr-deck-list-view:not(.sr-phone-layout)
+    .sr-deck-sync-btn,
+body.syro-desktop-deck-tree-square-corners
+    .sr-deck-list-view:not(.sr-phone-layout)
+    .sr-deck-collapse-btn,
+body.syro-desktop-deck-tree-square-corners
+    .sr-deck-list-view:not(.sr-phone-layout)
+    .sr-deck-settings-btn,
 body.syro-desktop-deck-tree-square-corners
     .sr-deck-list-view.sr-touch-layout:not(.sr-phone-layout)
     .sr-deck-stats-group {
@@ -736,6 +742,8 @@ body.syro-mobile-deck-tree-square-corners .sr-deck-list-view.sr-phone-layout .sr
 body.syro-mobile-deck-tree-square-corners .sr-deck-list-view.sr-phone-layout .sr-deck-sync-btn,
 body.syro-mobile-deck-tree-square-corners .sr-deck-list-view.sr-phone-layout .sr-deck-collapse-btn,
 body.syro-mobile-deck-tree-square-corners .sr-deck-list-view.sr-phone-layout .sr-deck-settings-btn,
-body.syro-mobile-deck-tree-square-corners .sr-deck-list-view.sr-phone-layout .sr-deck-stats-trigger {
+body.syro-mobile-deck-tree-square-corners
+    .sr-deck-list-view.sr-phone-layout
+    .sr-deck-stats-trigger {
     border-radius: 0 !important;
 }

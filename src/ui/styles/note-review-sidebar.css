@@ -901,17 +901,26 @@ body.sr-timeline-resize-active {
 
 .sr-note-sidebar .sr-timeline-container {
     --sr-syro-timeline-title-font-size: var(--syro-desktop-sidebar-timeline-title-font-size, 11px);
-    --sr-syro-timeline-message-font-size: var(--syro-desktop-sidebar-timeline-message-font-size, 13px);
+    --sr-syro-timeline-message-font-size: var(
+        --syro-desktop-sidebar-timeline-message-font-size,
+        13px
+    );
     --sr-syro-timeline-time-font-size: var(--syro-desktop-sidebar-timeline-time-font-size, 11px);
     --sr-syro-timeline-padding-x: 12px;
     --sr-syro-timeline-padding-y: var(--syro-desktop-sidebar-timeline-padding-y, 12px);
     --sr-syro-timeline-commit-height: var(--syro-desktop-sidebar-timeline-commit-height, 26px);
-    --sr-syro-timeline-commit-font-size: var(--syro-desktop-sidebar-timeline-commit-font-size, 11px);
+    --sr-syro-timeline-commit-font-size: var(
+        --syro-desktop-sidebar-timeline-commit-font-size,
+        11px
+    );
 }
 
 .sr-note-sidebar--phone-mobile-drawer .sr-timeline-container {
     --sr-syro-timeline-title-font-size: var(--syro-mobile-sidebar-timeline-title-font-size, 11px);
-    --sr-syro-timeline-message-font-size: var(--syro-mobile-sidebar-timeline-message-font-size, 13px);
+    --sr-syro-timeline-message-font-size: var(
+        --syro-mobile-sidebar-timeline-message-font-size,
+        13px
+    );
     --sr-syro-timeline-time-font-size: var(--syro-mobile-sidebar-timeline-time-font-size, 11px);
     --sr-syro-timeline-padding-x: 12px;
     --sr-syro-timeline-padding-y: var(--syro-mobile-sidebar-timeline-padding-y, 12px);
@@ -1056,8 +1065,7 @@ body.sr-timeline-resize-active {
 
 .sr-note-sidebar--mobile-drawer .sr-timeline-header {
     min-height: 32px;
-    padding:
-        max(4px, calc(var(--sr-syro-timeline-padding-y, 12px) / 3))
+    padding: max(4px, calc(var(--sr-syro-timeline-padding-y, 12px) / 3))
         max(8px, calc(var(--sr-syro-timeline-padding-x, 12px) * 2 / 3));
     touch-action: none;
 }
@@ -1087,9 +1095,7 @@ body.sr-timeline-resize-active {
 
 /* 输入区域 */
 .sr-timeline-input-area {
-    padding:
-        var(--sr-syro-timeline-padding-y, 12px)
-        var(--sr-syro-timeline-padding-x, 12px)
+    padding: var(--sr-syro-timeline-padding-y, 12px) var(--sr-syro-timeline-padding-x, 12px)
         max(8px, calc(var(--sr-syro-timeline-padding-y, 12px) - 4px))
         var(--sr-syro-timeline-padding-x, 12px);
     flex-shrink: 0;
@@ -1202,10 +1208,8 @@ body.sr-timeline-resize-active {
 .sr-timeline-list-scroll {
     flex: 1;
     overflow-y: auto;
-    padding:
-        max(4px, calc(var(--sr-syro-timeline-padding-y, 12px) / 3))
-        var(--sr-syro-timeline-padding-x, 12px)
-        var(--sr-syro-timeline-padding-y, 12px)
+    padding: max(4px, calc(var(--sr-syro-timeline-padding-y, 12px) / 3))
+        var(--sr-syro-timeline-padding-x, 12px) var(--sr-syro-timeline-padding-y, 12px)
         var(--sr-syro-timeline-padding-x, 12px);
     scrollbar-width: thin;
     scrollbar-color: var(--background-modifier-border) transparent;
@@ -1240,8 +1244,7 @@ body.sr-timeline-resize-active {
 /* 时间线单条记录 */
 .sr-timeline-entry {
     position: relative;
-    padding:
-        max(4px, calc(var(--sr-syro-timeline-padding-y, 12px) / 3))
+    padding: max(4px, calc(var(--sr-syro-timeline-padding-y, 12px) / 3))
         max(6px, calc(var(--sr-syro-timeline-padding-x, 12px) / 2));
     border-radius: 3px;
     cursor: default;

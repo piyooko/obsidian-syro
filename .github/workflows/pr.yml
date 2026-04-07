@@ -33,6 +33,9 @@ jobs:
             - name: Run Obsidian review lint
               run: pnpm run lint:obsidian
 
+            - name: Run text integrity lint
+              run: pnpm run lint:text
+
             - name: Run test
               run: pnpm run test
 
@@ -80,6 +83,9 @@ jobs:
 
             - name: Obsidian review lint
               run: pnpm lint:obsidian
+
+            - name: Text integrity lint
+              run: pnpm run lint:text
 
             - name: Test
               run: pnpm test

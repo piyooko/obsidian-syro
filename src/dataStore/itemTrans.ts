@@ -254,7 +254,6 @@ export class ItemTrans {
     }
 }
 
-
 function getLineScopedAnkiTargets(
     questionText: string,
 ): Array<{ clozeId: string; lineOffset: number }> {

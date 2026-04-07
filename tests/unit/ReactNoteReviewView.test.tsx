@@ -357,7 +357,11 @@ describe("ReactNoteReviewView", () => {
             sections: [{ id: "new", items: [item] }],
             totalCount: 1,
         } as any);
-        const { app, root, view: reviewView } = createView({
+        const {
+            app,
+            root,
+            view: reviewView,
+        } = createView({
             activeMarkdownPath: "notes/original.md",
             autoExpandTimeline: true,
         });

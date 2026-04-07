@@ -273,7 +273,10 @@ export class ReactNoteReviewView extends ItemView {
         return null;
     }
 
-    private findSidebarItemByPath(data: ReturnType<typeof reviewDecksToSidebarState>, path: string): NoteReviewItem | null {
+    private findSidebarItemByPath(
+        data: ReturnType<typeof reviewDecksToSidebarState>,
+        path: string,
+    ): NoteReviewItem | null {
         for (const section of data.sections) {
             const foundItem = section.items.find((item) => item.path === path);
             if (foundItem) {
@@ -288,7 +291,9 @@ export class ReactNoteReviewView extends ItemView {
         data: ReturnType<typeof reviewDecksToSidebarState>,
     ): void {
         const selectedPath =
-            this.plugin.data.settings.sidebarTimelineSelectedPath ?? this.selectedItem?.path ?? null;
+            this.plugin.data.settings.sidebarTimelineSelectedPath ??
+            this.selectedItem?.path ??
+            null;
         if (selectedPath == null) {
             return;
         }
@@ -347,8 +352,8 @@ export class ReactNoteReviewView extends ItemView {
 
         // Register workspace and vault listeners.
         this.registerEvent(
-            this.app.workspace.on("file-open", (file: TFile | null) => {
-                this.handleFileOpen(file);
+            this.app.workspace.on("file-open", () => {
+                this.handleFileOpen();
             }),
         );
         this.registerEvent(
@@ -1264,7 +1269,7 @@ export class ReactNoteReviewView extends ItemView {
     /**
      * Auto-select and expand the timeline when a reviewed file opens.
      */
-    private handleFileOpen(file?: TFile | null): void {
+    private handleFileOpen(): void {
         const data = reviewDecksToSidebarState(this.plugin);
         this.syncSidebarToPrimaryMarkdownNote(data, { requestReveal: true });
         this.redraw();

@@ -51,11 +51,13 @@ const THEME_SUFFIXES = ["@@light", "@@dark"] as const;
 const RERENDER_DELAY_MS = 180;
 
 function getStyleSettingsPlugin(app: App): StyleSettingsPluginLike | null {
-    const plugins = (app as App & {
-        plugins?: {
-            plugins?: Record<string, unknown>;
-        };
-    }).plugins?.plugins;
+    const plugins = (
+        app as App & {
+            plugins?: {
+                plugins?: Record<string, unknown>;
+            };
+        }
+    ).plugins?.plugins;
 
     if (!plugins) {
         return null;
@@ -118,7 +120,9 @@ function refreshStyleSettingsUi(plugin: StyleSettingsPluginLike): void {
     plugin.settingsTab?.setSettings?.(plugin.settingsList, plugin.errorList);
     plugin.settingsTab?.rerender?.();
 
-    const leaves = plugin.app.workspace.getLeavesOfType(STYLE_SETTINGS_VIEW_TYPE) as StyleSettingsLeaf[];
+    const leaves = plugin.app.workspace.getLeavesOfType(
+        STYLE_SETTINGS_VIEW_TYPE,
+    ) as StyleSettingsLeaf[];
     for (const leaf of leaves) {
         leaf.view.setSettings?.(plugin.settingsList, plugin.errorList);
         leaf.view.rerender?.();
@@ -148,7 +152,8 @@ function applyHierarchyResetFns(plugin: StyleSettingsPluginLike): boolean {
 
                 for (const childId of childIds) {
                     hasChanges =
-                        clearSettingValue(plugin.settingsManager, section.id, childId) || hasChanges;
+                        clearSettingValue(plugin.settingsManager, section.id, childId) ||
+                        hasChanges;
                 }
 
                 if (!hasChanges) {

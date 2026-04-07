@@ -4,44 +4,32 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-const DEFAULT_BASE = "51db186";
 const DEFAULT_HEAD = "HEAD";
 const SELF_SCRIPT_PATH = "scripts/detect-mojibake.mjs";
+const BASE_CANDIDATES = ["origin/main", "origin/master", "main", "master", "HEAD~1"];
 const TEXT_FILE_PATTERN = /\.(?:ts|tsx|js|jsx|mjs|cjs|json|css|scss|md|txt|yml|yaml)$/i;
 const PRIORITY_FILE_PATTERN =
     /^(src\/.*\.(?:ts|tsx|css)|scripts\/.*\.(?:mjs|js|ts)|package\.json|manifest\.json|versions\.json|eslint.*|\.eslintrc.*)$/i;
-const MOJIBAKE_FRAGMENTS = [
-    "姝ｅ湪",
-    "鍚屾",
-    "瑙ｆ瀽",
-    "绗旇",
-    "鏋勫缓",
-    "鐗岀粍",
-    "瀹屾垚",
-    "鎻愮ず",
-    "闅愯棌",
-    "骞挎挱",
-    "娓呮礂",
-    "鑴忔暟鎹",
-    "杩欎釜鏂囦欢",
-    "鎻掍欢",
-    "濮濓絽婀",
-    "濞撳懐鎮",
-    "閹笛嗩攽",
-    "閸氬本顒",
-    "閸ㄥ啫婧囬崶鐐存暪",
-    "sync鉃?",
-    "plugin.sync() 瀹屾垚",
+const EXPLICIT_MOJIBAKE_PATTERNS = [
+    /锟斤拷/u,
+    /�/u,
+    /Ã./u,
+    /Â./u,
+    /â[\u0080-\u00BF]/u,
+    /ð[\u0080-\u00BF]/u,
 ];
-const SUSPICIOUS_CHAR_PATTERN = /[鈥€鍚姝瑙鏋绗旇瀹鎻闅骞挎濮娓呮礂鑴忔閸锛銆]/gu;
+const SUSPICIOUS_CHAR_PATTERN = /[闂閿鏉妗鍙鐨涓浠鍚鈥欐鍥鏆鎴楂鎺鎼妫钃锟�]/gu;
 
-const { base, head } = parseArgs(process.argv.slice(2));
+const args = parseArgs(process.argv.slice(2));
 const repoRoot = execGit(["rev-parse", "--show-toplevel"]).trim();
 
 process.chdir(repoRoot);
 
-const trackedFiles = new Set(splitLines(git(["ls-files"])).filter(isTextFile));
-const candidateFiles = collectCandidateFiles(base, head, trackedFiles);
+const warnings = [];
+const base = resolveBase(args.base, warnings);
+const head = resolveHead(args.head, warnings);
+const trackedFiles = new Set(splitLines(safeGit(["ls-files"])).filter(isTextFile));
+const candidateFiles = collectCandidateFiles({ base, head, trackedFiles });
 const filesToScan =
     candidateFiles.length > 0 ? candidateFiles : [...trackedFiles].filter(isPriorityFile);
 const findings = [];
@@ -56,20 +44,24 @@ for (const file of filesToScan) {
         continue;
     }
 
-    const content = fs.readFileSync(absPath, "utf8");
+    const raw = fs.readFileSync(absPath);
+    if (raw.includes(0)) {
+        continue;
+    }
+
+    const content = raw.toString("utf8");
     const lines = content.split(/\r?\n/u);
 
     lines.forEach((line, index) => {
-        const fragments = getMatchingFragments(line);
-        if (fragments.length === 0) {
+        const signals = getSignals(line);
+        if (signals.length === 0) {
             return;
         }
 
         findings.push({
             file,
             lineNumber: index + 1,
-            category: classifyLine(line, fragments),
-            fragments,
+            category: classifyLine(line, signals),
             line: line.trim(),
         });
     });
@@ -81,12 +73,20 @@ const commentHits = grouped.comment ?? [];
 const otherHits = grouped.other ?? [];
 
 console.log("Mojibake scan");
-console.log(`Base: ${base}`);
-console.log(`Head: ${head} (plus current worktree changes)`);
+console.log(`Base: ${base ?? "(auto unavailable; scanned current worktree and staged files)"}`);
+console.log(`Head: ${head}`);
 console.log(`Scanned files: ${filesToScan.length}`);
 console.log(`Runtime strings: ${runtimeHits.length}`);
 console.log(`Comments: ${commentHits.length}`);
 console.log(`Other text: ${otherHits.length}`);
+
+if (warnings.length > 0) {
+    console.log("");
+    console.log("Notes:");
+    for (const warning of warnings) {
+        console.log(`- ${warning}`);
+    }
+}
 
 printGroup("runtime-string", runtimeHits);
 printGroup("comment", commentHits);
@@ -106,7 +106,7 @@ if (runtimeHits.length > 0) {
 }
 
 function parseArgs(argv) {
-    let base = DEFAULT_BASE;
+    let base = null;
     let head = DEFAULT_HEAD;
 
     for (let index = 0; index < argv.length; index += 1) {
@@ -129,6 +129,14 @@ function git(args) {
     return execGit(args, repoRoot);
 }
 
+function safeGit(args) {
+    try {
+        return git(args);
+    } catch {
+        return "";
+    }
+}
+
 function execGit(args, cwd = process.cwd()) {
     return execFileSync("git", args, {
         cwd,
@@ -144,23 +152,82 @@ function splitLines(text) {
         .filter(Boolean);
 }
 
-function collectCandidateFiles(base, head, trackedFiles) {
-    const files = new Set();
-    const diffCommands = [
-        ["diff", "--name-only", "--diff-filter=ACMR", base, head, "--"],
-        ["diff", "--name-only", "--diff-filter=ACMR", "--"],
-        ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "--"],
-    ];
+function resolveBase(explicitBase, warnings) {
+    if (explicitBase) {
+        if (revisionExists(explicitBase)) {
+            return explicitBase;
+        }
+        warnings.push(`Ignoring invalid --base revision: ${explicitBase}`);
+        return null;
+    }
 
-    for (const args of diffCommands) {
-        for (const file of splitLines(git(args))) {
-            if (trackedFiles.has(file) && isPriorityFile(file)) {
-                files.add(file);
-            }
+    for (const candidate of BASE_CANDIDATES) {
+        if (revisionExists(candidate)) {
+            return candidate;
         }
     }
 
+    warnings.push(
+        "No default git base was resolved; skipping base-to-head diff and scanning current changes only.",
+    );
+    return null;
+}
+
+function resolveHead(explicitHead, warnings) {
+    if (revisionExists(explicitHead)) {
+        return explicitHead;
+    }
+
+    warnings.push(
+        `Ignoring invalid --head revision: ${explicitHead}; falling back to ${DEFAULT_HEAD}.`,
+    );
+    return DEFAULT_HEAD;
+}
+
+function revisionExists(revision) {
+    try {
+        execGit(["rev-parse", "--verify", `${revision}^{commit}`], repoRoot);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function collectCandidateFiles({ base, head, trackedFiles }) {
+    const files = new Set();
+
+    if (base) {
+        addFilesFromGit(
+            ["diff", "--name-only", "--diff-filter=ACMR", base, head, "--"],
+            files,
+            trackedFiles,
+        );
+    }
+
+    addFilesFromGit(["diff", "--name-only", "--diff-filter=ACMR", "--"], files, trackedFiles);
+    addFilesFromGit(
+        ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "--"],
+        files,
+        trackedFiles,
+    );
+    addFilesFromGit(["ls-files", "--others", "--exclude-standard"], files, trackedFiles, {
+        includeUntracked: true,
+    });
+
     return [...files].sort();
+}
+
+function addFilesFromGit(args, files, trackedFiles, options = {}) {
+    const output = safeGit(args);
+    for (const file of splitLines(output)) {
+        if (!isTextFile(file) || !isPriorityFile(file)) {
+            continue;
+        }
+
+        if (options.includeUntracked || trackedFiles.has(file)) {
+            files.add(file);
+        }
+    }
 }
 
 function isPriorityFile(file) {
@@ -171,29 +238,35 @@ function isTextFile(file) {
     return TEXT_FILE_PATTERN.test(file);
 }
 
-function getMatchingFragments(line) {
-    const matchedFragments = MOJIBAKE_FRAGMENTS.filter((fragment) => line.includes(fragment));
-    if (matchedFragments.length > 0) {
-        return matchedFragments;
+function getSignals(line) {
+    const signals = new Set();
+
+    for (const pattern of EXPLICIT_MOJIBAKE_PATTERNS) {
+        const match = line.match(pattern);
+        if (match) {
+            signals.add(match[0]);
+        }
     }
 
-    const charHits = new Set(line.match(SUSPICIOUS_CHAR_PATTERN) ?? []);
-    if (charHits.size >= 4) {
-        return [...charHits].slice(0, 4);
+    const suspiciousChars = [...new Set(line.match(SUSPICIOUS_CHAR_PATTERN) ?? [])];
+    if (suspiciousChars.length >= 4) {
+        for (const char of suspiciousChars.slice(0, 4)) {
+            signals.add(char);
+        }
     }
 
-    return [];
+    return [...signals];
 }
 
-function classifyLine(line, fragments) {
+function classifyLine(line, signals) {
     const trimmed = line.trim();
     if (/^(?:\/\/|\/\*|\*|\*\/)/u.test(trimmed)) {
         return "comment";
     }
 
-    const escapedFragments = fragments.map((fragment) => escapeRegExp(fragment));
+    const escapedSignals = signals.map((signal) => escapeRegExp(signal));
     const stringPattern = new RegExp(
-        `(["'\`])(?:\\\\.|(?!\\1).)*?(?:${escapedFragments.join("|")})(?:\\\\.|(?!\\1).)*?\\1`,
+        `(["'\`])(?:\\\\.|(?!\\1).)*?(?:${escapedSignals.join("|")})(?:\\\\.|(?!\\1).)*?\\1`,
         "u",
     );
     if (stringPattern.test(line)) {
@@ -216,7 +289,7 @@ function printGroup(name, items) {
 }
 
 function truncate(text, maxLength) {
-    return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`;
+    return text.length <= maxLength ? text : `${text.slice(0, maxLength - 3)}...`;
 }
 
 function escapeRegExp(text) {

@@ -20,9 +20,7 @@ body.css-settings-manager:not(.is-phone)
     display: none;
 }
 
-body.css-settings-manager
-    .style-settings-heading[data-id^="syro-"]
-    + .style-settings-container {
+body.css-settings-manager .style-settings-heading[data-id^="syro-"] + .style-settings-container {
     padding-top: 12px !important;
 }
 
@@ -30,9 +28,7 @@ body.css-settings-manager
     .style-settings-heading[data-id^="syro-"]
     + .style-settings-container
     .setting-item:last-of-type,
-.style-settings-heading[data-id^="syro-"]
-    + .style-settings-container
-    .setting-item:last-of-type {
+.style-settings-heading[data-id^="syro-"] + .style-settings-container .setting-item:last-of-type {
     padding-bottom: 8px !important;
 }
 

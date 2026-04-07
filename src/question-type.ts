@@ -245,10 +245,7 @@ function buildLineSpan(startLine: number, endLine: number = startLine): number[]
     return result;
 }
 
-function shouldAttachReviewTarget(
-    lineOffset: number,
-    context?: CardExpansionContext,
-): boolean {
+function shouldAttachReviewTarget(lineOffset: number, context?: CardExpansionContext): boolean {
     return (
         lineOffset !== 0 ||
         context?.noteText !== undefined ||
@@ -329,7 +326,10 @@ function resolveGenericClozeReviewTarget(
     const startLine = getLineNumberFromIndex(rawText, activeDeletions[0].start);
     const endLine = getLineNumberFromIndex(
         rawText,
-        Math.max(activeDeletions[activeDeletions.length - 1].start, activeDeletions[activeDeletions.length - 1].end - 1),
+        Math.max(
+            activeDeletions[activeDeletions.length - 1].start,
+            activeDeletions[activeDeletions.length - 1].end - 1,
+        ),
     );
 
     return buildReviewTarget(lineOffset + startLine - 1, lineOffset + endLine - 1);
@@ -878,48 +878,48 @@ class QuestionTypeCloze implements IQuestionTypeHandler {
 
         let front: string, back: string, review: string;
         const result: CardFrontBack[] = [];
-            for (let i = 0; i < codeAwareNote.note.numCards; i++) {
-                front = restoreCodeContextMask(
-                    codeAwareNote.note.getCardFront(i, clozeFormatter),
-                    codeAwareNote.mask,
-                );
+        for (let i = 0; i < codeAwareNote.note.numCards; i++) {
+            front = restoreCodeContextMask(
+                codeAwareNote.note.getCardFront(i, clozeFormatter),
+                codeAwareNote.mask,
+            );
             back = restoreCodeContextMask(
                 codeAwareNote.note.getCardBack(i, clozeFormatter),
                 codeAwareNote.mask,
             );
-                review = restoreCodeContextMask(
-                    codeAwareNote.note.getCardFront(i, reviewFormatter),
-                    codeAwareNote.mask,
-                );
-                result.push(
-                    new CardFrontBack(
-                        front,
-                        back,
-                        review,
-                        shouldAttachReviewTarget(lineOffset, context)
-                            ? resolveGenericClozeReviewTarget(
-                                  codeAwareNote.mask.maskedText,
-                                  (
-                                      codeAwareNote.note as unknown as {
-                                          _clozeDeletions?: InternalClozeDeletion[];
-                                          clozeType?: InternalClozeType;
-                                      }
-                                  )._clozeDeletions ?? [],
-                                  (
-                                      codeAwareNote.note as unknown as {
-                                          clozeType?: InternalClozeType;
-                                      }
-                                  ).clozeType ?? "classic",
-                                  i,
-                                  lineOffset,
-                              )
-                            : undefined,
-                    ),
-                );
-            }
-
-            return result;
+            review = restoreCodeContextMask(
+                codeAwareNote.note.getCardFront(i, reviewFormatter),
+                codeAwareNote.mask,
+            );
+            result.push(
+                new CardFrontBack(
+                    front,
+                    back,
+                    review,
+                    shouldAttachReviewTarget(lineOffset, context)
+                        ? resolveGenericClozeReviewTarget(
+                              codeAwareNote.mask.maskedText,
+                              (
+                                  codeAwareNote.note as unknown as {
+                                      _clozeDeletions?: InternalClozeDeletion[];
+                                      clozeType?: InternalClozeType;
+                                  }
+                              )._clozeDeletions ?? [],
+                              (
+                                  codeAwareNote.note as unknown as {
+                                      clozeType?: InternalClozeType;
+                                  }
+                              ).clozeType ?? "classic",
+                              i,
+                              lineOffset,
+                          )
+                        : undefined,
+                ),
+            );
         }
+
+        return result;
+    }
 }
 
 export class QuestionTypeClozeFormatter implements IClozeFormatter {
@@ -1231,22 +1231,23 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                 }
             }
 
-                if (endPos !== -1) {
-                    let lineNum = 1;
-                    for (let k = 0; k < startPos; k++) {
-                        if (text[k] === "\n") lineNum++;
-                    }
-                    const endLineNum = lineNum + (text.substring(startPos, endPos).match(/\n/g) || []).length;
+            if (endPos !== -1) {
+                let lineNum = 1;
+                for (let k = 0; k < startPos; k++) {
+                    if (text[k] === "\n") lineNum++;
+                }
+                const endLineNum =
+                    lineNum + (text.substring(startPos, endPos).match(/\n/g) || []).length;
 
-                    const content = text.substring(contentStart, endPos);
-                    infos.push({
-                        id,
-                        content,
-                        start: startPos,
-                        end: endPos + 2,
-                        lineNum,
-                        endLineNum,
-                    });
+                const content = text.substring(contentStart, endPos);
+                infos.push({
+                    id,
+                    content,
+                    start: startPos,
+                    end: endPos + 2,
+                    lineNum,
+                    endLineNum,
+                });
 
                 regex.lastIndex = endPos + 2;
             }

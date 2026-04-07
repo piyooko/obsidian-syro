@@ -347,7 +347,10 @@ function focusLeafEditorRange(leaf: WorkspaceLeaf, target: CardReviewTarget): vo
     attemptFocus(0);
 }
 
-function normalizeReviewTarget(target?: CardReviewTarget | null, fallbackLine: number = 0): CardReviewTarget {
+function normalizeReviewTarget(
+    target?: CardReviewTarget | null,
+    fallbackLine: number = 0,
+): CardReviewTarget {
     if (!target) {
         return {
             startLine: Math.max(0, fallbackLine),
@@ -536,21 +539,22 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             const sessionStats = sequencer.getSessionDeckStats();
             reviewEntrySourceRef.current = source;
             if (sequencerReviewMode !== null && sequencerReviewMode !== reviewMode) {
-                console.warn("[SR] enterDeckReview: review mode mismatch between view and sequencer", {
-                    source,
-                    reviewMode: FlashcardReviewMode[reviewMode],
-                    sequencerReviewMode: FlashcardReviewMode[sequencerReviewMode],
-                    fullPath,
-                });
+                console.warn(
+                    "[SR] enterDeckReview: review mode mismatch between view and sequencer",
+                    {
+                        source,
+                        reviewMode: FlashcardReviewMode[reviewMode],
+                        sequencerReviewMode: FlashcardReviewMode[sequencerReviewMode],
+                        fullPath,
+                    },
+                );
             }
 
             logRuntimeDebug("[SR-Debug] enterDeckReview: activation succeeded", {
                 source,
                 reviewMode: FlashcardReviewMode[reviewMode],
                 sequencerReviewMode:
-                    sequencerReviewMode === null
-                        ? null
-                        : FlashcardReviewMode[sequencerReviewMode],
+                    sequencerReviewMode === null ? null : FlashcardReviewMode[sequencerReviewMode],
                 fullPath,
                 currentCardId: sequencer.currentCard?.Id ?? null,
                 currentDeckPath: getDeckPath(sequencer.currentDeck),
@@ -823,7 +827,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             const currentCard = sequencer.currentCard;
             const sessionStatsBefore = sequencer.getSessionDeckStats();
             const pluginStoreItemBefore = currentCard
-                ? plugin.store?.getItembyID(currentCard.Id) ?? null
+                ? (plugin.store?.getItembyID(currentCard.Id) ?? null)
                 : null;
             const dataStoreItemBefore = currentCard
                 ? DataStore.getInstance().getItembyID(currentCard.Id)
@@ -858,7 +862,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             }
 
             const pluginStoreItemAfter = currentCard
-                ? plugin.store?.getItembyID(currentCard.Id) ?? null
+                ? (plugin.store?.getItembyID(currentCard.Id) ?? null)
                 : null;
             const dataStoreItemAfter = currentCard
                 ? DataStore.getInstance().getItembyID(currentCard.Id)
@@ -1003,7 +1007,6 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                             <CardReviewView
                                 sequencer={sequencer}
                                 plugin={plugin}
-                                hostLeaf={hostLeaf}
                                 clearReviewMobileNavbarCover={clearReviewMobileNavbarCover}
                                 markdownOwner={markdownOwner}
                                 onAnswer={(rating) => {
@@ -1261,7 +1264,6 @@ const DeckListView: React.FC<DeckListViewProps> = ({
 interface CardReviewViewProps {
     sequencer: IFlashcardReviewSequencer;
     plugin: SRPlugin;
-    hostLeaf: WorkspaceLeaf;
     clearReviewMobileNavbarCover: () => void;
     markdownOwner: Component;
     onAnswer: (rating: number) => void;
@@ -1276,7 +1278,6 @@ interface CardReviewViewProps {
 const CardReviewView: React.FC<CardReviewViewProps> = ({
     sequencer,
     plugin,
-    hostLeaf,
     clearReviewMobileNavbarCover,
     markdownOwner,
     onAnswer,
@@ -1422,9 +1423,9 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
                       0,
                       Math.min(
                           breadcrumb.line,
-                            Math.max(0, activeLeaf.view.editor.lineCount() - 1),
-                        ),
-                    )
+                          Math.max(0, activeLeaf.view.editor.lineCount() - 1),
+                      ),
+                  )
                 : Math.max(0, breadcrumb.line);
         focusLeafEditorRange(activeLeaf, { startLine: safeLine, endLine: safeLine });
     };

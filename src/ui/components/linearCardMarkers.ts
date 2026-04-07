@@ -13,7 +13,6 @@ const SR_UNIFIED_REGEX = /\u00ab\u00abSR_C:([^\u00bb]+)\u00bb\u00bb/g;
 const SR_CODE_CLOZE_REGEX = /\u00ab\u00abSR_CLOZE:([^\u00bb]+)\u00bb\u00bb/g;
 const SR_HIDDEN_REGEX = /\u00ab\u00abSR_H:([^\u00bb]+)\u00bb\u00bb/g;
 const SR_SHOWN_REGEX = /\u00ab\u00abSR_S:([^\u00bb]+)\u00bb\u00bb/g;
-const SR_MARKDOWN_ENCODED_ATTRIBUTE = "data-sr-markdown-encoded";
 const SR_SENTINEL_PREFIX = "SR_SENTINEL_";
 const SR_SENTINEL_SUFFIX = "_TOKEN";
 const SUPPORTED_MARKDOWN_BOUNDARY_DELIMITERS = ["**", "=="] as const;
@@ -67,15 +66,6 @@ export interface PreTokenizedSrMarkers {
 
 function escapeRegExp(text: string): string {
     return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function escapeHtml(text: string): string {
-    return text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
 }
 
 export function tryDecodeSrMarkerText(encoded: string): string | null {

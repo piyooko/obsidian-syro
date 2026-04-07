@@ -70,7 +70,7 @@ export default class TabViewManager {
         const { workspace } = this.plugin.app;
         let pendingSession: ReviewSessionLoadResult | null = null;
         if (type === SR_TAB_VIEW) {
-            pendingSession = await this.preparePendingSession();
+            pendingSession = this.preparePendingSession();
         }
         const existingLeaf = workspace.getLeavesOfType(type)[0] ?? null;
 
@@ -92,7 +92,7 @@ export default class TabViewManager {
         return leaf;
     }
 
-    private async loadPendingSession(): Promise<ReviewSessionLoadResult> {
+    private loadPendingSession(): Promise<ReviewSessionLoadResult> {
         if (this.preparedPendingSession) {
             const preparedSession = this.preparedPendingSession;
             this.preparedPendingSession = null;
@@ -101,17 +101,20 @@ export default class TabViewManager {
                 initialView: preparedSession.initialView ?? "deck-list",
                 initialTargetDeckPath: preparedSession.initialTargetDeckPath ?? null,
             });
-            return preparedSession;
+            return Promise.resolve(preparedSession);
         }
 
-        this.logRuntimeDebug("[SR-TabViewManager] loadPendingSession: rebuild from current context", {
-            mode: FlashcardReviewMode[this.chosenReviewModeForTabbedView],
-            targetDeckPath: this.pendingReviewTarget.targetDeckPath ?? null,
-        });
-        return this.preparePendingSession();
+        this.logRuntimeDebug(
+            "[SR-TabViewManager] loadPendingSession: rebuild from current context",
+            {
+                mode: FlashcardReviewMode[this.chosenReviewModeForTabbedView],
+                targetDeckPath: this.pendingReviewTarget.targetDeckPath ?? null,
+            },
+        );
+        return Promise.resolve(this.preparePendingSession());
     }
 
-    private async preparePendingSession(): Promise<ReviewSessionLoadResult> {
+    private preparePendingSession(): ReviewSessionLoadResult {
         const fullDeckTree: Deck = this.plugin.deckTree;
         const sourceDeckTree: Deck =
             this.chosenReviewModeForTabbedView === FlashcardReviewMode.Cram

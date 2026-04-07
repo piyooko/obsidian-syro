@@ -44,6 +44,8 @@ export default {
     RESPONSE_RECEIVED: "反馈已收到",
     NO_DECK_EXISTS: "没有 ${deckName} 卡组",
     ALL_CAUGHT_UP: "都复习完啦，你真棒！\n去接触点新东西吧~",
+    NOTICE_PREPARE_NOTE_LOCAL_REVIEW_CARDS_FAILED:
+        "Syro：准备当前笔记的局部复习卡片失败。请先同步后重试。",
     STATUS_BAR_FLASHCARD_DUE: "${dueFlashcardsCount} 卡片已到期",
     STATUS_BAR_NOTE_DUE: "${dueNotesCount} 笔记已到期",
     STATUS_BAR_FLASHCARD_DUE_SINGULAR: "${dueFlashcardsCount} 卡片已到期",
@@ -576,14 +578,11 @@ export default {
     SETTINGS_CLOZE_CONTEXT_MODE: "Cloze 上下文范围",
     SETTINGS_CLOZE_CONTEXT_MODE_TOOLTIP: "选择复习时显示多少上下文。",
     SETTINGS_CLOZE_CONTEXT_SINGLE: "当前段落",
-    SETTINGS_CLOZE_CONTEXT_SINGLE_DESC:
-        "只显示当前所在段落，以单个空行为分隔。",
+    SETTINGS_CLOZE_CONTEXT_SINGLE_DESC: "只显示当前所在段落，以单个空行为分隔。",
     SETTINGS_CLOZE_CONTEXT_DOUBLE_BREAK: "当前小节",
-    SETTINGS_CLOZE_CONTEXT_DOUBLE_BREAK_DESC:
-        "显示更大的连续内容，直到遇到两个连续空行为止。",
+    SETTINGS_CLOZE_CONTEXT_DOUBLE_BREAK_DESC: "显示更大的连续内容，直到遇到两个连续空行为止。",
     SETTINGS_CLOZE_CONTEXT_EXPANDED: "附带相邻段落",
-    SETTINGS_CLOZE_CONTEXT_EXPANDED_DESC:
-        "显示当前段落，以及上一个和下一个相邻段落。",
+    SETTINGS_CLOZE_CONTEXT_EXPANDED_DESC: "显示当前段落，以及上一个和下一个相邻段落。",
     SETTINGS_CLOZE_CONTEXT_FULL: "完整笔记（不推荐）",
     SETTINGS_CLOZE_CONTEXT_FULL_DESC:
         "复习时显示整篇笔记。长文下可能影响性能，强烈建议搭配设置选项“长上下文性能优化”来使用",

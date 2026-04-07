@@ -162,6 +162,8 @@ export default normalizeSentenceCaseLocale({
     RESPONSE_RECEIVED: "Response received.",
     NO_DECK_EXISTS: "No deck exists for ${deckName}",
     ALL_CAUGHT_UP: "You're all caught up now :D.",
+    NOTICE_PREPARE_NOTE_LOCAL_REVIEW_CARDS_FAILED:
+        "Syro: failed to prepare note-local review cards. Please sync and try again.",
     STATUS_BAR_FLASHCARD_DUE: "${dueFlashcardsCount} cards due",
     STATUS_BAR_NOTE_DUE: "${dueNotesCount} notes due",
     STATUS_BAR_FLASHCARD_DUE_SINGULAR: "${dueFlashcardsCount} card due",

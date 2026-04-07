@@ -172,9 +172,7 @@ export class NoteQuestionParser {
         parsedQuestionInfo: ParsedQuestionInfo,
         textDirection: TextDirection,
     ): Question {
-        const questionContext = this.noteFile.getQuestionContext(
-            parsedQuestionInfo.firstLineNum,
-        );
+        const questionContext = this.noteFile.getQuestionContext(parsedQuestionInfo.firstLineNum);
         const result = Question.Create(
             this.settings,
             parsedQuestionInfo,

@@ -765,7 +765,6 @@ export default class SRPlugin extends Plugin {
 
         const replacement = `{{c${nextId}::${selection}}}`;
         editor.replaceSelection(replacement);
-
     }
 
     private getMaxClozeIdFromText(text: string): number {
@@ -2700,7 +2699,7 @@ export default class SRPlugin extends Plugin {
                     `Single-note review card is missing a tracked review id: ${notePath}`,
                 );
                 console.error("[SR] Failed to prepare note-local review card binding", error, card);
-                new Notice("Syro: failed to prepare note-local review cards. Please sync and try again.");
+                new Notice(t("NOTICE_PREPARE_NOTE_LOCAL_REVIEW_CARDS_FAILED"));
                 throw error;
             }
 
@@ -2708,8 +2707,12 @@ export default class SRPlugin extends Plugin {
                 const error = new Error(
                     `Single-note review card is missing a store item binding: ${notePath}#${card.Id}`,
                 );
-                console.error("[SR] Failed to prepare note-local review store binding", error, card);
-                new Notice("Syro: failed to prepare note-local review cards. Please sync and try again.");
+                console.error(
+                    "[SR] Failed to prepare note-local review store binding",
+                    error,
+                    card,
+                );
+                new Notice(t("NOTICE_PREPARE_NOTE_LOCAL_REVIEW_CARDS_FAILED"));
                 throw error;
             }
         }

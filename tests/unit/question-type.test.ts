@@ -241,7 +241,7 @@ test("CardType.AnkiCloze starts displayed code lines at 1 when the fenced block 
 
     const result = CardFrontBackUtil.expand(
         CardType.AnkiCloze,
-        '```ts\nconst alpha = 1;\nconst beta = {{c1::2}};\n```',
+        "```ts\nconst alpha = 1;\nconst beta = {{c1::2}};\n```",
         settings,
         0,
     );

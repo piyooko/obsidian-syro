@@ -441,9 +441,8 @@ function installMockResizeObserver() {
                 return;
             }
 
-            delete (
-                globalThis as typeof globalThis & { ResizeObserver?: typeof ResizeObserver }
-            ).ResizeObserver;
+            delete (globalThis as typeof globalThis & { ResizeObserver?: typeof ResizeObserver })
+                .ResizeObserver;
         },
     };
 }
@@ -458,7 +457,9 @@ function installHeaderLayoutGeometry(
         inlineCompact: number;
     },
 ) {
-    const liveHeader = container.querySelector<HTMLElement>(".sr-card-header:not(.sr-card-header-measure)");
+    const liveHeader = container.querySelector<HTMLElement>(
+        ".sr-card-header:not(.sr-card-header-measure)",
+    );
     if (!liveHeader) {
         throw new Error("Missing live header");
     }
@@ -811,9 +812,9 @@ describe("LinearCard math cloze rendering", () => {
             expect(codeBlock).not.toBeNull();
             expect(lineNumbers).toEqual(["", "10000", "10001"]);
             expect(codeBlock?.style.getPropertyValue("--sr-code-line-number-digits")).toBe("5");
-            expect(codeBlock?.querySelector(".sr-code-ellipsis .sr-code-line-number")?.textContent).toBe(
-                "",
-            );
+            expect(
+                codeBlock?.querySelector(".sr-code-ellipsis .sr-code-line-number")?.textContent,
+            ).toBe("");
 
             act(() => root.unmount());
         } finally {
@@ -844,7 +845,9 @@ describe("LinearCard math cloze rendering", () => {
             });
 
             act(() => {
-                resizeObserver.MockResizeObserver.instances.forEach((observer) => observer.trigger());
+                resizeObserver.MockResizeObserver.instances.forEach((observer) =>
+                    observer.trigger(),
+                );
             });
             await flushAnimationFrame();
 
@@ -925,7 +928,9 @@ describe("LinearCard math cloze rendering", () => {
             });
 
             act(() => {
-                resizeObserver.MockResizeObserver.instances.forEach((observer) => observer.trigger());
+                resizeObserver.MockResizeObserver.instances.forEach((observer) =>
+                    observer.trigger(),
+                );
             });
             await flushAnimationFrame();
 
@@ -1165,7 +1170,9 @@ describe("LinearCard math cloze rendering", () => {
             });
 
             act(() => {
-                resizeObserver.MockResizeObserver.instances.forEach((observer) => observer.trigger());
+                resizeObserver.MockResizeObserver.instances.forEach((observer) =>
+                    observer.trigger(),
+                );
             });
             await flushAnimationFrame();
 
@@ -1185,13 +1192,17 @@ describe("LinearCard math cloze rendering", () => {
             });
 
             act(() => {
-                resizeObserver.MockResizeObserver.instances.forEach((observer) => observer.trigger());
+                resizeObserver.MockResizeObserver.instances.forEach((observer) =>
+                    observer.trigger(),
+                );
             });
             await flushAnimationFrame();
 
             expect(liveHeader.dataset.srBreadcrumbPlacement).toBe("inline");
             expect(liveHeader.dataset.srStatsMode).toBe("regular");
-            expect(container.querySelectorAll(".sr-inline-breadcrumbs .sr-breadcrumb-item")).toHaveLength(2);
+            expect(
+                container.querySelectorAll(".sr-inline-breadcrumbs .sr-breadcrumb-item"),
+            ).toHaveLength(2);
 
             liveHeader = installHeaderLayoutGeometry(container, 200, {
                 expandedRegular: 560,
@@ -1201,7 +1212,9 @@ describe("LinearCard math cloze rendering", () => {
             });
 
             act(() => {
-                resizeObserver.MockResizeObserver.instances.forEach((observer) => observer.trigger());
+                resizeObserver.MockResizeObserver.instances.forEach((observer) =>
+                    observer.trigger(),
+                );
             });
             await flushAnimationFrame();
 
@@ -1242,7 +1255,9 @@ describe("LinearCard math cloze rendering", () => {
             );
             expect(liveHeader?.dataset.srBreadcrumbPlacement).toBe("inline");
             expect(liveHeader?.dataset.srStatsMode).toBe("compact");
-            expect(container.querySelectorAll(".sr-inline-breadcrumbs .sr-breadcrumb-item")).toHaveLength(1);
+            expect(
+                container.querySelectorAll(".sr-inline-breadcrumbs .sr-breadcrumb-item"),
+            ).toHaveLength(1);
         } finally {
             act(() => root.unmount());
         }

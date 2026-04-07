@@ -1001,24 +1001,34 @@
     /* dark:text-zinc-500 */
 }
 
-body.syro-desktop-review-compact-actions .sr-linear-card-wrapper:not(.sr-phone-layout) .sr-rating-buttons {
+body.syro-desktop-review-compact-actions
+    .sr-linear-card-wrapper:not(.sr-phone-layout)
+    .sr-rating-buttons {
     gap: max(4px, var(--syro-desktop-review-button-gap, 8px));
 }
 
-body.syro-desktop-review-compact-actions .sr-linear-card-wrapper:not(.sr-phone-layout) .sr-show-answer-btn {
+body.syro-desktop-review-compact-actions
+    .sr-linear-card-wrapper:not(.sr-phone-layout)
+    .sr-show-answer-btn {
     height: max(24px, calc(var(--syro-desktop-review-button-height, 40px) - 4px));
 }
 
-body.syro-desktop-review-compact-actions .sr-linear-card-wrapper:not(.sr-phone-layout) .sr-linear-btn {
+body.syro-desktop-review-compact-actions
+    .sr-linear-card-wrapper:not(.sr-phone-layout)
+    .sr-linear-btn {
     height: max(24px, calc(var(--syro-desktop-review-button-height, 40px) - 4px));
     padding: 0 10px;
 }
 
-body.syro-desktop-review-compact-actions .sr-linear-card-wrapper:not(.sr-phone-layout) .sr-linear-btn-label {
+body.syro-desktop-review-compact-actions
+    .sr-linear-card-wrapper:not(.sr-phone-layout)
+    .sr-linear-btn-label {
     font-size: max(10px, calc(var(--syro-desktop-review-button-label-font-size, 12px) - 1px));
 }
 
-body.syro-desktop-review-compact-actions .sr-linear-card-wrapper:not(.sr-phone-layout) .sr-linear-btn-sub {
+body.syro-desktop-review-compact-actions
+    .sr-linear-card-wrapper:not(.sr-phone-layout)
+    .sr-linear-btn-sub {
     font-size: max(8px, calc(var(--syro-desktop-review-button-sub-font-size, 10px) - 1px));
 }
 
@@ -1823,7 +1833,9 @@ body.syro-mobile-review-compact-actions .sr-linear-card-wrapper.sr-phone-layout 
     gap: max(4px, calc(var(--syro-mobile-review-button-gap, 6px) - 1px));
 }
 
-body.syro-mobile-review-compact-actions .sr-linear-card-wrapper.sr-phone-layout .sr-show-answer-btn {
+body.syro-mobile-review-compact-actions
+    .sr-linear-card-wrapper.sr-phone-layout
+    .sr-show-answer-btn {
     height: max(18px, calc(var(--syro-mobile-review-button-height, 48px) - 10px));
 }
 
@@ -1832,7 +1844,9 @@ body.syro-mobile-review-compact-actions .sr-linear-card-wrapper.sr-phone-layout 
     min-height: max(24px, calc(var(--syro-mobile-review-button-height, 48px) - 6px));
 }
 
-body.syro-mobile-review-compact-actions .sr-linear-card-wrapper.sr-phone-layout .sr-linear-btn-label {
+body.syro-mobile-review-compact-actions
+    .sr-linear-card-wrapper.sr-phone-layout
+    .sr-linear-btn-label {
     font-size: max(10px, calc(var(--syro-mobile-review-button-label-font-size, 11px) - 1px));
 }
 

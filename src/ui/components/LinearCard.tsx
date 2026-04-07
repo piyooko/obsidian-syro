@@ -195,9 +195,7 @@ function BreadcrumbTrail({
 
     return (
         <div className={`${className}${expanded ? " sr-breadcrumbs-expanded" : ""}`}>
-            {showLeadingSeparator && (
-                <ChevronRight size={10} className="sr-breadcrumb-separator" />
-            )}
+            {showLeadingSeparator && <ChevronRight size={10} className="sr-breadcrumb-separator" />}
             {breadcrumbs.map((crumb, index) => (
                 <Fragment key={`${crumb.label}-${crumb.line}-${crumb.level}-${index}`}>
                     <span
@@ -415,8 +413,7 @@ export const LinearCard: FC<LinearCardProps> = ({
     const breadcrumbKey = breadcrumbs
         .map((crumb) => `${crumb.label}\u001e${crumb.line}\u001e${crumb.level}`)
         .join("\u001f");
-    const shouldInlineBreadcrumbs =
-        isMobile || headerLayout.breadcrumbPlacement === "inline";
+    const shouldInlineBreadcrumbs = isMobile || headerLayout.breadcrumbPlacement === "inline";
     const shouldUseCompactStats = isMobile || headerLayout.statsMode === "compact";
     const shouldExpandHeaderBreadcrumbs =
         !shouldInlineBreadcrumbs && headerLayout.breadcrumbDisplay === "expanded";
@@ -1295,16 +1292,16 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                           .showOtherHighlightClozeVisual
                                                     : false
                                             }
-                                             showOtherBoldClozeVisual={
-                                                 plugin
-                                                     ? !plugin.data.settings
-                                                           .convertBoldTextToClozes ||
-                                                       plugin.data.settings.showOtherBoldClozeVisual
-                                                     : false
-                                             }
-                                             preserveScrollOnFlip={preservedFlipScrollTop !== null}
-                                         />
-                                     ) : (
+                                            showOtherBoldClozeVisual={
+                                                plugin
+                                                    ? !plugin.data.settings
+                                                          .convertBoldTextToClozes ||
+                                                      plugin.data.settings.showOtherBoldClozeVisual
+                                                    : false
+                                            }
+                                            preserveScrollOnFlip={preservedFlipScrollTop !== null}
+                                        />
+                                    ) : (
                                         <BasicContent
                                             key={cardUiResetKey}
                                             isFlipped={renderIsFlipped}
@@ -1632,7 +1629,7 @@ const MarkdownDisplay = ({
                 return;
             }
 
-            let buffer = document.createElement("div");
+            const buffer = document.createElement("div");
 
             try {
                 await renderMarkdown(tokenizedContent.content, buffer);

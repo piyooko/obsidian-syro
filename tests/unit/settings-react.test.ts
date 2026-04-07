@@ -1,13 +1,13 @@
 import { SRSettingTab } from "src/ui/settings/settings-react";
 
-var createRootMock: jest.Mock = jest.fn((_container?: unknown) => ({
+const createRootMock: jest.Mock = jest.fn((_container?: unknown) => ({
     render: jest.fn(),
     unmount: jest.fn(),
 }));
-var settingsToUIStateMock: jest.Mock = jest.fn(() => ({}));
-var mergeUIStateToSettingsMock: jest.Mock = jest.fn();
-var confirmModalOpenMock: jest.Mock = jest.fn();
-var noticeMock: jest.Mock = jest.fn();
+const settingsToUIStateMock: jest.Mock = jest.fn(() => ({}));
+const mergeUIStateToSettingsMock: jest.Mock = jest.fn();
+const confirmModalOpenMock: jest.Mock = jest.fn();
+const noticeMock: jest.Mock = jest.fn();
 
 jest.mock("react-dom/client", () => ({
     createRoot: (container: unknown) => createRootMock(container),
@@ -24,14 +24,16 @@ jest.mock("src/ui/settings/applySettingsUpdate", () => ({
 }));
 
 jest.mock("src/ui/modals/confirm", () => {
-    return jest.fn().mockImplementation(
-        (_plugin: unknown, _message: string, callback: (confirmed: boolean) => void) => ({
-            open: () => {
-                confirmModalOpenMock();
-                callback(true);
-            },
-        }),
-    );
+    return jest
+        .fn()
+        .mockImplementation(
+            (_plugin: unknown, _message: string, callback: (confirmed: boolean) => void) => ({
+                open: () => {
+                    confirmModalOpenMock();
+                    callback(true);
+                },
+            }),
+        );
 });
 
 jest.mock("obsidian", () => {

@@ -124,7 +124,9 @@ describe("SRPlugin status bar card count", () => {
         plugin.updateStatusBarVisibility = jest.fn();
         plugin.getStatusBarReviewableCardCount = jest
             .fn()
-            .mockImplementation((SRPlugin.prototype as any).getStatusBarReviewableCardCount.bind(plugin));
+            .mockImplementation(
+                (SRPlugin.prototype as any).getStatusBarReviewableCardCount.bind(plugin),
+            );
 
         (SRPlugin.prototype as any).updateStatusBar.call(plugin);
 

@@ -62,7 +62,6 @@ const insertCloze = (view: EditorView, type: "same" | "new"): void => {
         changes: { from: selection.from, to: selection.to, insert: replacement },
         selection: { anchor: selection.from + replacement.length },
     });
-
 };
 
 // ==========================================
