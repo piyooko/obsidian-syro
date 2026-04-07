@@ -4,6 +4,13 @@ import { parse, ParsedQuestionInfo } from "src/parser";
 import { RPITEMTYPE } from "./repetitionItem";
 import { DEFAULT_DECKNAME } from "src/constants";
 import { extractPlainCurlyClozeMatches } from "src/util/curlyCloze";
+import { extractStandardClozeMatches } from "src/util/codeAwareCloze";
+import {
+    extractLineScopedAnkiClozeGroups,
+    getAnkiClozeIdAliases,
+    getLegacyAnkiClozeId,
+    isLineScopedAnkiClozeId,
+} from "src/util/ankiClozeGrouping";
 
 // ============================================================================
 // ============================================================================
@@ -176,27 +183,50 @@ export class TrackedFile implements ITrackedFile {
         const normCloze = (id: string | null | undefined) =>
             id === null || id === undefined ? "c1" : id;
         const targetCloze = normCloze(clozeId);
+        const sameBaseCloze = (left: string, right: string) =>
+            getLegacyAnkiClozeId(left) === getLegacyAnkiClozeId(right);
+        const findNearest = (items: TrackedItem[]): TrackedItem | undefined => {
+            if (items.length === 0) {
+                return undefined;
+            }
+            return items.reduce((left, right) =>
+                Math.abs(left.lineNo - lineNo) < Math.abs(right.lineNo - lineNo) ? left : right,
+            );
+        };
 
         // 优先精准匹配：行号和 clozeId 都相同
         let item = this.trackedItems.find(
             (i) => i.lineNo === lineNo && normCloze(i.clozeId) === targetCloze,
         );
 
+        if (!item) {
+            item = this.trackedItems.find(
+                (i) => i.lineNo === lineNo && sameBaseCloze(normCloze(i.clozeId), targetCloze),
+            );
+        }
+
         // 如果找不到，尝试容错匹配（可能在笔记里加了空行，导致行号偏移）
         if (!item) {
-            const candidates = this.trackedItems.filter(
-                (i) => normCloze(i.clozeId) === targetCloze,
+            item = findNearest(
+                this.trackedItems.filter((i) => normCloze(i.clozeId) === targetCloze),
             );
-            if (candidates.length > 0) {
-                // 找行号最近的那个
-                item = candidates.reduce((a, b) =>
-                    Math.abs(a.lineNo - lineNo) < Math.abs(b.lineNo - lineNo) ? a : b,
-                );
 
-                // 如果行号差了 5 行以上，认为不是同一张卡片，放弃匹配
-                if (item && Math.abs(item.lineNo - lineNo) > 5) {
-                    item = undefined;
-                }
+            if (item && Math.abs(item.lineNo - lineNo) > 5) {
+                item = undefined;
+            }
+        }
+
+        if (!item) {
+            item = findNearest(
+                this.trackedItems.filter((i) => sameBaseCloze(normCloze(i.clozeId), targetCloze)),
+            );
+
+            if (
+                item &&
+                Math.abs(item.lineNo - lineNo) > 5 &&
+                !isLineScopedAnkiClozeId(targetCloze)
+            ) {
+                item = undefined;
             }
         }
         return item;
@@ -249,7 +279,7 @@ export class TrackedFile implements ITrackedFile {
             parsedQuestions.forEach((pq) => {
                 const itemMap: Record<string, number> = {};
                 const relatedItems = (this.trackedItems || []).filter(
-                    (ti) => ti.lineNo === pq.firstLineNum,
+                    (ti) => ti.lineNo >= pq.firstLineNum && ti.lineNo <= pq.lastLineNum,
                 );
                 relatedItems.forEach((ri) => {
                     if (ri.clozeId) itemMap[ri.clozeId] = ri.reviewId;
@@ -299,8 +329,15 @@ function expandToCandidates(
 
         // 处理挖空题：一个大块里可能有多个挖空
         if (question.cardType === CardType.Cloze || question.cardType === CardType.AnkiCloze) {
-            // [关键环节] 这里提取所有挖空的具体位置和内容
-            const holes = extractHolesWithOffsets(cleanText, settings);
+            const holes =
+                question.cardType === CardType.AnkiCloze
+                    ? [
+                          ...extractGroupedAnkiHolesWithOffsets(cleanText),
+                          ...(isCodeBlockQuestionText(cleanText, settings)
+                              ? []
+                              : extractHolesWithOffsets(cleanText, settings, false)),
+                      ]
+                    : extractHolesWithOffsets(cleanText, settings);
 
             for (const hole of holes) {
                 const startOffset = blockStartOffset + hole.localStart;
@@ -312,9 +349,9 @@ function expandToCandidates(
                 candidates.push(
                     new TrackedItem(
                         hole.answerText, // fingerprint 指纹通常就是挖空内的答案
-                        question.firstLineNum,
+                        question.firstLineNum + hole.lineOffset,
                         extractContext(fileText, startOffset, endOffset),
-                        CardType.Cloze,
+                        question.cardType,
                         { startOffset, endOffset, blockStartOffset, blockEndOffset },
                         hole.clozeId, // 将计算出的 clozeId 塞进去
                         -1,
@@ -367,6 +404,7 @@ function matchItems(oldItems: TrackedItem[], candidates: TrackedItem[]): Tracked
 
     const result: TrackedItem[] = [];
     const usedNew = new Set<TrackedItem>();
+    const usedOld = new Set<TrackedItem>();
 
     // 2. 遍历所有旧分组进行匹配
     for (const [fp, oldGroup] of oldByFp.entries()) {
@@ -378,6 +416,7 @@ function matchItems(oldItems: TrackedItem[], candidates: TrackedItem[]): Tracked
         if (oldGroup.length === 1 && newGroup.length === 1) {
             const oldC = oldGroup[0];
             const newC = newGroup[0];
+            usedOld.add(oldC);
             usedNew.add(newC);
             newC.reviewId = oldC.reviewId;
             result.push(newC);
@@ -411,10 +450,27 @@ function matchItems(oldItems: TrackedItem[], candidates: TrackedItem[]): Tracked
             if (matchedOld.has(pair.old) || usedNew.has(pair.cand)) continue;
 
             matchedOld.add(pair.old);
+            usedOld.add(pair.old);
             usedNew.add(pair.cand);
             pair.cand.reviewId = pair.old.reviewId; // 继承 ID
             result.push(pair.cand);
         }
+    }
+
+    for (const cand of candidates) {
+        if (usedNew.has(cand)) {
+            continue;
+        }
+
+        const matchedLegacy = matchLegacyAnkiCandidate(oldItems, cand, usedOld);
+        if (!matchedLegacy) {
+            continue;
+        }
+
+        usedOld.add(matchedLegacy);
+        usedNew.add(cand);
+        cand.reviewId = matchedLegacy.reviewId;
+        result.push(cand);
     }
 
     // 3. 把没被匹配上的新候选卡片加进来，它们就是纯粹的新卡（reviewId 为 -1）
@@ -427,6 +483,59 @@ function matchItems(oldItems: TrackedItem[], candidates: TrackedItem[]): Tracked
     return result;
 }
 
+function matchLegacyAnkiCandidate(
+    oldItems: TrackedItem[],
+    candidate: TrackedItem,
+    usedOld: Set<TrackedItem>,
+): TrackedItem | undefined {
+    if (!candidate.clozeId || !isLineScopedAnkiClozeId(candidate.clozeId)) {
+        return undefined;
+    }
+
+    const candidateParts = new Set(candidate.fingerprint.split("||"));
+    const aliases = new Set(getAnkiClozeIdAliases(candidate.clozeId));
+
+    const legacyCandidates = oldItems.filter((oldItem) => {
+        if (usedOld.has(oldItem) || !oldItem.clozeId) {
+            return false;
+        }
+
+        const oldAliases = getAnkiClozeIdAliases(oldItem.clozeId);
+        const sharesAlias = oldAliases.some((alias) => aliases.has(alias));
+        if (!sharesAlias) {
+            return false;
+        }
+
+        if (oldItem.fingerprint === candidate.fingerprint) {
+            return true;
+        }
+
+        if (candidateParts.has(oldItem.fingerprint)) {
+            return true;
+        }
+
+        return oldItem.fingerprint
+            .split("||")
+            .some((part) => candidateParts.has(part) || candidate.fingerprint.includes(part));
+    });
+
+    if (legacyCandidates.length === 0) {
+        return undefined;
+    }
+
+    return legacyCandidates.sort((left, right) => {
+        const leftScore =
+            stringSimilarity(left.context, candidate.context) * 100 -
+            Math.abs(left.lineNo - candidate.lineNo) +
+            (left.clozeId === candidate.clozeId ? 10 : 0);
+        const rightScore =
+            stringSimilarity(right.context, candidate.context) * 100 -
+            Math.abs(right.lineNo - candidate.lineNo) +
+            (right.clozeId === candidate.clozeId ? 10 : 0);
+        return rightScore - leftScore;
+    })[0];
+}
+
 // ============================================================================
 // ============================================================================
 
@@ -437,103 +546,97 @@ function extractContext(fileText: string, startOffset: number, endOffset: number
 }
 
 // 核心函数：利用括号深度匹配逻辑，把字符串里的 {{c1::xxxx}} 全部找出来
+function isCodeBlockQuestionText(cleanText: string, settings: SRSettings): boolean {
+    return (
+        (cleanText.startsWith("```") || cleanText.startsWith("~~~")) &&
+        settings.parseClozesInCodeBlocks
+    );
+}
+
+function extractGroupedAnkiHolesWithOffsets(cleanText: string): Array<{
+    answerText: string;
+    localStart: number;
+    localEnd: number;
+    clozeId: string;
+    lineOffset: number;
+}> {
+    return extractLineScopedAnkiClozeGroups(cleanText).map((group) => ({
+        answerText: group.fingerprint,
+        localStart: group.start,
+        localEnd: group.end,
+        clozeId: group.clozeId,
+        lineOffset: group.lineIndex,
+    }));
+}
+
 function extractHolesWithOffsets(
     cleanText: string,
     settings: SRSettings,
-): Array<{ answerText: string; localStart: number; localEnd: number; clozeId: string }> {
+    includeAnki: boolean = true,
+): Array<{
+    answerText: string;
+    localStart: number;
+    localEnd: number;
+    clozeId: string;
+    lineOffset: number;
+}> {
     const holes: Array<{
         answerText: string;
         localStart: number;
         localEnd: number;
         clozeId: string;
+        lineOffset: number;
     }> = [];
 
     // [修正]: 判断当前提取的是否为代码块，用来给后面添加正确的 _lX 行号后缀
-    const isCodeBlock =
-        (cleanText.startsWith("```") || cleanText.startsWith("~~~")) &&
-        settings.parseClozesInCodeBlocks;
+    const isCodeBlock = isCodeBlockQuestionText(cleanText, settings);
 
-    const regex = /\{\{c(\d+)(?:::|：：)/gi;
-    let match;
-    // 使用 while 和 indexOf 进行深度括号匹配，防止被嵌套的 } 打断
-    while ((match = regex.exec(cleanText)) !== null) {
-        const id = match[1];
-        const startPos = match.index;
-        const contentStart = startPos + match[0].length;
-
-        let braceDepth = 0;
-        let endPos = -1;
-
-        for (let j = contentStart; j < cleanText.length; j++) {
-            if (braceDepth === 0 && cleanText.startsWith("}}", j)) {
-                endPos = j;
-                break;
-            }
-            if (cleanText[j] === "{") braceDepth++;
-            else if (cleanText[j] === "}") {
-                if (braceDepth > 0) braceDepth--;
-            }
-        }
-
-        if (endPos !== -1) {
-            const rawContent = cleanText.substring(contentStart, endPos);
-            // 处理可选的 ::hint
-            const hintSeparatorIndex = rawContent.indexOf("::");
-            let answerText = rawContent;
-            if (hintSeparatorIndex !== -1) {
-                answerText = rawContent.substring(0, hintSeparatorIndex);
-            } else {
-                const altHintSeparatorIndex = rawContent.indexOf("：：");
-                if (altHintSeparatorIndex !== -1) {
-                    answerText = rawContent.substring(0, altHintSeparatorIndex);
-                }
-            }
-
-            const answerOffset = cleanText.substring(startPos, endPos).indexOf(answerText);
-
-            // [修正]: 为代码块加上正确的行号标识 (例如 c1_l0)。
-            // 因为 `ItemTrans.ts` 和 `utils_recall.ts` 期望代码块里的特征键带有行号以防重名
-            const lineIndex = cleanText.substring(0, startPos).split("\n").length - 1;
-            const clozeId = isCodeBlock ? `c${id}_l${lineIndex}` : `c${id}`;
+    if (includeAnki) {
+        extractLineScopedAnkiClozeGroups(cleanText).forEach((group) => {
+            const answerText = group.answerParts[0] ?? group.fingerprint;
+            const answerOffset = cleanText.substring(group.start, group.end).indexOf(answerText);
 
             holes.push({
                 answerText,
-                localStart: startPos + answerOffset,
-                localEnd: startPos + answerOffset + answerText.length,
-                clozeId,
-            });
-
-            regex.lastIndex = endPos + 2;
-        }
-    }
-
-    // 处理普通的 ==高亮==
-    if (settings.convertHighlightsToClozes) {
-        const highlightMatches = [...cleanText.matchAll(/==(.*?)==/g)];
-        highlightMatches.forEach((match, index) => {
-            const answerText = match[1];
-            holes.push({
-                answerText,
-                localStart: match.index + 2,
-                localEnd: match.index + 2 + answerText.length,
-                clozeId: `hl${index}`,
+                localStart: group.start + Math.max(answerOffset, 0),
+                localEnd: group.start + Math.max(answerOffset, 0) + answerText.length,
+                clozeId: isCodeBlock ? group.clozeId : getLegacyAnkiClozeId(group.clozeId),
+                lineOffset: group.lineIndex,
             });
         });
     }
 
-    // 处理普通的 **加粗**
-    if (settings.convertBoldTextToClozes) {
-        const boldMatches = [...cleanText.matchAll(/\*\*(.*?)\*\*/g)];
-        boldMatches.forEach((match, index) => {
-            const answerText = match[1];
+    let highlightIndex = 0;
+    let boldIndex = 0;
+    extractStandardClozeMatches(cleanText).forEach((match) => {
+        if (match.type === "highlight") {
+            if (!settings.convertHighlightsToClozes) {
+                return;
+            }
+            const answerText = match.innerText;
             holes.push({
                 answerText,
-                localStart: match.index + 2,
-                localEnd: match.index + 2 + answerText.length,
-                clozeId: `bd${index}`,
+                localStart: match.start + match.delimiter.length,
+                localEnd: match.start + match.delimiter.length + answerText.length,
+                clozeId: `hl${highlightIndex++}`,
+                lineOffset: cleanText.substring(0, match.start).split("\n").length - 1,
             });
+            return;
+        }
+
+        if (!settings.convertBoldTextToClozes) {
+            return;
+        }
+
+        const answerText = match.innerText;
+        holes.push({
+            answerText,
+            localStart: match.start + match.delimiter.length,
+            localEnd: match.start + match.delimiter.length + answerText.length,
+            clozeId: `bd${boldIndex++}`,
+            lineOffset: cleanText.substring(0, match.start).split("\n").length - 1,
         });
-    }
+    });
 
     if (settings.convertCurlyBracketsToClozes) {
         const plainCurlyMatches = extractPlainCurlyClozeMatches(cleanText);
@@ -543,6 +646,7 @@ function extractHolesWithOffsets(
                 localStart: match.start + 2,
                 localEnd: match.start + 2 + match.innerText.length,
                 clozeId: `cb${index}`,
+                lineOffset: cleanText.substring(0, match.start).split("\n").length - 1,
             });
         });
     }

@@ -2,6 +2,8 @@
 import { cyrb53 } from "src/util/utils";
 import { SRSettings } from "src/settings";
 import { extractPlainCurlyClozeMatches } from "src/util/curlyCloze";
+import { extractStandardClozeMatches } from "src/util/codeAwareCloze";
+import { extractAnkiClozeInfos, groupLineScopedAnkiClozes } from "src/util/ankiClozeGrouping";
 
 export class DateUtils {
     /**
@@ -25,6 +27,109 @@ export class DateUtils {
 }
 
 const characters = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+interface FingerprintEntry {
+    key: string;
+    lineOffset: number;
+    content: string;
+    start: number;
+    end: number;
+}
+
+function stripSrComments(cardText: string): string {
+    return cardText.replace(/<!--SR:.+-->/gm, "").trimEnd();
+}
+
+function isCodeBlockCardText(text: string, settings: SRSettings): boolean {
+    return (text.startsWith("```") || text.startsWith("~~~")) && settings.parseClozesInCodeBlocks;
+}
+
+function buildAnkiFingerprintEntries(text: string, settings: SRSettings): FingerprintEntry[] {
+    const groups = groupLineScopedAnkiClozes(extractAnkiClozeInfos(text));
+    if (groups.length === 0) {
+        return [];
+    }
+
+    const orderedGroups = isCodeBlockCardText(text, settings)
+        ? [...groups].sort((left, right) => left.id - right.id || left.lineIndex - right.lineIndex)
+        : groups;
+
+    return orderedGroups.map((group) => ({
+        key: group.clozeId,
+        lineOffset: group.lineIndex,
+        content: group.fingerprint,
+        start: group.start,
+        end: group.end,
+    }));
+}
+
+function buildStandardFingerprintEntries(text: string, settings: SRSettings): FingerprintEntry[] {
+    if (!settings.convertHighlightsToClozes && !settings.convertBoldTextToClozes) {
+        return [];
+    }
+
+    let highlightIndex = 0;
+    let boldIndex = 0;
+
+    return extractStandardClozeMatches(text).flatMap((match) => {
+        if (match.type === "highlight") {
+            if (!settings.convertHighlightsToClozes) {
+                return [];
+            }
+            return [
+                {
+                    key: `hl${highlightIndex++}`,
+                    lineOffset: text.substring(0, match.start).split("\n").length - 1,
+                    content: match.innerText,
+                    start: match.start,
+                    end: match.end,
+                },
+            ];
+        }
+
+        if (!settings.convertBoldTextToClozes) {
+            return [];
+        }
+
+        return [
+            {
+                key: `bd${boldIndex++}`,
+                lineOffset: text.substring(0, match.start).split("\n").length - 1,
+                content: match.innerText,
+                start: match.start,
+                end: match.end,
+            },
+        ];
+    });
+}
+
+function buildPlainCurlyFingerprintEntries(text: string, settings: SRSettings): FingerprintEntry[] {
+    if (!settings.convertCurlyBracketsToClozes) {
+        return [];
+    }
+
+    return extractPlainCurlyClozeMatches(text).map((match, index) => ({
+        key: `cb${index}`,
+        lineOffset: text.substring(0, match.start).split("\n").length - 1,
+        content: match.innerText,
+        start: match.start,
+        end: match.end,
+    }));
+}
+
+function buildOrderedFingerprintEntries(text: string, settings: SRSettings): FingerprintEntry[] {
+    return [
+        ...buildAnkiFingerprintEntries(text, settings),
+        ...buildStandardFingerprintEntries(text, settings),
+        ...buildPlainCurlyFingerprintEntries(text, settings),
+    ];
+}
+
+function buildContext(text: string, start: number, end: number, radius: number): string {
+    const before = text.substring(Math.max(0, start - radius), start);
+    const after = text.substring(end, Math.min(text.length, end + radius));
+    return before + after;
+}
 export class BlockUtils {
     static generateBlockId(length?: number): string {
         if (length === undefined) length = 6;
@@ -36,63 +141,30 @@ export class BlockUtils {
         return hash;
     }
 
+    static getOrderedFingerprintTargets(
+        cardText: string,
+        settings: SRSettings,
+    ): Array<{ key: string; lineOffset: number }> {
+        const text = stripSrComments(cardText);
+        return buildOrderedFingerprintEntries(text, settings).map((entry) => ({
+            key: entry.key,
+            lineOffset: entry.lineOffset,
+        }));
+    }
+
     static getOrderedFingerprintKeys(cardText: string, settings: SRSettings): string[] {
-        const text = cardText.replace(/<!--SR:.+-->/gm, "").trimEnd();
-        const keys: string[] = [];
-        const isCodeBlock = text.startsWith("```") && settings.parseClozesInCodeBlocks;
-
-        const ankiMatches = [...text.matchAll(/\{\{c(\d+)(?:::|：：)(.*?)(?:::|：：)?\}\}/gi)];
-        if (ankiMatches.length > 0) {
-            const seenKeys = new Set<string>();
-            const clozes = ankiMatches
-                .map((m) => {
-                    const lineIndex = text.substring(0, m.index).split("\n").length - 1;
-                    return {
-                        id: parseInt(m[1]),
-                        lineIndex,
-                        key: isCodeBlock ? `c${m[1]}_l${lineIndex}` : `c${m[1]}`,
-                    };
-                })
-                .sort((a, b) => {
-                    if (a.id !== b.id) return a.id - b.id;
-                    return a.lineIndex - b.lineIndex;
-                });
-
-            clozes.forEach((cloze) => {
-                if (!seenKeys.has(cloze.key)) {
-                    seenKeys.add(cloze.key);
-                    keys.push(cloze.key);
-                }
-            });
-        }
-
-        if (settings.convertCurlyBracketsToClozes) {
-            const plainCurlyMatches = extractPlainCurlyClozeMatches(text);
-            plainCurlyMatches.forEach((_, i) => keys.push(`cb${i}`));
-        }
-
-        if (settings.convertHighlightsToClozes) {
-            const highlights = [...text.matchAll(/==(.*?)==/g)];
-            highlights.forEach((_, i) => keys.push(`hl${i}`));
-        }
-
-        if (settings.convertBoldTextToClozes) {
-            const bolds = [...text.matchAll(/\*\*(.*?)\*\*/g)];
-            bolds.forEach((_, i) => keys.push(`bd${i}`));
-        }
-
-        return keys;
+        return this.getOrderedFingerprintTargets(cardText, settings).map((target) => target.key);
     }
 
     static getTxtHash(cardText: string) {
-        const text = cardText.replace(/<!--SR:.+-->/gm, "").trimEnd();
+        const text = stripSrComments(cardText);
         return cyrb53(text).substring(0, 8);
     }
 
     static getFingerprint(cardText: string, settings: SRSettings): string {
         const parts = this.getFingerprintParts(cardText, settings);
         if (parts.length === 0) {
-            const text = cardText.replace(/<!--SR:.+-->/gm, "").trimEnd();
+            const text = stripSrComments(cardText);
             return cyrb53(text).substring(0, 8);
         }
         // Join parts with a stable separator so similar fragments do not collapse together.
@@ -100,41 +172,10 @@ export class BlockUtils {
     }
 
     static getFingerprintParts(cardText: string, settings: SRSettings): string[] {
-        const text = cardText.replace(/<!--SR:.+-->/gm, "").trimEnd();
-        const fingerprintParts: string[] = [];
-        const isCodeBlock = text.startsWith("```") && settings.parseClozesInCodeBlocks;
-
-        const ankiMatches = [...text.matchAll(/\{\{c(\d+)(?:::|：：)(.*?)(?:::|：：)?\}\}/gi)];
-        if (ankiMatches.length > 0) {
-            const clozes = ankiMatches.map((m) => {
-                const lineIndex = text.substring(0, m.index).split("\n").length - 1;
-                return {
-                    id: parseInt(m[1]),
-                    content: m[2],
-                    lineIndex: isCodeBlock ? lineIndex : 0,
-                };
-            });
-            clozes.sort((a, b) => {
-                if (a.id !== b.id) return a.id - b.id;
-                return a.lineIndex - b.lineIndex;
-            });
-            fingerprintParts.push(...clozes.map((c) => c.content));
-        }
-
-        if (settings.convertCurlyBracketsToClozes) {
-            const plainCurlyMatches = extractPlainCurlyClozeMatches(text);
-            fingerprintParts.push(...plainCurlyMatches.map((match) => match.innerText));
-        }
-
-        if (settings.convertHighlightsToClozes) {
-            const highlights = [...text.matchAll(/==(.*?)==/g)];
-            fingerprintParts.push(...highlights.map((m) => m[1]));
-        }
-
-        if (settings.convertBoldTextToClozes) {
-            const bolds = [...text.matchAll(/\*\*(.*?)\*\*/g)];
-            fingerprintParts.push(...bolds.map((m) => m[1]));
-        }
+        const text = stripSrComments(cardText);
+        const fingerprintParts = buildOrderedFingerprintEntries(text, settings).map(
+            (entry) => entry.content,
+        );
 
         if (fingerprintParts.length === 0) {
             const sep = settings.singleLineCardSeparator || "::";
@@ -147,52 +188,11 @@ export class BlockUtils {
     }
 
     static getFingerprintMap(cardText: string, settings: SRSettings): Record<string, string> {
-        const text = cardText.replace(/<!--SR:.+-->/gm, "").trimEnd();
+        const text = stripSrComments(cardText);
         const result: Record<string, string> = {};
-        const isCodeBlock = text.startsWith("```") && settings.parseClozesInCodeBlocks;
-
-        const ankiMatches = [...text.matchAll(/\{\{c(\d+)(?:::|：：)(.*?)(?:::|：：)?\}\}/gi)];
-        ankiMatches
-            .map((m) => {
-                const id = parseInt(m[1]);
-                const lineIndex = text.substring(0, m.index).split("\n").length - 1;
-                return {
-                    id,
-                    lineIndex,
-                    key: isCodeBlock ? `c${m[1]}_l${lineIndex}` : `c${m[1]}`,
-                    content: m[2],
-                };
-            })
-            .sort((a, b) => {
-                if (a.id !== b.id) return a.id - b.id;
-                return a.lineIndex - b.lineIndex;
-            })
-            .forEach((cloze) => {
-                if (!(cloze.key in result)) {
-                    result[cloze.key] = cloze.content;
-                }
-            });
-
-        if (settings.convertCurlyBracketsToClozes) {
-            const plainCurlyMatches = extractPlainCurlyClozeMatches(text);
-            plainCurlyMatches.forEach((match, i) => {
-                result[`cb${i}`] = match.innerText;
-            });
-        }
-
-        if (settings.convertHighlightsToClozes) {
-            const highlights = [...text.matchAll(/==(.*?)==/g)];
-            highlights.forEach((m, i) => {
-                result[`hl${i}`] = m[1];
-            });
-        }
-
-        if (settings.convertBoldTextToClozes) {
-            const bolds = [...text.matchAll(/\*\*(.*?)\*\*/g)];
-            bolds.forEach((m, i) => {
-                result[`bd${i}`] = m[1];
-            });
-        }
+        buildOrderedFingerprintEntries(text, settings).forEach((entry) => {
+            result[entry.key] = entry.content;
+        });
 
         return result;
     }
@@ -201,77 +201,16 @@ export class BlockUtils {
         cardText: string,
         settings: SRSettings,
     ): Record<string, { content: string; context: string }> {
-        const text = cardText.replace(/<!--SR:.+-->/gm, "").trimEnd();
+        const text = stripSrComments(cardText);
         const result: Record<string, { content: string; context: string }> = {};
-        const isCodeBlock = text.startsWith("```") && settings.parseClozesInCodeBlocks;
-        const CONTEXT_RADIUS = 250;
+        const contextRadius = 250;
 
-        const ankiMatches = [...text.matchAll(/\{\{c(\d+)(?:::|：：)(.*?)(?:::|：：)?\}\}/gi)];
-        ankiMatches.forEach((m) => {
-            const id = m[1];
-            const pos = m.index;
-            const lineIndex = text.substring(0, pos).split("\n").length - 1;
-            const key = isCodeBlock ? `c${id}_l${lineIndex}` : `c${id}`;
-            const before = text.substring(Math.max(0, pos - CONTEXT_RADIUS), pos);
-            const after = text.substring(
-                pos + m[0].length,
-                Math.min(text.length, pos + m[0].length + CONTEXT_RADIUS),
-            );
-            result[key] = {
-                content: m[2],
-                context: before + after,
+        buildOrderedFingerprintEntries(text, settings).forEach((entry) => {
+            result[entry.key] = {
+                content: entry.content,
+                context: buildContext(text, entry.start, entry.end, contextRadius),
             };
         });
-
-        if (settings.convertCurlyBracketsToClozes) {
-            const plainCurlyMatches = extractPlainCurlyClozeMatches(text);
-            plainCurlyMatches.forEach((match, i) => {
-                const before = text.substring(
-                    Math.max(0, match.start - CONTEXT_RADIUS),
-                    match.start,
-                );
-                const after = text.substring(
-                    match.end,
-                    Math.min(text.length, match.end + CONTEXT_RADIUS),
-                );
-                result[`cb${i}`] = {
-                    content: match.innerText,
-                    context: before + after,
-                };
-            });
-        }
-
-        if (settings.convertHighlightsToClozes) {
-            const highlights = [...text.matchAll(/==(.*?)==/g)];
-            highlights.forEach((m, i) => {
-                const pos = m.index;
-                const before = text.substring(Math.max(0, pos - CONTEXT_RADIUS), pos);
-                const after = text.substring(
-                    pos + m[0].length,
-                    Math.min(text.length, pos + m[0].length + CONTEXT_RADIUS),
-                );
-                result[`hl${i}`] = {
-                    content: m[1],
-                    context: before + after,
-                };
-            });
-        }
-
-        if (settings.convertBoldTextToClozes) {
-            const bolds = [...text.matchAll(/\*\*(.*?)\*\*/g)];
-            bolds.forEach((m, i) => {
-                const pos = m.index;
-                const before = text.substring(Math.max(0, pos - CONTEXT_RADIUS), pos);
-                const after = text.substring(
-                    pos + m[0].length,
-                    Math.min(text.length, pos + m[0].length + CONTEXT_RADIUS),
-                );
-                result[`bd${i}`] = {
-                    content: m[1],
-                    context: before + after,
-                };
-            });
-        }
 
         return result;
     }

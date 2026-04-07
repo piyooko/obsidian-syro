@@ -13,6 +13,12 @@ import {
     resolveClozeReviewContextDetails,
     type ResolvedClozeReviewContext,
 } from "src/util/cloze-review-context";
+import {
+    extractAnkiClozeInfos,
+    groupLineScopedAnkiClozes,
+    type AnkiClozeInfo,
+    type AnkiClozeLineGroup,
+} from "src/util/ankiClozeGrouping";
 import { extractPlainCurlyClozeMatches, stripPlainCurlyClozeSyntax } from "src/util/curlyCloze";
 import { findLineIndexOfSearchStringIgnoringWs } from "src/util/utils";
 
@@ -63,22 +69,6 @@ export interface CardExpansionContext {
     noteText?: string;
     firstLineNum?: number;
     lastLineNum?: number;
-}
-
-interface AnkiClozeInfo {
-    id: number;
-    content: string;
-    start: number;
-    end: number;
-    lineNum: number;
-    endLineNum: number;
-}
-
-interface AnkiClozeLineGroup {
-    id: number;
-    lineNum: number;
-    endLineNum: number;
-    infos: AnkiClozeInfo[];
 }
 
 export class CardFrontBackUtil {
@@ -964,7 +954,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         const result: CardFrontBack[] = [];
         const isCodeBlock = this.isCodeBlockQuestion(questionText);
 
-        const clozeInfos = this.extractClozeInfos(questionText);
+        const clozeInfos = extractAnkiClozeInfos(questionText);
 
         if (isCodeBlock) {
             const groups = new Map<number, Map<number, typeof clozeInfos>>();
@@ -1038,7 +1028,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                 });
             });
         } else {
-            const lineScopedGroups = this.groupLineScopedClozes(clozeInfos);
+            const lineScopedGroups = groupLineScopedAnkiClozes(clozeInfos);
             lineScopedGroups.forEach((group) => {
                 const contextInfo = this.resolveTextContext(
                     questionText,
@@ -1046,7 +1036,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                     settings,
                     context,
                 );
-                const contextInfos = this.extractClozeInfos(contextInfo.text);
+                const contextInfos = extractAnkiClozeInfos(contextInfo.text);
                 const activeGroup = {
                     id: group.id,
                     lineNum: contextInfo.activeLinesInText[0] ?? group.lineNum,
@@ -1243,9 +1233,11 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                 infos.push({
                     id,
                     content,
+                    answerText: content,
                     start: startPos,
                     end: endPos + 2,
                     lineNum,
+                    lineIndex: lineNum - 1,
                     endLineNum,
                 });
 
@@ -1264,7 +1256,13 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                 groups.set(key, {
                     id: info.id,
                     lineNum: info.lineNum,
+                    lineIndex: info.lineIndex,
                     endLineNum: info.endLineNum,
+                    start: info.start,
+                    end: info.end,
+                    clozeId: `c${info.id}_l${info.lineIndex}`,
+                    answerParts: [],
+                    fingerprint: "",
                     infos: [],
                 });
             }
@@ -1275,6 +1273,10 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
             }
 
             existing.endLineNum = Math.max(existing.endLineNum, info.endLineNum);
+            existing.start = Math.min(existing.start, info.start);
+            existing.end = Math.max(existing.end, info.end);
+            existing.answerParts.push(info.answerText);
+            existing.fingerprint = existing.answerParts.join("||");
             existing.infos.push(info);
         });
 

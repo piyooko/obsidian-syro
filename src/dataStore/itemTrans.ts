@@ -193,7 +193,7 @@ export class ItemTrans {
             deckname = Tags.isDefaultDackName(deckname) ? deckname : "#" + deckname;
 
             // 为这个问题下的每个 Card 寻找对应的 TrackedItem
-            const orderedFingerprintKeys = BlockUtils.getOrderedFingerprintKeys(
+            const orderedFingerprintTargets = BlockUtils.getOrderedFingerprintTargets(
                 question.questionText.actualQuestion,
                 settings,
             );
@@ -203,18 +203,9 @@ export class ItemTrans {
 
                 // 尝试用 parser 里的真实 cloze 名（如果存在，比如 "c1", "c12"）
                 // 既然旧版没有给 Card 对象直接挂载 clozeId，我们基于文本和类型进行推断：
-                let targetClozeId = orderedFingerprintKeys[i] ?? `c${i + 1}`;
-                if (
-                    question.questionType === CardType.AnkiCloze &&
-                    orderedFingerprintKeys.length === 0
-                ) {
-                    const lineScopedTargets = getLineScopedAnkiTargets(
-                        question.questionText.actualQuestion,
-                    );
-                    if (i < lineScopedTargets.length) {
-                        targetClozeId = lineScopedTargets[i].clozeId;
-                        targetLineNo = lineNo + lineScopedTargets[i].lineOffset;
-                    }
+                let targetClozeId = orderedFingerprintTargets[i]?.key ?? `c${i + 1}`;
+                if (orderedFingerprintTargets[i]) {
+                    targetLineNo = lineNo + orderedFingerprintTargets[i].lineOffset;
                 } else if (
                     question.questionType !== CardType.Cloze &&
                     question.questionType !== CardType.AnkiCloze
@@ -252,29 +243,6 @@ export class ItemTrans {
             }
         }
     }
-}
-
-function getLineScopedAnkiTargets(
-    questionText: string,
-): Array<{ clozeId: string; lineOffset: number }> {
-    const targets = new Map<string, { clozeId: string; lineOffset: number }>();
-    const regex = /{{(c\d+)(?:::|\uFF1A\uFF1A)/g;
-
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(questionText)) !== null) {
-        const prefix = questionText.substring(0, match.index);
-        const lineOffset = prefix.split("\n").length - 1;
-        const key = `${lineOffset}:${match[1]}`;
-
-        if (!targets.has(key)) {
-            targets.set(key, {
-                clozeId: match[1],
-                lineOffset,
-            });
-        }
-    }
-
-    return Array.from(targets.values());
 }
 
 function updateCardObjs(cards: Card[], scheduling: RegExpMatchArray[]) {
