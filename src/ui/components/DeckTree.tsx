@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Platform } from "obsidian";
 import { DeckState } from "../types/deckTypes";
@@ -52,32 +52,64 @@ const SettingsIcon: React.FC = () => (
     </svg>
 );
 
-const SyncIcon: React.FC<{ isSyncing?: boolean }> = ({ isSyncing = false }) => (
-    <motion.svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        style={{ display: "block" }}
-        initial={false}
-        animate={isSyncing ? { rotate: 360 } : { rotate: 0 }}
-        transition={
-            isSyncing
-                ? { duration: 0.9, ease: "linear", repeat: Infinity }
-                : { duration: 0.2, ease: "easeOut" }
+const SYNC_ICON_SPIN_DURATION_MS = 900;
+
+const SyncIcon: React.FC<{ isSyncing?: boolean }> = ({ isSyncing = false }) => {
+    const [shouldSpin, setShouldSpin] = useState(isSyncing);
+    const spinStartedAtRef = useRef<number | null>(isSyncing ? Date.now() : null);
+
+    useEffect(() => {
+        if (isSyncing) {
+            spinStartedAtRef.current = Date.now();
+            setShouldSpin(true);
+            return;
         }
-    >
-        <path d="M18.6 8.11A7 7 0 0 0 6.12 9" />
-        <path d="M5 5v4h4" />
-        <path d="M5.4 15.89A7 7 0 0 0 17.88 15" />
-        <path d="M19 19v-4h-4" />
-    </motion.svg>
-);
+
+        if (!shouldSpin || spinStartedAtRef.current === null) {
+            setShouldSpin(false);
+            spinStartedAtRef.current = null;
+            return;
+        }
+
+        const elapsed = Date.now() - spinStartedAtRef.current;
+        const cycleCount = Math.max(1, Math.ceil(elapsed / SYNC_ICON_SPIN_DURATION_MS));
+        const remaining = cycleCount * SYNC_ICON_SPIN_DURATION_MS - elapsed;
+
+        if (remaining <= 0) {
+            setShouldSpin(false);
+            spinStartedAtRef.current = null;
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            setShouldSpin(false);
+            spinStartedAtRef.current = null;
+        }, remaining);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [isSyncing, shouldSpin]);
+
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ display: "block" }}
+            className={`sr-sync-icon ${shouldSpin ? "is-spinning" : ""}`}
+        >
+            <path d="M18.6 8.11A7 7 0 0 0 6.12 9" />
+            <path d="M5 5v4h4" />
+            <path d="M5.4 15.89A7 7 0 0 0 17.88 15" />
+            <path d="M19 19v-4h-4" />
+        </svg>
+    );
+};
 
 // ==========================================
 // ==========================================

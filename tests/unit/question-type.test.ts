@@ -179,6 +179,39 @@ test("CardType.Cloze preserves standard cloze wrapped around inline code", () =>
     ]);
 });
 
+test("CardType.Cloze records the correct review target for standard clozes", () => {
+    const result = CardFrontBackUtil.expand(
+        CardType.Cloze,
+        "Intro\n==alpha==\nOutro",
+        DEFAULT_SETTINGS,
+        10,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].reviewTarget).toEqual({ startLine: 11, endLine: 11 });
+});
+
+test("CardType.Cloze records the correct review target for plain curly clozes", () => {
+    const settings: SRSettings = {
+        ...DEFAULT_SETTINGS,
+        clozePatterns: [
+            "==[123;;]answer[;;hint]==",
+            "**[123;;]answer[;;hint]**",
+            "{{[123;;]answer[;;hint]}}",
+        ],
+    };
+
+    const result = CardFrontBackUtil.expand(
+        CardType.Cloze,
+        "Intro\nThis is {{interesting}}\nOutro",
+        settings,
+        20,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].reviewTarget).toEqual({ startLine: 21, endLine: 21 });
+});
+
 test("CardType.AnkiCloze keeps fenced code blocks in Anki-only mode", () => {
     const settings: SRSettings = {
         ...DEFAULT_SETTINGS,
@@ -271,13 +304,34 @@ test("CardType.AnkiCloze only links same-number clozes on the current line even 
             `Intro line\n${clozeFormatter.asking()} and ${clozeFormatter.asking()}\ncarry gamma\nOutro line`,
             `Intro line\n${clozeFormatter.showingAnswer("alpha")} and ${clozeFormatter.showingAnswer("beta")}\ncarry gamma\nOutro line`,
             `Intro line\n${reviewFormatter.asking("alpha")} and ${reviewFormatter.asking("beta")}\ncarry gamma\nOutro line`,
+            { startLine: 1, endLine: 1 },
         ),
         new CardFrontBack(
             `Intro line\nalpha and beta\ncarry ${clozeFormatter.asking()}\nOutro line`,
             `Intro line\nalpha and beta\ncarry ${clozeFormatter.showingAnswer("gamma")}\nOutro line`,
             `Intro line\nalpha and beta\ncarry ${reviewFormatter.asking("gamma")}\nOutro line`,
+            { startLine: 2, endLine: 2 },
         ),
     ]);
+});
+
+test("CardType.AnkiCloze records multi-line review targets from full-note context", () => {
+    const settings: SRSettings = {
+        ...DEFAULT_SETTINGS,
+        convertAnkiClozesToClozes: true,
+        clozeContextMode: "full",
+    };
+    const questionText = "before {{c1::alpha\nbeta}} after";
+    const noteText = `Intro line\n${questionText}\nOutro line`;
+
+    const result = CardFrontBackUtil.expand(CardType.AnkiCloze, questionText, settings, 1, {
+        noteText,
+        firstLineNum: 1,
+        lastLineNum: 2,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].reviewTarget).toEqual({ startLine: 1, endLine: 2 });
 });
 
 test("CardType.AnkiCloze safe trim keeps the current line but does not preserve distant same-number lines", () => {

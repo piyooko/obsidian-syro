@@ -39,6 +39,7 @@ interface ExtractedContext {
 export interface ResolvedClozeReviewContext {
     text: string;
     activeLinesInText: number[];
+    activeLinesAbsolute: number[];
 }
 
 export function resolveClozeReviewContext(input: ClozeReviewContextInput): string {
@@ -316,6 +317,7 @@ function buildResolvedContext(
         activeLinesInText: context.activeAbsoluteLines.map(
             (line) => line - sourceStartLine + 1 + leadingInsertedLineCount,
         ),
+        activeLinesAbsolute: [...context.activeAbsoluteLines],
     };
 }
 

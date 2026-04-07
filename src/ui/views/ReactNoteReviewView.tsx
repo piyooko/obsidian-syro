@@ -28,6 +28,10 @@ import { parseTimelineMessage } from "src/ui/timeline/timelineMessage";
 // Stable view type id used when registering the sidebar view.
 export const REACT_REVIEW_QUEUE_VIEW_TYPE = "react-review-queue-list-view";
 
+interface OpenNoteTargetOptions {
+    newTab?: boolean;
+}
+
 function isPhoneMobileLayout(): boolean {
     if (typeof document === "undefined") {
         return false;
@@ -69,7 +73,6 @@ export class ReactNoteReviewView extends ItemView {
     private timelineScopeHandlers: Array<Parameters<Scope["unregister"]>[0]> = [];
     private autoRevealTargetPath: string | null = null;
     private autoRevealRequestKey = 0;
-    private wasForegroundDrawerView = false;
 
     private runAsync(task: Promise<void>, label: string): void {
         void task.catch((error: unknown) => {
@@ -344,8 +347,8 @@ export class ReactNoteReviewView extends ItemView {
 
         // Register workspace and vault listeners.
         this.registerEvent(
-            this.app.workspace.on("file-open", () => {
-                this.handleFileOpen();
+            this.app.workspace.on("file-open", (file: TFile | null) => {
+                this.handleFileOpen(file);
             }),
         );
         this.registerEvent(
@@ -475,13 +478,7 @@ export class ReactNoteReviewView extends ItemView {
         const timelineHeight = this.getTimelineHeightForRender(isPhoneMobileDrawerView);
         const data = reviewDecksToSidebarState(this.plugin);
         this.restorePersistedTimelineSelection(data);
-        const activeFilePath =
-            this.plugin.data.settings.autoExpandTimeline &&
-            isForegroundDrawerView &&
-            !this.wasForegroundDrawerView
-                ? this.syncSidebarToPrimaryMarkdownNote(data, { requestReveal: true })
-                : this.resolvePrimaryMarkdownPath();
-        this.wasForegroundDrawerView = isForegroundDrawerView;
+        const activeFilePath = this.resolvePrimaryMarkdownPath();
         if (this.selectedItem && this.commitStore) {
             this.commitLogs = this.commitStore.getCommits(this.selectedItem.path);
         }
@@ -493,8 +490,8 @@ export class ReactNoteReviewView extends ItemView {
                 activeFilePath: activeFilePath ?? undefined,
                 autoRevealTargetPath: this.autoRevealTargetPath ?? undefined,
                 autoRevealRequestKey: this.autoRevealRequestKey,
-                onNoteClick: (item) => {
-                    this.runAsync(this.handleNoteClick(item), "open note");
+                onNoteClick: (item, options) => {
+                    this.runAsync(this.handleNoteClick(item, options), "open note");
                 },
                 onNoteContextMenu: (item, event) => this.handleNoteContextMenu(item, event),
                 onTagDrop: (item, tag) => {
@@ -734,15 +731,71 @@ export class ReactNoteReviewView extends ItemView {
     /**
      * Open the selected note.
      */
-    private async handleNoteClick(item: NoteReviewItem): Promise<void> {
+    private isMarkdownLeaf(leaf: WorkspaceLeaf | null | undefined): leaf is WorkspaceLeaf {
+        return leaf?.view instanceof MarkdownView;
+    }
+
+    private findOpenMarkdownLeafForFile(noteFile: TFile): WorkspaceLeaf | null {
+        const markdownLeaves = this.app.workspace.getLeavesOfType("markdown");
+        for (const leaf of markdownLeaves) {
+            if (!this.isMarkdownLeaf(leaf)) {
+                continue;
+            }
+
+            const markdownView = leaf.view as MarkdownView;
+            if (markdownView.file?.path === noteFile.path) {
+                return leaf;
+            }
+        }
+
+        return null;
+    }
+
+    private resolveNoteNavigationLeaf(
+        noteFile: TFile,
+        options?: OpenNoteTargetOptions,
+    ): WorkspaceLeaf {
+        if (!options?.newTab) {
+            const existingLeaf = this.findOpenMarkdownLeafForFile(noteFile);
+            if (existingLeaf) {
+                return existingLeaf;
+            }
+
+            const activeMarkdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
+            const activeMarkdownLeaf = activeMarkdownView?.leaf;
+            if (this.isMarkdownLeaf(activeMarkdownLeaf) && activeMarkdownLeaf !== this.leaf) {
+                return activeMarkdownLeaf;
+            }
+
+            const mostRecentLeaf = this.app.workspace.getMostRecentLeaf?.();
+            if (this.isMarkdownLeaf(mostRecentLeaf) && mostRecentLeaf !== this.leaf) {
+                return mostRecentLeaf;
+            }
+
+            const markdownLeaves = this.app.workspace.getLeavesOfType("markdown");
+            for (const leaf of markdownLeaves) {
+                if (this.isMarkdownLeaf(leaf) && leaf !== this.leaf) {
+                    return leaf;
+                }
+            }
+        }
+
+        return this.app.workspace.getLeaf("tab");
+    }
+
+    private async handleNoteClick(
+        item: NoteReviewItem,
+        options?: OpenNoteTargetOptions,
+    ): Promise<void> {
         // Remember the last selected deck for sidebar context.
         const pathParts = item.path.split("/");
         if (pathParts.length > 1) {
             this.plugin.lastSelectedReviewDeck = pathParts[0];
         }
 
-        // Open the note in the workspace.
-        await this.app.workspace.getLeaf().openFile(item.noteFile);
+        const targetLeaf = this.resolveNoteNavigationLeaf(item.noteFile, options);
+        await targetLeaf.openFile(item.noteFile);
+        this.app.workspace.revealLeaf?.(targetLeaf);
 
         // Show the floating review bar when the note is tracked.
         const repItem = this.plugin.noteReviewStore.getItem(item.path);
@@ -1211,7 +1264,7 @@ export class ReactNoteReviewView extends ItemView {
     /**
      * Auto-select and expand the timeline when a reviewed file opens.
      */
-    private handleFileOpen(): void {
+    private handleFileOpen(file?: TFile | null): void {
         const data = reviewDecksToSidebarState(this.plugin);
         this.syncSidebarToPrimaryMarkdownNote(data, { requestReveal: true });
         this.redraw();

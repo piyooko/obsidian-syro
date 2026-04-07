@@ -23,6 +23,7 @@ import { NoteCardScheduleParser } from "./CardSchedule";
 import { OBSIDIAN_BLOCK_ID_ENDOFLINE_REGEX, OBSIDIAN_TAG_AT_STARTOFLINE_REGEX } from "./constants";
 import { Note } from "./Note";
 import { ParsedQuestionInfo } from "./parser";
+import type { QuestionContextBreadcrumb } from "./SRFile";
 import { SRSettings } from "./settings";
 import { TopicPath, TopicPathList, TopicPathWithWs } from "./TopicPath";
 import { MultiLineTextFinder } from "./util/MultiLineTextFinder";
@@ -209,7 +210,7 @@ export class Question {
     topicPathList: TopicPathList;
     questionText: QuestionText;
     hasEditLaterTag: boolean;
-    questionContext: string[];
+    questionContext: QuestionContextBreadcrumb[];
     cards: Card[];
     hasChanged: boolean;
 
@@ -319,7 +320,7 @@ export class Question {
         parsedQuestionInfo: ParsedQuestionInfo,
         noteTopicPathList: TopicPathList,
         textDirection: TextDirection,
-        context: string[],
+        context: QuestionContextBreadcrumb[],
     ): Question {
         const hasEditLaterTag = parsedQuestionInfo.text.includes(settings.editLaterTag);
         const questionText: QuestionText = QuestionText.create(

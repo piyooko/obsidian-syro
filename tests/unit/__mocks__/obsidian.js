@@ -114,10 +114,13 @@ class MarkdownView {
         this.leaf = null;
         this.editor = {
             getCursor: jest.fn(() => ({ line: 0, ch: 0 })),
+            getLine: jest.fn(() => ""),
             getValue: jest.fn(() => ""),
+            lineCount: jest.fn(() => 1),
             posToOffset: jest.fn(() => 0),
             getScrollInfo: jest.fn(() => ({ top: 0, left: 0, height: 0, clientHeight: 0 })),
             scrollIntoView: jest.fn(),
+            setSelection: jest.fn(),
             setCursor: jest.fn(),
         };
         this.containerEl = { offsetWidth: 0, offsetHeight: 0 };

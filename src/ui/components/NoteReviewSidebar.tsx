@@ -1223,7 +1223,7 @@ interface SectionGroupModernProps {
     pathTooltipHoverEnabled: boolean;
     filePathTooltipEnabled: boolean;
     filePathTooltipDelayMs: number;
-    onNoteClick: (item: NoteReviewItem) => void;
+    onNoteClick: (item: NoteReviewItem, options?: { newTab?: boolean }) => void;
     onNoteDoubleClick?: (item: NoteReviewItem) => void;
     onNoteContextMenu: (item: NoteReviewItem, event: MouseEvent) => void;
     onTagDrop?: (item: NoteReviewItem, tag: string) => void;
@@ -1295,6 +1295,7 @@ const SectionGroupModern: React.FC<SectionGroupModernProps> = ({
                         filePathTooltipEnabled={filePathTooltipEnabled}
                         filePathTooltipDelayMs={filePathTooltipDelayMs}
                         onClick={() => onNoteClick(item)}
+                        onMiddleClick={() => onNoteClick(item, { newTab: true })}
                         onDoubleClick={() => _onNoteDoubleClick && _onNoteDoubleClick(item)}
                         onContextMenu={(e) => onNoteContextMenu(item, e)}
                         onTagDrop={onTagDrop}
@@ -1320,6 +1321,7 @@ interface NoteItemModernProps {
     filePathTooltipEnabled: boolean;
     filePathTooltipDelayMs: number;
     onClick: () => void;
+    onMiddleClick?: () => void;
     onDoubleClick?: () => void;
     onContextMenu: (event: MouseEvent) => void;
     onTagDrop?: (item: NoteReviewItem, tag: string) => void;
@@ -1546,6 +1548,7 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
     filePathTooltipEnabled,
     filePathTooltipDelayMs,
     onClick,
+    onMiddleClick,
     onDoubleClick,
     onContextMenu,
     onTagDrop,
@@ -1573,6 +1576,19 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
             onContextMenu(e.nativeEvent);
         },
         [onContextMenu],
+    );
+
+    const handleMouseDown = useCallback(
+        (e: React.MouseEvent<HTMLDivElement>) => {
+            if (e.button !== 1) {
+                return;
+            }
+
+            e.preventDefault();
+            e.stopPropagation();
+            onMiddleClick?.();
+        },
+        [onMiddleClick],
     );
 
     // 拖拽相关
@@ -1690,6 +1706,7 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
                 className={`sr-new-item ${isActive ? "sr-new-item--active" : ""} ${isDragOver ? "sr-new-item--drag-over" : ""}`}
                 data-note-path={item.path}
                 onClick={onClick}
+                onMouseDown={handleMouseDown}
                 onDoubleClick={onDoubleClick}
                 onContextMenu={handleContextMenu}
                 onDragOver={handleDragOver}
@@ -1759,7 +1776,7 @@ interface NoteReviewSidebarProps {
     activeFilePath?: string;
     autoRevealTargetPath?: string;
     autoRevealRequestKey?: number;
-    onNoteClick: (item: NoteReviewItem) => void;
+    onNoteClick: (item: NoteReviewItem, options?: { newTab?: boolean }) => void;
     onNoteContextMenu: (item: NoteReviewItem, event: MouseEvent) => void;
     onTagDrop?: (item: NoteReviewItem, tag: string) => void;
     onPriorityChange?: (item: NoteReviewItem, newPriority: number) => void;
@@ -2535,8 +2552,8 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
         shouldUseTapToSelectOpen && selectedItem ? selectedItem.path : activeFilePath;
 
     const handleNoteSingleClick = useCallback(
-        (item: NoteReviewItem) => {
-            if (shouldUseTapToSelectOpen) {
+        (item: NoteReviewItem, options?: { newTab?: boolean }) => {
+            if (shouldUseTapToSelectOpen && !options?.newTab) {
                 if (selectedItem?.path === item.path) {
                     onNoteClick?.(item);
                     return;
@@ -2547,7 +2564,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
             }
 
             onNoteSelect?.(item);
-            onNoteClick?.(item);
+            onNoteClick?.(item, options);
         },
         [onNoteClick, onNoteSelect, selectedItem, shouldUseTapToSelectOpen],
     );

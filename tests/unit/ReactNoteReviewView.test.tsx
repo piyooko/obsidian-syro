@@ -350,7 +350,38 @@ describe("ReactNoteReviewView", () => {
         expect(plugin.data.settings.sidebarTimelineOpen).toBe(true);
     });
 
-    it("auto-follows the visible markdown leaf when the sidebar becomes foreground", () => {
+    it("does not auto-follow on active leaf changes alone", () => {
+        const item = { id: "note-1", path: "notes/visible.md", title: "Visible Note" };
+        const { view } = createMarkdownLeaf(item.path);
+        jest.mocked(reviewDecksToSidebarState).mockReturnValue({
+            sections: [{ id: "new", items: [item] }],
+            totalCount: 1,
+        } as any);
+        const { app, root, view: reviewView } = createView({
+            activeMarkdownPath: "notes/original.md",
+            autoExpandTimeline: true,
+        });
+        root.render.mockClear();
+        const activeLeafChangeHandler = app.workspace.on.mock.calls.find(
+            ([eventName]: [string]) => eventName === "active-leaf-change",
+        )?.[1];
+
+        if (typeof activeLeafChangeHandler !== "function") {
+            throw new Error("Expected active-leaf-change handler");
+        }
+
+        activeLeafChangeHandler({ view } as any);
+
+        expect(root.render).not.toHaveBeenCalled();
+
+        reviewView.redraw();
+        const props = getLastSidebarProps(root);
+        expect(props.activeFilePath).toBe("notes/original.md");
+        expect(props.selectedItem).toBeNull();
+        expect(props.autoRevealRequestKey).toBe(0);
+    });
+
+    it("does not auto-follow just because the sidebar drawer becomes foreground", () => {
         const item = { id: "note-1", path: "notes/visible.md", title: "Visible Note" };
         const visibleLeaf = createMarkdownLeaf(item.path).view;
         jest.mocked(reviewDecksToSidebarState).mockReturnValue({
@@ -375,9 +406,9 @@ describe("ReactNoteReviewView", () => {
 
         const props = getLastSidebarProps(root);
         expect(props.activeFilePath).toBe(item.path);
-        expect(props.selectedItem).toEqual(item);
+        expect(props.selectedItem).toBeNull();
         expect(props.isTimelineOpen).toBe(true);
-        expect(props.autoRevealRequestKey).toBe(1);
+        expect(props.autoRevealRequestKey).toBe(0);
     });
 
     it("does not auto-follow when the setting is disabled", () => {

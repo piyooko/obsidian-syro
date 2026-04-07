@@ -20,13 +20,20 @@ export class CardFrontBack {
     front: string;
     back: string;
     review?: string;
+    reviewTarget?: CardReviewTarget;
 
     // The caller is responsible for any required trimming of leading/trailing spaces
-    constructor(front: string, back: string, review?: string) {
+    constructor(front: string, back: string, review?: string, reviewTarget?: CardReviewTarget) {
         this.front = front;
         this.back = back;
         this.review = review;
+        this.reviewTarget = reviewTarget;
     }
+}
+
+export interface CardReviewTarget {
+    startLine: number;
+    endLine: number;
 }
 
 const SR_MARKER_OPEN = "\u00ab\u00ab";
@@ -64,11 +71,13 @@ interface AnkiClozeInfo {
     start: number;
     end: number;
     lineNum: number;
+    endLineNum: number;
 }
 
 interface AnkiClozeLineGroup {
     id: number;
     lineNum: number;
+    endLineNum: number;
     infos: AnkiClozeInfo[];
 }
 
@@ -81,20 +90,17 @@ export class CardFrontBackUtil {
         context?: CardExpansionContext,
     ): CardFrontBack[] {
         const handler: IQuestionTypeHandler = QuestionTypeFactory.create(questionType);
-        if (questionType === CardType.AnkiCloze) {
-            return (handler as QuestionTypeAnkiCloze).expand(
-                questionText,
-                settings,
-                lineOffset,
-                context,
-            );
-        }
-        return handler.expand(questionText, settings);
+        return handler.expand(questionText, settings, lineOffset, context);
     }
 }
 
 export interface IQuestionTypeHandler {
-    expand(questionText: string, settings: SRSettings): CardFrontBack[];
+    expand(
+        questionText: string,
+        settings: SRSettings,
+        lineOffset?: number,
+        context?: CardExpansionContext,
+    ): CardFrontBack[];
 }
 
 class QuestionTypeSingleLineBasic implements IQuestionTypeHandler {
@@ -171,6 +177,7 @@ interface RawStandardClozeRange {
     fullMatch: string;
     innerText: string;
     lineNum: number;
+    endLineNum: number;
     children: RawStandardClozeRange[];
 }
 
@@ -182,6 +189,7 @@ interface StandardClozeRange {
     fullMatch: string;
     innerText: string;
     lineNum: number;
+    endLineNum: number;
     children: StandardClozeRange[];
     answerText: string;
     visualMode: StandardClozeVisualMode;
@@ -200,6 +208,131 @@ interface PlainCurlyClozeRange {
     fullMatch: string;
     innerText: string;
     lineNum: number;
+    endLineNum: number;
+}
+
+type InternalClozeType = "classic" | "overlapping" | "simple";
+
+type InternalClozeDeletion = {
+    raw: string;
+    seq: number | string;
+};
+
+function buildReviewTarget(startLine: number, endLine: number = startLine): CardReviewTarget {
+    const safeStart = Math.max(0, Math.min(startLine, endLine));
+    const safeEnd = Math.max(safeStart, Math.max(startLine, endLine));
+    return {
+        startLine: safeStart,
+        endLine: safeEnd,
+    };
+}
+
+function buildReviewTargetFromLines(lines: number[]): CardReviewTarget | undefined {
+    if (lines.length === 0) {
+        return undefined;
+    }
+
+    return buildReviewTarget(Math.min(...lines), Math.max(...lines));
+}
+
+function buildLineSpan(startLine: number, endLine: number = startLine): number[] {
+    const safeStart = Math.max(1, Math.min(startLine, endLine));
+    const safeEnd = Math.max(safeStart, Math.max(startLine, endLine));
+    const result: number[] = [];
+    for (let line = safeStart; line <= safeEnd; line++) {
+        result.push(line);
+    }
+    return result;
+}
+
+function shouldAttachReviewTarget(
+    lineOffset: number,
+    context?: CardExpansionContext,
+): boolean {
+    return (
+        lineOffset !== 0 ||
+        context?.noteText !== undefined ||
+        context?.firstLineNum !== undefined ||
+        context?.lastLineNum !== undefined
+    );
+}
+
+function resolveGenericClozeReviewTarget(
+    rawText: string,
+    clozeDeletions: InternalClozeDeletion[],
+    clozeType: InternalClozeType,
+    cardIndex: number,
+    lineOffset: number,
+): CardReviewTarget | undefined {
+    if (clozeDeletions.length === 0) {
+        return undefined;
+    }
+
+    const occurrenceMap = new Map<string, number[]>();
+    for (const deletion of clozeDeletions) {
+        if (!occurrenceMap.has(deletion.raw)) {
+            const occurrences: number[] = [];
+            let searchIndex = 0;
+            while (searchIndex <= rawText.length) {
+                const foundIndex = rawText.indexOf(deletion.raw, searchIndex);
+                if (foundIndex === -1) {
+                    break;
+                }
+                occurrences.push(foundIndex);
+                searchIndex = foundIndex + Math.max(1, deletion.raw.length);
+            }
+            occurrenceMap.set(deletion.raw, occurrences);
+        }
+    }
+
+    const positionedDeletions = clozeDeletions
+        .map((deletion) => {
+            const occurrences = occurrenceMap.get(deletion.raw);
+            const start = occurrences?.shift();
+            if (start === undefined) {
+                return null;
+            }
+
+            return {
+                deletion,
+                start,
+                end: start + deletion.raw.length,
+            };
+        })
+        .filter(
+            (
+                item,
+            ): item is {
+                deletion: InternalClozeDeletion;
+                start: number;
+                end: number;
+            } => item !== null,
+        )
+        .sort((a, b) => a.start - b.start);
+
+    const activeDeletions = positionedDeletions.filter(({ deletion }) => {
+        if (clozeType === "overlapping") {
+            const action =
+                typeof deletion.seq === "string" && cardIndex < deletion.seq.length
+                    ? deletion.seq[cardIndex]
+                    : "s";
+            return action === "a";
+        }
+
+        return deletion.seq === cardIndex + 1;
+    });
+
+    if (activeDeletions.length === 0) {
+        return undefined;
+    }
+
+    const startLine = getLineNumberFromIndex(rawText, activeDeletions[0].start);
+    const endLine = getLineNumberFromIndex(
+        rawText,
+        Math.max(activeDeletions[activeDeletions.length - 1].start, activeDeletions[activeDeletions.length - 1].end - 1),
+    );
+
+    return buildReviewTarget(lineOffset + startLine - 1, lineOffset + endLine - 1);
 }
 
 function shouldKeepStandardClozeVisual(type: StandardClozeType, settings: SRSettings): boolean {
@@ -271,6 +404,7 @@ function extractStandardClozeRanges(text: string, settings: SRSettings): RawStan
         fullMatch: match.fullMatch,
         innerText: match.innerText,
         lineNum: getLineNumberFromIndex(text, match.start),
+        endLineNum: getLineNumberFromIndex(text, Math.max(match.start, match.end - 1)),
         children: [],
     }));
 }
@@ -364,6 +498,7 @@ function normalizeStandardClozeSubtree(range: RawStandardClozeRange): StandardCl
             fullMatch: outerRange.fullMatch,
             innerText: semanticRange.innerText,
             lineNum: outerRange.lineNum,
+            endLineNum: outerRange.endLineNum,
             children: normalizedChildren,
             answerText: stripStandardClozeSyntax(semanticRange.innerText),
             visualMode,
@@ -404,6 +539,7 @@ function createPlainCurlyClozeRanges(text: string): PlainCurlyClozeRange[] {
         fullMatch: match.fullMatch,
         innerText: match.innerText,
         lineNum: getLineNumberFromIndex(text, match.start),
+        endLineNum: getLineNumberFromIndex(text, Math.max(match.start, match.end - 1)),
     }));
 }
 
@@ -505,11 +641,13 @@ function createPlainCurlyClozeCardFrontBack(
     text: string,
     ranges: PlainCurlyClozeRange[],
     activeRange: PlainCurlyClozeRange,
+    reviewTarget?: CardReviewTarget,
 ): CardFrontBack {
     return new CardFrontBack(
         renderPlainCurlyClozeSegment(text, ranges, activeRange, "front"),
         renderPlainCurlyClozeSegment(text, ranges, activeRange, "back"),
         renderPlainCurlyClozeSegment(text, ranges, activeRange, "review"),
+        reviewTarget,
     );
 }
 
@@ -598,6 +736,7 @@ function createStandardClozeCardFrontBack(
     model: StandardClozeModel,
     activeRange: StandardClozeRange,
     settings: SRSettings,
+    reviewTarget?: CardReviewTarget,
 ): CardFrontBack {
     return new CardFrontBack(
         renderStandardClozeSegment(
@@ -627,6 +766,7 @@ function createStandardClozeCardFrontBack(
             0,
             text.length,
         ),
+        reviewTarget,
     );
 }
 
@@ -701,14 +841,30 @@ function findStandardClozeRangeInContext(
 }
 
 class QuestionTypeCloze implements IQuestionTypeHandler {
-    expand(questionText: string, settings: SRSettings): CardFrontBack[] {
+    expand(
+        questionText: string,
+        settings: SRSettings,
+        lineOffset: number = 0,
+        context?: CardExpansionContext,
+    ): CardFrontBack[] {
         const standardModel = createStandardClozeModel(questionText, settings);
         if (
             standardModel.ranges.length > 0 &&
             !hasNonStandardClozePatterns(questionText, settings)
         ) {
             return standardModel.ranges.map((range) =>
-                createStandardClozeCardFrontBack(questionText, standardModel, range, settings),
+                createStandardClozeCardFrontBack(
+                    questionText,
+                    standardModel,
+                    range,
+                    settings,
+                    shouldAttachReviewTarget(lineOffset, context)
+                        ? buildReviewTarget(
+                              lineOffset + range.lineNum - 1,
+                              lineOffset + range.endLineNum - 1,
+                          )
+                        : undefined,
+                ),
             );
         }
 
@@ -722,24 +878,48 @@ class QuestionTypeCloze implements IQuestionTypeHandler {
 
         let front: string, back: string, review: string;
         const result: CardFrontBack[] = [];
-        for (let i = 0; i < codeAwareNote.note.numCards; i++) {
-            front = restoreCodeContextMask(
-                codeAwareNote.note.getCardFront(i, clozeFormatter),
-                codeAwareNote.mask,
-            );
+            for (let i = 0; i < codeAwareNote.note.numCards; i++) {
+                front = restoreCodeContextMask(
+                    codeAwareNote.note.getCardFront(i, clozeFormatter),
+                    codeAwareNote.mask,
+                );
             back = restoreCodeContextMask(
                 codeAwareNote.note.getCardBack(i, clozeFormatter),
                 codeAwareNote.mask,
             );
-            review = restoreCodeContextMask(
-                codeAwareNote.note.getCardFront(i, reviewFormatter),
-                codeAwareNote.mask,
-            );
-            result.push(new CardFrontBack(front, back, review));
-        }
+                review = restoreCodeContextMask(
+                    codeAwareNote.note.getCardFront(i, reviewFormatter),
+                    codeAwareNote.mask,
+                );
+                result.push(
+                    new CardFrontBack(
+                        front,
+                        back,
+                        review,
+                        shouldAttachReviewTarget(lineOffset, context)
+                            ? resolveGenericClozeReviewTarget(
+                                  codeAwareNote.mask.maskedText,
+                                  (
+                                      codeAwareNote.note as unknown as {
+                                          _clozeDeletions?: InternalClozeDeletion[];
+                                          clozeType?: InternalClozeType;
+                                      }
+                                  )._clozeDeletions ?? [],
+                                  (
+                                      codeAwareNote.note as unknown as {
+                                          clozeType?: InternalClozeType;
+                                      }
+                                  ).clozeType ?? "classic",
+                                  i,
+                                  lineOffset,
+                              )
+                            : undefined,
+                    ),
+                );
+            }
 
-        return result;
-    }
+            return result;
+        }
 }
 
 export class QuestionTypeClozeFormatter implements IClozeFormatter {
@@ -808,6 +988,10 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
 
                 sortedLines.forEach((activeLine) => {
                     const activeClozes = lineMap.get(activeLine);
+                    const activeEndLine = Math.max(
+                        activeLine,
+                        ...activeClozes.map((active) => active.endLineNum),
+                    );
 
                     let processedFullText = "";
                     let lastEnd = 0;
@@ -838,7 +1022,19 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
 
                     const finalContent = meta + windowedText;
 
-                    result.push(new CardFrontBack(finalContent, finalContent));
+                    result.push(
+                        new CardFrontBack(
+                            finalContent,
+                            finalContent,
+                            undefined,
+                            shouldAttachReviewTarget(lineOffset, context)
+                                ? buildReviewTarget(
+                                      lineOffset + activeLine - 1,
+                                      lineOffset + activeEndLine - 1,
+                                  )
+                                : undefined,
+                        ),
+                    );
                 });
             });
         } else {
@@ -846,7 +1042,7 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
             lineScopedGroups.forEach((group) => {
                 const contextInfo = this.resolveTextContext(
                     questionText,
-                    [group.lineNum],
+                    buildLineSpan(group.lineNum, group.endLineNum),
                     settings,
                     context,
                 );
@@ -873,7 +1069,16 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                     activeGroup,
                     settings,
                 );
-                result.push(new CardFrontBack(front, back, review));
+                result.push(
+                    new CardFrontBack(
+                        front,
+                        back,
+                        review,
+                        shouldAttachReviewTarget(lineOffset, context)
+                            ? buildReviewTargetFromLines(contextInfo.activeLinesAbsolute)
+                            : undefined,
+                    ),
+                );
             });
         }
 
@@ -908,6 +1113,9 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                     contextModel,
                     activeRange,
                     settings,
+                    shouldAttachReviewTarget(lineOffset, context)
+                        ? buildReviewTargetFromLines(contextInfo.activeLinesAbsolute)
+                        : undefined,
                 );
                 card.front = this.applyOtherClozeVisibility(card.front, settings);
                 card.back = this.applyOtherClozeVisibility(card.back, settings);
@@ -944,6 +1152,9 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                     contextText,
                     contextRanges,
                     activeRange,
+                    shouldAttachReviewTarget(lineOffset, context)
+                        ? buildReviewTargetFromLines(contextInfo.activeLinesAbsolute)
+                        : undefined,
                 );
                 card.front = this.applyOtherClozeVisibility(card.front, settings);
                 card.back = this.applyOtherClozeVisibility(card.back, settings);
@@ -1020,20 +1231,22 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                 }
             }
 
-            if (endPos !== -1) {
-                let lineNum = 1;
-                for (let k = 0; k < startPos; k++) {
-                    if (text[k] === "\n") lineNum++;
-                }
+                if (endPos !== -1) {
+                    let lineNum = 1;
+                    for (let k = 0; k < startPos; k++) {
+                        if (text[k] === "\n") lineNum++;
+                    }
+                    const endLineNum = lineNum + (text.substring(startPos, endPos).match(/\n/g) || []).length;
 
-                const content = text.substring(contentStart, endPos);
-                infos.push({
-                    id,
-                    content,
-                    start: startPos,
-                    end: endPos + 2,
-                    lineNum,
-                });
+                    const content = text.substring(contentStart, endPos);
+                    infos.push({
+                        id,
+                        content,
+                        start: startPos,
+                        end: endPos + 2,
+                        lineNum,
+                        endLineNum,
+                    });
 
                 regex.lastIndex = endPos + 2;
             }
@@ -1050,11 +1263,18 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                 groups.set(key, {
                     id: info.id,
                     lineNum: info.lineNum,
+                    endLineNum: info.endLineNum,
                     infos: [],
                 });
             }
 
-            groups.get(key)?.infos.push(info);
+            const existing = groups.get(key);
+            if (!existing) {
+                return;
+            }
+
+            existing.endLineNum = Math.max(existing.endLineNum, info.endLineNum);
+            existing.infos.push(info);
         });
 
         return Array.from(groups.values());

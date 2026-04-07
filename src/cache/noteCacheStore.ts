@@ -3,11 +3,11 @@ import { CardScheduleInfo } from "src/CardSchedule";
 import { Note } from "src/Note";
 import { ParsedQuestionInfo } from "src/parser";
 import { Question, QuestionText } from "src/Question";
-import { ISRFile } from "src/SRFile";
+import { ISRFile, type QuestionContextBreadcrumb } from "src/SRFile";
 import { TopicPath, TopicPathList, TopicPathWithWs } from "src/TopicPath";
 import { TextDirection } from "src/util/TextDirection";
 
-export const NOTE_CACHE_VERSION = 3;
+export const NOTE_CACHE_VERSION = 4;
 
 export interface CachedNoteBindingStore {
     getItembyID(id: number): { fileID?: string | null } | null;
@@ -76,7 +76,7 @@ interface SerializedQuestion {
     topicPathList: SerializedTopicPathList | null;
     questionText: SerializedQuestionText;
     hasEditLaterTag: boolean;
-    questionContext: string[];
+    questionContext: QuestionContextBreadcrumb[];
     cards: SerializedCard[];
 }
 

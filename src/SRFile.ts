@@ -10,13 +10,19 @@
 import { TextDirection } from "./util/TextDirection";
 import { parseObsidianFrontmatterTag } from "./util/utils";
 
+export interface QuestionContextBreadcrumb {
+    label: string;
+    line: number;
+    level: number;
+}
+
 // NOTE: Line numbers are zero based
 export interface ISRFile {
     get path(): string;
     get basename(): string;
     getAllTagsFromCache(): string[];
     getAllTagsFromText(): TagCache[];
-    getQuestionContext(cardLine: number): string[];
+    getQuestionContext(cardLine: number): QuestionContextBreadcrumb[];
     getTextDirection(): TextDirection;
     read(): Promise<string>;
     write(content: string): Promise<void>;
@@ -88,7 +94,7 @@ export class SrTFile implements ISRFile {
         return result;
     }
 
-    getQuestionContext(cardLine: number): string[] {
+    getQuestionContext(cardLine: number): QuestionContextBreadcrumb[] {
         const fileCachedData = this.metadataCache.getFileCache(this.file) || {};
         const headings: HeadingCache[] = fileCachedData.headings || [];
         // console.debug(`getQuestionContext: headings: ${headings.map((item) => `(${item.position.start.line}: ${item.heading})`).join("|")}`);
@@ -105,10 +111,13 @@ export class SrTFile implements ISRFile {
             stack.push(heading);
         }
 
-        const result = [];
+        const result: QuestionContextBreadcrumb[] = [];
         for (const headingObj of stack) {
-            headingObj.heading = headingObj.heading.replace(/\[\^\d+\]/gm, "").trim();
-            result.push(headingObj.heading);
+            result.push({
+                label: headingObj.heading.replace(/\[\^\d+\]/gm, "").trim(),
+                line: headingObj.position.start.line,
+                level: headingObj.level,
+            });
         }
         return result;
     }

@@ -32,6 +32,8 @@ import { CardDebugModal } from "./CardDebugModal";
 import type { CardDebugData } from "./CardDebugModal";
 import { CardEditorView } from "./CardEditorView";
 import type SRPlugin from "src/main";
+import type { CardReviewTarget } from "src/question-type";
+import type { QuestionContextBreadcrumb } from "src/SRFile";
 import "../styles/linear-card.css";
 import { t } from "src/lang/helpers";
 import { DEFAULT_PROGRESS_BAR_STYLE, type ProgressBarStyle } from "src/settings";
@@ -55,7 +57,12 @@ export interface CardState {
     front: string;
     back: string;
     review?: string;
+    reviewTarget?: CardReviewTarget;
     responseButtonLabels?: string[];
+}
+
+export interface OpenNoteTargetOptions {
+    newTab?: boolean;
 }
 
 interface LinearCardProps {
@@ -64,7 +71,7 @@ interface LinearCardProps {
     deckPath?: string;
     stats?: { new: number; learning: number; due: number };
     type?: "basic" | "cloze";
-    breadcrumbs?: string[];
+    breadcrumbs?: QuestionContextBreadcrumb[];
     filename?: string;
     autoAdvanceSeconds?: number;
     showProgressBar?: boolean;
@@ -72,7 +79,11 @@ interface LinearCardProps {
     onAnswer?: (rating: number) => void;
     onShowAnswer?: () => void;
     onUndo?: () => void;
-    onOpenNote?: () => void;
+    onOpenNote?: (options?: OpenNoteTargetOptions) => void;
+    onOpenBreadcrumb?: (
+        breadcrumb: QuestionContextBreadcrumb,
+        options?: OpenNoteTargetOptions,
+    ) => void;
     onEditCard?: () => void;
     onPostpone?: () => void;
     onDelete?: () => void;
@@ -92,20 +103,38 @@ interface LinearCardProps {
 }
 
 interface InlineBreadcrumbsProps {
-    breadcrumbs: string[];
+    breadcrumbs: QuestionContextBreadcrumb[];
+    onOpenBreadcrumb?: (
+        breadcrumb: QuestionContextBreadcrumb,
+        options?: OpenNoteTargetOptions,
+    ) => void;
+    interactive?: boolean;
 }
 
 type ToastMsg = { icon: ReactNode; text: string; id: number };
 type ResizeDirection = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 type ClozeRenderFace = "single" | "front" | "back";
-type HeaderLayoutMode = "regular" | "compact" | "inline";
+type HeaderBreadcrumbPlacement = "header" | "inline";
+type HeaderBreadcrumbDisplay = "expanded" | "truncated";
+type HeaderStatsMode = "regular" | "compact";
+
+type HeaderLayoutState = {
+    breadcrumbPlacement: HeaderBreadcrumbPlacement;
+    breadcrumbDisplay: HeaderBreadcrumbDisplay;
+    statsMode: HeaderStatsMode;
+};
 
 interface HeaderBreadcrumbsProps {
-    breadcrumbs: string[];
+    breadcrumbs: QuestionContextBreadcrumb[];
     filename: string;
     showTrail: boolean;
-    onOpenFile?: () => void;
+    onOpenFile?: (options?: OpenNoteTargetOptions) => void;
+    onOpenBreadcrumb?: (
+        breadcrumb: QuestionContextBreadcrumb,
+        options?: OpenNoteTargetOptions,
+    ) => void;
     interactive?: boolean;
+    expanded?: boolean;
 }
 
 interface HeaderStatsPanelProps {
@@ -115,18 +144,105 @@ interface HeaderStatsPanelProps {
     animated?: boolean;
 }
 
+function BreadcrumbTrail({
+    breadcrumbs,
+    className,
+    interactive = true,
+    onOpenBreadcrumb,
+    showLeadingSeparator = false,
+    expanded = false,
+}: {
+    breadcrumbs: QuestionContextBreadcrumb[];
+    className: string;
+    interactive?: boolean;
+    onOpenBreadcrumb?: (
+        breadcrumb: QuestionContextBreadcrumb,
+        options?: OpenNoteTargetOptions,
+    ) => void;
+    showLeadingSeparator?: boolean;
+    expanded?: boolean;
+}) {
+    const canOpenBreadcrumbs = interactive && onOpenBreadcrumb;
+    const createBreadcrumbMouseDownHandler = (breadcrumb: QuestionContextBreadcrumb) => {
+        if (!canOpenBreadcrumbs) {
+            return undefined;
+        }
+
+        return (event: React.MouseEvent<HTMLElement>) => {
+            if (event.button !== 1) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            onOpenBreadcrumb(breadcrumb, { newTab: true });
+        };
+    };
+    const createBreadcrumbClickHandler = (
+        breadcrumb: QuestionContextBreadcrumb,
+        newTab: boolean,
+    ) => {
+        if (!canOpenBreadcrumbs) {
+            return undefined;
+        }
+
+        return (event: React.MouseEvent<HTMLElement>) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onOpenBreadcrumb(breadcrumb, newTab ? { newTab: true } : undefined);
+        };
+    };
+
+    return (
+        <div className={`${className}${expanded ? " sr-breadcrumbs-expanded" : ""}`}>
+            {showLeadingSeparator && (
+                <ChevronRight size={10} className="sr-breadcrumb-separator" />
+            )}
+            {breadcrumbs.map((crumb, index) => (
+                <Fragment key={`${crumb.label}-${crumb.line}-${crumb.level}-${index}`}>
+                    <span
+                        className="sr-breadcrumb-item"
+                        title={crumb.label}
+                        onClick={createBreadcrumbClickHandler(crumb, false)}
+                        onMouseDown={createBreadcrumbMouseDownHandler(crumb)}
+                    >
+                        {crumb.label}
+                    </span>
+                    {index < breadcrumbs.length - 1 && (
+                        <ChevronRight size={10} className="sr-breadcrumb-separator" />
+                    )}
+                </Fragment>
+            ))}
+        </div>
+    );
+}
+
 function HeaderBreadcrumbs({
     breadcrumbs,
     filename,
     showTrail,
     onOpenFile,
+    onOpenBreadcrumb,
     interactive = true,
+    expanded = false,
 }: HeaderBreadcrumbsProps) {
     const fileNameLabel = filename.replace(/\.md$/i, "");
     const fileProps =
         interactive && onOpenFile
             ? {
-                  onClick: onOpenFile,
+                  onClick: (event: React.MouseEvent<HTMLElement>) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onOpenFile();
+                  },
+                  onMouseDown: (event: React.MouseEvent<HTMLElement>) => {
+                      if (event.button !== 1) {
+                          return;
+                      }
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onOpenFile({ newTab: true });
+                  },
                   title: t("UI_OPEN_FILE_LOCATION"),
               }
             : {};
@@ -138,17 +254,14 @@ function HeaderBreadcrumbs({
                 <span>{fileNameLabel}</span>
             </div>
             {showTrail && breadcrumbs.length > 0 && (
-                <div className="sr-breadcrumbs-trail">
-                    <ChevronRight size={10} className="sr-breadcrumb-separator" />
-                    {breadcrumbs.map((crumb, index) => (
-                        <Fragment key={`${crumb}-${index}`}>
-                            <span className="sr-breadcrumb-item">{crumb}</span>
-                            {index < breadcrumbs.length - 1 && (
-                                <ChevronRight size={10} className="sr-breadcrumb-separator" />
-                            )}
-                        </Fragment>
-                    ))}
-                </div>
+                <BreadcrumbTrail
+                    breadcrumbs={breadcrumbs}
+                    className="sr-breadcrumbs-trail"
+                    interactive={interactive}
+                    onOpenBreadcrumb={onOpenBreadcrumb}
+                    showLeadingSeparator
+                    expanded={expanded}
+                />
             )}
         </div>
     );
@@ -217,6 +330,7 @@ export const LinearCard: FC<LinearCardProps> = ({
     onShowAnswer,
     onUndo,
     onOpenNote,
+    onOpenBreadcrumb,
     onEditCard,
     onPostpone,
     onDelete,
@@ -238,8 +352,10 @@ export const LinearCard: FC<LinearCardProps> = ({
     const wrapperRef = useRef<HTMLDivElement>(null);
     const cardRef = useRef<HTMLDivElement>(null);
     const headerRef = useRef<HTMLDivElement>(null);
-    const regularHeaderMeasureRef = useRef<HTMLDivElement>(null);
-    const compactHeaderMeasureRef = useRef<HTMLDivElement>(null);
+    const expandedRegularHeaderMeasureRef = useRef<HTMLDivElement>(null);
+    const truncatedRegularHeaderMeasureRef = useRef<HTMLDivElement>(null);
+    const inlineRegularHeaderMeasureRef = useRef<HTMLDivElement>(null);
+    const inlineCompactHeaderMeasureRef = useRef<HTMLDivElement>(null);
     const contentScrollRef = useRef<HTMLDivElement>(null);
     const sizeRef = useRef({ width, height });
     const isResizingRef = useRef(false);
@@ -258,8 +374,18 @@ export const LinearCard: FC<LinearCardProps> = ({
 
     const [stats, setStats] = useState(initialStats);
     const [currentType, setCurrentType] = useState<"new" | "learning" | "due">(cardType || "due");
-    const [headerLayoutMode, setHeaderLayoutMode] = useState<HeaderLayoutMode>(
-        isMobile ? "inline" : "regular",
+    const [headerLayout, setHeaderLayout] = useState<HeaderLayoutState>(() =>
+        isMobile
+            ? {
+                  breadcrumbPlacement: "inline",
+                  breadcrumbDisplay: "truncated",
+                  statsMode: "compact",
+              }
+            : {
+                  breadcrumbPlacement: "header",
+                  breadcrumbDisplay: "expanded",
+                  statsMode: "regular",
+              },
     );
     const [isFlipped, setIsFlipped] = useState(false);
     const cardContentResetKey = [card?.front || "", card?.back || "", card?.review || ""].join(
@@ -286,20 +412,43 @@ export const LinearCard: FC<LinearCardProps> = ({
         setEditText(rawContent);
     }, [rawContent]);
 
-    const breadcrumbKey = breadcrumbs.join("\u001f");
-    const shouldInlineBreadcrumbs = isMobile || headerLayoutMode === "inline";
-    const shouldUseCompactStats = isMobile || headerLayoutMode !== "regular";
+    const breadcrumbKey = breadcrumbs
+        .map((crumb) => `${crumb.label}\u001e${crumb.line}\u001e${crumb.level}`)
+        .join("\u001f");
+    const shouldInlineBreadcrumbs =
+        isMobile || headerLayout.breadcrumbPlacement === "inline";
+    const shouldUseCompactStats = isMobile || headerLayout.statsMode === "compact";
+    const shouldExpandHeaderBreadcrumbs =
+        !shouldInlineBreadcrumbs && headerLayout.breadcrumbDisplay === "expanded";
 
     const recalculateHeaderLayout = useCallback(() => {
         if (isMobile) {
-            setHeaderLayoutMode((prev) => (prev === "inline" ? prev : "inline"));
+            setHeaderLayout((prev) =>
+                prev.breadcrumbPlacement === "inline" &&
+                prev.breadcrumbDisplay === "truncated" &&
+                prev.statsMode === "compact"
+                    ? prev
+                    : {
+                          breadcrumbPlacement: "inline",
+                          breadcrumbDisplay: "truncated",
+                          statsMode: "compact",
+                      },
+            );
             return;
         }
 
         const headerEl = headerRef.current;
-        const regularMeasureEl = regularHeaderMeasureRef.current;
-        const compactMeasureEl = compactHeaderMeasureRef.current;
-        if (!headerEl || !regularMeasureEl || !compactMeasureEl) {
+        const expandedRegularMeasureEl = expandedRegularHeaderMeasureRef.current;
+        const truncatedRegularMeasureEl = truncatedRegularHeaderMeasureRef.current;
+        const inlineRegularMeasureEl = inlineRegularHeaderMeasureRef.current;
+        const inlineCompactMeasureEl = inlineCompactHeaderMeasureRef.current;
+        if (
+            !headerEl ||
+            !expandedRegularMeasureEl ||
+            !truncatedRegularMeasureEl ||
+            !inlineRegularMeasureEl ||
+            !inlineCompactMeasureEl
+        ) {
             return;
         }
 
@@ -308,17 +457,55 @@ export const LinearCard: FC<LinearCardProps> = ({
             return;
         }
 
-        const regularWidth = Math.ceil(regularMeasureEl.getBoundingClientRect().width);
-        const compactWidth = Math.ceil(compactMeasureEl.getBoundingClientRect().width);
+        const measurementOrder: Array<{
+            state: HeaderLayoutState;
+            width: number;
+        }> = [
+            {
+                state: {
+                    breadcrumbPlacement: "header",
+                    breadcrumbDisplay: "expanded",
+                    statsMode: "regular",
+                },
+                width: Math.ceil(expandedRegularMeasureEl.getBoundingClientRect().width),
+            },
+            {
+                state: {
+                    breadcrumbPlacement: "header",
+                    breadcrumbDisplay: "truncated",
+                    statsMode: "regular",
+                },
+                width: Math.ceil(truncatedRegularMeasureEl.getBoundingClientRect().width),
+            },
+            {
+                state: {
+                    breadcrumbPlacement: "inline",
+                    breadcrumbDisplay: "truncated",
+                    statsMode: "regular",
+                },
+                width: Math.ceil(inlineRegularMeasureEl.getBoundingClientRect().width),
+            },
+            {
+                state: {
+                    breadcrumbPlacement: "inline",
+                    breadcrumbDisplay: "truncated",
+                    statsMode: "compact",
+                },
+                width: Math.ceil(inlineCompactMeasureEl.getBoundingClientRect().width),
+            },
+        ];
 
-        const nextMode: HeaderLayoutMode =
-            regularWidth <= availableWidth
-                ? "regular"
-                : compactWidth <= availableWidth
-                  ? "compact"
-                  : "inline";
+        const nextLayout =
+            measurementOrder.find((entry) => entry.width <= availableWidth)?.state ??
+            measurementOrder[measurementOrder.length - 1].state;
 
-        setHeaderLayoutMode((prev) => (prev === nextMode ? prev : nextMode));
+        setHeaderLayout((prev) =>
+            prev.breadcrumbPlacement === nextLayout.breadcrumbPlacement &&
+            prev.breadcrumbDisplay === nextLayout.breadcrumbDisplay &&
+            prev.statsMode === nextLayout.statsMode
+                ? prev
+                : nextLayout,
+        );
     }, [isMobile]);
 
     useLayoutEffect(() => {
@@ -579,7 +766,7 @@ export const LinearCard: FC<LinearCardProps> = ({
     );
 
     const handleMenuAction = useCallback(
-        (action: string) => {
+        (action: string, options?: OpenNoteTargetOptions) => {
             setShowMenu(false);
             switch (action) {
                 case "UNDO":
@@ -588,7 +775,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                     break;
                 case "OPEN":
                     showToast(t("UI_OPEN_IN_OBSIDIAN"), <FileText size={14} />);
-                    onOpenNote?.();
+                    onOpenNote?.(options);
                     break;
                 case "INFO":
                     setShowInfo((prev) => !prev);
@@ -781,8 +968,47 @@ export const LinearCard: FC<LinearCardProps> = ({
                         {!isMobile && (
                             <div className="sr-header-measurements" aria-hidden="true">
                                 <div
-                                    ref={regularHeaderMeasureRef}
+                                    ref={expandedRegularHeaderMeasureRef}
                                     className="sr-card-header sr-card-header-measure"
+                                    data-sr-layout-measure="header-expanded-regular"
+                                >
+                                    <div className="sr-header-left">
+                                        {onExit && (
+                                            <button
+                                                type="button"
+                                                className="sr-header-btn"
+                                                tabIndex={-1}
+                                            >
+                                                <ArrowLeft size={16} />
+                                            </button>
+                                        )}
+                                        <HeaderBreadcrumbs
+                                            breadcrumbs={breadcrumbs}
+                                            filename={filename}
+                                            showTrail={breadcrumbs.length > 0}
+                                            expanded
+                                            interactive={false}
+                                        />
+                                    </div>
+                                    <div className="sr-header-right">
+                                        <HeaderStatsPanel
+                                            stats={stats}
+                                            currentType={currentType}
+                                            animated={false}
+                                        />
+                                        <button
+                                            type="button"
+                                            className="sr-header-btn"
+                                            tabIndex={-1}
+                                        >
+                                            <MoreHorizontal size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div
+                                    ref={truncatedRegularHeaderMeasureRef}
+                                    className="sr-card-header sr-card-header-measure"
+                                    data-sr-layout-measure="header-truncated-regular"
                                 >
                                     <div className="sr-header-left">
                                         {onExit && (
@@ -817,8 +1043,9 @@ export const LinearCard: FC<LinearCardProps> = ({
                                     </div>
                                 </div>
                                 <div
-                                    ref={compactHeaderMeasureRef}
+                                    ref={inlineRegularHeaderMeasureRef}
                                     className="sr-card-header sr-card-header-measure"
+                                    data-sr-layout-measure="inline-regular"
                                 >
                                     <div className="sr-header-left">
                                         {onExit && (
@@ -833,7 +1060,44 @@ export const LinearCard: FC<LinearCardProps> = ({
                                         <HeaderBreadcrumbs
                                             breadcrumbs={breadcrumbs}
                                             filename={filename}
-                                            showTrail={breadcrumbs.length > 0}
+                                            showTrail={false}
+                                            interactive={false}
+                                        />
+                                    </div>
+                                    <div className="sr-header-right">
+                                        <HeaderStatsPanel
+                                            stats={stats}
+                                            currentType={currentType}
+                                            animated={false}
+                                        />
+                                        <button
+                                            type="button"
+                                            className="sr-header-btn"
+                                            tabIndex={-1}
+                                        >
+                                            <MoreHorizontal size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div
+                                    ref={inlineCompactHeaderMeasureRef}
+                                    className="sr-card-header sr-card-header-measure"
+                                    data-sr-layout-measure="inline-compact"
+                                >
+                                    <div className="sr-header-left">
+                                        {onExit && (
+                                            <button
+                                                type="button"
+                                                className="sr-header-btn"
+                                                tabIndex={-1}
+                                            >
+                                                <ArrowLeft size={16} />
+                                            </button>
+                                        )}
+                                        <HeaderBreadcrumbs
+                                            breadcrumbs={breadcrumbs}
+                                            filename={filename}
+                                            showTrail={false}
                                             interactive={false}
                                         />
                                     </div>
@@ -857,7 +1121,21 @@ export const LinearCard: FC<LinearCardProps> = ({
                         )}
 
                         {/* Header */}
-                        <div className="sr-card-header" ref={headerRef}>
+                        <div
+                            className="sr-card-header"
+                            ref={headerRef}
+                            data-sr-breadcrumb-placement={
+                                shouldInlineBreadcrumbs ? "inline" : "header"
+                            }
+                            data-sr-breadcrumb-display={
+                                shouldInlineBreadcrumbs
+                                    ? "truncated"
+                                    : shouldExpandHeaderBreadcrumbs
+                                      ? "expanded"
+                                      : "truncated"
+                            }
+                            data-sr-stats-mode={shouldUseCompactStats ? "compact" : "regular"}
+                        >
                             <div className="sr-header-left">
                                 {onExit && (
                                     <button
@@ -874,7 +1152,9 @@ export const LinearCard: FC<LinearCardProps> = ({
                                         breadcrumbs={breadcrumbs}
                                         filename={filename}
                                         showTrail={!shouldInlineBreadcrumbs}
-                                        onOpenFile={() => handleMenuAction("OPEN")}
+                                        onOpenFile={(options) => handleMenuAction("OPEN", options)}
+                                        onOpenBreadcrumb={onOpenBreadcrumb}
+                                        expanded={shouldExpandHeaderBreadcrumbs}
                                     />
                                 )}
                             </div>
@@ -989,7 +1269,10 @@ export const LinearCard: FC<LinearCardProps> = ({
                             ) : (
                                 <div className="sr-card-content-scroll" ref={contentScrollRef}>
                                     {shouldInlineBreadcrumbs && (
-                                        <InlineBreadcrumbs breadcrumbs={breadcrumbs} />
+                                        <InlineBreadcrumbs
+                                            breadcrumbs={breadcrumbs}
+                                            onOpenBreadcrumb={onOpenBreadcrumb}
+                                        />
                                     )}
                                     {type === "cloze" ? (
                                         <ClozeContent
@@ -2021,10 +2304,61 @@ const BasicContent = ({
     </div>
 );
 
-const InlineBreadcrumbs: FC<InlineBreadcrumbsProps> = ({ breadcrumbs }) => {
+const InlineBreadcrumbs: FC<InlineBreadcrumbsProps> = ({
+    breadcrumbs,
+    onOpenBreadcrumb,
+    interactive = true,
+}) => {
     if (breadcrumbs.length === 0) {
         return null;
     }
 
-    return <div className="sr-inline-breadcrumbs">{breadcrumbs.join(" > ")}</div>;
+    const canOpenBreadcrumbs = interactive && onOpenBreadcrumb;
+    const createInlineBreadcrumbMouseDownHandler = (breadcrumb: QuestionContextBreadcrumb) => {
+        if (!canOpenBreadcrumbs) {
+            return undefined;
+        }
+
+        return (event: React.MouseEvent<HTMLElement>) => {
+            if (event.button !== 1) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            onOpenBreadcrumb(breadcrumb, { newTab: true });
+        };
+    };
+    const createInlineBreadcrumbClickHandler = (
+        breadcrumb: QuestionContextBreadcrumb,
+        newTab: boolean,
+    ) => {
+        if (!canOpenBreadcrumbs) {
+            return undefined;
+        }
+
+        return (event: React.MouseEvent<HTMLElement>) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onOpenBreadcrumb(breadcrumb, newTab ? { newTab: true } : undefined);
+        };
+    };
+
+    return (
+        <div className="sr-inline-breadcrumbs">
+            {breadcrumbs.map((crumb, index) => (
+                <Fragment key={`${crumb.label}-${crumb.line}-${crumb.level}-${index}`}>
+                    {index > 0 && " > "}
+                    <span
+                        className="sr-breadcrumb-item"
+                        title={crumb.label}
+                        onClick={createInlineBreadcrumbClickHandler(crumb, false)}
+                        onMouseDown={createInlineBreadcrumbMouseDownHandler(crumb)}
+                    >
+                        {crumb.label}
+                    </span>
+                </Fragment>
+            ))}
+        </div>
+    );
 };

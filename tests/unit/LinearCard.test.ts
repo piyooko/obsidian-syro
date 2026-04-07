@@ -448,6 +448,62 @@ function installMockResizeObserver() {
     };
 }
 
+function installHeaderLayoutGeometry(
+    container: HTMLElement,
+    availableWidth: number,
+    widths: {
+        expandedRegular: number;
+        truncatedRegular: number;
+        inlineRegular: number;
+        inlineCompact: number;
+    },
+) {
+    const liveHeader = container.querySelector<HTMLElement>(".sr-card-header:not(.sr-card-header-measure)");
+    if (!liveHeader) {
+        throw new Error("Missing live header");
+    }
+
+    liveHeader.getBoundingClientRect = jest.fn(() => ({
+        top: 0,
+        left: 0,
+        right: availableWidth,
+        bottom: 40,
+        width: availableWidth,
+        height: 40,
+        x: 0,
+        y: 0,
+        toJSON: () => undefined,
+    }));
+
+    const widthByMeasure = new Map<string, number>([
+        ["header-expanded-regular", widths.expandedRegular],
+        ["header-truncated-regular", widths.truncatedRegular],
+        ["inline-regular", widths.inlineRegular],
+        ["inline-compact", widths.inlineCompact],
+    ]);
+
+    const measures = Array.from(
+        container.querySelectorAll<HTMLElement>(".sr-card-header.sr-card-header-measure"),
+    );
+    measures.forEach((element) => {
+        const key = element.dataset.srLayoutMeasure ?? "";
+        const width = widthByMeasure.get(key) ?? availableWidth;
+        element.getBoundingClientRect = jest.fn(() => ({
+            top: 0,
+            left: 0,
+            right: width,
+            bottom: 40,
+            width,
+            height: 40,
+            x: 0,
+            y: 0,
+            toJSON: () => undefined,
+        }));
+    });
+
+    return liveHeader;
+}
+
 function createReviewerSettings(source: ReviewerClozeSource): {
     questionType: CardType;
     settings: SRSettings;
@@ -1068,6 +1124,230 @@ describe("LinearCard math cloze rendering", () => {
             expect(contentRoot?.textContent).not.toContain("SR_C:");
             expect(contentRoot?.textContent).not.toContain("SR_SENTINEL_");
             expect(contentRoot?.textContent).not.toContain("**");
+        } finally {
+            act(() => root.unmount());
+        }
+    });
+
+    test("desktop header layout truncates breadcrumbs before moving them inline and only compacts stats last", async () => {
+        const resizeObserver = installMockResizeObserver();
+        const container = document.createElement("div");
+        document.body.appendChild(container);
+        const root = createRoot(container);
+        const breadcrumbs = [
+            { label: "Root heading", line: 0, level: 1 },
+            { label: "Very long child heading", line: 5, level: 2 },
+        ];
+
+        try {
+            act(() => {
+                root.render(
+                    React.createElement(LinearCard, {
+                        autoAdvanceSeconds: 0,
+                        card: { front: "Q", back: "A" },
+                        breadcrumbs,
+                        filename: "note.md",
+                        renderMarkdown: async (content: string, el: HTMLElement) => {
+                            el.textContent = content;
+                        },
+                        type: "basic",
+                    }),
+                );
+            });
+
+            await flushEffects();
+
+            let liveHeader = installHeaderLayoutGeometry(container, 420, {
+                expandedRegular: 560,
+                truncatedRegular: 380,
+                inlineRegular: 320,
+                inlineCompact: 260,
+            });
+
+            act(() => {
+                resizeObserver.MockResizeObserver.instances.forEach((observer) => observer.trigger());
+            });
+            await flushAnimationFrame();
+
+            expect(liveHeader.dataset.srBreadcrumbPlacement).toBe("header");
+            expect(liveHeader.dataset.srBreadcrumbDisplay).toBe("truncated");
+            expect(liveHeader.dataset.srStatsMode).toBe("regular");
+            expect(
+                liveHeader.querySelectorAll(".sr-breadcrumbs-trail .sr-breadcrumb-item"),
+            ).toHaveLength(2);
+            expect(container.querySelector(".sr-inline-breadcrumbs")).toBeNull();
+
+            liveHeader = installHeaderLayoutGeometry(container, 300, {
+                expandedRegular: 560,
+                truncatedRegular: 380,
+                inlineRegular: 280,
+                inlineCompact: 220,
+            });
+
+            act(() => {
+                resizeObserver.MockResizeObserver.instances.forEach((observer) => observer.trigger());
+            });
+            await flushAnimationFrame();
+
+            expect(liveHeader.dataset.srBreadcrumbPlacement).toBe("inline");
+            expect(liveHeader.dataset.srStatsMode).toBe("regular");
+            expect(container.querySelectorAll(".sr-inline-breadcrumbs .sr-breadcrumb-item")).toHaveLength(2);
+
+            liveHeader = installHeaderLayoutGeometry(container, 200, {
+                expandedRegular: 560,
+                truncatedRegular: 380,
+                inlineRegular: 280,
+                inlineCompact: 180,
+            });
+
+            act(() => {
+                resizeObserver.MockResizeObserver.instances.forEach((observer) => observer.trigger());
+            });
+            await flushAnimationFrame();
+
+            expect(liveHeader.dataset.srBreadcrumbPlacement).toBe("inline");
+            expect(liveHeader.dataset.srStatsMode).toBe("compact");
+        } finally {
+            act(() => root.unmount());
+            resizeObserver.restore();
+        }
+    });
+
+    test("mobile header layout always uses inline breadcrumbs with compact stats", async () => {
+        const container = document.createElement("div");
+        document.body.appendChild(container);
+        const root = createRoot(container);
+
+        try {
+            act(() => {
+                root.render(
+                    React.createElement(LinearCard, {
+                        autoAdvanceSeconds: 0,
+                        card: { front: "Q", back: "A" },
+                        breadcrumbs: [{ label: "Root", line: 0, level: 1 }],
+                        filename: "note.md",
+                        isMobile: true,
+                        renderMarkdown: async (content: string, el: HTMLElement) => {
+                            el.textContent = content;
+                        },
+                        type: "basic",
+                    }),
+                );
+            });
+
+            await flushEffects();
+
+            const liveHeader = container.querySelector<HTMLElement>(
+                ".sr-card-header:not(.sr-card-header-measure)",
+            );
+            expect(liveHeader?.dataset.srBreadcrumbPlacement).toBe("inline");
+            expect(liveHeader?.dataset.srStatsMode).toBe("compact");
+            expect(container.querySelectorAll(".sr-inline-breadcrumbs .sr-breadcrumb-item")).toHaveLength(1);
+        } finally {
+            act(() => root.unmount());
+        }
+    });
+
+    test("keeps file and breadcrumb clicks on separate handlers in the header", async () => {
+        const container = document.createElement("div");
+        document.body.appendChild(container);
+        const root = createRoot(container);
+        const onOpenNote = jest.fn();
+        const onOpenBreadcrumb = jest.fn();
+        const breadcrumbs = [
+            { label: "日志 10.24--11.21", line: 3, level: 1 },
+            { label: "11.3-11.9", line: 8, level: 2 },
+        ];
+
+        try {
+            act(() => {
+                root.render(
+                    React.createElement(LinearCard, {
+                        autoAdvanceSeconds: 0,
+                        card: { front: "Q", back: "A" },
+                        breadcrumbs,
+                        filename: "8号.md",
+                        onOpenNote,
+                        onOpenBreadcrumb,
+                        renderMarkdown: async (content: string, el: HTMLElement) => {
+                            el.textContent = content;
+                        },
+                        type: "basic",
+                    }),
+                );
+            });
+
+            await flushEffects();
+
+            const liveHeader = container.querySelector<HTMLElement>(
+                ".sr-card-header:not(.sr-card-header-measure)",
+            );
+            const fileButton = liveHeader?.querySelector<HTMLElement>(".sr-filename-badge");
+            const crumbButtons = Array.from(
+                liveHeader?.querySelectorAll<HTMLElement>(
+                    ".sr-breadcrumbs-trail .sr-breadcrumb-item",
+                ) ?? [],
+            );
+
+            expect(fileButton).not.toBeNull();
+            expect(crumbButtons).toHaveLength(2);
+
+            act(() => {
+                fileButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+            act(() => {
+                crumbButtons[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            expect(onOpenNote).toHaveBeenCalledTimes(1);
+            expect(onOpenBreadcrumb).toHaveBeenCalledTimes(1);
+            expect(onOpenBreadcrumb).toHaveBeenCalledWith(breadcrumbs[1], undefined);
+        } finally {
+            act(() => root.unmount());
+        }
+    });
+
+    test("renders clickable inline breadcrumbs in mobile layout", async () => {
+        const container = document.createElement("div");
+        document.body.appendChild(container);
+        const root = createRoot(container);
+        const onOpenBreadcrumb = jest.fn();
+        const breadcrumbs = [
+            { label: "Root", line: 0, level: 1 },
+            { label: "Child", line: 4, level: 2 },
+        ];
+
+        try {
+            act(() => {
+                root.render(
+                    React.createElement(LinearCard, {
+                        autoAdvanceSeconds: 0,
+                        card: { front: "Q", back: "A" },
+                        breadcrumbs,
+                        filename: "note.md",
+                        isMobile: true,
+                        onOpenBreadcrumb,
+                        renderMarkdown: async (content: string, el: HTMLElement) => {
+                            el.textContent = content;
+                        },
+                        type: "basic",
+                    }),
+                );
+            });
+
+            await flushEffects();
+
+            const inlineButtons = container.querySelectorAll<HTMLElement>(
+                ".sr-inline-breadcrumbs .sr-breadcrumb-item",
+            );
+            expect(inlineButtons).toHaveLength(2);
+
+            act(() => {
+                inlineButtons[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            expect(onOpenBreadcrumb).toHaveBeenCalledTimes(1);
+            expect(onOpenBreadcrumb).toHaveBeenCalledWith(breadcrumbs[0], undefined);
         } finally {
             act(() => root.unmount());
         }

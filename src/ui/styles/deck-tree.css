@@ -252,6 +252,10 @@
     transform-origin: center;
 }
 
+.sr-sync-icon.is-spinning {
+    animation: sr-sync-icon-spin 0.9s linear infinite;
+}
+
 .sr-deck-sync-btn:hover {
     background-color: var(--background-modifier-hover) !important;
     color: var(--text-normal) !important;
@@ -264,6 +268,16 @@
 .sr-deck-sync-btn.is-syncing {
     color: var(--text-accent);
     background-color: var(--background-modifier-hover) !important;
+}
+
+@keyframes sr-sync-icon-spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(-360deg);
+    }
 }
 
 .sr-deck-sync-btn--compact-header {

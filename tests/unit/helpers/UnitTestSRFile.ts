@@ -1,5 +1,5 @@
 import { TagCache } from "obsidian";
-import { ISRFile } from "src/SRFile";
+import { ISRFile, type QuestionContextBreadcrumb } from "src/SRFile";
 import { unitTest_GetAllTagsFromTextEx } from "./UnitTestHelper";
 import { TextDirection } from "src/util/TextDirection";
 
@@ -29,7 +29,7 @@ export class UnitTestSRFile implements ISRFile {
     }
 
     // eslint-disable-next-line  @typescript-eslint/no-unused-vars
-    getQuestionContext(cardLine: number): string[] {
+    getQuestionContext(cardLine: number): QuestionContextBreadcrumb[] {
         return [];
     }
 

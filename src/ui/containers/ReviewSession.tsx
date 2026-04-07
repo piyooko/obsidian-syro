@@ -8,6 +8,7 @@ import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useR
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
     Component,
+    MarkdownView,
     MarkdownRenderer,
     Notice,
     Platform,
@@ -30,7 +31,8 @@ import { FlashcardReviewMode, IFlashcardReviewSequencer } from "src/FlashcardRev
 import { Deck } from "src/Deck";
 import { ReviewResponse, textInterval } from "src/scheduling";
 import { CardType } from "src/Question";
-import { CardFrontBackUtil } from "src/question-type";
+import { CardFrontBackUtil, type CardReviewTarget } from "src/question-type";
+import type { QuestionContextBreadcrumb } from "src/SRFile";
 
 // ==========================================
 // Types
@@ -132,6 +134,269 @@ function resolveNoteFile(noteFile: unknown): TFile | null {
 
 function hasEditor(view: unknown): view is { editor: Editor } {
     return typeof view === "object" && view !== null && "editor" in view;
+}
+
+function isMarkdownLeaf(leaf: WorkspaceLeaf | null | undefined): leaf is WorkspaceLeaf & {
+    view: MarkdownView;
+} {
+    return Boolean(leaf?.view instanceof MarkdownView);
+}
+
+type ScrollInfo = {
+    top: number;
+    left: number;
+    height: number;
+    clientHeight: number;
+};
+
+type ScrollableEditor = Editor & {
+    getScrollInfo?: () => ScrollInfo;
+    scrollTo?: (x: number, y: number) => void;
+};
+
+type CodeMirrorScrollDOM = {
+    scrollTop: number;
+    clientHeight: number;
+    scrollHeight: number;
+};
+
+type CodeMirrorRect = {
+    top: number;
+    bottom: number;
+};
+
+type InternalCodeMirrorEditor = Editor & {
+    cm?: {
+        scrollDOM: CodeMirrorScrollDOM;
+        coordsAtPos: (pos: number) => CodeMirrorRect | null;
+    };
+};
+
+type EditorCursorRange = {
+    from: { line: number; ch: number };
+    to: { line: number; ch: number };
+};
+
+function buildCursorRange(
+    startLine: number,
+    startCh: number = 0,
+    endLine: number = startLine,
+    endCh: number = startCh,
+): EditorCursorRange {
+    const safeStartLine = Math.max(0, Math.min(startLine, endLine));
+    const safeEndLine = Math.max(safeStartLine, Math.max(startLine, endLine));
+    return {
+        from: { line: safeStartLine, ch: Math.max(0, startCh) },
+        to: { line: safeEndLine, ch: Math.max(0, endCh) },
+    };
+}
+
+function centerEditorLine(editor: Editor, lineNo: number): void {
+    const internalEditor = editor as InternalCodeMirrorEditor;
+    const safeLine = Math.max(0, Math.min(lineNo, Math.max(0, editor.lineCount() - 1)));
+    const codeMirror = internalEditor.cm;
+
+    if (codeMirror?.scrollDOM && codeMirror.scrollDOM.clientHeight > 0) {
+        const lineStartOffset = editor.posToOffset({ line: safeLine, ch: 0 });
+        const coords = codeMirror.coordsAtPos(lineStartOffset);
+        if (coords) {
+            const lineHeight = Math.max(1, coords.bottom - coords.top);
+            const maxScrollTop = Math.max(
+                0,
+                codeMirror.scrollDOM.scrollHeight - codeMirror.scrollDOM.clientHeight,
+            );
+            const centeredTop = Math.max(
+                0,
+                Math.min(
+                    codeMirror.scrollDOM.scrollTop +
+                        coords.top -
+                        codeMirror.scrollDOM.clientHeight / 2 +
+                        lineHeight / 2,
+                    maxScrollTop,
+                ),
+            );
+
+            codeMirror.scrollDOM.scrollTop = centeredTop;
+            return;
+        }
+    }
+
+    const scrollableEditor = editor as ScrollableEditor;
+    const scrollInfo = scrollableEditor.getScrollInfo?.() as ScrollInfo | undefined;
+
+    if (!scrollInfo || !scrollableEditor.scrollTo) {
+        return;
+    }
+
+    const lineCount = Math.max(1, editor.lineCount());
+    const averageLineHeight = scrollInfo.height / lineCount;
+    const approximateLineTop = averageLineHeight * lineNo;
+    const maxScrollTop = Math.max(0, scrollInfo.height - scrollInfo.clientHeight);
+    const centeredTop = Math.max(
+        0,
+        Math.min(
+            approximateLineTop - scrollInfo.clientHeight / 2 + averageLineHeight / 2,
+            maxScrollTop,
+        ),
+    );
+
+    scrollableEditor.scrollTo(scrollInfo.left, centeredTop);
+}
+
+function resolveEditorTargetLine(editor: Editor, lineNo: number): number | null {
+    const maxLineIndex = Math.max(0, editor.lineCount() - 1);
+
+    // When the document has not finished loading, CodeMirror often reports a single line.
+    if (lineNo > 0 && maxLineIndex === 0) {
+        return null;
+    }
+
+    return Math.max(0, Math.min(lineNo, maxLineIndex));
+}
+
+function resolveEditorTargetRange(
+    editor: Editor,
+    startLine: number,
+    endLine: number,
+): CardReviewTarget | null {
+    const safeStartLine = resolveEditorTargetLine(editor, startLine);
+    const safeEndLine = resolveEditorTargetLine(editor, endLine);
+    if (safeStartLine === null || safeEndLine === null) {
+        return null;
+    }
+
+    return {
+        startLine: Math.min(safeStartLine, safeEndLine),
+        endLine: Math.max(safeStartLine, safeEndLine),
+    };
+}
+
+function focusEditorRange(editor: Editor, target: CardReviewTarget): boolean {
+    const safeRange = resolveEditorTargetRange(editor, target.startLine, target.endLine);
+    if (safeRange === null) {
+        return false;
+    }
+
+    const endLineContent = editor.getLine(safeRange.endLine) || "";
+    const { from, to } = buildCursorRange(
+        safeRange.startLine,
+        0,
+        safeRange.endLine,
+        endLineContent.length,
+    );
+
+    editor.setSelection(from, to);
+    editor.scrollIntoView({ from, to }, true);
+
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(() => {
+            centerEditorLine(editor, safeRange.startLine);
+        });
+    } else {
+        centerEditorLine(editor, safeRange.startLine);
+    }
+
+    return true;
+}
+
+function scheduleFocusEditorRange(editor: Editor, target: CardReviewTarget): void {
+    const initialFocused = focusEditorRange(editor, target);
+    const retryDelays = initialFocused ? [24, 72, 180] : [24, 72, 180, 320, 520, 800, 1200];
+
+    retryDelays.forEach((delay) => {
+        window.setTimeout(() => {
+            focusEditorRange(editor, target);
+        }, delay);
+    });
+}
+
+function focusLeafEditorRange(leaf: WorkspaceLeaf, target: CardReviewTarget): void {
+    const retryDelays = [0, 16, 48, 120, 240, 420, 700, 1100];
+
+    const attemptFocus = (attemptIndex: number) => {
+        if (hasEditor(leaf.view)) {
+            const internalEditor = leaf.view.editor as InternalCodeMirrorEditor;
+            const clientHeight = internalEditor.cm?.scrollDOM?.clientHeight ?? 1;
+            if (clientHeight <= 0) {
+                const nextDelay = retryDelays[attemptIndex + 1];
+                if (nextDelay !== undefined) {
+                    window.setTimeout(() => {
+                        attemptFocus(attemptIndex + 1);
+                    }, nextDelay);
+                }
+                return;
+            }
+
+            const didFocus = focusEditorRange(leaf.view.editor, target);
+            if (didFocus) {
+                scheduleFocusEditorRange(leaf.view.editor, target);
+                return;
+            }
+        }
+
+        const nextDelay = retryDelays[attemptIndex + 1];
+        if (nextDelay === undefined) {
+            return;
+        }
+
+        window.setTimeout(() => {
+            attemptFocus(attemptIndex + 1);
+        }, nextDelay);
+    };
+
+    attemptFocus(0);
+}
+
+function normalizeReviewTarget(target?: CardReviewTarget | null, fallbackLine: number = 0): CardReviewTarget {
+    if (!target) {
+        return {
+            startLine: Math.max(0, fallbackLine),
+            endLine: Math.max(0, fallbackLine),
+        };
+    }
+
+    return {
+        startLine: Math.max(0, Math.min(target.startLine, target.endLine)),
+        endLine: Math.max(target.startLine, target.endLine, 0),
+    };
+}
+
+function buildOpenStateForLine(lineNo: number) {
+    return {
+        eState: {
+            cursor: buildCursorRange(lineNo),
+        },
+    };
+}
+
+function findOpenMarkdownLeafForFile(plugin: SRPlugin, noteFile: TFile): WorkspaceLeaf | null {
+    const markdownLeaves = plugin.app.workspace.getLeavesOfType("markdown");
+    for (const leaf of markdownLeaves) {
+        if (!isMarkdownLeaf(leaf)) {
+            continue;
+        }
+
+        if (leaf.view.file?.path === noteFile.path) {
+            return leaf;
+        }
+    }
+
+    return null;
+}
+
+function resolveNavigationLeaf(
+    plugin: SRPlugin,
+    noteFile: TFile,
+    options?: { newTab?: boolean },
+): WorkspaceLeaf {
+    if (!options?.newTab) {
+        const existingLeaf = findOpenMarkdownLeafForFile(plugin, noteFile);
+        if (existingLeaf) {
+            return existingLeaf;
+        }
+    }
+
+    return plugin.app.workspace.getLeaf("tab");
 }
 
 function getMobileNavbars(): HTMLElement[] {
@@ -738,6 +1003,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                             <CardReviewView
                                 sequencer={sequencer}
                                 plugin={plugin}
+                                hostLeaf={hostLeaf}
                                 clearReviewMobileNavbarCover={clearReviewMobileNavbarCover}
                                 markdownOwner={markdownOwner}
                                 onAnswer={(rating) => {
@@ -995,6 +1261,7 @@ const DeckListView: React.FC<DeckListViewProps> = ({
 interface CardReviewViewProps {
     sequencer: IFlashcardReviewSequencer;
     plugin: SRPlugin;
+    hostLeaf: WorkspaceLeaf;
     clearReviewMobileNavbarCover: () => void;
     markdownOwner: Component;
     onAnswer: (rating: number) => void;
@@ -1009,6 +1276,7 @@ interface CardReviewViewProps {
 const CardReviewView: React.FC<CardReviewViewProps> = ({
     sequencer,
     plugin,
+    hostLeaf,
     clearReviewMobileNavbarCover,
     markdownOwner,
     onAnswer,
@@ -1060,15 +1328,17 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     const front = expanded[cardIdx]?.front || "";
     const back = expanded[cardIdx]?.back || "";
     const review = expanded[cardIdx]?.review;
+    const reviewTarget = normalizeReviewTarget(expanded[cardIdx]?.reviewTarget, question.lineNo);
 
     const cardState: CardState = useMemo(
         () => ({
             front,
             back,
             review,
+            reviewTarget,
             responseButtonLabels: btnLabels,
         }),
-        [front, back, review, btnLabels],
+        [front, back, review, reviewTarget, btnLabels],
     );
 
     // Pull counters from the deck session the user entered from.
@@ -1122,40 +1392,41 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     }, [plugin.store, card.Id, deck.deckName]);
 
     // Open the source note and focus the reviewed line in the editor.
-    const handleOpenNote = async () => {
+    const handleOpenNote = async (options?: { newTab?: boolean }) => {
         const noteFile = resolveNoteFile(question.note?.file);
         if (!noteFile) return;
 
         clearReviewMobileNavbarCover();
-        const activeLeaf = plugin.app.workspace.getLeaf("tab");
-        await activeLeaf.openFile(noteFile);
+        const activeLeaf = resolveNavigationLeaf(plugin, noteFile, options);
+        await activeLeaf.openFile(noteFile, buildOpenStateForLine(reviewTarget.startLine));
+        plugin.app.workspace.revealLeaf?.(activeLeaf);
+        plugin.app.workspace.setActiveLeaf(activeLeaf, { focus: true });
+        focusLeafEditorRange(activeLeaf, reviewTarget);
+    };
 
-        // Give Obsidian time to finish opening the file before touching the editor.
-        await new Promise((resolve) => setTimeout(resolve, 100));
+    const handleOpenBreadcrumb = async (
+        breadcrumb: QuestionContextBreadcrumb,
+        options?: { newTab?: boolean },
+    ) => {
+        const noteFile = resolveNoteFile(question.note?.file);
+        if (!noteFile) return;
 
-        if (hasEditor(activeLeaf.view)) {
-            const editor = activeLeaf.view.editor;
-            const lineNo = question.lineNo;
-
-            // Highlight the reviewed line.
-            const lineContent = editor.getLine(lineNo) || "";
-            const from = { line: lineNo, ch: 0 };
-            const to = { line: lineNo, ch: lineContent.length };
-
-            // Move the cursor first so the editor focuses the reviewed line.
-            editor.setCursor(from);
-
-            // Center the reviewed line with the typed Obsidian editor API.
-            editor.scrollIntoView({ from, to }, true);
-
-            // Highlight the line after scrolling to it.
-            editor.setSelection(from, to);
-
-            // Restore a clean cursor after the highlight has been visible for a moment.
-            setTimeout(() => {
-                editor.setCursor(from);
-            }, 1500);
-        }
+        clearReviewMobileNavbarCover();
+        const activeLeaf = resolveNavigationLeaf(plugin, noteFile, options);
+        await activeLeaf.openFile(noteFile, buildOpenStateForLine(breadcrumb.line));
+        plugin.app.workspace.revealLeaf?.(activeLeaf);
+        plugin.app.workspace.setActiveLeaf(activeLeaf, { focus: true });
+        const safeLine =
+            hasEditor(activeLeaf.view) && activeLeaf.view.editor.lineCount() > 0
+                ? Math.max(
+                      0,
+                      Math.min(
+                          breadcrumb.line,
+                            Math.max(0, activeLeaf.view.editor.lineCount() - 1),
+                        ),
+                    )
+                : Math.max(0, breadcrumb.line);
+        focusLeafEditorRange(activeLeaf, { startLine: safeLine, endLine: safeLine });
     };
 
     // Postpone the current card without opening the note.
@@ -1218,8 +1489,11 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
                 onAnswer={onAnswer}
                 onShowAnswer={() => {}}
                 onUndo={onUndo}
-                onOpenNote={() => {
-                    void handleOpenNote();
+                onOpenNote={(options) => {
+                    void handleOpenNote(options);
+                }}
+                onOpenBreadcrumb={(breadcrumb, options) => {
+                    void handleOpenBreadcrumb(breadcrumb, options);
                 }}
                 onEditCard={() => {}}
                 onPostpone={handlePostpone}

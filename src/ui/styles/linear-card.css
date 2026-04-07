@@ -395,6 +395,12 @@
     color: var(--text-normal);
 }
 
+.sr-breadcrumbs-expanded .sr-breadcrumb-item {
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+}
+
 .sr-breadcrumb-separator {
     opacity: 0.4;
     flex-shrink: 0;
@@ -652,6 +658,12 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     opacity: 0.86;
+}
+
+.sr-inline-breadcrumbs .sr-breadcrumb-item {
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
 }
 
 /* 基础卡片内容 */
@@ -1674,8 +1686,8 @@ body.syro-desktop-review-compact-actions .sr-linear-card-wrapper:not(.sr-phone-l
 }
 
 /* 移动端：隐藏面包屑，只显示文件名 */
-.sr-linear-card-wrapper.sr-phone-layout .sr-breadcrumb-item,
-.sr-linear-card-wrapper.sr-phone-layout .sr-breadcrumb-separator {
+.sr-linear-card-wrapper.sr-phone-layout .sr-breadcrumbs-trail .sr-breadcrumb-item,
+.sr-linear-card-wrapper.sr-phone-layout .sr-breadcrumbs-trail .sr-breadcrumb-separator {
     display: none !important;
 }
 
