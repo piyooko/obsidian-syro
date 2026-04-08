@@ -282,6 +282,7 @@ export const DEFAULT_DECK_OPTIONS_PRESET: DeckOptionsPreset = {
 const BUILTIN_DECK_OPTIONS_PRESET_NAME_ALIASES = new Set([
     DEFAULT_DECK_OPTIONS_PRESET.name,
     "Default Preset",
+    "Default preset",
 ]);
 
 export function isBuiltinDeckOptionsPresetName(name: string, presetIndex: number): boolean {

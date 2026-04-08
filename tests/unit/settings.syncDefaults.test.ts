@@ -2,12 +2,15 @@ import {
     cloneFsrsSettings,
     DEFAULT_SETTINGS,
     DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
+    getDeckOptionsPresetDisplayName,
     resolveDeckFsrsSettings,
     resolveDeckOptionsPreset,
     SRSettings,
     upgradeSettings,
 } from "src/settings";
+import { t } from "src/lang/helpers";
 import { mergeUIStateToSettings, settingsToUIState } from "src/ui/adapters/settingsAdapter";
+import { moment } from "obsidian";
 
 describe("sync progress display defaults", () => {
     test("new installs default to full-only progress tips", () => {
@@ -28,6 +31,60 @@ describe("sync progress display defaults", () => {
     test("new deck presets enable auto-advance with the progress bar by default", () => {
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.autoAdvance).toBe(true);
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.showProgressBar).toBe(true);
+    });
+
+    test("default preset display name follows the current locale for built-in names", () => {
+        const previousLocale = moment.locale();
+
+        moment.locale("en");
+        expect(
+            getDeckOptionsPresetDisplayName(
+                {
+                    name: "\u9ed8\u8ba4\u65b9\u6848",
+                },
+                0,
+            ),
+        ).toBe("Default preset");
+
+        moment.locale("zh-cn");
+        expect(
+            getDeckOptionsPresetDisplayName(
+                {
+                    name: "Default preset",
+                },
+                0,
+            ),
+        ).toBe("\u9ed8\u8ba4\u65b9\u6848");
+
+        moment.locale(previousLocale);
+        expect(
+            getDeckOptionsPresetDisplayName(
+                {
+                    name: "My Preset",
+                },
+                0,
+            ),
+        ).toBe("My Preset");
+    });
+
+    test("deck preset usage count copy uses proper English singular and plural forms", () => {
+        const previousLocale = moment.locale();
+
+        moment.locale("en");
+        expect(
+            t("DECK_OPTIONS_PRESET_USAGE_COUNT_SINGULAR", {
+                presetName: "Default preset",
+                count: 1,
+            }),
+        ).toBe("Default preset (1 deck uses this)");
+        expect(
+            t("DECK_OPTIONS_PRESET_USAGE_COUNT_PLURAL", {
+                presetName: "Default preset",
+                count: 2,
+            }),
+        ).toBe("Default preset (2 decks use this)");
+
+        moment.locale(previousLocale);
     });
 
     test("upgradeSettings backfills the new default when the setting is missing", () => {

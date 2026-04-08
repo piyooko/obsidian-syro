@@ -17,6 +17,7 @@ import {
     createDefaultDeckOptionsPreset,
     DeckOptionsPreset,
     DEFAULT_DECK_OPTIONS_PRESET,
+    getDeckOptionsPresetDisplayName,
     normalizeDeckOptionsPreset,
     syncFsrsSettingsCompatibilityMirror,
     updateDeckOptionsPresetStepProxy,
@@ -116,6 +117,10 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
     const currentPreset = useMemo(
         () => draft.presets[draft.currentPresetIndex] ?? draft.presets[0],
         [draft.currentPresetIndex, draft.presets],
+    );
+    const currentPresetDisplayName = useMemo(
+        () => getDeckOptionsPresetDisplayName(currentPreset, draft.currentPresetIndex),
+        [currentPreset, draft.currentPresetIndex],
     );
     const presetUsageCounts = useMemo(() => {
         const deckPaths = collectDeckPaths(plugin.deckTree);
@@ -312,11 +317,25 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                                     }
                                     className="dropdown"
                                 >
-                                    {draft.presets.map((preset, index) => (
-                                        <option key={`${preset.name}-${index}`} value={index}>
-                                            {`${preset.name} (已有${presetUsageCounts[index] ?? 0}个牌组使用)`}
-                                        </option>
-                                    ))}
+                                    {draft.presets.map((preset, index) => {
+                                        const usageCount = presetUsageCounts[index] ?? 0;
+                                        const usageLabelKey =
+                                            usageCount === 1
+                                                ? "DECK_OPTIONS_PRESET_USAGE_COUNT_SINGULAR"
+                                                : "DECK_OPTIONS_PRESET_USAGE_COUNT_PLURAL";
+
+                                        return (
+                                            <option key={`${preset.name}-${index}`} value={index}>
+                                                {t(usageLabelKey, {
+                                                    presetName: getDeckOptionsPresetDisplayName(
+                                                        preset,
+                                                        index,
+                                                    ),
+                                                    count: usageCount,
+                                                })}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
                                 <button
                                     type="button"
@@ -329,7 +348,7 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                         </BaseComponent>
                         <InputRow
                             label={t("DECK_OPTIONS_PRESET_NAME")}
-                            value={currentPreset.name}
+                            value={currentPresetDisplayName}
                             onChange={(value) =>
                                 updateCurrentPreset((preset) => ({ ...preset, name: value }))
                             }

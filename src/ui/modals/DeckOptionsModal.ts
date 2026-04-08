@@ -10,6 +10,7 @@ import { t } from "src/lang/helpers";
 import {
     createDefaultDeckOptionsPreset,
     DeckOptionsPreset,
+    getDeckOptionsPresetDisplayName,
     normalizeDeckOptionsPreset,
     syncFsrsSettingsCompatibilityMirror,
     updateDeckOptionsPresetStepProxy,
@@ -76,7 +77,10 @@ export class DeckOptionsModal extends Modal {
         const preset = this.getCurrentPreset();
         headerEl.createDiv({
             cls: "sr-deck-options-subtitle",
-            text: `${t("DECK_OPTIONS_EDIT_PRESET")}: ${preset.name}`,
+            text: `${t("DECK_OPTIONS_EDIT_PRESET")}: ${getDeckOptionsPresetDisplayName(
+                preset,
+                this.currentPresetIndex,
+            )}`,
         });
     }
 
@@ -89,7 +93,10 @@ export class DeckOptionsModal extends Modal {
             .setDesc(t("DECK_OPTIONS_PRESET_SELECT_DESC"))
             .addDropdown((dropdown) => {
                 presets.forEach((preset, index) => {
-                    dropdown.addOption(index.toString(), preset.name);
+                    dropdown.addOption(
+                        index.toString(),
+                        getDeckOptionsPresetDisplayName(preset, index),
+                    );
                 });
                 dropdown.setValue(this.currentPresetIndex.toString());
                 dropdown.onChange(async (value) => {
@@ -114,7 +121,9 @@ export class DeckOptionsModal extends Modal {
         const preset = this.getCurrentPreset();
 
         new Setting(itemsEl).setName(t("DECK_OPTIONS_PRESET_NAME")).addText((text) =>
-            text.setValue(preset.name).onChange(async (value) => {
+            text.setValue(
+                getDeckOptionsPresetDisplayName(preset, this.currentPresetIndex),
+            ).onChange(async (value) => {
                 const nextName = value.trim();
                 if (!nextName) return;
                 preset.name = nextName;

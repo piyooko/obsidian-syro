@@ -728,7 +728,12 @@ export default {
     DECK_OPTIONS_DELETE_PRESET_DESC: "删除后，使用此方案的牌组将改为使用默认方案",
     DECK_OPTIONS_BTN_DELETE_PRESET: "删除方案",
     DECK_OPTIONS_BTN_SAVE: "保存",
+    DECK_OPTIONS_BUILTIN_PRESET_NAME: "\u9ed8\u8ba4\u65b9\u6848",
     DECK_OPTIONS_DEFAULT_PRESET_NAME: "自定义方案",
+    DECK_OPTIONS_PRESET_USAGE_COUNT_SINGULAR:
+        "${presetName}\uff08\u5df2\u6709${count}\u4e2a\u724c\u7ec4\u4f7f\u7528\uff09",
+    DECK_OPTIONS_PRESET_USAGE_COUNT_PLURAL:
+        "${presetName}\uff08\u5df2\u6709${count}\u4e2a\u724c\u7ec4\u4f7f\u7528\uff09",
     FOLDER_TRACKING_TITLE: "文件夹追踪设置",
     FOLDER_TRACKING_SECTION_TRACKING: "追踪",
     FOLDER_TRACKING_SECTION_TAGS: "自动标签",
