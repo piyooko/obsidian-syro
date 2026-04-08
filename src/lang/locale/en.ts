@@ -895,7 +895,7 @@ export default normalizeSentenceCaseLocale({
 
     // Phase 3
     SETTINGS_SECTION_SUPPORTER: "Supporter",
-    SETTINGS_SUPPORTER_DESC_PRO: "Sustaining long-term development.",
+    SETTINGS_SUPPORTER_DESC_PRO: "Supporter access is enabled on this device.",
     SETTINGS_SUPPORTER_DESC_FREE:
         "Syro will always provide 90% of core features for free.\nActivating a License Key supports plugin development and unlocks additional features.",
     SETTINGS_SECTION_LICENSE: "License",
@@ -907,7 +907,7 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_BTN_VERIFYING: "Verifying...",
     SETTINGS_BTN_ACTIVATE: "Activate",
     SETTINGS_DEACTIVATE_LICENSE: "Deactivate License",
-    SETTINGS_DEACTIVATE_LICENSE_DESC: "Remove supporter status from this device.",
+    SETTINGS_DEACTIVATE_LICENSE_DESC: "You can deactivate it here at any time.",
     SETTINGS_BTN_DEACTIVATE: "Deactivate",
     SETTINGS_MSG_ENTER_KEY: "Please enter a license key.",
     SETTINGS_MSG_VERIFY_SUCCESS: "Verification successful! Thank you for your support!",

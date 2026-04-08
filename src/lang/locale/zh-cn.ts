@@ -676,7 +676,7 @@ export default {
     SETTINGS_RUNTIME_DEBUG_MESSAGES_DESC:
         "在开发者控制台显示运行期调试日志，例如同步流程、牌组树刷新和复习会话状态变化。",
     SETTINGS_SECTION_SUPPORTER: "支持者",
-    SETTINGS_SUPPORTER_DESC_PRO: "持续支持项目长期发展。",
+    SETTINGS_SUPPORTER_DESC_PRO: "当前设备已启用支持者权限",
     SETTINGS_SUPPORTER_DESC_FREE:
         "Syro 将始终提供 90% 的核心功能。\n激活 License Key 维护插件开发并获得额外功能。",
     SETTINGS_SECTION_LICENSE: "授权",
@@ -688,7 +688,7 @@ export default {
     SETTINGS_BTN_VERIFYING: "验证中...",
     SETTINGS_BTN_ACTIVATE: "激活",
     SETTINGS_DEACTIVATE_LICENSE: "解除授权",
-    SETTINGS_DEACTIVATE_LICENSE_DESC: "从该设备移除支持者状态。",
+    SETTINGS_DEACTIVATE_LICENSE_DESC: "你可以随时在此取消授权",
     SETTINGS_BTN_DEACTIVATE: "解除授权",
     SETTINGS_MSG_ENTER_KEY: "请输入激活码",
     SETTINGS_MSG_VERIFY_SUCCESS: "验证成功！感谢您的支持！",
