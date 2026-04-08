@@ -158,6 +158,7 @@ export default normalizeSentenceCaseLocale({
     STATUS_BAR: "Review: ${dueNotesCount} note(s), ${dueFlashcardsCount} card(s) due",
     SYNC_TIME_TAKEN: "Sync took ${t}ms",
     NOTE_IN_IGNORED_FOLDER: "Note is saved under ignored folder (check settings).",
+    NOTE_IN_IGNORED_TAGS: "Note contains ignored tags (check settings).",
     PLEASE_TAG_NOTE: "Please tag the note appropriately for reviewing (in settings).",
     RESPONSE_RECEIVED: "Response received.",
     NO_DECK_EXISTS: "No deck exists for ${deckName}",

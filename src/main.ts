@@ -15,6 +15,7 @@ import {
     DEFAULT_SETTINGS,
     DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
     FsrsSettings,
+    NoteReviewIgnoreReason,
     SettingsUtil,
     SRSettings,
     SyncProgressDisplayMode,
@@ -66,7 +67,7 @@ import { FsrsAlgorithm } from "src/algorithms/fsrs";
 import { WeightedMultiplierAlgorithm } from "src/algorithms/weightedMultiplier";
 
 import { reviewResponseModal } from "src/ui/modals/reviewresponse-modal";
-import { debug, isIgnoredPath, isVersionNewerThanOther } from "./util/utils_recall";
+import { debug, isVersionNewerThanOther } from "./util/utils_recall";
 import { DEFAULT_DECKNAME, SR_TAB_VIEW } from "./constants";
 
 import { addFileMenuEvt, registerTrackFileEvents } from "./Events/trackFileEvents";
@@ -1205,15 +1206,27 @@ export default class SRPlugin extends Plugin {
         notes = notes.filter((noteFile) => {
             const fileCachedData = this.app.metadataCache.getFileCache(noteFile) || {};
             const tags = getAllTags(fileCachedData) || [];
-            const isIgnoredTags = this.data.settings.tagsToIgnore.some((igntag) =>
-                tags.some((notetag) => notetag.startsWith(igntag)),
-            );
             return (
-                !isIgnoredPath(this.data.settings.noteFoldersToIgnore, noteFile.path) &&
-                !isIgnoredTags
+                SettingsUtil.getNoteReviewIgnoreReason(
+                    this.data.settings,
+                    noteFile.path,
+                    tags,
+                ) === null
             );
         });
         return notes;
+    }
+
+    public getNoteReviewIgnoreReason(note: TFile): NoteReviewIgnoreReason | null {
+        const fileCachedData = this.app.metadataCache.getFileCache(note) || {};
+        const tags = getAllTags(fileCachedData) || [];
+        return SettingsUtil.getNoteReviewIgnoreReason(this.data.settings, note.path, tags);
+    }
+
+    public showNoteReviewIgnoreNotice(reason: NoteReviewIgnoreReason): void {
+        new Notice(
+            t(reason === "ignored-folder" ? "NOTE_IN_IGNORED_FOLDER" : "NOTE_IN_IGNORED_TAGS"),
+        );
     }
 
     private getMarkdownFilesInFolder(folderPath: string): TFile[] {
@@ -1848,12 +1861,12 @@ export default class SRPlugin extends Plugin {
             notes = notes.filter((noteFile) => {
                 const fileCachedData = this.app.metadataCache.getFileCache(noteFile) || {};
                 const tags = getAllTags(fileCachedData) || [];
-                const isIgnoredTags = this.data.settings.tagsToIgnore.some((igntag) =>
-                    tags.some((notetag) => notetag.startsWith(igntag)),
-                );
                 return (
-                    !isIgnoredPath(this.data.settings.noteFoldersToIgnore, noteFile.path) &&
-                    !isIgnoredTags
+                    SettingsUtil.getNoteReviewIgnoreReason(
+                        this.data.settings,
+                        noteFile.path,
+                        tags,
+                    ) === null
                 );
             });
             this.linkRank.readLinks(notes);
@@ -2134,8 +2147,9 @@ export default class SRPlugin extends Plugin {
             console.debug("[SR Debug] noteAlgorithm: WeightedMultiplier");
         }
 
-        if (isIgnoredPath(settings.noteFoldersToIgnore, note.path)) {
-            new Notice(t("NOTE_IN_IGNORED_FOLDER"));
+        const ignoreReason = this.getNoteReviewIgnoreReason(note);
+        if (ignoreReason) {
+            this.showNoteReviewIgnoreNotice(ignoreReason);
             return;
         }
         const tracking = this.resolveNoteReviewTracking(note);
@@ -2228,32 +2242,17 @@ export default class SRPlugin extends Plugin {
         const fileCachedData = this.app.metadataCache.getFileCache(note) || {};
 
         const tags = getAllTags(fileCachedData) || [];
-        let shouldIgnore = true;
-        if (SettingsUtil.isPathInNoteIgnoreFolder(this.data.settings, note.path)) {
-            new Notice(t("NOTE_IN_IGNORED_FOLDER"));
+        const ignoreReason = SettingsUtil.getNoteReviewIgnoreReason(
+            this.data.settings,
+            note.path,
+            tags,
+        );
+        if (ignoreReason) {
+            this.showNoteReviewIgnoreNotice(ignoreReason);
             return false;
         }
-        // if (
-        //     this.data.settings.tagsToIgnore.some((igntag) =>
-        //         tags.some((notetag) => notetag.startsWith(igntag)),
-        //     )
-        // ) {
-        //     new Notice(t("NOTE_IN_IGNORED_TAGS"));
-        //     return false;
-        // }
 
-        for (const tag of tags) {
-            if (
-                this.data.settings.tagsToReview.some(
-                    (tagToReview) => tag === tagToReview || tag.startsWith(tagToReview + "/"),
-                )
-            ) {
-                shouldIgnore = false;
-                break;
-            }
-        }
-
-        if (shouldIgnore) {
+        if (!SettingsUtil.isAnyTagANoteReviewTag(this.data.settings, tags)) {
             new Notice(t("PLEASE_TAG_NOTE"));
             return false;
         }

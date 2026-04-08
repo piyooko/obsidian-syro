@@ -29,6 +29,7 @@ export type ClozeContextPerformanceMode = "off" | "safe-trim";
 export type SyncProgressDisplayMode = "always" | "full-only" | "never";
 export type SidebarProgressIndicatorMode = "ring" | "percentage";
 export type SidebarProgressRingDirection = "clockwise" | "counterclockwise";
+export type NoteReviewIgnoreReason = "ignored-folder" | "ignored-tag";
 export const DEFAULT_SYNC_PROGRESS_DISPLAY_MODE: SyncProgressDisplayMode = "full-only";
 // ============ Deck Option Presets ===========
 // Per-preset configuration.
@@ -277,6 +278,28 @@ export const DEFAULT_DECK_OPTIONS_PRESET: DeckOptionsPreset = {
     lapseSteps: "10m", // Default relearning steps
     fsrs: createDefaultFsrsSettings(),
 };
+
+const BUILTIN_DECK_OPTIONS_PRESET_NAME_ALIASES = new Set([
+    DEFAULT_DECK_OPTIONS_PRESET.name,
+    "Default Preset",
+]);
+
+export function isBuiltinDeckOptionsPresetName(name: string, presetIndex: number): boolean {
+    if (presetIndex !== 0) {
+        return false;
+    }
+
+    return BUILTIN_DECK_OPTIONS_PRESET_NAME_ALIASES.has(name.trim());
+}
+
+export function getDeckOptionsPresetDisplayName(
+    preset: Pick<DeckOptionsPreset, "name">,
+    presetIndex: number,
+): string {
+    return isBuiltinDeckOptionsPresetName(preset.name, presetIndex)
+        ? t("DECK_OPTIONS_BUILTIN_PRESET_NAME")
+        : preset.name;
+}
 
 export function cloneDeckOptionsPreset(preset: DeckOptionsPreset): DeckOptionsPreset {
     return {
@@ -1111,6 +1134,26 @@ export class SettingsUtil {
             }
         }
         return false;
+    }
+
+    static isAnyTagIgnored(settings: SRSettings, tags: string[]): boolean {
+        return tags.some((tag) => SettingsUtil.isTagInList(settings.tagsToIgnore, tag));
+    }
+
+    static getNoteReviewIgnoreReason(
+        settings: SRSettings,
+        path: string,
+        tags: string[],
+    ): NoteReviewIgnoreReason | null {
+        if (SettingsUtil.isPathInNoteIgnoreFolder(settings, path)) {
+            return "ignored-folder";
+        }
+
+        if (SettingsUtil.isAnyTagIgnored(settings, tags)) {
+            return "ignored-tag";
+        }
+
+        return null;
     }
 
     // Given a list of tags, return the subset that is in settings.tagsToReview

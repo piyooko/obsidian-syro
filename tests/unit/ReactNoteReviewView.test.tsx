@@ -4,7 +4,8 @@ import {
     ReactNoteReviewView,
 } from "src/ui/views/ReactNoteReviewView";
 import { reviewDecksToSidebarState } from "src/ui/adapters/noteReviewAdapter";
-import { MarkdownView } from "obsidian";
+import { DEFAULT_DECKNAME } from "src/constants";
+import { MarkdownView, TFile } from "obsidian";
 
 jest.mock("src/ui/components/NoteReviewSidebar", () => ({
     MOBILE_TIMELINE_MIN_HEIGHT_PX: 64,
@@ -39,7 +40,7 @@ jest.mock("src/services/LicenseManager", () => ({
 }));
 
 jest.mock("src/ui/timeline/timelineContext", () => ({
-    captureTimelineContext: jest.fn(async () => ({
+    captureTimelineContext: jest.fn(() => ({
         contextAnchor: null,
         scrollPercentage: 0,
     })),
@@ -89,12 +90,24 @@ jest.mock("obsidian", () => {
         Scope,
         TFile,
         MarkdownView,
+        getAllTags: jest.fn((fileCache: { tags?: Array<{ tag: string }> } | null | undefined) =>
+            fileCache?.tags?.map((item) => item.tag) ?? [],
+        ),
     };
 });
 
 type RenderRoot = {
     render: jest.Mock;
 };
+
+function createTFile(path: string) {
+    const basename = path.split("/").pop()?.replace(/\.md$/i, "") ?? path;
+    return Object.assign(Object.create(TFile.prototype), {
+        path,
+        basename,
+        extension: "md",
+    });
+}
 
 function createMarkdownLeaf(path?: string, visible = true) {
     const view = Object.create(MarkdownView.prototype) as MarkdownView & {
@@ -136,6 +149,8 @@ function createView(options: {
     activeMarkdownPath?: string | null;
     markdownLeaves?: Array<{ view: MarkdownView }>;
     mostRecentLeaf?: { view: MarkdownView } | null;
+    availableFiles?: string[];
+    fileCacheByPath?: Record<string, unknown>;
 }) {
     if (options.mobile) {
         document.body.classList.add("is-mobile");
@@ -160,7 +175,25 @@ function createView(options: {
         document.body.appendChild(leafContainer);
     }
 
+    const fileMap = new Map<string, TFile>();
+    const availableFiles = new Set<string>(options.availableFiles ?? []);
+    if (options.activeMarkdownPath) {
+        availableFiles.add(options.activeMarkdownPath);
+    }
+    if (options.savedSelectedPath) {
+        availableFiles.add(options.savedSelectedPath);
+    }
+    for (const path of availableFiles) {
+        fileMap.set(path, createTFile(path));
+    }
+
     const app = {
+        metadataCache: {
+            getFileCache: jest.fn((file: { path?: string } | null | undefined) => {
+                const path = file?.path;
+                return path ? (options.fileCacheByPath?.[path] ?? {}) : {};
+            }),
+        },
         workspace: {
             on: jest.fn(),
             setActiveLeaf: jest.fn(),
@@ -183,6 +216,7 @@ function createView(options: {
         },
         vault: {
             on: jest.fn(),
+            getAbstractFileByPath: jest.fn((path: string) => fileMap.get(path) ?? null),
         },
     };
 
@@ -212,11 +246,27 @@ function createView(options: {
                 showSidebarProgressIndicator: true,
                 sidebarFilePathTooltipEnabled: true,
                 sidebarFilePathTooltipDelayMs: 1000,
+                tagsToReview: ["#review"],
+                noteFoldersToIgnore: [] as string[],
+                tagsToIgnore: [] as string[],
             },
         },
         savePluginData: jest.fn(async () => {}),
         noteReviewStore: {
             getItem: jest.fn(() => null),
+            ensureTracked: jest.fn(),
+            save: jest.fn(async () => {}),
+            buildReviewDecks: jest.fn(() => ({})),
+        },
+        getNoteReviewIgnoreReason: jest.fn(() => null),
+        showNoteReviewIgnoreNotice: jest.fn(),
+        clearFolderTrackingExclusion: jest.fn(),
+        noteAlgorithm: {},
+        reviewDecks: {},
+        updateAndSortDueNotes: jest.fn(),
+        syncEvents: {
+            emit: jest.fn(),
+            on: jest.fn(() => () => {}),
         },
         reviewFloatBar: {
             display: jest.fn(),
@@ -237,6 +287,7 @@ function createView(options: {
         root,
         view,
         leafContainer,
+        fileMap,
     };
 }
 
@@ -335,6 +386,23 @@ describe("ReactNoteReviewView", () => {
         expect(props.isTimelineOpen).toBe(true);
     });
 
+    it("restores a saved standalone timeline selection when the path is not in the queue", () => {
+        const path = "notes/Standalone Note.md";
+        const { root, view } = createView({
+            savedTimelineOpen: true,
+            savedSelectedPath: path,
+            autoExpandTimeline: false,
+            availableFiles: [path],
+        });
+
+        view.redraw();
+
+        expect(getLastSidebarProps(root).selectedItem).toMatchObject({
+            path,
+            title: "Standalone Note",
+        });
+    });
+
     it("auto-follows the current markdown note on file open when the active leaf is that markdown tab", () => {
         const item = { id: "note-1", path: "notes/focused.md", title: "Focused Note" };
         const { view: markdownView } = createMarkdownLeaf(item.path);
@@ -366,6 +434,42 @@ describe("ReactNoteReviewView", () => {
         expect(props.autoRevealTargetPath).toBe(item.path);
         expect(props.autoRevealRequestKey).toBe(1);
         expect(plugin.data.settings.sidebarTimelineSelectedPath).toBe(item.path);
+        expect(plugin.data.settings.sidebarTimelineOpen).toBe(true);
+    });
+
+    it("auto-follows the current markdown note into a standalone timeline item when it is not in the queue", () => {
+        const path = "notes/Standalone Focus.md";
+        const file = createTFile(path);
+        const { view: markdownView } = createMarkdownLeaf(path);
+        const markdownLeaf = { view: markdownView } as any;
+        (markdownView as any).leaf = markdownLeaf;
+        const { app, plugin, root } = createView({
+            activeMarkdownPath: path,
+            autoExpandTimeline: true,
+            availableFiles: [path],
+        });
+        app.workspace.getActiveViewOfType.mockReturnValue(markdownView);
+        const fileOpenHandler = app.workspace.on.mock.calls.find(
+            ([eventName]: [string]) => eventName === "file-open",
+        )?.[1];
+
+        if (typeof fileOpenHandler !== "function") {
+            throw new Error("Expected file-open handler");
+        }
+
+        fileOpenHandler(file);
+
+        const props = getLastSidebarProps(root);
+        expect(props.activeFilePath).toBe(path);
+        expect(props.selectedItem).toMatchObject({
+            path,
+            title: "Standalone Focus",
+            noteFile: file,
+        });
+        expect(props.isTimelineOpen).toBe(true);
+        expect(props.autoRevealTargetPath).toBe(path);
+        expect(props.autoRevealRequestKey).toBe(1);
+        expect(plugin.data.settings.sidebarTimelineSelectedPath).toBe(path);
         expect(plugin.data.settings.sidebarTimelineOpen).toBe(true);
     });
 
@@ -487,15 +591,16 @@ describe("ReactNoteReviewView", () => {
         expect(props.autoRevealRequestKey).toBe(0);
     });
 
-    it("keeps the current selection when the active note is not in the queue", () => {
+    it("switches the timeline selection to the current file even when it is not in the queue", () => {
         const oldItem = { id: "note-1", path: "notes/original.md", title: "Original" };
         jest.mocked(reviewDecksToSidebarState).mockReturnValue({
             sections: [{ id: "new", items: [oldItem] }],
             totalCount: 1,
         } as any);
         const { root, view } = createView({
-            activeMarkdownPath: "notes/missing.md",
+            activeMarkdownPath: "notes/Current Focus.md",
             autoExpandTimeline: true,
+            availableFiles: ["notes/Current Focus.md"],
         });
         (view as any).selectedItem = oldItem;
         (view as any).isTimelineOpen = true;
@@ -503,10 +608,13 @@ describe("ReactNoteReviewView", () => {
         (view as any).handleFileOpen();
 
         const props = getLastSidebarProps(root);
-        expect(props.activeFilePath).toBe("notes/missing.md");
-        expect(props.selectedItem).toEqual(oldItem);
+        expect(props.activeFilePath).toBe("notes/Current Focus.md");
+        expect(props.selectedItem).toMatchObject({
+            path: "notes/Current Focus.md",
+            title: "Current Focus",
+        });
         expect(props.isTimelineOpen).toBe(true);
-        expect(props.autoRevealRequestKey).toBe(0);
+        expect(props.autoRevealRequestKey).toBe(1);
     });
 
     it("persists the selected note path and desktop timeline toggle state", () => {
@@ -554,5 +662,74 @@ describe("ReactNoteReviewView", () => {
             focus: true,
         });
         expect(app.workspace.revealLeaf).toHaveBeenCalledWith(targetLeaf);
+    });
+
+    it("creates a tracked note item when committing a duration prefix from standalone timeline", async () => {
+        const path = "notes/Plan.md";
+        const { plugin, view } = createView({
+            activeMarkdownPath: path,
+            availableFiles: [path],
+        });
+        plugin.data.settings.timelineEnableDurationPrefixSyntax = true;
+
+        const trackedItem = {
+            applyManualTimelineSchedule: jest.fn(),
+        };
+        let storedItem: typeof trackedItem | null = null;
+        plugin.noteReviewStore.getItem.mockImplementation(() => storedItem);
+        plugin.noteReviewStore.ensureTracked.mockImplementation(() => {
+            storedItem = trackedItem;
+            return trackedItem;
+        });
+
+        const commitStore = {
+            getCommits: jest.fn(() => []),
+            addCommit: jest.fn(async () => undefined),
+        };
+        (view as any).commitStore = commitStore;
+
+        await (view as any).handleCommit(path, "2d:: revisit");
+
+        expect(commitStore.addCommit).toHaveBeenCalledWith(path, "2d:: revisit", null, 0);
+        expect(plugin.clearFolderTrackingExclusion).toHaveBeenCalledWith(path);
+        expect(plugin.noteReviewStore.ensureTracked).toHaveBeenCalledWith(
+            path,
+            DEFAULT_DECKNAME,
+            "manual",
+            plugin.noteAlgorithm,
+        );
+        expect(trackedItem.applyManualTimelineSchedule).toHaveBeenCalledWith(2);
+        expect(plugin.noteReviewStore.save).toHaveBeenCalled();
+        expect(plugin.noteReviewStore.buildReviewDecks).toHaveBeenCalledWith(
+            (view as any).app.vault,
+        );
+        expect(plugin.updateAndSortDueNotes).toHaveBeenCalled();
+        expect(plugin.syncEvents.emit).toHaveBeenCalledWith("note-review-updated");
+    });
+
+    test.each([
+        ["ignored-tag"],
+        ["ignored-folder"],
+    ])("keeps duration-prefix timeline commits as logs only when note review is blocked by %s", async (reason) => {
+        const path = "notes/Blocked.md";
+        const { plugin, view } = createView({
+            activeMarkdownPath: path,
+            availableFiles: [path],
+        });
+        plugin.data.settings.timelineEnableDurationPrefixSyntax = true;
+        plugin.getNoteReviewIgnoreReason.mockReturnValue(reason);
+
+        const commitStore = {
+            getCommits: jest.fn(() => []),
+            addCommit: jest.fn(async () => undefined),
+        };
+        (view as any).commitStore = commitStore;
+
+        await (view as any).handleCommit(path, "2d:: blocked");
+
+        expect(commitStore.addCommit).toHaveBeenCalledWith(path, "2d:: blocked", null, 0);
+        expect(plugin.noteReviewStore.ensureTracked).not.toHaveBeenCalled();
+        expect(plugin.noteReviewStore.save).not.toHaveBeenCalled();
+        expect(plugin.showNoteReviewIgnoreNotice).toHaveBeenCalledWith(reason);
     });
 });

@@ -40,6 +40,7 @@ export default {
     STATUS_BAR: "复习: ${dueNotesCount} 笔记, ${dueFlashcardsCount} 卡片已到期",
     SYNC_TIME_TAKEN: "同步时间 ${t}ms",
     NOTE_IN_IGNORED_FOLDER: "笔记保存在已被忽略的路径中（检查设置选项）。",
+    NOTE_IN_IGNORED_TAGS: "笔记包含已忽略的标签（检查设置选项）。",
     PLEASE_TAG_NOTE: "请将需要复习的笔记中加入正确的标签（检查设置选项）。",
     RESPONSE_RECEIVED: "反馈已收到",
     NO_DECK_EXISTS: "没有 ${deckName} 卡组",

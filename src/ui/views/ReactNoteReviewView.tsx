@@ -3,10 +3,21 @@
  * It renders the note review queue and timeline interactions inside an Obsidian item view.
  */
 
-import { ItemView, WorkspaceLeaf, Menu, TFile, Notice, Scope, type Modifier } from "obsidian";
+import {
+    ItemView,
+    WorkspaceLeaf,
+    Menu,
+    TFile,
+    Notice,
+    Scope,
+    getAllTags,
+    MarkdownView,
+    type Modifier,
+} from "obsidian";
 import { createRoot, Root } from "react-dom/client";
 import React from "react";
 import type SRPlugin from "src/main";
+import { DEFAULT_DECKNAME } from "src/constants";
 import {
     MOBILE_TIMELINE_MIN_HEIGHT_PX,
     NoteReviewSidebar,
@@ -19,8 +30,8 @@ import {
     type ReviewCommitEditPayload,
 } from "src/dataStore/reviewCommitStore";
 import { t } from "src/lang/helpers";
+import { Tags } from "src/tags";
 import { ContextAnchorService } from "src/util/ContextAnchor";
-import { MarkdownView } from "obsidian";
 import { LicenseManager } from "src/services/LicenseManager";
 import { captureTimelineContext } from "src/ui/timeline/timelineContext";
 import { parseTimelineMessage } from "src/ui/timeline/timelineMessage";
@@ -367,6 +378,44 @@ export class ReactNoteReviewView extends ItemView {
         return null;
     }
 
+    private setSelectedTimelineItem(item: NoteReviewItem | null): void {
+        this.selectedItem = item;
+        this.commitLogs = item && this.commitStore ? this.commitStore.getCommits(item.path) : [];
+    }
+
+    private extractStandaloneTimelineTags(file: TFile): string[] {
+        const fileCache = this.app.metadataCache.getFileCache(file) ?? null;
+        const tags = getAllTags(fileCache) ?? [];
+        return Array.from(new Set(tags.map((tag) => tag.replace(/^#/, "")).filter(Boolean)));
+    }
+
+    private buildStandaloneTimelineItem(path: string): NoteReviewItem | null {
+        const abstractFile = this.app.vault.getAbstractFileByPath(path);
+        if (!(abstractFile instanceof TFile) || abstractFile.extension !== "md") {
+            return null;
+        }
+
+        const item = this.plugin.noteReviewStore.getItem(path);
+        return {
+            id: `timeline-standalone-${path}`,
+            title: abstractFile.basename,
+            priority: item?.priority ?? 5,
+            path,
+            noteFile: abstractFile,
+            dueUnix: item?.nextReview,
+            isNew: item?.isNew ?? true,
+            lastScrollPercentage: this.commitStore?.getLatestScrollPercentage(path),
+            tags: this.extractStandaloneTimelineTags(abstractFile),
+        };
+    }
+
+    private resolveTimelineItemByPath(
+        data: ReturnType<typeof reviewDecksToSidebarState>,
+        path: string,
+    ): NoteReviewItem | null {
+        return this.findSidebarItemByPath(data, path) ?? this.buildStandaloneTimelineItem(path);
+    }
+
     private findSidebarItemByPath(
         data: ReturnType<typeof reviewDecksToSidebarState>,
         path: string,
@@ -392,15 +441,12 @@ export class ReactNoteReviewView extends ItemView {
             return;
         }
 
-        const foundItem = this.findSidebarItemByPath(data, selectedPath);
+        const foundItem = this.resolveTimelineItemByPath(data, selectedPath);
         if (!foundItem) {
             return;
         }
 
-        this.selectedItem = foundItem;
-        if (this.commitStore) {
-            this.commitLogs = this.commitStore.getCommits(foundItem.path);
-        }
+        this.setSelectedTimelineItem(foundItem);
     }
 
     private syncSidebarToPrimaryMarkdownNote(
@@ -425,20 +471,17 @@ export class ReactNoteReviewView extends ItemView {
             return primaryMarkdownPath;
         }
 
-        const foundItem = this.findSidebarItemByPath(data, primaryMarkdownPath);
+        const foundItem = this.resolveTimelineItemByPath(data, primaryMarkdownPath);
         if (!foundItem) {
             this.logRuntimeDebug("[TimelineAutoFollow] syncSidebarToPrimaryMarkdownNote:skip", {
                 source: options.source,
-                reason: "pathNotTrackedInSidebar",
+                reason: "pathUnavailableForTimeline",
                 primaryMarkdownPath,
             });
             return primaryMarkdownPath;
         }
 
-        this.selectedItem = foundItem;
-        if (this.commitStore) {
-            this.commitLogs = this.commitStore.getCommits(foundItem.path);
-        }
+        this.setSelectedTimelineItem(foundItem);
         this.isTimelineOpen = true;
         this.persistTimelineUiState({
             selectedPath: foundItem.path,
@@ -668,9 +711,7 @@ export class ReactNoteReviewView extends ItemView {
             autoRevealRequestKey: this.autoRevealRequestKey,
             autoRevealDebugSource: this.autoRevealDebugSource,
         });
-        if (this.selectedItem && this.commitStore) {
-            this.commitLogs = this.commitStore.getCommits(this.selectedItem.path);
-        }
+        this.setSelectedTimelineItem(this.selectedItem);
 
         this.root.render(
             React.createElement(NoteReviewSidebar, {
@@ -1231,11 +1272,7 @@ export class ReactNoteReviewView extends ItemView {
      * Select a note and load its timeline entries.
      */
     private handleNoteSelect(item: NoteReviewItem): void {
-        this.selectedItem = item;
-
-        if (this.commitStore) {
-            this.commitLogs = this.commitStore.getCommits(item.path);
-        }
+        this.setSelectedTimelineItem(item);
 
         // Auto-expand the timeline if the setting allows it.
         let persistOpenState: boolean | undefined;
@@ -1439,9 +1476,31 @@ export class ReactNoteReviewView extends ItemView {
             return false;
         }
 
-        const item = this.plugin.noteReviewStore.getItem(notePath);
+        let item = this.plugin.noteReviewStore.getItem(notePath);
         if (!item) {
-            return false;
+            const abstractFile = this.app.vault.getAbstractFileByPath(notePath);
+            if (!(abstractFile instanceof TFile) || abstractFile.extension !== "md") {
+                return false;
+            }
+
+            const ignoreReason = this.plugin.getNoteReviewIgnoreReason(abstractFile);
+            if (ignoreReason) {
+                this.plugin.showNoteReviewIgnoreNotice(ignoreReason);
+                return false;
+            }
+
+            this.plugin.clearFolderTrackingExclusion(notePath);
+            const fileCache = this.app.metadataCache.getFileCache(abstractFile) ?? null;
+            const fileTags = getAllTags(fileCache) ?? [];
+            const deckName =
+                Tags.getTagFromSettingTags(fileTags, this.plugin.data.settings.tagsToReview) ??
+                DEFAULT_DECKNAME;
+            item = this.plugin.noteReviewStore.ensureTracked(
+                notePath,
+                deckName,
+                "manual",
+                this.plugin.noteAlgorithm,
+            );
         }
 
         item.applyManualTimelineSchedule(parsed.durationPrefix.totalDays);
