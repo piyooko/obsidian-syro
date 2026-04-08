@@ -163,6 +163,8 @@ function createView(options: {
     const app = {
         workspace: {
             on: jest.fn(),
+            setActiveLeaf: jest.fn(),
+            revealLeaf: jest.fn(),
             getActiveFile: jest.fn(() =>
                 options.activeMarkdownPath ? { path: options.activeMarkdownPath } : null,
             ),
@@ -213,6 +215,12 @@ function createView(options: {
             },
         },
         savePluginData: jest.fn(async () => {}),
+        noteReviewStore: {
+            getItem: jest.fn(() => null),
+        },
+        reviewFloatBar: {
+            display: jest.fn(),
+        },
     };
 
     const view = new ReactNoteReviewView(leaf as never, plugin as never);
@@ -327,18 +335,29 @@ describe("ReactNoteReviewView", () => {
         expect(props.isTimelineOpen).toBe(true);
     });
 
-    it("auto-follows the current markdown note on file open when enabled", () => {
+    it("auto-follows the current markdown note on file open when the active leaf is that markdown tab", () => {
         const item = { id: "note-1", path: "notes/focused.md", title: "Focused Note" };
+        const { view: markdownView } = createMarkdownLeaf(item.path);
+        const markdownLeaf = { view: markdownView } as any;
+        (markdownView as any).leaf = markdownLeaf;
         jest.mocked(reviewDecksToSidebarState).mockReturnValue({
             sections: [{ id: "new", items: [item] }],
             totalCount: 1,
         } as any);
-        const { plugin, root, view } = createView({
+        const { app, plugin, root } = createView({
             activeMarkdownPath: item.path,
             autoExpandTimeline: true,
         });
+        app.workspace.getActiveViewOfType.mockReturnValue(markdownView);
+        const fileOpenHandler = app.workspace.on.mock.calls.find(
+            ([eventName]: [string]) => eventName === "file-open",
+        )?.[1];
 
-        (view as any).handleFileOpen();
+        if (typeof fileOpenHandler !== "function") {
+            throw new Error("Expected file-open handler");
+        }
+
+        fileOpenHandler({ path: item.path });
 
         const props = getLastSidebarProps(root);
         expect(props.activeFilePath).toBe(item.path);
@@ -348,6 +367,36 @@ describe("ReactNoteReviewView", () => {
         expect(props.autoRevealRequestKey).toBe(1);
         expect(plugin.data.settings.sidebarTimelineSelectedPath).toBe(item.path);
         expect(plugin.data.settings.sidebarTimelineOpen).toBe(true);
+    });
+
+    it("ignores file-open for auto-follow when the active leaf is not markdown", () => {
+        const item = { id: "note-1", path: "notes/focused.md", title: "Focused Note" };
+        jest.mocked(reviewDecksToSidebarState).mockReturnValue({
+            sections: [{ id: "new", items: [item] }],
+            totalCount: 1,
+        } as any);
+        const { app, root, view } = createView({
+            activeMarkdownPath: item.path,
+            autoExpandTimeline: true,
+        });
+        const fileOpenHandler = app.workspace.on.mock.calls.find(
+            ([eventName]: [string]) => eventName === "file-open",
+        )?.[1];
+
+        if (typeof fileOpenHandler !== "function") {
+            throw new Error("Expected file-open handler");
+        }
+
+        root.render.mockClear();
+        fileOpenHandler({ path: item.path });
+
+        expect(root.render).not.toHaveBeenCalled();
+
+        view.redraw();
+        const props = getLastSidebarProps(root);
+        expect(props.activeFilePath).toBe(item.path);
+        expect(props.selectedItem).toBeNull();
+        expect(props.autoRevealRequestKey).toBe(0);
     });
 
     it("does not auto-follow on active leaf changes alone", () => {
@@ -475,5 +524,35 @@ describe("ReactNoteReviewView", () => {
 
         expect(plugin.data.settings.sidebarTimelineOpen).toBe(false);
         expect(plugin.savePluginData).toHaveBeenCalled();
+    });
+
+    it("activates and reveals the target markdown leaf when clicking a note", async () => {
+        const noteFile = { path: "notes/focused.md" } as any;
+        const targetLeaf = {
+            openFile: jest.fn(async () => {}),
+            view: Object.create(MarkdownView.prototype),
+        };
+        const item = {
+            id: "note-1",
+            path: noteFile.path,
+            title: "Focused Note",
+            noteFile,
+        };
+        const { app, view } = createView({
+            activeMarkdownPath: noteFile.path,
+            autoExpandTimeline: true,
+        });
+        jest.spyOn(view as any, "resolveNoteNavigationLeaf").mockReturnValue(targetLeaf);
+
+        await (view as any).handleNoteClick(item);
+
+        expect(app.workspace.setActiveLeaf).toHaveBeenNthCalledWith(1, targetLeaf, {
+            focus: true,
+        });
+        expect(targetLeaf.openFile).toHaveBeenCalledWith(noteFile);
+        expect(app.workspace.setActiveLeaf).toHaveBeenNthCalledWith(2, targetLeaf, {
+            focus: true,
+        });
+        expect(app.workspace.revealLeaf).toHaveBeenCalledWith(targetLeaf);
     });
 });

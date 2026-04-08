@@ -52,6 +52,8 @@ function isPhoneMobileLayout(): boolean {
  */
 
 export class ReactNoteReviewView extends ItemView {
+    private static readonly FILE_OPEN_AFTER_LEAF_CHANGE_WINDOW_MS = 400;
+
     private static hasInitializedPhoneDrawerTimelineHeightThisSession = false;
     private static phoneDrawerTimelineHeightThisSession: number | null = null;
 
@@ -73,11 +75,33 @@ export class ReactNoteReviewView extends ItemView {
     private timelineScopeHandlers: Array<Parameters<Scope["unregister"]>[0]> = [];
     private autoRevealTargetPath: string | null = null;
     private autoRevealRequestKey = 0;
+    private autoRevealDebugSource: string | null = null;
+    private lastPrimaryMarkdownPath: string | null = null;
+    private previousMarkdownTabsContainer: HTMLElement | null = null;
+    private currentMarkdownTabsContainer: HTMLElement | null = null;
+    private lastMarkdownLeafChangeAt = 0;
 
     private runAsync(task: Promise<void>, label: string): void {
         void task.catch((error: unknown) => {
             console.error(`[ReactNoteReviewView] ${label} failed`, error);
         });
+    }
+
+    private shouldLogRuntimeDebug(): boolean {
+        return this.plugin.data.settings.showRuntimeDebugMessages === true;
+    }
+
+    private logRuntimeDebug(message: string, details?: Record<string, unknown>): void {
+        if (!this.shouldLogRuntimeDebug()) {
+            return;
+        }
+
+        if (details) {
+            console.debug(message, details);
+            return;
+        }
+
+        console.debug(message);
     }
 
     private shouldPersistTimelineOpenState(): boolean {
@@ -132,6 +156,76 @@ export class ReactNoteReviewView extends ItemView {
         const leafContainer = this.getLeafContainer();
         const drawerInner = leafContainer?.closest(".workspace-drawer-inner");
         return drawerInner instanceof HTMLElement ? drawerInner : null;
+    }
+
+    private describeLeaf(leaf: WorkspaceLeaf | null | undefined): Record<string, unknown> {
+        const view = leaf?.view;
+        const viewType =
+            typeof view?.getViewType === "function" ? view.getViewType() : view?.constructor?.name ?? null;
+        const path =
+            view instanceof MarkdownView && typeof view.file?.path === "string" ? view.file.path : null;
+        const containerEl = (leaf as (WorkspaceLeaf & { containerEl?: HTMLElement }) | null | undefined)
+            ?.containerEl;
+
+        return {
+            viewType,
+            path,
+            containerClasses: containerEl instanceof HTMLElement ? containerEl.className : null,
+        };
+    }
+
+    private getWorkspaceTabsContainer(leaf: WorkspaceLeaf | null | undefined): HTMLElement | null {
+        const containerEl = (leaf as (WorkspaceLeaf & { containerEl?: HTMLElement }) | null | undefined)
+            ?.containerEl;
+        const workspaceTabs = containerEl?.closest(".workspace-tabs");
+        return workspaceTabs instanceof HTMLElement ? workspaceTabs : null;
+    }
+
+    private shouldAllowAutoFollowForFileOpen(
+        file: TFile,
+        activeLeaf: WorkspaceLeaf,
+        activeLeafPath: string,
+    ): boolean {
+        const now = Date.now();
+        const activeTabsContainer = this.getWorkspaceTabsContainer(activeLeaf);
+        const hasRecentLeafChange =
+            now - this.lastMarkdownLeafChangeAt <=
+            ReactNoteReviewView.FILE_OPEN_AFTER_LEAF_CHANGE_WINDOW_MS;
+
+        if (!hasRecentLeafChange) {
+            this.logRuntimeDebug("[TimelineAutoFollow] workspace:file-open:allow", {
+                reason: "noRecentLeafChange",
+                filePath: file.path,
+                activeLeafPath,
+                lastPrimaryMarkdownPath: this.lastPrimaryMarkdownPath,
+            });
+            return true;
+        }
+
+        const sameTabsContainer =
+            activeTabsContainer !== null && activeTabsContainer === this.previousMarkdownTabsContainer;
+        const changedMarkdownPath =
+            this.lastPrimaryMarkdownPath == null || this.lastPrimaryMarkdownPath !== file.path;
+
+        if (sameTabsContainer && changedMarkdownPath) {
+            this.logRuntimeDebug("[TimelineAutoFollow] workspace:file-open:allow", {
+                reason: "recentLeafChangeWithinSameTabsContainer",
+                filePath: file.path,
+                activeLeafPath,
+                lastPrimaryMarkdownPath: this.lastPrimaryMarkdownPath,
+            });
+            return true;
+        }
+
+        this.logRuntimeDebug("[TimelineAutoFollow] workspace:file-open:ignored", {
+            reason: sameTabsContainer ? "pathDidNotChangeWithinSameTabsContainer" : "tabsContainerChanged",
+            filePath: file.path,
+            activeLeafPath,
+            lastPrimaryMarkdownPath: this.lastPrimaryMarkdownPath,
+            hasRecentLeafChange,
+            sameTabsContainer,
+        });
+        return false;
     }
 
     private isForegroundDrawerView(): boolean {
@@ -311,16 +405,33 @@ export class ReactNoteReviewView extends ItemView {
 
     private syncSidebarToPrimaryMarkdownNote(
         data: ReturnType<typeof reviewDecksToSidebarState>,
-        options: { requestReveal: boolean },
+        options: { requestReveal: boolean; source: string },
     ): string | null {
         const primaryMarkdownPath = this.resolvePrimaryMarkdownPath();
+        this.logRuntimeDebug("[TimelineAutoFollow] syncSidebarToPrimaryMarkdownNote:start", {
+            source: options.source,
+            autoExpandEnabled: this.plugin.data.settings.autoExpandTimeline,
+            primaryMarkdownPath,
+        });
 
         if (!this.plugin.data.settings.autoExpandTimeline || primaryMarkdownPath == null) {
+            this.logRuntimeDebug("[TimelineAutoFollow] syncSidebarToPrimaryMarkdownNote:skip", {
+                source: options.source,
+                reason: !this.plugin.data.settings.autoExpandTimeline
+                    ? "autoExpandDisabled"
+                    : "missingPrimaryMarkdownPath",
+                primaryMarkdownPath,
+            });
             return primaryMarkdownPath;
         }
 
         const foundItem = this.findSidebarItemByPath(data, primaryMarkdownPath);
         if (!foundItem) {
+            this.logRuntimeDebug("[TimelineAutoFollow] syncSidebarToPrimaryMarkdownNote:skip", {
+                source: options.source,
+                reason: "pathNotTrackedInSidebar",
+                primaryMarkdownPath,
+            });
             return primaryMarkdownPath;
         }
 
@@ -337,7 +448,15 @@ export class ReactNoteReviewView extends ItemView {
         if (options.requestReveal) {
             this.autoRevealTargetPath = foundItem.path;
             this.autoRevealRequestKey += 1;
+            this.autoRevealDebugSource = options.source;
         }
+
+        this.logRuntimeDebug("[TimelineAutoFollow] syncSidebarToPrimaryMarkdownNote:matched", {
+            source: options.source,
+            matchedPath: foundItem.path,
+            requestReveal: options.requestReveal,
+            autoRevealRequestKey: this.autoRevealRequestKey,
+        });
 
         return primaryMarkdownPath;
     }
@@ -349,11 +468,55 @@ export class ReactNoteReviewView extends ItemView {
         // Restore persisted timeline UI state.
         this.timelineHeight = this.plugin.data.settings.sidebarTimelineHeight;
         this.isTimelineOpen = this.plugin.data.settings.sidebarTimelineOpen;
+        this.lastPrimaryMarkdownPath = this.resolvePrimaryMarkdownPath();
+        this.currentMarkdownTabsContainer = this.getWorkspaceTabsContainer(
+            this.app.workspace.getActiveViewOfType(MarkdownView)?.leaf ?? null,
+        );
 
         // Register workspace and vault listeners.
         this.registerEvent(
-            this.app.workspace.on("file-open", () => {
-                this.handleFileOpen();
+            this.app.workspace.on("file-open", (file: TFile | null) => {
+                const activeMarkdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
+                const activeLeaf = activeMarkdownView?.leaf ?? null;
+                const activeLeafPath = activeMarkdownView?.file?.path ?? null;
+                const activeLeafIsMarkdown = this.isMarkdownLeaf(activeLeaf);
+                this.logRuntimeDebug("[TimelineAutoFollow] workspace:file-open", {
+                    filePath: file?.path ?? null,
+                    activeLeaf: this.describeLeaf(activeLeaf),
+                    activeLeafIsMarkdown,
+                    activeLeafPath,
+                });
+
+                if (!file) {
+                    this.logRuntimeDebug("[TimelineAutoFollow] workspace:file-open:ignored", {
+                        reason: "missingFile",
+                    });
+                    return;
+                }
+
+                if (!activeLeafIsMarkdown) {
+                    this.logRuntimeDebug("[TimelineAutoFollow] workspace:file-open:ignored", {
+                        reason: "activeLeafNotMarkdown",
+                        filePath: file.path,
+                        activeLeaf: this.describeLeaf(activeLeaf),
+                    });
+                    return;
+                }
+
+                if (activeLeafPath !== file.path) {
+                    this.logRuntimeDebug("[TimelineAutoFollow] workspace:file-open:ignored", {
+                        reason: "activeLeafPathMismatch",
+                        filePath: file.path,
+                        activeLeafPath,
+                    });
+                    return;
+                }
+
+                if (!this.shouldAllowAutoFollowForFileOpen(file, activeLeaf, activeLeafPath)) {
+                    return;
+                }
+
+                this.handleFileOpen(file);
             }),
         );
         this.registerEvent(
@@ -371,7 +534,20 @@ export class ReactNoteReviewView extends ItemView {
             }),
         );
         this.registerEvent(
-            this.app.workspace.on("active-leaf-change", () => {
+            this.app.workspace.on("active-leaf-change", (activeLeaf: WorkspaceLeaf | null) => {
+                if (activeLeaf?.view instanceof MarkdownView) {
+                    this.previousMarkdownTabsContainer = this.currentMarkdownTabsContainer;
+                    this.currentMarkdownTabsContainer = this.getWorkspaceTabsContainer(activeLeaf);
+                    this.lastMarkdownLeafChangeAt = Date.now();
+                }
+                this.logRuntimeDebug("[TimelineAutoFollow] workspace:active-leaf-change:ignored", {
+                    activeLeaf: this.describeLeaf(activeLeaf),
+                    activeMarkdownPath: this.resolvePrimaryMarkdownPath(),
+                    lastPrimaryMarkdownPath: this.lastPrimaryMarkdownPath,
+                    previousTabsContainerMatched:
+                        this.previousMarkdownTabsContainer !== null &&
+                        this.previousMarkdownTabsContainer === this.currentMarkdownTabsContainer,
+                });
                 this.scheduleDrawerChromeSync();
             }),
         );
@@ -484,6 +660,14 @@ export class ReactNoteReviewView extends ItemView {
         const data = reviewDecksToSidebarState(this.plugin);
         this.restorePersistedTimelineSelection(data);
         const activeFilePath = this.resolvePrimaryMarkdownPath();
+        this.lastPrimaryMarkdownPath = activeFilePath;
+        this.logRuntimeDebug("[TimelineAutoFollow] redraw", {
+            activeFilePath,
+            selectedItemPath: this.selectedItem?.path ?? null,
+            autoRevealTargetPath: this.autoRevealTargetPath,
+            autoRevealRequestKey: this.autoRevealRequestKey,
+            autoRevealDebugSource: this.autoRevealDebugSource,
+        });
         if (this.selectedItem && this.commitStore) {
             this.commitLogs = this.commitStore.getCommits(this.selectedItem.path);
         }
@@ -495,6 +679,8 @@ export class ReactNoteReviewView extends ItemView {
                 activeFilePath: activeFilePath ?? undefined,
                 autoRevealTargetPath: this.autoRevealTargetPath ?? undefined,
                 autoRevealRequestKey: this.autoRevealRequestKey,
+                autoRevealDebugSource: this.autoRevealDebugSource ?? undefined,
+                debugRuntime: this.shouldLogRuntimeDebug(),
                 onNoteClick: (item, options) => {
                     this.runAsync(this.handleNoteClick(item, options), "open note");
                 },
@@ -799,7 +985,9 @@ export class ReactNoteReviewView extends ItemView {
         }
 
         const targetLeaf = this.resolveNoteNavigationLeaf(item.noteFile, options);
+        this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
         await targetLeaf.openFile(item.noteFile);
+        this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
         this.app.workspace.revealLeaf?.(targetLeaf);
 
         // Show the floating review bar when the note is tracked.
@@ -1269,9 +1457,12 @@ export class ReactNoteReviewView extends ItemView {
     /**
      * Auto-select and expand the timeline when a reviewed file opens.
      */
-    private handleFileOpen(): void {
+    private handleFileOpen(file?: TFile | null): void {
         const data = reviewDecksToSidebarState(this.plugin);
-        this.syncSidebarToPrimaryMarkdownNote(data, { requestReveal: true });
+        this.syncSidebarToPrimaryMarkdownNote(data, {
+            requestReveal: true,
+            source: `file-open:${file?.path ?? "unknown"}`,
+        });
         this.redraw();
     }
 }

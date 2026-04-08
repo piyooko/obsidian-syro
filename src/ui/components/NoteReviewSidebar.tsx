@@ -1817,6 +1817,8 @@ interface NoteReviewSidebarProps {
     filePathTooltipEnabled?: boolean;
     filePathTooltipDelayMs?: number;
     isForegroundDrawerView?: boolean;
+    autoRevealDebugSource?: string;
+    debugRuntime?: boolean;
 }
 
 export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
@@ -1865,6 +1867,8 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     filePathTooltipEnabled = true,
     filePathTooltipDelayMs = 1000,
     isForegroundDrawerView = false,
+    autoRevealDebugSource,
+    debugRuntime = false,
 }) => {
     const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
     const [currentHeight, setCurrentHeight] = useState(filterBarHeight);
@@ -1887,6 +1891,23 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     const timelineTouchBlockCooldownRef = useRef<number | null>(null);
     const suppressNextTimelineHeaderClickRef = useRef(false);
     const contentRef = useRef<HTMLDivElement>(null);
+    const lastHandledAutoRevealRequestKeyRef = useRef(0);
+
+    const logRuntimeDebug = useCallback(
+        (message: string, details?: Record<string, unknown>) => {
+            if (!debugRuntime) {
+                return;
+            }
+
+            if (details) {
+                console.debug(message, details);
+                return;
+            }
+
+            console.debug(message);
+        },
+        [debugRuntime],
+    );
 
     // 同步外部高度变化
     useEffect(() => {
@@ -2149,18 +2170,47 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
 
     useLayoutEffect(() => {
         if (!autoRevealTargetPath || autoRevealRequestKey <= 0) {
+            logRuntimeDebug("[TimelineAutoFollow] sidebar:auto-reveal:skip", {
+                reason: !autoRevealTargetPath ? "missingTargetPath" : "nonPositiveRequestKey",
+                autoRevealTargetPath,
+                autoRevealRequestKey,
+                autoRevealDebugSource,
+            });
+            return;
+        }
+
+        if (autoRevealRequestKey <= lastHandledAutoRevealRequestKeyRef.current) {
+            logRuntimeDebug("[TimelineAutoFollow] sidebar:auto-reveal:skip", {
+                reason: "requestAlreadyHandled",
+                autoRevealTargetPath,
+                autoRevealRequestKey,
+                autoRevealDebugSource,
+            });
             return;
         }
 
         const contentEl = contentRef.current;
         const sidebarEl = sidebarRef.current;
         if (!(contentEl instanceof HTMLElement) || !(sidebarEl instanceof HTMLElement)) {
+            logRuntimeDebug("[TimelineAutoFollow] sidebar:auto-reveal:skip", {
+                reason: "missingSidebarElements",
+                autoRevealTargetPath,
+                autoRevealRequestKey,
+                autoRevealDebugSource,
+            });
             return;
         }
 
         const noteSelector = `[data-note-path="${escapeNotePathForSelector(autoRevealTargetPath)}"]`;
         const noteEl = sidebarEl.querySelector(noteSelector);
         if (!(noteEl instanceof HTMLElement)) {
+            logRuntimeDebug("[TimelineAutoFollow] sidebar:auto-reveal:skip", {
+                reason: "targetElementNotFound",
+                autoRevealTargetPath,
+                autoRevealRequestKey,
+                autoRevealDebugSource,
+                noteSelector,
+            });
             return;
         }
 
@@ -2172,15 +2222,34 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
             noteRect.bottom <= contentRect.bottom - visibilityPadding;
 
         if (isFullyVisible) {
+            lastHandledAutoRevealRequestKeyRef.current = autoRevealRequestKey;
+            logRuntimeDebug("[TimelineAutoFollow] sidebar:auto-reveal:skip", {
+                reason: "targetAlreadyVisible",
+                autoRevealTargetPath,
+                autoRevealRequestKey,
+                autoRevealDebugSource,
+            });
             return;
         }
 
+        lastHandledAutoRevealRequestKeyRef.current = autoRevealRequestKey;
+        logRuntimeDebug("[TimelineAutoFollow] sidebar:auto-reveal:scroll", {
+            autoRevealTargetPath,
+            autoRevealRequestKey,
+            autoRevealDebugSource,
+        });
         noteEl.scrollIntoView({
             behavior: "smooth",
             block: "center",
             inline: "nearest",
         });
-    }, [autoRevealRequestKey, autoRevealTargetPath, filteredSections]);
+    }, [
+        autoRevealDebugSource,
+        autoRevealRequestKey,
+        autoRevealTargetPath,
+        filteredSections,
+        logRuntimeDebug,
+    ]);
 
     // 标签切换
     const handleToggleTag = useCallback((tag: string, multiSelect: boolean) => {
