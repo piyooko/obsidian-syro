@@ -733,6 +733,13 @@ settings:
     level: 2
     collapsed: true
   -
+    id: syro-desktop-review-square-corners
+    title: Square corners
+    title.zh: 直角边框
+    description: Force the review card, stats panel, and action buttons to use 0 radius.
+    description.zh: 强制复习卡片、统计面板和操作按钮使用 0 圆角。
+    type: class-toggle
+  -
     id: syro-desktop-review-card-radius
     title: Card corner radius
     title.zh: 卡片圆角
@@ -878,6 +885,13 @@ settings:
     type: heading
     level: 2
     collapsed: true
+  -
+    id: syro-desktop-sidebar-square-corners
+    title: Square corners
+    title.zh: 直角边框
+    description: Force sidebar controls, note items, and timeline chips to use 0 radius.
+    description.zh: 强制侧边栏控制按钮、笔记项和时间线标签使用 0 圆角。
+    type: class-toggle
   -
     id: syro-desktop-sidebar-tag-pill-radius
     title: Tag pill radius
@@ -1208,6 +1222,13 @@ settings:
     level: 2
     collapsed: true
   -
+    id: syro-mobile-review-square-corners
+    title: Square corners
+    title.zh: 直角边框
+    description: Force the phone review card, stats panel, and action buttons to use 0 radius.
+    description.zh: 强制手机复习卡片、统计面板和操作按钮使用 0 圆角。
+    type: class-toggle
+  -
     id: syro-mobile-review-card-radius
     title: Card corner radius
     title.zh: 卡片圆角
@@ -1353,6 +1374,13 @@ settings:
     type: heading
     level: 2
     collapsed: true
+  -
+    id: syro-mobile-sidebar-square-corners
+    title: Square corners
+    title.zh: 直角边框
+    description: Force phone sidebar controls, note items, and timeline chips to use 0 radius.
+    description.zh: 强制手机侧边栏控制按钮、笔记项和时间线标签使用 0 圆角。
+    type: class-toggle
   -
     id: syro-mobile-sidebar-tag-pill-radius
     title: Tag pill radius

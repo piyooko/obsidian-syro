@@ -1032,6 +1032,23 @@ body.syro-desktop-review-compact-actions
     font-size: max(8px, calc(var(--syro-desktop-review-button-sub-font-size, 10px) - 1px));
 }
 
+body.syro-desktop-review-square-corners
+    .sr-linear-card-wrapper:not(.sr-phone-layout)
+    :is(
+        .sr-linear-card,
+        .sr-stats-panel,
+        .sr-stat-badge,
+        .sr-filename-badge,
+        .sr-menu-btn,
+        .sr-dropdown-menu,
+        .sr-menu-item,
+        .sr-menu-item-kbd,
+        .sr-show-answer-btn,
+        .sr-linear-btn
+    ) {
+    border-radius: 0 !important;
+}
+
 /* ==========================================
    Debug Modal
    ========================================== */
@@ -1852,6 +1869,23 @@ body.syro-mobile-review-compact-actions
 
 body.syro-mobile-review-compact-actions .sr-linear-card-wrapper.sr-phone-layout .sr-linear-btn-sub {
     font-size: max(8px, calc(var(--syro-mobile-review-button-sub-font-size, 9px) - 1px));
+}
+
+body.syro-mobile-review-square-corners
+    .sr-linear-card-wrapper.sr-phone-layout
+    :is(
+        .sr-linear-card,
+        .sr-stats-panel,
+        .sr-stat-badge,
+        .sr-filename-badge,
+        .sr-menu-btn,
+        .sr-dropdown-menu,
+        .sr-menu-item,
+        .sr-menu-item-kbd,
+        .sr-show-answer-btn,
+        .sr-linear-btn
+    ) {
+    border-radius: 0 !important;
 }
 
 /* 移动端：隐藏键盘快捷键提示 */
