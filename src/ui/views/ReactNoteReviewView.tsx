@@ -82,6 +82,7 @@ export class ReactNoteReviewView extends ItemView {
     private timelineHeight: number = 300;
     private editingId: string | null = null;
     private unsubscribeSyncEvent: (() => void) | null = null;
+    private unsubscribeReviewCardSyncEvent: (() => void) | null = null;
     private isLoading: boolean = false;
     private timelineScopeHandlers: Array<Parameters<Scope["unregister"]>[0]> = [];
     private autoRevealTargetPath: string | null = null;
@@ -383,6 +384,10 @@ export class ReactNoteReviewView extends ItemView {
         this.commitLogs = item && this.commitStore ? this.commitStore.getCommits(item.path) : [];
     }
 
+    private canUseStandaloneTimelineItems(): boolean {
+        return this.plugin.data.settings.timelineAllowUntrackedNotes === true;
+    }
+
     private extractStandaloneTimelineTags(file: TFile): string[] {
         const fileCache = this.app.metadataCache.getFileCache(file) ?? null;
         const tags = getAllTags(fileCache) ?? [];
@@ -390,6 +395,10 @@ export class ReactNoteReviewView extends ItemView {
     }
 
     private buildStandaloneTimelineItem(path: string): NoteReviewItem | null {
+        if (!this.canUseStandaloneTimelineItems()) {
+            return null;
+        }
+
         const abstractFile = this.app.vault.getAbstractFileByPath(path);
         if (!(abstractFile instanceof TFile) || abstractFile.extension !== "md") {
             return null;
@@ -443,10 +452,53 @@ export class ReactNoteReviewView extends ItemView {
 
         const foundItem = this.resolveTimelineItemByPath(data, selectedPath);
         if (!foundItem) {
+            const trackedItem = this.plugin.noteReviewStore.getItem(selectedPath);
+            if (!trackedItem && !this.canUseStandaloneTimelineItems()) {
+                this.setSelectedTimelineItem(null);
+            }
             return;
         }
 
         this.setSelectedTimelineItem(foundItem);
+    }
+
+    private syncTimelineToPath(
+        data: ReturnType<typeof reviewDecksToSidebarState>,
+        notePath: string,
+        options: { requestReveal: boolean; source: string },
+    ): boolean {
+        const foundItem = this.resolveTimelineItemByPath(data, notePath);
+        if (!foundItem) {
+            this.logRuntimeDebug("[TimelineAutoFollow] syncTimelineToPath:skip", {
+                source: options.source,
+                reason: "pathUnavailableForTimeline",
+                notePath,
+                allowStandaloneTimeline: this.canUseStandaloneTimelineItems(),
+            });
+            return false;
+        }
+
+        this.setSelectedTimelineItem(foundItem);
+        this.isTimelineOpen = true;
+        this.persistTimelineUiState({
+            selectedPath: foundItem.path,
+            isOpen: true,
+        });
+
+        if (options.requestReveal) {
+            this.autoRevealTargetPath = foundItem.path;
+            this.autoRevealRequestKey += 1;
+            this.autoRevealDebugSource = options.source;
+        }
+
+        this.logRuntimeDebug("[TimelineAutoFollow] syncTimelineToPath:matched", {
+            source: options.source,
+            matchedPath: foundItem.path,
+            requestReveal: options.requestReveal,
+            autoRevealRequestKey: this.autoRevealRequestKey,
+        });
+
+        return true;
     }
 
     private syncSidebarToPrimaryMarkdownNote(
@@ -471,37 +523,32 @@ export class ReactNoteReviewView extends ItemView {
             return primaryMarkdownPath;
         }
 
-        const foundItem = this.resolveTimelineItemByPath(data, primaryMarkdownPath);
-        if (!foundItem) {
-            this.logRuntimeDebug("[TimelineAutoFollow] syncSidebarToPrimaryMarkdownNote:skip", {
-                source: options.source,
-                reason: "pathUnavailableForTimeline",
-                primaryMarkdownPath,
-            });
-            return primaryMarkdownPath;
-        }
-
-        this.setSelectedTimelineItem(foundItem);
-        this.isTimelineOpen = true;
-        this.persistTimelineUiState({
-            selectedPath: foundItem.path,
-            isOpen: true,
-        });
-
-        if (options.requestReveal) {
-            this.autoRevealTargetPath = foundItem.path;
-            this.autoRevealRequestKey += 1;
-            this.autoRevealDebugSource = options.source;
-        }
-
-        this.logRuntimeDebug("[TimelineAutoFollow] syncSidebarToPrimaryMarkdownNote:matched", {
-            source: options.source,
-            matchedPath: foundItem.path,
-            requestReveal: options.requestReveal,
-            autoRevealRequestKey: this.autoRevealRequestKey,
-        });
+        this.syncTimelineToPath(data, primaryMarkdownPath, options);
 
         return primaryMarkdownPath;
+    }
+
+    private handleReviewCardTimelineFollow(): void {
+        const reviewCardPath = this.plugin.getTimelineReviewCardPath();
+        if (
+            !this.plugin.data.settings.timelineAutoFollowReviewCards ||
+            reviewCardPath == null
+        ) {
+            this.logRuntimeDebug("[TimelineAutoFollow] review-card:skip", {
+                reviewCardPath,
+                enabled: this.plugin.data.settings.timelineAutoFollowReviewCards === true,
+            });
+            return;
+        }
+
+        const data = reviewDecksToSidebarState(this.plugin);
+        const didSync = this.syncTimelineToPath(data, reviewCardPath, {
+            requestReveal: false,
+            source: `review-card:${reviewCardPath}`,
+        });
+        if (didSync) {
+            this.redraw();
+        }
     }
 
     constructor(leaf: WorkspaceLeaf, plugin: SRPlugin) {
@@ -663,6 +710,12 @@ export class ReactNoteReviewView extends ItemView {
         this.unsubscribeSyncEvent = this.plugin.syncEvents.on("note-review-updated", () => {
             this.redraw();
         });
+        this.unsubscribeReviewCardSyncEvent = this.plugin.syncEvents.on(
+            "timeline-review-card-updated",
+            () => {
+                this.handleReviewCardTimelineFollow();
+            },
+        );
 
         return Promise.resolve();
     }
@@ -675,6 +728,10 @@ export class ReactNoteReviewView extends ItemView {
         if (this.unsubscribeSyncEvent) {
             this.unsubscribeSyncEvent();
             this.unsubscribeSyncEvent = null;
+        }
+        if (this.unsubscribeReviewCardSyncEvent) {
+            this.unsubscribeReviewCardSyncEvent();
+            this.unsubscribeReviewCardSyncEvent = null;
         }
 
         this.unregisterTimelineScopeHotkeys();

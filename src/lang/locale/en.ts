@@ -846,11 +846,19 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_SIDEBAR_FILE_PATH_TOOLTIP_DELAY_DESC:
         "How long to hover before showing the file path tooltip. 0 shows it immediately.",
     SETTINGS_SECTION_TIMELINE: "Timeline",
+    SETTINGS_LAB_BADGE: "LAB",
+    SETTINGS_LAB_BADGE_ARIA: "Experimental feature",
     SETTINGS_TIMELINE_SCROLL: "Show Scroll Percentage",
     SETTINGS_TIMELINE_SCROLL_DESC: "Show reading progress percentage in timeline items.",
     SETTINGS_TIMELINE_AUTO_EXPAND: "Auto Follow Current Note",
     SETTINGS_TIMELINE_AUTO_EXPAND_DESC:
         "When the sidebar opens or the main editor switches notes, automatically locate the current note in the queue and open its timeline.",
+    SETTINGS_TIMELINE_ALLOW_UNTRACKED_NOTES: "Allow Timeline For Untracked Notes",
+    SETTINGS_TIMELINE_ALLOW_UNTRACKED_NOTES_DESC:
+        "Let the sidebar Timeline follow and log the current markdown note even when it is not in the review queue.",
+    SETTINGS_TIMELINE_AUTO_FOLLOW_REVIEW_CARD: "Follow Current Review Card Note",
+    SETTINGS_TIMELINE_AUTO_FOLLOW_REVIEW_CARD_DESC:
+        "While reviewing flashcards, automatically switch Timeline to the source note of the current card.",
     SETTINGS_TIMELINE_AUTO_COMMIT_REVIEW: "Auto Log Review Selection",
     SETTINGS_TIMELINE_AUTO_COMMIT_REVIEW_DESC:
         "Automatically write the selected note review option into Timeline after a successful review.",

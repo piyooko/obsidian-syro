@@ -1445,6 +1445,16 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     );
 
     const sourcePath = question.note?.file?.path || "";
+    useEffect(() => {
+        plugin.setTimelineReviewCardPath(sourcePath || null);
+
+        return () => {
+            if (plugin.getTimelineReviewCardPath() === (sourcePath || null)) {
+                plugin.setTimelineReviewCardPath(null);
+            }
+        };
+    }, [plugin, sourcePath]);
+
     const renderCardMarkdown = useCallback(
         (text: string, el: HTMLElement) =>
             MarkdownRenderer.render(plugin.app, text, el, sourcePath, markdownOwner),

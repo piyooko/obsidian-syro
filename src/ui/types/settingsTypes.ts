@@ -61,6 +61,8 @@ export interface UISettingsState {
     sidebarFilePathTooltipDelayMs: number; // Hover delay before showing sidebar file path tooltips
     showScrollPercentage: boolean; // Show saved scroll percentage in timeline items
     autoExpandTimeline: boolean; // Auto-expand the timeline when opening a reviewed note
+    timelineAllowUntrackedNotes: boolean; // Experimental: allow timeline access for untracked notes
+    timelineAutoFollowReviewCards: boolean; // Experimental: follow the current review card note
     timelineAutoCommitReviewSelection: boolean; // Auto-write note review selections to timeline
     timelineEnableDurationPrefixSyntax: boolean; // Enable Nd:: prefix parsing and rendering
 

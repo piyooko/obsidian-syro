@@ -262,6 +262,7 @@ export default class SRPlugin extends Plugin {
     public reviewPersistenceCoordinator: ReviewPersistenceCoordinator;
 
     public syncEvents: SyncEvents = new SyncEvents();
+    private timelineReviewCardPath: string | null = null;
 
     public clock_start: number;
 
@@ -1221,6 +1222,21 @@ export default class SRPlugin extends Plugin {
         const fileCachedData = this.app.metadataCache.getFileCache(note) || {};
         const tags = getAllTags(fileCachedData) || [];
         return SettingsUtil.getNoteReviewIgnoreReason(this.data.settings, note.path, tags);
+    }
+
+    public getTimelineReviewCardPath(): string | null {
+        return this.timelineReviewCardPath;
+    }
+
+    public setTimelineReviewCardPath(path: string | null): void {
+        const normalizedPath =
+            typeof path === "string" && path.trim().length > 0 ? path.trim() : null;
+        if (this.timelineReviewCardPath === normalizedPath) {
+            return;
+        }
+
+        this.timelineReviewCardPath = normalizedPath;
+        this.syncEvents.emit("timeline-review-card-updated");
     }
 
     public showNoteReviewIgnoreNotice(reason: NoteReviewIgnoreReason): void {

@@ -188,6 +188,13 @@ describe("sync progress display defaults", () => {
         expect(settingsToUIState(DEFAULT_SETTINGS).autoExpandTimeline).toBe(true);
     });
 
+    test("experimental timeline follow helpers stay disabled by default", () => {
+        expect(DEFAULT_SETTINGS.timelineAllowUntrackedNotes).toBe(false);
+        expect(DEFAULT_SETTINGS.timelineAutoFollowReviewCards).toBe(false);
+        expect(settingsToUIState(DEFAULT_SETTINGS).timelineAllowUntrackedNotes).toBe(false);
+        expect(settingsToUIState(DEFAULT_SETTINGS).timelineAutoFollowReviewCards).toBe(false);
+    });
+
     test("settings UI normalizes sidebar file path tooltip delay to a non-negative integer", () => {
         const merged = mergeUIStateToSettings(DEFAULT_SETTINGS, {
             sidebarFilePathTooltipDelayMs: -12.6,

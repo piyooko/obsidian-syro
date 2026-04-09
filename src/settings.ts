@@ -651,6 +651,8 @@ export interface SRSettings {
     sidebarTimelineSelectedPath: string | null; // Persisted selected note path in timeline
     showScrollPercentage: boolean;
     autoExpandTimeline: boolean;
+    timelineAllowUntrackedNotes: boolean;
+    timelineAutoFollowReviewCards: boolean;
     timelineAutoCommitReviewSelection: boolean;
     timelineEnableDurationPrefixSyntax: boolean;
 
@@ -804,6 +806,8 @@ export const DEFAULT_SETTINGS: SRSettings = {
     sidebarTimelineSelectedPath: null,
     showScrollPercentage: true,
     autoExpandTimeline: true,
+    timelineAllowUntrackedNotes: false,
+    timelineAutoFollowReviewCards: false,
     timelineAutoCommitReviewSelection: true,
     timelineEnableDurationPrefixSyntax: true,
 

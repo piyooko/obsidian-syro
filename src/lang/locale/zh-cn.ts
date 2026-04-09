@@ -635,11 +635,19 @@ export default {
     SETTINGS_SIDEBAR_FILE_PATH_TOOLTIP_DELAY_DESC:
         "悬浮多久后显示文件路径提示。设为 0 则立即显示。",
     SETTINGS_SECTION_TIMELINE: "时间线",
+    SETTINGS_LAB_BADGE: "LAB",
+    SETTINGS_LAB_BADGE_ARIA: "实验性功能",
     SETTINGS_TIMELINE_SCROLL: "显示阅读进度",
     SETTINGS_TIMELINE_SCROLL_DESC: "在时间线条目中显示该条提交时的阅读进度百分比",
     SETTINGS_TIMELINE_AUTO_EXPAND: "自动跟随当前笔记",
     SETTINGS_TIMELINE_AUTO_EXPAND_DESC:
         "当侧边栏打开，或主编辑区切换到其他笔记时，自动在队列中定位当前笔记并展开它的时间线",
+    SETTINGS_TIMELINE_ALLOW_UNTRACKED_NOTES: "允许未追踪笔记使用 Timeline",
+    SETTINGS_TIMELINE_ALLOW_UNTRACKED_NOTES_DESC:
+        "即使当前 Markdown 笔记不在复习队列中，也允许侧边栏 Timeline 跟随并记录该笔记。",
+    SETTINGS_TIMELINE_AUTO_FOLLOW_REVIEW_CARD: "让 Timeline 跟随当前复习卡片的笔记",
+    SETTINGS_TIMELINE_AUTO_FOLLOW_REVIEW_CARD_DESC:
+        "在卡片复习过程中，自动将 Timeline 切换到当前卡片所属的源笔记。",
     SETTINGS_TIMELINE_AUTO_COMMIT_REVIEW: "自动记录复习选项",
     SETTINGS_TIMELINE_AUTO_COMMIT_REVIEW_DESC: "笔记复习成功后，自动把所选选项写入时间线",
     SETTINGS_TIMELINE_ENABLE_DURATION_PREFIX: "启用时长前缀语法",

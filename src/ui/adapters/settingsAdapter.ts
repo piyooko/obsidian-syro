@@ -139,6 +139,8 @@ export function settingsToUIState(settings: SRSettings): UISettingsState {
         ),
         showScrollPercentage: settings.showScrollPercentage ?? true,
         autoExpandTimeline: settings.autoExpandTimeline ?? true,
+        timelineAllowUntrackedNotes: settings.timelineAllowUntrackedNotes ?? false,
+        timelineAutoFollowReviewCards: settings.timelineAutoFollowReviewCards ?? false,
         timelineAutoCommitReviewSelection: settings.timelineAutoCommitReviewSelection ?? true,
         timelineEnableDurationPrefixSyntax: settings.timelineEnableDurationPrefixSyntax ?? true,
 
@@ -277,6 +279,10 @@ export function mergeUIStateToSettings(
         merged.showScrollPercentage = uiChanges.showScrollPercentage;
     if (uiChanges.autoExpandTimeline !== undefined)
         merged.autoExpandTimeline = uiChanges.autoExpandTimeline;
+    if (uiChanges.timelineAllowUntrackedNotes !== undefined)
+        merged.timelineAllowUntrackedNotes = uiChanges.timelineAllowUntrackedNotes;
+    if (uiChanges.timelineAutoFollowReviewCards !== undefined)
+        merged.timelineAutoFollowReviewCards = uiChanges.timelineAutoFollowReviewCards;
     if (uiChanges.timelineAutoCommitReviewSelection !== undefined)
         merged.timelineAutoCommitReviewSelection = uiChanges.timelineAutoCommitReviewSelection;
     if (uiChanges.timelineEnableDurationPrefixSyntax !== undefined)

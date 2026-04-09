@@ -52,16 +52,41 @@ const SupporterDiamond = () => (
     </svg>
 );
 
-const LabelWithSupporter = ({ label, isLocked }: { label: string; isLocked: boolean }) => (
+const LabelWithBadge = ({
+    label,
+    badgeText,
+    badgeAriaLabel,
+}: {
+    label: string;
+    badgeText: string;
+    badgeAriaLabel: string;
+}) => (
     <span className="sr-supporter-label-wrap">
         <span>{label}</span>
-        {isLocked && (
-            <span className="sr-supporter-badge" aria-label={t("SETTINGS_SUPPORTER_BADGE")}>
-                <SupporterDiamond />
-                <span>{t("SETTINGS_SUPPORTER_BADGE")}</span>
-            </span>
-        )}
+        <span className="sr-supporter-badge" aria-label={badgeAriaLabel}>
+            <SupporterDiamond />
+            <span>{badgeText}</span>
+        </span>
     </span>
+);
+
+const LabelWithSupporter = ({ label, isLocked }: { label: string; isLocked: boolean }) =>
+    isLocked ? (
+        <LabelWithBadge
+            label={label}
+            badgeText={t("SETTINGS_SUPPORTER_BADGE")}
+            badgeAriaLabel={t("SETTINGS_SUPPORTER_BADGE")}
+        />
+    ) : (
+        <span>{label}</span>
+    );
+
+const LabelWithLab = ({ label }: { label: string }) => (
+    <LabelWithBadge
+        label={label}
+        badgeText={t("SETTINGS_LAB_BADGE").toUpperCase()}
+        badgeAriaLabel={t("SETTINGS_LAB_BADGE_ARIA")}
+    />
 );
 
 // ==========================================
@@ -1305,6 +1330,18 @@ const NotesTab: React.FC<TabProps> = ({ settings, onChange }) => {
                     desc={t("SETTINGS_TIMELINE_AUTO_EXPAND_DESC")}
                     value={settings.autoExpandTimeline}
                     onChange={(v) => onChange("autoExpandTimeline", v)}
+                />
+                <ToggleRow
+                    label={<LabelWithLab label={t("SETTINGS_TIMELINE_ALLOW_UNTRACKED_NOTES")} />}
+                    desc={t("SETTINGS_TIMELINE_ALLOW_UNTRACKED_NOTES_DESC")}
+                    value={settings.timelineAllowUntrackedNotes}
+                    onChange={(v) => onChange("timelineAllowUntrackedNotes", v)}
+                />
+                <ToggleRow
+                    label={<LabelWithLab label={t("SETTINGS_TIMELINE_AUTO_FOLLOW_REVIEW_CARD")} />}
+                    desc={t("SETTINGS_TIMELINE_AUTO_FOLLOW_REVIEW_CARD_DESC")}
+                    value={settings.timelineAutoFollowReviewCards}
+                    onChange={(v) => onChange("timelineAutoFollowReviewCards", v)}
                 />
                 <ToggleRow
                     label={t("SETTINGS_TIMELINE_AUTO_COMMIT_REVIEW")}

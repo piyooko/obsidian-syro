@@ -64,6 +64,8 @@ function createSettings(overrides: Partial<UISettingsState> = {}): UISettingsSta
         sidebarFilePathTooltipDelayMs: 1000,
         showScrollPercentage: true,
         autoExpandTimeline: true,
+        timelineAllowUntrackedNotes: false,
+        timelineAutoFollowReviewCards: false,
         timelineAutoCommitReviewSelection: true,
         timelineEnableDurationPrefixSyntax: true,
         fsrsEnableFuzz: true,
@@ -475,6 +477,42 @@ describe("EmbeddedSettingsPanel", () => {
             expect(toggleContainer?.tagName).toBe("LABEL");
             expect(toggleContainer?.getAttribute("tabindex")).toBe("0");
             expect(toggleInput).not.toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("shows LAB badges on experimental timeline settings and keeps them off by default", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            openTab(view.container, "Incremental");
+
+            const untrackedItem = findSettingItemByName(view.container, [
+                "Allow Timeline For Untracked Notes",
+            ]);
+            const reviewCardItem = findSettingItemByName(view.container, [
+                "Follow Current Review Card Note",
+            ]);
+
+            expect(untrackedItem?.querySelector(".sr-supporter-badge")?.textContent).toContain(
+                "LAB",
+            );
+            expect(reviewCardItem?.querySelector(".sr-supporter-badge")?.textContent).toContain(
+                "LAB",
+            );
+            expect(
+                (
+                    untrackedItem?.querySelector('input[type="checkbox"]') as HTMLInputElement | null
+                )?.checked,
+            ).toBe(false);
+            expect(
+                (
+                    reviewCardItem?.querySelector(
+                        'input[type="checkbox"]',
+                    ) as HTMLInputElement | null
+                )?.checked,
+            ).toBe(false);
         } finally {
             view.cleanup();
         }

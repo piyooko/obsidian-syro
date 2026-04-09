@@ -146,6 +146,8 @@ function createView(options: {
     mobile?: boolean;
     tablet?: boolean;
     autoExpandTimeline?: boolean;
+    timelineAllowUntrackedNotes?: boolean;
+    timelineAutoFollowReviewCards?: boolean;
     activeMarkdownPath?: string | null;
     markdownLeaves?: Array<{ view: MarkdownView }>;
     mostRecentLeaf?: { view: MarkdownView } | null;
@@ -242,6 +244,8 @@ function createView(options: {
                 hideNoteReviewSidebarFilters: false,
                 showScrollPercentage: true,
                 autoExpandTimeline: options.autoExpandTimeline ?? true,
+                timelineAllowUntrackedNotes: options.timelineAllowUntrackedNotes ?? false,
+                timelineAutoFollowReviewCards: options.timelineAutoFollowReviewCards ?? false,
                 timelineEnableDurationPrefixSyntax: false,
                 showSidebarProgressIndicator: true,
                 sidebarFilePathTooltipEnabled: true,
@@ -261,6 +265,8 @@ function createView(options: {
         getNoteReviewIgnoreReason: jest.fn(() => null),
         showNoteReviewIgnoreNotice: jest.fn(),
         clearFolderTrackingExclusion: jest.fn(),
+        getTimelineReviewCardPath: jest.fn(() => null),
+        setTimelineReviewCardPath: jest.fn(),
         noteAlgorithm: {},
         reviewDecks: {},
         updateAndSortDueNotes: jest.fn(),
@@ -392,6 +398,7 @@ describe("ReactNoteReviewView", () => {
             savedTimelineOpen: true,
             savedSelectedPath: path,
             autoExpandTimeline: false,
+            timelineAllowUntrackedNotes: true,
             availableFiles: [path],
         });
 
@@ -401,6 +408,21 @@ describe("ReactNoteReviewView", () => {
             path,
             title: "Standalone Note",
         });
+    });
+
+    it("does not restore a saved standalone timeline selection when experimental support is disabled", () => {
+        const path = "notes/Standalone Note.md";
+        const { root, view } = createView({
+            savedTimelineOpen: true,
+            savedSelectedPath: path,
+            autoExpandTimeline: false,
+            timelineAllowUntrackedNotes: false,
+            availableFiles: [path],
+        });
+
+        view.redraw();
+
+        expect(getLastSidebarProps(root).selectedItem).toBeNull();
     });
 
     it("auto-follows the current markdown note on file open when the active leaf is that markdown tab", () => {
@@ -446,6 +468,7 @@ describe("ReactNoteReviewView", () => {
         const { app, plugin, root } = createView({
             activeMarkdownPath: path,
             autoExpandTimeline: true,
+            timelineAllowUntrackedNotes: true,
             availableFiles: [path],
         });
         app.workspace.getActiveViewOfType.mockReturnValue(markdownView);
@@ -600,6 +623,7 @@ describe("ReactNoteReviewView", () => {
         const { root, view } = createView({
             activeMarkdownPath: "notes/Current Focus.md",
             autoExpandTimeline: true,
+            timelineAllowUntrackedNotes: true,
             availableFiles: ["notes/Current Focus.md"],
         });
         (view as any).selectedItem = oldItem;
@@ -668,6 +692,7 @@ describe("ReactNoteReviewView", () => {
         const path = "notes/Plan.md";
         const { plugin, view } = createView({
             activeMarkdownPath: path,
+            timelineAllowUntrackedNotes: true,
             availableFiles: [path],
         });
         plugin.data.settings.timelineEnableDurationPrefixSyntax = true;
@@ -714,6 +739,7 @@ describe("ReactNoteReviewView", () => {
         const path = "notes/Blocked.md";
         const { plugin, view } = createView({
             activeMarkdownPath: path,
+            timelineAllowUntrackedNotes: true,
             availableFiles: [path],
         });
         plugin.data.settings.timelineEnableDurationPrefixSyntax = true;
@@ -731,5 +757,41 @@ describe("ReactNoteReviewView", () => {
         expect(plugin.noteReviewStore.ensureTracked).not.toHaveBeenCalled();
         expect(plugin.noteReviewStore.save).not.toHaveBeenCalled();
         expect(plugin.showNoteReviewIgnoreNotice).toHaveBeenCalledWith(reason);
+    });
+
+    it("follows the current review card note into a standalone timeline item when enabled", () => {
+        const path = "notes/Card Source.md";
+        const { plugin, root, view } = createView({
+            timelineAllowUntrackedNotes: true,
+            timelineAutoFollowReviewCards: true,
+            availableFiles: [path],
+        });
+        plugin.getTimelineReviewCardPath.mockReturnValue(path);
+
+        (view as any).handleReviewCardTimelineFollow();
+
+        const props = getLastSidebarProps(root);
+        expect(props.selectedItem).toMatchObject({
+            path,
+            title: "Card Source",
+        });
+        expect(props.isTimelineOpen).toBe(true);
+        expect(props.autoRevealRequestKey).toBe(0);
+    });
+
+    it("ignores review card timeline follow for untracked notes when experimental support is disabled", () => {
+        const path = "notes/Card Source.md";
+        const { plugin, root, view } = createView({
+            timelineAllowUntrackedNotes: false,
+            timelineAutoFollowReviewCards: true,
+            availableFiles: [path],
+        });
+        plugin.getTimelineReviewCardPath.mockReturnValue(path);
+        view.redraw();
+        root.render.mockClear();
+
+        (view as any).handleReviewCardTimelineFollow();
+
+        expect(root.render).not.toHaveBeenCalled();
     });
 });
