@@ -121,14 +121,14 @@ export class DeckOptionsModal extends Modal {
         const preset = this.getCurrentPreset();
 
         new Setting(itemsEl).setName(t("DECK_OPTIONS_PRESET_NAME")).addText((text) =>
-            text.setValue(
-                getDeckOptionsPresetDisplayName(preset, this.currentPresetIndex),
-            ).onChange(async (value) => {
-                const nextName = value.trim();
-                if (!nextName) return;
-                preset.name = nextName;
-                await this.saveSettings();
-            }),
+            text
+                .setValue(getDeckOptionsPresetDisplayName(preset, this.currentPresetIndex))
+                .onChange(async (value) => {
+                    const nextName = value.trim();
+                    if (!nextName) return;
+                    preset.name = nextName;
+                    await this.saveSettings();
+                }),
         );
     }
 

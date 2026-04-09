@@ -502,16 +502,12 @@ describe("EmbeddedSettingsPanel", () => {
                 "LAB",
             );
             expect(
-                (
-                    untrackedItem?.querySelector('input[type="checkbox"]') as HTMLInputElement | null
-                )?.checked,
+                (untrackedItem?.querySelector('input[type="checkbox"]') as HTMLInputElement | null)
+                    ?.checked,
             ).toBe(false);
             expect(
-                (
-                    reviewCardItem?.querySelector(
-                        'input[type="checkbox"]',
-                    ) as HTMLInputElement | null
-                )?.checked,
+                (reviewCardItem?.querySelector('input[type="checkbox"]') as HTMLInputElement | null)
+                    ?.checked,
             ).toBe(false);
         } finally {
             view.cleanup();

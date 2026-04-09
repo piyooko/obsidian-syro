@@ -173,11 +173,16 @@ export class ReactNoteReviewView extends ItemView {
     private describeLeaf(leaf: WorkspaceLeaf | null | undefined): Record<string, unknown> {
         const view = leaf?.view;
         const viewType =
-            typeof view?.getViewType === "function" ? view.getViewType() : view?.constructor?.name ?? null;
+            typeof view?.getViewType === "function"
+                ? view.getViewType()
+                : (view?.constructor?.name ?? null);
         const path =
-            view instanceof MarkdownView && typeof view.file?.path === "string" ? view.file.path : null;
-        const containerEl = (leaf as (WorkspaceLeaf & { containerEl?: HTMLElement }) | null | undefined)
-            ?.containerEl;
+            view instanceof MarkdownView && typeof view.file?.path === "string"
+                ? view.file.path
+                : null;
+        const containerEl = (
+            leaf as (WorkspaceLeaf & { containerEl?: HTMLElement }) | null | undefined
+        )?.containerEl;
 
         return {
             viewType,
@@ -187,8 +192,9 @@ export class ReactNoteReviewView extends ItemView {
     }
 
     private getWorkspaceTabsContainer(leaf: WorkspaceLeaf | null | undefined): HTMLElement | null {
-        const containerEl = (leaf as (WorkspaceLeaf & { containerEl?: HTMLElement }) | null | undefined)
-            ?.containerEl;
+        const containerEl = (
+            leaf as (WorkspaceLeaf & { containerEl?: HTMLElement }) | null | undefined
+        )?.containerEl;
         const workspaceTabs = containerEl?.closest(".workspace-tabs");
         return workspaceTabs instanceof HTMLElement ? workspaceTabs : null;
     }
@@ -215,7 +221,8 @@ export class ReactNoteReviewView extends ItemView {
         }
 
         const sameTabsContainer =
-            activeTabsContainer !== null && activeTabsContainer === this.previousMarkdownTabsContainer;
+            activeTabsContainer !== null &&
+            activeTabsContainer === this.previousMarkdownTabsContainer;
         const changedMarkdownPath =
             this.lastPrimaryMarkdownPath == null || this.lastPrimaryMarkdownPath !== file.path;
 
@@ -230,7 +237,9 @@ export class ReactNoteReviewView extends ItemView {
         }
 
         this.logRuntimeDebug("[TimelineAutoFollow] workspace:file-open:ignored", {
-            reason: sameTabsContainer ? "pathDidNotChangeWithinSameTabsContainer" : "tabsContainerChanged",
+            reason: sameTabsContainer
+                ? "pathDidNotChangeWithinSameTabsContainer"
+                : "tabsContainerChanged",
             filePath: file.path,
             activeLeafPath,
             lastPrimaryMarkdownPath: this.lastPrimaryMarkdownPath,
@@ -530,10 +539,7 @@ export class ReactNoteReviewView extends ItemView {
 
     private handleReviewCardTimelineFollow(): void {
         const reviewCardPath = this.plugin.getTimelineReviewCardPath();
-        if (
-            !this.plugin.data.settings.timelineAutoFollowReviewCards ||
-            reviewCardPath == null
-        ) {
+        if (!this.plugin.data.settings.timelineAutoFollowReviewCards || reviewCardPath == null) {
             this.logRuntimeDebug("[TimelineAutoFollow] review-card:skip", {
                 reviewCardPath,
                 enabled: this.plugin.data.settings.timelineAutoFollowReviewCards === true,

@@ -90,8 +90,9 @@ jest.mock("obsidian", () => {
         Scope,
         TFile,
         MarkdownView,
-        getAllTags: jest.fn((fileCache: { tags?: Array<{ tag: string }> } | null | undefined) =>
-            fileCache?.tags?.map((item) => item.tag) ?? [],
+        getAllTags: jest.fn(
+            (fileCache: { tags?: Array<{ tag: string }> } | null | undefined) =>
+                fileCache?.tags?.map((item) => item.tag) ?? [],
         ),
     };
 });
@@ -732,32 +733,32 @@ describe("ReactNoteReviewView", () => {
         expect(plugin.syncEvents.emit).toHaveBeenCalledWith("note-review-updated");
     });
 
-    test.each([
-        ["ignored-tag"],
-        ["ignored-folder"],
-    ])("keeps duration-prefix timeline commits as logs only when note review is blocked by %s", async (reason) => {
-        const path = "notes/Blocked.md";
-        const { plugin, view } = createView({
-            activeMarkdownPath: path,
-            timelineAllowUntrackedNotes: true,
-            availableFiles: [path],
-        });
-        plugin.data.settings.timelineEnableDurationPrefixSyntax = true;
-        plugin.getNoteReviewIgnoreReason.mockReturnValue(reason);
+    test.each([["ignored-tag"], ["ignored-folder"]])(
+        "keeps duration-prefix timeline commits as logs only when note review is blocked by %s",
+        async (reason) => {
+            const path = "notes/Blocked.md";
+            const { plugin, view } = createView({
+                activeMarkdownPath: path,
+                timelineAllowUntrackedNotes: true,
+                availableFiles: [path],
+            });
+            plugin.data.settings.timelineEnableDurationPrefixSyntax = true;
+            plugin.getNoteReviewIgnoreReason.mockReturnValue(reason);
 
-        const commitStore = {
-            getCommits: jest.fn(() => []),
-            addCommit: jest.fn(async () => undefined),
-        };
-        (view as any).commitStore = commitStore;
+            const commitStore = {
+                getCommits: jest.fn(() => []),
+                addCommit: jest.fn(async () => undefined),
+            };
+            (view as any).commitStore = commitStore;
 
-        await (view as any).handleCommit(path, "2d:: blocked");
+            await (view as any).handleCommit(path, "2d:: blocked");
 
-        expect(commitStore.addCommit).toHaveBeenCalledWith(path, "2d:: blocked", null, 0);
-        expect(plugin.noteReviewStore.ensureTracked).not.toHaveBeenCalled();
-        expect(plugin.noteReviewStore.save).not.toHaveBeenCalled();
-        expect(plugin.showNoteReviewIgnoreNotice).toHaveBeenCalledWith(reason);
-    });
+            expect(commitStore.addCommit).toHaveBeenCalledWith(path, "2d:: blocked", null, 0);
+            expect(plugin.noteReviewStore.ensureTracked).not.toHaveBeenCalled();
+            expect(plugin.noteReviewStore.save).not.toHaveBeenCalled();
+            expect(plugin.showNoteReviewIgnoreNotice).toHaveBeenCalledWith(reason);
+        },
+    );
 
     it("follows the current review card note into a standalone timeline item when enabled", () => {
         const path = "notes/Card Source.md";

@@ -1208,11 +1208,8 @@ export default class SRPlugin extends Plugin {
             const fileCachedData = this.app.metadataCache.getFileCache(noteFile) || {};
             const tags = getAllTags(fileCachedData) || [];
             return (
-                SettingsUtil.getNoteReviewIgnoreReason(
-                    this.data.settings,
-                    noteFile.path,
-                    tags,
-                ) === null
+                SettingsUtil.getNoteReviewIgnoreReason(this.data.settings, noteFile.path, tags) ===
+                null
             );
         });
         return notes;
