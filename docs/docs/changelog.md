@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.0.11] - 2026-04-09
+
+### New Features
+
+-   Timeline for Untracked Notes: Added an experimental toggle allowing you to use the Timeline sidebar on regular, untracked Markdown notes.
+-   Timeline Auto-Follow: Added an experimental toggle that makes the Timeline automatically switch to and display the source note of the card you are currently reviewing.
+-   Cram Mode Command: Introduced a new specific command to "Review cards in this note" using Cram Mode.
+
+### Improvements
+
+-   Auto-Tracking via Duration Prefix: When working in untracked notes, manually typing a duration prefix (e.g., `2d::`) will now automatically add the note to your tracked items and schedule a review.
+-   Expanded UI Customization: Added new options in Style Settings to enable square corners for the review area and sidebar. Adjusted group title spacing in settings for better readability.
+-   Streamlined Card Creation: Removed redundant popups and overlays from the top right corner during card creation for a cleaner, distraction-free experience.
+-   General UI Polish: Optimized card scrolling positioning, answer expansion behaviors, and various interaction details across the deck tree and review sessions.
+
+### Bug Fixes
+
+-   Fixed an issue where Anki-style clozes were incorrectly grouped and generated when placed inside Markdown tables or lists.
+-   Fixed incorrect rendering of cloze cards caused by mixed or cross-closed text formatting.
+-   Fixed the Timeline sidebar's auto-follow logic and tab-focus behavior when switching between different files.
+-   Fixed the standard "Review cards in this note" command and resolved related review session switching bugs.
+-   Fixed the English localization display for the deck options preset usage count.
+
 ## [0.0.10] - 2026-04-01
 
 ### New Features
