@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useRef, useState, useMemo, useCallback, useLayoutEffect } from "react";
 import { Platform } from "obsidian";
 import { X, Merge, SplitSquareHorizontal, Layers } from "lucide-react";
 import "../styles/cloze-popover.css";
@@ -197,9 +197,11 @@ export const ClozePopover: React.FC<ClozePopoverProps> = ({
         setPosition({ top, left });
     }, [anchorElement, size]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         updatePosition();
+    }, [updatePosition]);
 
+    useEffect(() => {
         const handleScroll = () => {
             updatePosition();
         };
