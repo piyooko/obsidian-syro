@@ -20,6 +20,7 @@ const EXPLICIT_MOJIBAKE_PATTERNS = [
 ];
 const SUSPICIOUS_CHAR_PATTERN = /[闂閿鏉妗鍙鐨涓浠鍚鈥欐鍥鏆鎴楂鎺鎼妫钃锟�]/gu;
 
+const invocationCwd = process.cwd();
 const args = parseArgs(process.argv.slice(2));
 const repoRoot = execGit(["rev-parse", "--show-toplevel"]).trim();
 
@@ -30,21 +31,32 @@ const base = resolveBase(args.base, warnings);
 const head = resolveHead(args.head, warnings);
 const trackedFiles = new Set(splitLines(safeGit(["ls-files"])).filter(isTextFile));
 const candidateFiles = collectCandidateFiles({ base, head, trackedFiles });
-const filesToScan =
-    candidateFiles.length > 0 ? candidateFiles : [...trackedFiles].filter(isPriorityFile);
+const explicitTargets = collectExplicitTargets(args.paths, invocationCwd, repoRoot, warnings);
+
+if (!args.all && explicitTargets.length === 0 && candidateFiles.length > 0) {
+    warnings.push(
+        "Default mode scans changed and untracked text files only. Use --all to scan the full repo or --path <file|dir> to scan external/runtime data.",
+    );
+}
+
+const defaultFilesToScan = args.all
+    ? [...trackedFiles].filter(isPriorityFile)
+    : candidateFiles.length > 0
+      ? candidateFiles
+      : [...trackedFiles].filter(isPriorityFile);
+const scanTargets = buildScanTargets(defaultFilesToScan, explicitTargets, repoRoot);
 const findings = [];
 
-for (const file of filesToScan) {
-    if (file === SELF_SCRIPT_PATH) {
+for (const target of scanTargets) {
+    if (target.absPath === path.resolve(repoRoot, SELF_SCRIPT_PATH)) {
         continue;
     }
 
-    const absPath = path.join(repoRoot, file);
-    if (!fs.existsSync(absPath) || !fs.statSync(absPath).isFile()) {
+    if (!fs.existsSync(target.absPath) || !fs.statSync(target.absPath).isFile()) {
         continue;
     }
 
-    const raw = fs.readFileSync(absPath);
+    const raw = fs.readFileSync(target.absPath);
     if (raw.includes(0)) {
         continue;
     }
@@ -59,7 +71,7 @@ for (const file of filesToScan) {
         }
 
         findings.push({
-            file,
+            file: target.displayPath,
             lineNumber: index + 1,
             category: classifyLine(line, signals),
             line: line.trim(),
@@ -75,7 +87,7 @@ const otherHits = grouped.other ?? [];
 console.log("Mojibake scan");
 console.log(`Base: ${base ?? "(auto unavailable; scanned current worktree and staged files)"}`);
 console.log(`Head: ${head}`);
-console.log(`Scanned files: ${filesToScan.length}`);
+console.log(`Scanned files: ${scanTargets.length}`);
 console.log(`Runtime strings: ${runtimeHits.length}`);
 console.log(`Comments: ${commentHits.length}`);
 console.log(`Other text: ${otherHits.length}`);
@@ -108,6 +120,8 @@ if (runtimeHits.length > 0) {
 function parseArgs(argv) {
     let base = null;
     let head = DEFAULT_HEAD;
+    let all = false;
+    const paths = [];
 
     for (let index = 0; index < argv.length; index += 1) {
         const arg = argv[index];
@@ -119,10 +133,19 @@ function parseArgs(argv) {
         if (arg === "--head" && argv[index + 1]) {
             head = argv[index + 1];
             index += 1;
+            continue;
+        }
+        if (arg === "--path" && argv[index + 1]) {
+            paths.push(argv[index + 1]);
+            index += 1;
+            continue;
+        }
+        if (arg === "--all") {
+            all = true;
         }
     }
 
-    return { base, head };
+    return { all, base, head, paths };
 }
 
 function git(args) {
@@ -215,6 +238,75 @@ function collectCandidateFiles({ base, head, trackedFiles }) {
     });
 
     return [...files].sort();
+}
+
+function collectExplicitTargets(inputPaths, cwd, repoRoot, warnings) {
+    const targets = new Map();
+
+    for (const inputPath of inputPaths) {
+        const resolvedPath = path.resolve(cwd, inputPath);
+        if (!fs.existsSync(resolvedPath)) {
+            warnings.push(`Ignoring missing --path target: ${inputPath}`);
+            continue;
+        }
+
+        addExplicitTarget(resolvedPath, targets, repoRoot);
+    }
+
+    return [...targets.values()].sort(compareTargets);
+}
+
+function addExplicitTarget(absPath, targets, repoRoot) {
+    const stat = fs.statSync(absPath);
+    if (stat.isDirectory()) {
+        for (const entry of fs.readdirSync(absPath, { withFileTypes: true })) {
+            if (entry.name === ".git" || entry.name === "node_modules") {
+                continue;
+            }
+
+            addExplicitTarget(path.join(absPath, entry.name), targets, repoRoot);
+        }
+        return;
+    }
+
+    if (!stat.isFile() || !isTextFile(absPath)) {
+        return;
+    }
+
+    const target = createScanTarget(absPath, repoRoot);
+    targets.set(target.absPath, target);
+}
+
+function buildScanTargets(defaultFilesToScan, explicitTargets, repoRoot) {
+    const targets = new Map();
+
+    for (const file of defaultFilesToScan) {
+        const target = createScanTarget(path.resolve(repoRoot, file), repoRoot);
+        targets.set(target.absPath, target);
+    }
+
+    for (const target of explicitTargets) {
+        targets.set(target.absPath, target);
+    }
+
+    return [...targets.values()].sort(compareTargets);
+}
+
+function createScanTarget(absPath, repoRoot) {
+    const normalizedAbsPath = path.resolve(absPath);
+    const relativePath = path.relative(repoRoot, normalizedAbsPath);
+    const displayPath =
+        relativePath &&
+        !relativePath.startsWith("..") &&
+        !path.isAbsolute(relativePath)
+            ? relativePath.split(path.sep).join("/")
+            : normalizedAbsPath;
+
+    return { absPath: normalizedAbsPath, displayPath };
+}
+
+function compareTargets(left, right) {
+    return left.displayPath.localeCompare(right.displayPath);
 }
 
 function addFilesFromGit(args, files, trackedFiles, options = {}) {
