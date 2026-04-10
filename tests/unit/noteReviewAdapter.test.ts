@@ -1,9 +1,4 @@
-import { getAllTags } from "obsidian";
 import { reviewDecksToSidebarState } from "src/ui/adapters/noteReviewAdapter";
-
-jest.mock("obsidian", () => ({
-    getAllTags: jest.fn(),
-}));
 
 jest.mock("src/lang/helpers", () => ({
     t: (key: string) => key,
@@ -17,16 +12,8 @@ jest.mock("src/util/DateProvider", () => ({
     },
 }));
 
-const getAllTagsMock = getAllTags as jest.MockedFunction<typeof getAllTags>;
-
 describe("reviewDecksToSidebarState", () => {
-    beforeEach(() => {
-        getAllTagsMock.mockReset();
-    });
-
-    it("extracts Obsidian tags even when they are not stored in frontmatter.tags", () => {
-        getAllTagsMock.mockReturnValue(["#project", "#project/alpha", "#project"]);
-
+    it("extracts sidebar tags only from file frontmatter properties", () => {
         const plugin = {
             reviewDecks: {
                 default: {
@@ -41,7 +28,12 @@ describe("reviewDecksToSidebarState", () => {
             },
             app: {
                 metadataCache: {
-                    getFileCache: jest.fn().mockReturnValue({}),
+                    getFileCache: jest.fn().mockReturnValue({
+                        frontmatter: {
+                            tags: ["project", "#project/alpha", "project"],
+                        },
+                        tags: [{ tag: "#inline-only" }],
+                    }),
                 },
             },
         } as any;
@@ -50,22 +42,9 @@ describe("reviewDecksToSidebarState", () => {
 
         expect(state.sections).toHaveLength(1);
         expect(state.sections[0].items[0].tags).toEqual(["project", "project/alpha"]);
-        expect(getAllTagsMock).toHaveBeenCalledWith({});
     });
 
     it("injects latest scroll percentages without changing sidebar grouping or ordering", () => {
-        getAllTagsMock.mockImplementation((cache: any) => {
-            if (Array.isArray(cache?.frontmatter?.tags)) {
-                return cache.frontmatter.tags;
-            }
-
-            if (typeof cache?.frontmatter?.tags === "string") {
-                return cache.frontmatter.tags.split(",").map((tag: string) => tag.trim());
-            }
-
-            return [];
-        });
-
         const newFile = { path: "notes/new-note.md", basename: "New Note" };
         const futureFile = { path: "notes/future-note.md", basename: "Future Note" };
         const getLatestScrollPercentage = jest.fn((path: string) =>

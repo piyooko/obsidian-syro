@@ -20,6 +20,10 @@ describe("folderTracking helpers", () => {
             "#review",
             "#project/alpha",
         ]);
+        expect(normalizeFrontmatterTags("review, #project/alpha")).toEqual([
+            "#review",
+            "#project/alpha",
+        ]);
     });
 
     test("resolveFolderTrackingRule prefers the nearest matching folder", () => {

@@ -411,6 +411,32 @@ describe("ReactNoteReviewView", () => {
         });
     });
 
+    it("uses only file property tags for standalone timeline items", () => {
+        const path = "notes/Standalone Tags.md";
+        const { root, view } = createView({
+            savedTimelineOpen: true,
+            savedSelectedPath: path,
+            autoExpandTimeline: false,
+            timelineAllowUntrackedNotes: true,
+            availableFiles: [path],
+            fileCacheByPath: {
+                [path]: {
+                    frontmatter: {
+                        tags: ["project", "#project/alpha", "project"],
+                    },
+                    tags: [{ tag: "#inline-only" }],
+                },
+            },
+        });
+
+        view.redraw();
+
+        expect(getLastSidebarProps(root).selectedItem).toMatchObject({
+            path,
+            tags: ["project", "project/alpha"],
+        });
+    });
+
     it("does not restore a saved standalone timeline selection when experimental support is disabled", () => {
         const path = "notes/Standalone Note.md";
         const { root, view } = createView({

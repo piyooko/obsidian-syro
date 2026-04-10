@@ -1,4 +1,4 @@
-import { CachedMetadata, getAllTags } from "obsidian";
+import { CachedMetadata } from "obsidian";
 import type SRPlugin from "src/main";
 import type { ReviewDeck, SchedNote } from "src/ReviewDeck";
 import type {
@@ -8,6 +8,7 @@ import type {
 } from "../types/noteReview";
 import { globalDateProvider } from "src/util/DateProvider";
 import { t } from "src/lang/helpers";
+import { Tags } from "src/tags";
 
 const COLORS = {
     new: "var(--text-accent)",
@@ -19,8 +20,7 @@ const COLORS = {
 };
 
 function extractTags(fileCache: CachedMetadata | null): string[] {
-    const tags = getAllTags(fileCache) ?? [];
-    return Array.from(new Set(tags.map((tag) => tag.replace(/^#/, "")).filter(Boolean)));
+    return Tags.getSidebarDisplayTags(fileCache);
 }
 
 function schedNoteToItem(sNote: SchedNote, index: number, plugin: SRPlugin): NoteReviewItem {

@@ -399,8 +399,7 @@ export class ReactNoteReviewView extends ItemView {
 
     private extractStandaloneTimelineTags(file: TFile): string[] {
         const fileCache = this.app.metadataCache.getFileCache(file) ?? null;
-        const tags = getAllTags(fileCache) ?? [];
-        return Array.from(new Set(tags.map((tag) => tag.replace(/^#/, "")).filter(Boolean)));
+        return Tags.getSidebarDisplayTags(fileCache);
     }
 
     private buildStandaloneTimelineItem(path: string): NoteReviewItem | null {

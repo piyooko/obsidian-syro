@@ -301,7 +301,11 @@ export function parseObsidianFrontmatterTag(tagStr: string): string[] {
     const result: string[] = [] as string[];
     const tagStrList: string[] = tagStr.split(",");
     for (const tag of tagStrList) {
-        result.push(tag.startsWith("#") ? tag : "#" + tag);
+        const trimmedTag = tag.trim();
+        if (!trimmedTag) {
+            continue;
+        }
+        result.push(trimmedTag.startsWith("#") ? trimmedTag : "#" + trimmedTag);
     }
     return result;
 }

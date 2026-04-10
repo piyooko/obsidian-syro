@@ -16,10 +16,11 @@
 /**
  * [工具] 标签处理。
  */
-import { TFile, getAllTags } from "obsidian";
+import { CachedMetadata, TFile, getAllTags } from "obsidian";
 import { SRSettings } from "./settings";
 import { DEFAULT_DECKNAME } from "./constants";
 import { Iadapter } from "./dataStore/adapter";
+import { normalizeFrontmatterTags } from "./folderTracking";
 
 export class Tags {
     static isDefaultDackName(tag: string) {
@@ -30,6 +31,22 @@ export class Tags {
         const fileCachedData = Iadapter.instance.metadataCache.getFileCache(note) || {};
         const tags = getAllTags(fileCachedData) || [];
         return tags;
+    }
+
+    static getFilePropertyTags(fileCache: Pick<CachedMetadata, "frontmatter"> | null | undefined) {
+        return normalizeFrontmatterTags(fileCache?.frontmatter?.tags);
+    }
+
+    static getSidebarDisplayTags(
+        fileCache: Pick<CachedMetadata, "frontmatter"> | null | undefined,
+    ): string[] {
+        return Array.from(
+            new Set(
+                this.getFilePropertyTags(fileCache)
+                    .map((tag) => tag.replace(/^#/, ""))
+                    .filter(Boolean),
+            ),
+        );
     }
 
     /**
