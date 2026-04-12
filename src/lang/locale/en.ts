@@ -152,6 +152,10 @@ export default normalizeSentenceCaseLocale({
     CRAM_ALL_CARDS: "Select a deck to cram",
     REVIEW_ALL_CARDS: "Review flashcards from all notes",
     REVIEW_CARDS_IN_NOTE: "Review flashcards in this note",
+    INLINE_TITLE_CARD_PROGRESS_TOOLTIP:
+        "Reviewable cards in this note: ${reviewableCount} / ${totalCount}",
+    INLINE_TITLE_CARD_NO_CARDS: "No flashcards in this note",
+    INLINE_TITLE_CARD_MENU_TOOLTIP: "More note review options",
     CRAM_CARDS_IN_NOTE: "Cram-review flashcards in this note (does not update scheduling)",
     VIEW_STATS: "View statistics",
     OPEN_REVIEW_QUEUE_VIEW: "Open Tracked Notes in sidebar",

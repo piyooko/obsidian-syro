@@ -25,12 +25,23 @@ jest.mock("src/ui/views/TabView", () => {
     };
 });
 
+const mockActivateDeckReviewSession = jest.fn();
+
+jest.mock("src/ui/reviewDeckSession", () => ({
+    activateDeckReviewSession: (...args: unknown[]) => mockActivateDeckReviewSession(...args),
+}));
+
 import { FlashcardReviewMode } from "src/FlashcardReviewSequencer";
 import TabViewManager from "src/ui/views/TabViewManager";
 
 describe("TabViewManager", () => {
     beforeEach(() => {
         mockTabViewLoaders.length = 0;
+        mockActivateDeckReviewSession.mockReset();
+        mockActivateDeckReviewSession.mockReturnValue({
+            isolatedContextDeck: { name: "targeted" },
+            fullPath: "folder/note",
+        });
     });
 
     function createPlugin() {
@@ -88,18 +99,38 @@ describe("TabViewManager", () => {
         });
 
         expect(existingLeaf.view.reloadSession).toHaveBeenCalledTimes(1);
+        const reloadedSession = (existingLeaf.view.reloadSession as jest.Mock).mock.calls[0]?.[0] as
+            | {
+                  initialTargetDeckPath?: string;
+              }
+            | undefined;
         expect(existingLeaf.view.reloadSession).toHaveBeenCalledWith(
             expect.objectContaining({
                 mode: FlashcardReviewMode.Review,
-                initialView: "deck-list",
-                initialTargetDeckPath: "folder/note",
+                initialView: "review",
             }),
         );
+        expect(reloadedSession?.initialTargetDeckPath).toBeUndefined();
         expect(existingLeaf.setViewState).not.toHaveBeenCalled();
         expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(existingLeaf);
+        expect(mockActivateDeckReviewSession).toHaveBeenCalledWith(
+            expect.objectContaining({
+                plugin,
+                sequencer: expect.objectContaining({
+                    deckTree: plugin.deckTree,
+                    remainingDeckTree: plugin.remainingDeckTree,
+                    mode: FlashcardReviewMode.Review,
+                }),
+                fullPath: "folder/note",
+                sourceDeckTree: plugin.remainingDeckTree,
+                fullDeckTree: plugin.deckTree,
+                globalRemainingDeckTree: plugin.remainingDeckTree,
+                applyDailyLimits: true,
+            }),
+        );
     });
 
-    it("prepares a standard global session and only passes the target deck intent", async () => {
+    it("prepares the target deck session before opening the review tab", async () => {
         const plugin = createPlugin();
         const manager = new TabViewManager(plugin as never);
         const viewCreator = plugin.registerView.mock.calls[0][1];
@@ -121,8 +152,18 @@ describe("TabViewManager", () => {
             plugin.remainingDeckTree,
             FlashcardReviewMode.Review,
         );
-        expect(result.initialView).toBe("deck-list");
-        expect(result.initialTargetDeckPath).toBe("folder/note");
+        expect(mockActivateDeckReviewSession).toHaveBeenCalledWith(
+            expect.objectContaining({
+                plugin,
+                fullPath: "folder/note",
+                sourceDeckTree: plugin.remainingDeckTree,
+                fullDeckTree: plugin.deckTree,
+                globalRemainingDeckTree: plugin.remainingDeckTree,
+                applyDailyLimits: true,
+            }),
+        );
+        expect(result.initialView).toBe("review");
+        expect(result.initialTargetDeckPath).toBeUndefined();
         expect(result.mode).toBe(FlashcardReviewMode.Review);
     });
 

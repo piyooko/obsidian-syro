@@ -1,6 +1,7 @@
 import {
     App,
     getAllTags,
+    Menu,
     Notice,
     Plugin,
     TAbstractFile,
@@ -123,6 +124,12 @@ import { ReviewCommitStore } from "src/dataStore/reviewCommitStore";
 import { ReviewPersistenceCoordinator } from "src/services/reviewPersistenceCoordinator";
 import { autoCommitReviewResponseToTimeline } from "src/ui/timeline/reviewResponseTimeline";
 import {
+    InlineTitleCardStats,
+    cloneTrackedFileForInlineTitleStats,
+    countInlineTitleStatsFromNote,
+    countInlineTitleStatsFromTrackedFile,
+} from "src/inlineTitleCardStats";
+import {
     mergeQueuedSyncRequest,
     normalizeSyncRequest,
     type NormalizedSyncRequest,
@@ -132,6 +139,7 @@ import {
     type SyncTrigger,
 } from "src/syncRequest";
 import { getFirstRunTutorial } from "src/firstRunTutorial";
+import { InlineTitleReviewButtonManager } from "src/ui/components/InlineTitleReviewButtonManager";
 
 interface DailyDeckStats {
     date: string;
@@ -210,6 +218,7 @@ export default class SRPlugin extends Plugin {
     private isSRInFocus: boolean = false;
     private statusBarNote: HTMLElement;
     private statusBarFlashcard: HTMLElement;
+    private inlineTitleReviewButtonManager: InlineTitleReviewButtonManager | null = null;
     public data: PluginData;
     cardAlgorithm: SrsAlgorithm;
     noteAlgorithm: SrsAlgorithm;
@@ -705,6 +714,8 @@ export default class SRPlugin extends Plugin {
         this.addSettingTab(this.settingTab);
         this.scheduleStyleSettingsHierarchyResetBridge();
         this.app.workspace.trigger("parse-style-settings");
+        this.inlineTitleReviewButtonManager = new InlineTitleReviewButtonManager(this);
+        this.inlineTitleReviewButtonManager.register();
 
         this.app.workspace.onLayoutReady(() => {
             this.runAsync(this.initReviewQueueView(), "init review queue view");
@@ -744,6 +755,8 @@ export default class SRPlugin extends Plugin {
         this.app.workspace.getLeavesOfType(REVIEW_QUEUE_VIEW_TYPE).forEach((leaf) => leaf.detach());
         this.tabViewManager.closeAllTabViews();
         this.reviewFloatBar.close();
+        this.inlineTitleReviewButtonManager?.destroy();
+        this.inlineTitleReviewButtonManager = null;
     }
 
     insertAnkiCloze(editor: import("obsidian").Editor, type: "same" | "new"): void {
@@ -2139,6 +2152,56 @@ export default class SRPlugin extends Plugin {
         await this.store.save();
         await note.clearTransientFileText(this.data.settings);
         return note;
+    }
+
+    public async getReadonlyNoteCardStats(file: TFile): Promise<InlineTitleCardStats> {
+        if (!(file instanceof TFile) || file.extension !== "md") {
+            return {
+                reviewableCount: 0,
+                totalCount: 0,
+            };
+        }
+
+        const now = Date.now();
+        const learnAheadMillis = Math.max(0, this.data.settings.learnAheadMinutes ?? 0) * 60 * 1000;
+        const cacheEntry = this.noteCache.get(file.path);
+        const mtime = file.stat?.mtime ?? 0;
+
+        if (cacheEntry && cacheEntry.mtime === mtime) {
+            return countInlineTitleStatsFromNote(cacheEntry.note, now, learnAheadMillis);
+        }
+
+        try {
+            const fileText = await this.app.vault.read(file);
+            const trackedFile = cloneTrackedFileForInlineTitleStats(
+                file.path,
+                this.store.getTrackedFile(file.path),
+            );
+            trackedFile.syncNoteCardsIndex(fileText, this.data.settings);
+
+            return countInlineTitleStatsFromTrackedFile(
+                trackedFile,
+                (id) => this.store.getItembyID(id),
+                now,
+                learnAheadMillis,
+            );
+        } catch (error) {
+            console.warn(`[SR] Failed to calculate inline-title card stats for ${file.path}:`, error);
+            return {
+                reviewableCount: 0,
+                totalCount: 0,
+            };
+        }
+    }
+
+    public buildInlineTitleCardMenu(file: TFile): Menu {
+        const menu = new Menu();
+        this.app.workspace.trigger("file-menu", menu, file, "syro-inline-title", null);
+        return menu;
+    }
+
+    public refreshInlineTitleReviewButtons(): void {
+        this.inlineTitleReviewButtonManager?.refresh();
     }
 
     private getObsidianRtlSetting(): TextDirection {

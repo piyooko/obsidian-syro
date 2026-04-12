@@ -1,0 +1,108 @@
+.syro-inline-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 6px;
+}
+
+.syro-inline-title-row > .inline-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0 !important;
+}
+
+.syro-inline-title-progress {
+    display: inline-flex;
+    align-items: stretch;
+    flex: 0 0 auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--background-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.syro-inline-title-progress-main,
+.syro-inline-title-progress-menu {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0 !important;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent !important;
+    background-color: transparent !important;
+    color: var(--text-muted) !important;
+    cursor: pointer;
+    height: 32px;
+    box-shadow: none !important;
+    --button-radius: 0px;
+    --button-corner-shape: square;
+    transition:
+        background-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.syro-inline-title-progress-main {
+    gap: 6px;
+    padding: 0 10px 0 12px;
+    font-size: 13px;
+    font-weight: 500;
+    border-right: 1px solid var(--background-modifier-border);
+    border-radius: 5px 0 0 5px !important;
+}
+
+.syro-inline-title-progress-menu {
+    width: 28px;
+    padding: 0;
+    border-radius: 0 5px 5px 0 !important;
+}
+
+.syro-inline-title-progress-main:not(:disabled):hover,
+.syro-inline-title-progress-menu:hover {
+    background-color: var(--background-modifier-hover) !important;
+    color: var(--text-normal) !important;
+}
+
+.syro-inline-title-progress-main:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.syro-inline-title-progress-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+}
+
+.syro-inline-title-progress-count {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: var(--text-normal) !important;
+}
+
+.syro-inline-title-progress-main:focus-visible,
+.syro-inline-title-progress-menu:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--interactive-accent);
+}
+
+.theme-dark .syro-inline-title-progress {
+    border-color: color-mix(in srgb, var(--background-modifier-border) 60%, transparent);
+    background: var(--background-secondary);
+}
+
+.theme-dark .syro-inline-title-progress-main {
+    border-right-color: color-mix(in srgb, var(--background-modifier-border) 60%, transparent);
+}
+
+.theme-dark .syro-inline-title-progress-main:not(:disabled):hover,
+.theme-dark .syro-inline-title-progress-menu:hover {
+    background: var(--background-modifier-hover);
+}

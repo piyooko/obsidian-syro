@@ -781,7 +781,7 @@ describe("NoteReviewSidebar", () => {
 
     it("shows the file path tooltip after the configured hover delay", () => {
         jest.useFakeTimers();
-        const item = createItem({ path: "folder/example.md" });
+        const item = createItem({ path: "folder/Example.Md" });
         const view = renderSidebar([item], {
             filePathTooltipEnabled: true,
             filePathTooltipDelayMs: 1000,
@@ -810,7 +810,7 @@ describe("NoteReviewSidebar", () => {
                 ".sr-note-path-tooltip",
             ) as HTMLElement | null;
             expect(tooltip).not.toBeNull();
-            expect(tooltip?.textContent).toContain(item.path);
+            expect(tooltip?.textContent).toBe("folder/Example");
         } finally {
             view.cleanup();
             jest.useRealTimers();

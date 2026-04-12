@@ -4,6 +4,7 @@ import { Deck } from "src/Deck";
 import { FlashcardReviewMode } from "src/FlashcardReviewSequencer";
 import { SR_TAB_VIEW } from "src/constants";
 import type SRPlugin from "src/main";
+import { activateDeckReviewSession } from "src/ui/reviewDeckSession";
 import { TabView, type ReviewSessionLoadResult } from "./TabView";
 
 export type TabViewType = { type: string; viewCreator: ViewCreator };
@@ -120,6 +121,10 @@ export default class TabViewManager {
             this.chosenReviewModeForTabbedView === FlashcardReviewMode.Cram
                 ? this.plugin.deckTree
                 : this.plugin.remainingDeckTree;
+        const globalRemainingDeckTree =
+            this.chosenReviewModeForTabbedView === FlashcardReviewMode.Cram
+                ? undefined
+                : this.plugin.remainingDeckTree;
         const preparedSession = this.plugin.getPreparedReviewSequencer(
             fullDeckTree,
             sourceDeckTree,
@@ -127,11 +132,31 @@ export default class TabViewManager {
         );
         const initialTargetDeckPath = this.pendingReviewTarget.targetDeckPath?.trim() || undefined;
 
-        const pendingSession = {
+        let pendingSession: ReviewSessionLoadResult = {
             ...preparedSession,
             initialView: "deck-list" as const,
             initialTargetDeckPath,
         };
+
+        if (initialTargetDeckPath) {
+            const activatedSession = activateDeckReviewSession({
+                plugin: this.plugin,
+                sequencer: preparedSession.reviewSequencer,
+                fullPath: initialTargetDeckPath,
+                sourceDeckTree,
+                fullDeckTree,
+                globalRemainingDeckTree,
+                applyDailyLimits: this.chosenReviewModeForTabbedView !== FlashcardReviewMode.Cram,
+            });
+
+            if (activatedSession) {
+                pendingSession = {
+                    ...preparedSession,
+                    initialView: "review",
+                };
+            }
+        }
+
         this.logRuntimeDebug("[SR-TabViewManager] preparePendingSession", {
             mode: FlashcardReviewMode[pendingSession.mode],
             initialView: pendingSession.initialView,

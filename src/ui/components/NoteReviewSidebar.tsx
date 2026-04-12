@@ -106,6 +106,10 @@ function escapeNotePathForSelector(path: string): string {
     return path.replace(/["\\]/g, "\\$&");
 }
 
+function formatNotePathTooltip(path: string): string {
+    return path.replace(/\.md$/i, "");
+}
+
 // ==========================================
 // 类型定义
 // ==========================================
@@ -1447,6 +1451,7 @@ const NotePathTooltip: React.FC<{
 }> = ({ anchorEl, path, visible }) => {
     const tooltipRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState<NotePathTooltipPosition | null>(null);
+    const displayPath = formatNotePathTooltip(path);
 
     const updatePosition = useCallback(() => {
         if (!anchorEl || !tooltipRef.current) {
@@ -1531,7 +1536,7 @@ const NotePathTooltip: React.FC<{
                     : undefined,
             }}
         >
-            {path}
+            {displayPath}
         </div>,
         document.body,
     );
