@@ -3,6 +3,7 @@ import { getStorePath } from "./dataLocation";
 import { SRSettings } from "src/settings";
 import type { TimelineReviewResponse } from "src/ui/timeline/reviewResponseTimeline";
 import type { TimelineDisplayDuration } from "src/ui/timeline/timelineMessage";
+import type { ReviewCommitStorePathConfig } from "./syroWorkspace";
 
 export interface ReviewCommitLog {
     id: string;
@@ -34,11 +35,15 @@ export class ReviewCommitStore {
     private data: ReviewCommitData = {};
     private dataPath: string;
 
-    constructor(settings: SRSettings, manifestDir: string) {
-        const trackedPath = getStorePath(manifestDir, settings);
-        const lastSlash = trackedPath.lastIndexOf("/");
-        const dir = lastSlash >= 0 ? trackedPath.substring(0, lastSlash + 1) : "./";
-        this.dataPath = dir + "review_commits.json";
+    constructor(settings: SRSettings, manifestDirOrPaths: string | ReviewCommitStorePathConfig) {
+        if (typeof manifestDirOrPaths === "string") {
+            const trackedPath = getStorePath(manifestDirOrPaths, settings);
+            const lastSlash = Math.max(trackedPath.lastIndexOf("/"), trackedPath.lastIndexOf("\\"));
+            const dir = lastSlash >= 0 ? trackedPath.substring(0, lastSlash + 1) : "./";
+            this.dataPath = dir + "review_commits.json";
+        } else {
+            this.dataPath = manifestDirOrPaths.timelinePath;
+        }
     }
 
     async load(): Promise<void> {

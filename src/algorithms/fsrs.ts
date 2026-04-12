@@ -120,9 +120,7 @@ export class FsrsAlgorithm extends SrsAlgorithm<FsrsSettings> {
     }
 
     getLogfilepath() {
-        const filepath = DataStore.getInstance().dataPath;
-        const fder_index = filepath.lastIndexOf("/");
-        this.logfilepath = filepath.substring(0, fder_index + 1) + this.filename;
+        this.logfilepath = DataStore.getInstance().getAuxiliaryPath(this.filename);
     }
 
     defaultData(): FsrsData {

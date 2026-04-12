@@ -15,6 +15,7 @@ import { TrackedFile } from "./trackedFile";
 import { RPITEMTYPE, RepetitionItem, ReviewResult, CardQueue } from "./repetitionItem";
 import { DEFAULT_QUEUE_DATA, Queue } from "./queue";
 import { Iadapter } from "./adapter";
+import type { CardsStorePathConfig } from "./syroWorkspace";
 import { t } from "src/lang/helpers";
 import { createEmptyCard } from "ts-fsrs";
 import { getArrayProp, getNumberProp, isRecord, parseJsonUnknown } from "src/util/typeGuards";
@@ -109,6 +110,8 @@ export class DataStore {
      * @type {string}
      */
     dataPath: string;
+    private reviewOverlayPath: string;
+    private auxiliaryDataDir: string;
     private saveSuppressionCount: number = 0;
     private saveRequestedWhileSuppressed: boolean = false;
     private itemByIdIndex: Map<number, RepetitionItem> = new Map();
@@ -144,12 +147,37 @@ export class DataStore {
      * @param settings
      * @param manifestDir
      */
-    constructor(settings: SRSettings, manifestDir: string) {
+    constructor(settings: SRSettings, manifestDirOrPaths: string | CardsStorePathConfig) {
         // this.plugin = plugin;
         this.settings = settings;
         // this.manifestDir = manifestDir;
-        this.dataPath = getStorePath(manifestDir, settings);
+        if (typeof manifestDirOrPaths === "string") {
+            this.dataPath = getStorePath(manifestDirOrPaths, settings);
+            this.reviewOverlayPath = this.deriveReviewOverlayPath(this.dataPath);
+            this.auxiliaryDataDir = this.getParentDir(this.dataPath);
+        } else {
+            this.dataPath = manifestDirOrPaths.cardsPath;
+            this.reviewOverlayPath =
+                manifestDirOrPaths.cardsOverlayPath ??
+                this.deriveReviewOverlayPath(manifestDirOrPaths.cardsPath);
+            this.auxiliaryDataDir =
+                manifestDirOrPaths.auxiliaryDataDir ??
+                this.getParentDir(manifestDirOrPaths.cardsPath);
+        }
         DataStore.instance = this;
+    }
+
+    private getParentDir(path: string): string {
+        const sepIdx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+        return sepIdx >= 0 ? path.substring(0, sepIdx + 1) : "";
+    }
+
+    private joinWithParent(parentDir: string, fileName: string): string {
+        if (!parentDir) return fileName;
+        if (parentDir.endsWith("/") || parentDir.endsWith("\\")) {
+            return `${parentDir}${fileName}`;
+        }
+        return `${parentDir}/${fileName}`;
     }
 
     private shouldLogDebug(): boolean {
@@ -199,7 +227,7 @@ export class DataStore {
         }
     }
 
-    private getReviewOverlayPath(path = this.dataPath): string {
+    private deriveReviewOverlayPath(path = this.dataPath): string {
         if (!path) return "tracked_files.review_overlay.json";
         const sepIdx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
         const dir = sepIdx >= 0 ? path.substring(0, sepIdx + 1) : "";
@@ -207,6 +235,18 @@ export class DataStore {
         const dotIdx = fileName.lastIndexOf(".");
         const baseName = dotIdx > 0 ? fileName.substring(0, dotIdx) : fileName;
         return `${dir}${baseName}.review_overlay.json`;
+    }
+
+    private getReviewOverlayPath(path = this.dataPath): string {
+        if (path === this.dataPath && this.reviewOverlayPath) {
+            return this.reviewOverlayPath;
+        }
+
+        return this.deriveReviewOverlayPath(path);
+    }
+
+    public getAuxiliaryPath(fileName: string): string {
+        return this.joinWithParent(this.auxiliaryDataDir, fileName);
     }
 
     private createReviewItemDelta(item: RepetitionItem): ReviewItemDelta {
@@ -623,8 +663,10 @@ export class DataStore {
             await this.load();
         }
     }
-    setdataPath(path = this.dataPath) {
+    setdataPath(path = this.dataPath, options: Partial<CardsStorePathConfig> = {}) {
         this.dataPath = path;
+        this.reviewOverlayPath = options.cardsOverlayPath ?? this.deriveReviewOverlayPath(path);
+        this.auxiliaryDataDir = options.auxiliaryDataDir ?? this.getParentDir(path);
         this.reviewItemOverlayById.clear();
         this.reviewItemOverlayVersion = 0;
         this.persistedReviewOverlayVersion = 0;

@@ -12,6 +12,7 @@ import { SRSettings } from "src/settings";
 import { isPathInsideFolder, renamePathPrefix } from "src/folderTracking";
 import { Tags } from "src/tags";
 import { parseJsonUnknown } from "src/util/typeGuards";
+import type { NoteReviewStorePathConfig } from "src/dataStore/syroWorkspace";
 
 export type NoteReviewSource = "manual" | "tag" | "folder";
 
@@ -46,12 +47,16 @@ export class NoteReviewStore {
     private data: Record<string, NoteReviewEntry> = {};
     private nextItemId = 1;
 
-    constructor(settings: SRSettings, manifestDir: string) {
+    constructor(settings: SRSettings, manifestDirOrPaths: string | NoteReviewStorePathConfig) {
         this.settings = settings;
-        const trackedPath = getStorePath(manifestDir, settings);
-        const lastSlash = Math.max(trackedPath.lastIndexOf("/"), trackedPath.lastIndexOf("\\"));
-        const dir = lastSlash >= 0 ? trackedPath.substring(0, lastSlash + 1) : "./";
-        this.dataPath = dir + "review_notes.json";
+        if (typeof manifestDirOrPaths === "string") {
+            const trackedPath = getStorePath(manifestDirOrPaths, settings);
+            const lastSlash = Math.max(trackedPath.lastIndexOf("/"), trackedPath.lastIndexOf("\\"));
+            const dir = lastSlash >= 0 ? trackedPath.substring(0, lastSlash + 1) : "./";
+            this.dataPath = dir + "review_notes.json";
+        } else {
+            this.dataPath = manifestDirOrPaths.notesPath;
+        }
     }
 
     async load(): Promise<void> {

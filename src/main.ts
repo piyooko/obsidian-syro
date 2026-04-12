@@ -62,6 +62,7 @@ import { setDebugParser } from "src/parser";
 import { DataStore } from "./dataStore/data";
 import { DataLocation } from "./dataStore/dataLocation";
 import { NoteReviewStore, NoteReviewSource } from "./dataStore/noteReviewStore";
+import { SyroPersistenceLayout, SyroWorkspace } from "./dataStore/syroWorkspace";
 import Commands from "./commands";
 import { SrsAlgorithm } from "src/algorithms/algorithms";
 import { FsrsAlgorithm } from "src/algorithms/fsrs";
@@ -282,6 +283,7 @@ export default class SRPlugin extends Plugin {
     private pendingPluginDataSaveRequested = false;
     private pendingPluginDataSavePromise: Promise<boolean> | null = null;
     private pluginDataSaveFailureNotified = false;
+    private syroLayout: SyroPersistenceLayout | null = null;
 
     private static _instance: SRPlugin;
     static getInstance() {
@@ -1039,12 +1041,15 @@ export default class SRPlugin extends Plugin {
     }
 
     private getNoteCacheStorePath(): string {
-        const dataPath = this.store?.dataPath;
-        if (!dataPath) return "note_cache.json";
+        if (this.syroLayout?.noteCachePath) {
+            return this.syroLayout.noteCachePath;
+        }
 
-        const sepIdx = Math.max(dataPath.lastIndexOf("/"), dataPath.lastIndexOf("\\"));
-        if (sepIdx < 0) return "note_cache.json";
-        return `${dataPath.substring(0, sepIdx + 1)}note_cache.json`;
+        if (this.store) {
+            return this.store.getAuxiliaryPath("note_cache.json");
+        }
+
+        return "note_cache.json";
     }
 
     private async loadNoteCacheFromDisk(): Promise<PersistedNoteCacheFile | null> {
@@ -2186,7 +2191,10 @@ export default class SRPlugin extends Plugin {
                 learnAheadMillis,
             );
         } catch (error) {
-            console.warn(`[SR] Failed to calculate inline-title card stats for ${file.path}:`, error);
+            console.warn(
+                `[SR] Failed to calculate inline-title card stats for ${file.path}:`,
+                error,
+            );
             return {
                 reviewableCount: 0,
                 totalCount: 0,
@@ -2527,12 +2535,25 @@ export default class SRPlugin extends Plugin {
                 cloneFolderTrackingRule(rule),
             ]),
         );
-        this.store = new DataStore(this.data.settings, this.manifest.dir);
+        this.syroLayout = await new SyroWorkspace(
+            this.app,
+            this.manifest.dir,
+            this.data.settings,
+        ).initialize();
+        this.store = new DataStore(this.data.settings, {
+            cardsPath: this.syroLayout.cardsPath,
+            cardsOverlayPath: this.syroLayout.cardsOverlayPath,
+            auxiliaryDataDir: this.syroLayout.localDeviceRoot,
+        });
         await this.store.load();
-        this.noteReviewStore = new NoteReviewStore(this.data.settings, this.manifest.dir);
+        this.noteReviewStore = new NoteReviewStore(this.data.settings, {
+            notesPath: this.syroLayout.notesPath,
+        });
         await this.noteReviewStore.load();
         await this.noteReviewStore.migrateFromLegacyStore(this.store);
-        this.reviewCommitStore = new ReviewCommitStore(this.data.settings, this.manifest.dir);
+        this.reviewCommitStore = new ReviewCommitStore(this.data.settings, {
+            timelinePath: this.syroLayout.timelinePath,
+        });
         await this.reviewCommitStore.load();
         this.reviewPersistenceCoordinator = new ReviewPersistenceCoordinator({
             shouldLogDebug: () => this.data.settings.showRuntimeDebugMessages,
