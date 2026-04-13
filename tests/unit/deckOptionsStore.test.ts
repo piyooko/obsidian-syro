@@ -38,7 +38,7 @@ describe("deckOptionsStore", () => {
 
     it("loads deck options state into runtime settings", async () => {
         files.set(
-            ".obsidian/plugins/syro/syro/devices/Desktop--d84f/deck-options.json",
+            ".obsidian/plugins/syro/devices/Desktop--d84f/deck-options.json",
             JSON.stringify({
                 version: 1,
                 fsrsSettings: {
@@ -73,7 +73,7 @@ describe("deckOptionsStore", () => {
 
         const settings = cloneSettings();
         const store = new DeckOptionsStore(
-            ".obsidian/plugins/syro/syro/devices/Desktop--d84f/deck-options.json",
+            ".obsidian/plugins/syro/devices/Desktop--d84f/deck-options.json",
         );
 
         await store.loadIntoSettings(settings);
@@ -110,12 +110,12 @@ describe("deckOptionsStore", () => {
         };
 
         const store = new DeckOptionsStore(
-            ".obsidian/plugins/syro/syro/devices/Desktop--d84f/deck-options.json",
+            ".obsidian/plugins/syro/devices/Desktop--d84f/deck-options.json",
         );
         await store.loadIntoSettings(settings);
 
         const saved = JSON.parse(
-            files.get(".obsidian/plugins/syro/syro/devices/Desktop--d84f/deck-options.json") ??
+            files.get(".obsidian/plugins/syro/devices/Desktop--d84f/deck-options.json") ??
                 "{}",
         );
         expect(saved.fsrsSettings.enable_fuzz).toBe(false);

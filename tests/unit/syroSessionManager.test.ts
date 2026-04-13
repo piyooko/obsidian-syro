@@ -6,15 +6,15 @@ import { SyroWorkspace } from "src/dataStore/syroWorkspace";
 
 type MockAdapter = {
     basePath: string;
+    append: jest.Mock<Promise<void>, [string, string]>;
     exists: jest.Mock<Promise<boolean>, [string]>;
+    list: jest.Mock<Promise<{ files: string[]; folders: string[] }>, [string]>;
     mkdir: jest.Mock<Promise<void>, [string]>;
     read: jest.Mock<Promise<string>, [string]>;
-    write: jest.Mock<Promise<void>, [string, string]>;
-    append: jest.Mock<Promise<void>, [string, string]>;
+    readBinary: jest.Mock<Promise<ArrayBuffer>, [string]>;
     remove: jest.Mock<Promise<void>, [string]>;
     rename: jest.Mock<Promise<void>, [string, string]>;
-    list: jest.Mock<Promise<{ files: string[]; folders: string[] }>, [string]>;
-    readBinary: jest.Mock<Promise<ArrayBuffer>, [string]>;
+    write: jest.Mock<Promise<void>, [string, string]>;
     writeBinary: jest.Mock<Promise<void>, [string, ArrayBuffer]>;
 };
 
@@ -43,42 +43,14 @@ function createMockAdapter() {
 
     const adapter: MockAdapter = {
         basePath: "C:/Vaults/Syro",
-        exists: jest.fn(async (path: string) => {
-            const normalized = normalizePath(path);
-            return files.has(normalized) || directories.has(normalized);
-        }),
-        mkdir: jest.fn(async (path: string) => {
-            directories.add(normalizePath(path));
-        }),
-        read: jest.fn(async (path: string) => files.get(normalizePath(path)) ?? ""),
-        write: jest.fn(async (path: string, value: string) => {
-            const normalized = normalizePath(path);
-            ensureParentDirectories(normalized);
-            files.set(normalized, value);
-        }),
         append: jest.fn(async (path: string, value: string) => {
             const normalized = normalizePath(path);
             ensureParentDirectories(normalized);
             files.set(normalized, `${files.get(normalized) ?? ""}${value}`);
         }),
-        remove: jest.fn(async (path: string) => {
-            files.delete(normalizePath(path));
-        }),
-        rename: jest.fn(async (oldPath: string, newPath: string) => {
-            const normalizedOld = normalizePath(oldPath);
-            const normalizedNew = normalizePath(newPath);
-            const value = files.get(normalizedOld);
-            if (value !== undefined) {
-                ensureParentDirectories(normalizedNew);
-                files.set(normalizedNew, value);
-                files.delete(normalizedOld);
-                return;
-            }
-
-            if (directories.has(normalizedOld)) {
-                directories.add(normalizedNew);
-                directories.delete(normalizedOld);
-            }
+        exists: jest.fn(async (path: string) => {
+            const normalized = normalizePath(path);
+            return files.has(normalized) || directories.has(normalized);
         }),
         list: jest.fn(async (path: string) => {
             const normalized = normalizePath(path);
@@ -113,10 +85,38 @@ function createMockAdapter() {
                 folders: Array.from(folderSet).sort(),
             };
         }),
+        mkdir: jest.fn(async (path: string) => {
+            directories.add(normalizePath(path));
+        }),
+        read: jest.fn(async (path: string) => files.get(normalizePath(path)) ?? ""),
         readBinary: jest.fn(async (path: string) => {
             const value = files.get(normalizePath(path)) ?? "";
             const encoded = Buffer.from(value, "base64");
             return encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength);
+        }),
+        remove: jest.fn(async (path: string) => {
+            files.delete(normalizePath(path));
+        }),
+        rename: jest.fn(async (oldPath: string, newPath: string) => {
+            const normalizedOld = normalizePath(oldPath);
+            const normalizedNew = normalizePath(newPath);
+            const value = files.get(normalizedOld);
+            if (value !== undefined) {
+                ensureParentDirectories(normalizedNew);
+                files.set(normalizedNew, value);
+                files.delete(normalizedOld);
+                return;
+            }
+
+            if (directories.has(normalizedOld)) {
+                directories.add(normalizedNew);
+                directories.delete(normalizedOld);
+            }
+        }),
+        write: jest.fn(async (path: string, value: string) => {
+            const normalized = normalizePath(path);
+            ensureParentDirectories(normalized);
+            files.set(normalized, value);
         }),
         writeBinary: jest.fn(async (path: string, value: ArrayBuffer) => {
             const normalized = normalizePath(path);
@@ -126,6 +126,33 @@ function createMockAdapter() {
     };
 
     return { adapter, files, directories };
+}
+
+function createValidDeviceMetadata(options: {
+    deviceId: string;
+    deviceName: string;
+    shortDeviceId: string;
+    importedSessionIds?: string[];
+    importedSessionRetentionUntil?: Record<string, string>;
+    lastSeenAt?: string;
+}): string {
+    return JSON.stringify(
+        {
+            version: 1,
+            deviceId: options.deviceId,
+            deviceName: options.deviceName,
+            shortDeviceId: options.shortDeviceId,
+            createdAt: "2026-04-12T00:00:00.000Z",
+            updatedAt: "2026-04-12T00:00:00.000Z",
+            lastSeenAt: options.lastSeenAt ?? "2026-04-13T00:00:00.000Z",
+            baselineFromDeviceId: null,
+            baselineBuiltAt: null,
+            importedSessionIds: options.importedSessionIds ?? [],
+            importedSessionRetentionUntil: options.importedSessionRetentionUntil ?? {},
+        },
+        null,
+        2,
+    );
 }
 
 describe("SyroSessionManager", () => {
@@ -169,34 +196,35 @@ describe("SyroSessionManager", () => {
             },
         } as any;
 
-        const layout = await new SyroWorkspace(app, manifestDir, DEFAULT_SETTINGS).initialize();
-        return { adapter, app, files, layout };
+        const startup = await new SyroWorkspace(app, manifestDir, DEFAULT_SETTINGS).initialize();
+        return { adapter, app, files, layout: startup.layout };
     }
 
     async function addSecondaryDevice(
         adapter: MockAdapter,
         files: Map<string, string>,
-        folderName = "Mobile--91ac",
+        options: {
+            folderName?: string;
+            deviceId?: string;
+            deviceName?: string;
+            shortDeviceId?: string;
+            importedSessionIds?: string[];
+            importedSessionRetentionUntil?: Record<string, string>;
+            lastSeenAt?: string;
+        } = {},
     ): Promise<void> {
-        await adapter.mkdir(`.obsidian/plugins/syro/syro/devices/${folderName}`);
+        const folderName = options.folderName ?? "Mobile--91ac";
+        await adapter.mkdir(`.obsidian/plugins/syro/devices/${folderName}`);
         files.set(
-            `.obsidian/plugins/syro/syro/devices/${folderName}/device.json`,
-            JSON.stringify(
-                {
-                    version: 1,
-                    deviceId: "91ac1111-2222-3333-4444-555555555555",
-                    deviceName: "Mobile",
-                    shortDeviceId: "91ac",
-                    createdAt: "2026-04-12T00:00:00.000Z",
-                    updatedAt: "2026-04-12T00:00:00.000Z",
-                    lastSeenAt: "2026-04-13T00:00:00.000Z",
-                    baselineFromDeviceId: null,
-                    baselineBuiltAt: null,
-                    importedSessionIds: [],
-                },
-                null,
-                2,
-            ),
+            `.obsidian/plugins/syro/devices/${folderName}/device.json`,
+            createValidDeviceMetadata({
+                deviceId: options.deviceId ?? "91ac1111-2222-3333-4444-555555555555",
+                deviceName: options.deviceName ?? "Mobile",
+                shortDeviceId: options.shortDeviceId ?? "91ac",
+                importedSessionIds: options.importedSessionIds,
+                importedSessionRetentionUntil: options.importedSessionRetentionUntil,
+                lastSeenAt: options.lastSeenAt,
+            }),
         );
     }
 
@@ -229,18 +257,15 @@ describe("SyroSessionManager", () => {
         const sessionId = await manager.flushActiveSession();
 
         expect(sessionId).toBe("2026-04-13T12-34-56__d84f__0001");
-        const sessionPath = normalizePath(
-            `${layout.sessionsRoot}/2026-04-13T12-34-56__d84f__0001.jsonl`,
-        );
-        expect(files.get(sessionPath)).toContain('"sessionId":"2026-04-13T12-34-56__d84f__0001"');
+        expect(
+            files.get(normalizePath(`${layout.sessionsRoot}/${sessionId}.jsonl`)),
+        ).toContain('"sessionId":"2026-04-13T12-34-56__d84f__0001"');
         expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(false);
 
         const currentDeviceMeta = JSON.parse(
             files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
         ) as { importedSessionIds?: string[] };
-        expect(currentDeviceMeta.importedSessionIds).toContain(
-            "2026-04-13T12-34-56__d84f__0001",
-        );
+        expect(currentDeviceMeta.importedSessionIds).toContain(sessionId);
     });
 
     test("recovers buffered records on startup and quarantines bad buffer lines", async () => {
@@ -263,11 +288,7 @@ describe("SyroSessionManager", () => {
 
         const sessionId = await restoredManager.flushActiveSession();
         expect(sessionId).toBe("2026-04-13T12-34-56__d84f__0001");
-        expect(
-            files.has(
-                normalizePath(`${layout.sessionsRoot}/2026-04-13T12-34-56__d84f__0001.jsonl`),
-            ),
-        ).toBe(true);
+        expect(files.has(normalizePath(`${layout.sessionsRoot}/${sessionId}.jsonl`))).toBe(true);
     });
 
     test("imports pending sessions, quarantines bad lines, and confirms the imported session", async () => {
@@ -314,8 +335,6 @@ describe("SyroSessionManager", () => {
         );
         expect(result.importedSessionIds).toEqual(["2026-04-12T08-00-00__91ac__0001"]);
         expect(files.get(normalizePath(`${remoteSessionPath}.bad`))).toContain("not-json");
-        expect(files.get(normalizePath(remoteSessionPath))).toContain('"opId":"op-1"');
-        expect(files.get(normalizePath(remoteSessionPath))).not.toContain("not-json");
 
         const currentDeviceMeta = JSON.parse(
             files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
@@ -325,35 +344,13 @@ describe("SyroSessionManager", () => {
         );
     });
 
-    test("deletes fully confirmed sessions after import cleanup", async () => {
-        const { app, files, layout } = await createWorkspaceContext();
+    test("keeps importedSessionIds for the retention window after fully confirmed cleanup", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
         const sessionId = "2026-04-12T08-00-00__91ac__0001";
-        await addSecondaryDevice(
-            app.vault.adapter as MockAdapter,
-            files,
-            "Mobile--91ac",
-        );
+        await addSecondaryDevice(adapter, files, {
+            importedSessionIds: [sessionId],
+        });
 
-        const remoteMetaPath = ".obsidian/plugins/syro/syro/devices/Mobile--91ac/device.json";
-        files.set(
-            normalizePath(remoteMetaPath),
-            JSON.stringify(
-                {
-                    version: 1,
-                    deviceId: "91ac1111-2222-3333-4444-555555555555",
-                    deviceName: "Mobile",
-                    shortDeviceId: "91ac",
-                    createdAt: "2026-04-12T00:00:00.000Z",
-                    updatedAt: "2026-04-12T00:00:00.000Z",
-                    lastSeenAt: "2026-04-13T00:00:00.000Z",
-                    baselineFromDeviceId: null,
-                    baselineBuiltAt: null,
-                    importedSessionIds: [sessionId],
-                },
-                null,
-                2,
-            ),
-        );
         files.set(
             normalizePath(`${layout.sessionsRoot}/${sessionId}.jsonl`),
             JSON.stringify({
@@ -374,9 +371,15 @@ describe("SyroSessionManager", () => {
 
         const currentDeviceMeta = JSON.parse(
             files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
-        ) as { importedSessionIds?: string[] };
+        ) as {
+            importedSessionIds?: string[];
+            importedSessionRetentionUntil?: Record<string, string>;
+        };
         currentDeviceMeta.importedSessionIds = [sessionId];
+        currentDeviceMeta.importedSessionRetentionUntil = {};
         files.set(normalizePath(layout.deviceMetaPath), JSON.stringify(currentDeviceMeta, null, 2));
+        layout.device.importedSessionIds = [sessionId];
+        layout.device.importedSessionRetentionUntil = {};
 
         const manager = new SyroSessionManager(app, layout);
         await manager.initialize();
@@ -384,13 +387,31 @@ describe("SyroSessionManager", () => {
 
         expect(result.deletedSessionIds).toContain(sessionId);
         expect(files.has(normalizePath(`${layout.sessionsRoot}/${sessionId}.jsonl`))).toBe(false);
+
+        const retainedCurrentMeta = JSON.parse(
+            files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
+        ) as {
+            importedSessionIds?: string[];
+            importedSessionRetentionUntil?: Record<string, string>;
+        };
+        expect(retainedCurrentMeta.importedSessionIds).toContain(sessionId);
+        expect(retainedCurrentMeta.importedSessionRetentionUntil?.[sessionId]).toBeTruthy();
     });
 
-    test("archives stale unconfirmed sessions into monthly packs", async () => {
+    test("archives stale unconfirmed sessions into a real gzip pack and keeps retention metadata", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
-        await addSecondaryDevice(adapter, files);
-
         const sessionId = "2026-03-01T08-00-00__91ac__0001";
+        await addSecondaryDevice(adapter, files, {
+            importedSessionIds: [sessionId],
+        });
+        await addSecondaryDevice(adapter, files, {
+            folderName: "Tablet--22bb",
+            deviceId: "22bb1111-2222-3333-4444-555555555555",
+            deviceName: "Tablet",
+            shortDeviceId: "22bb",
+            importedSessionIds: [],
+        });
+
         files.set(
             normalizePath(`${layout.sessionsRoot}/${sessionId}.jsonl`),
             JSON.stringify({
@@ -409,6 +430,18 @@ describe("SyroSessionManager", () => {
             }),
         );
 
+        const currentDeviceMeta = JSON.parse(
+            files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
+        ) as {
+            importedSessionIds?: string[];
+            importedSessionRetentionUntil?: Record<string, string>;
+        };
+        currentDeviceMeta.importedSessionIds = [sessionId];
+        currentDeviceMeta.importedSessionRetentionUntil = {};
+        files.set(normalizePath(layout.deviceMetaPath), JSON.stringify(currentDeviceMeta, null, 2));
+        layout.device.importedSessionIds = [sessionId];
+        layout.device.importedSessionRetentionUntil = {};
+
         const manager = new SyroSessionManager(app, layout);
         await manager.initialize();
         const result = await manager.importPendingSessions(async () => undefined);
@@ -419,12 +452,59 @@ describe("SyroSessionManager", () => {
         expect(files.has(archivePath)).toBe(true);
 
         const archiveBuffer = Buffer.from(files.get(archivePath) ?? "", "base64");
-        let archiveText: string;
-        try {
-            archiveText = gunzipSync(archiveBuffer).toString("utf8");
-        } catch {
-            archiveText = archiveBuffer.toString("utf8");
-        }
+        const archiveText = gunzipSync(archiveBuffer).toString("utf8");
         expect(archiveText).toContain(sessionId);
+
+        const retainedCurrentMeta = JSON.parse(
+            files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
+        ) as {
+            importedSessionIds?: string[];
+            importedSessionRetentionUntil?: Record<string, string>;
+        };
+        expect(retainedCurrentMeta.importedSessionIds).toContain(sessionId);
+        expect(retainedCurrentMeta.importedSessionRetentionUntil?.[sessionId]).toBeTruthy();
+    });
+
+    test("seals the active session after five minutes of idleness", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        await addSecondaryDevice(adapter, files);
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+        await manager.appendDeckOptionsChange(createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state);
+
+        await jest.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+        expect(
+            files.has(normalizePath(`${layout.sessionsRoot}/2026-04-13T12-39-56__d84f__0001.jsonl`)),
+        ).toBe(true);
+        expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(false);
+    });
+
+    test("seals the active session immediately when the record limit is reached", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        await addSecondaryDevice(adapter, files);
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+        const deckOptionsState = createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state;
+
+        for (let index = 0; index < 100; index++) {
+            await manager.appendDeckOptionsChange(
+                {
+                    ...deckOptionsState,
+                    deckPresetAssignment: {
+                        ...deckOptionsState.deckPresetAssignment,
+                        [`Deck-${index}`]: 0,
+                    },
+                },
+                `2026-04-13T12:34:${String(index % 60).padStart(2, "0")}.000Z`,
+            );
+        }
+
+        expect(
+            files.has(normalizePath(`${layout.sessionsRoot}/2026-04-13T12-34-56__d84f__0001.jsonl`)),
+        ).toBe(true);
+        expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(false);
     });
 });

@@ -1,9 +1,11 @@
+import { createDeckOptionsStoreSnapshot } from "src/dataStore/deckOptionsStore";
 import { DEFAULT_SETTINGS } from "src/settings";
 import { SyroWorkspace } from "src/dataStore/syroWorkspace";
 
 type MockAdapter = {
     basePath: string;
     exists: jest.Mock<Promise<boolean>, [string]>;
+    list: jest.Mock<Promise<{ files: string[]; folders: string[] }>, [string]>;
     mkdir: jest.Mock<Promise<void>, [string]>;
     read: jest.Mock<Promise<string>, [string]>;
     write: jest.Mock<Promise<void>, [string, string]>;
@@ -38,6 +40,39 @@ function createMockAdapter() {
             const normalized = normalizePath(path);
             return files.has(normalized) || directories.has(normalized);
         }),
+        list: jest.fn(async (path: string) => {
+            const normalized = normalizePath(path);
+            const prefix = normalized ? `${normalized}/` : "";
+            const folderSet = new Set<string>();
+            const fileList: string[] = [];
+
+            for (const directory of directories) {
+                if (!directory.startsWith(prefix) || directory === normalized) {
+                    continue;
+                }
+                const rest = directory.slice(prefix.length);
+                if (rest.length === 0 || rest.includes("/")) {
+                    continue;
+                }
+                folderSet.add(directory);
+            }
+
+            for (const filePath of files.keys()) {
+                if (!filePath.startsWith(prefix)) {
+                    continue;
+                }
+                const rest = filePath.slice(prefix.length);
+                if (rest.length === 0 || rest.includes("/")) {
+                    continue;
+                }
+                fileList.push(filePath);
+            }
+
+            return {
+                files: fileList.sort(),
+                folders: Array.from(folderSet).sort(),
+            };
+        }),
         mkdir: jest.fn(async (path: string) => {
             directories.add(normalizePath(path));
         }),
@@ -50,6 +85,77 @@ function createMockAdapter() {
     };
 
     return { adapter, files, directories };
+}
+
+function createValidNotesPayload(): string {
+    return JSON.stringify({
+        version: 1,
+        nextItemId: 1,
+        items: {},
+    });
+}
+
+function createValidDeckOptionsPayload(): string {
+    return JSON.stringify(createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state);
+}
+
+function createValidDeviceMetadata(options: {
+    deviceId: string;
+    deviceName: string;
+    shortDeviceId: string;
+    createdAt?: string;
+    updatedAt?: string;
+    lastSeenAt?: string;
+    baselineFromDeviceId?: string | null;
+    baselineBuiltAt?: string | null;
+    importedSessionIds?: string[];
+    importedSessionRetentionUntil?: Record<string, string>;
+}): string {
+    return JSON.stringify(
+        {
+            version: 1,
+            deviceId: options.deviceId,
+            deviceName: options.deviceName,
+            shortDeviceId: options.shortDeviceId,
+            createdAt: options.createdAt ?? "2026-04-12T00:00:00.000Z",
+            updatedAt: options.updatedAt ?? "2026-04-12T00:00:00.000Z",
+            lastSeenAt: options.lastSeenAt ?? "2026-04-13T00:00:00.000Z",
+            baselineFromDeviceId: options.baselineFromDeviceId ?? null,
+            baselineBuiltAt: options.baselineBuiltAt ?? null,
+            importedSessionIds: options.importedSessionIds ?? [],
+            importedSessionRetentionUntil: options.importedSessionRetentionUntil ?? {},
+        },
+        null,
+        2,
+    );
+}
+
+async function addSourceDevice(
+    adapter: MockAdapter,
+    files: Map<string, string>,
+    options: {
+        folderName: string;
+        deviceId: string;
+        deviceName: string;
+        shortDeviceId: string;
+        lastSeenAt?: string;
+    },
+): Promise<void> {
+    const sourceRoot = `.obsidian/plugins/syro/devices/${options.folderName}`;
+    await adapter.mkdir(sourceRoot);
+    files.set(
+        `${sourceRoot}/device.json`,
+        createValidDeviceMetadata({
+            deviceId: options.deviceId,
+            deviceName: options.deviceName,
+            shortDeviceId: options.shortDeviceId,
+            lastSeenAt: options.lastSeenAt,
+        }),
+    );
+    files.set(`${sourceRoot}/cards.json`, '{"items":[{"uuid":"card-1"}]}');
+    files.set(`${sourceRoot}/notes.json`, createValidNotesPayload());
+    files.set(`${sourceRoot}/timeline.json`, '{"note.md":[{"id":"1"}]}');
+    files.set(`${sourceRoot}/deck-options.json`, createValidDeckOptionsPayload());
 }
 
 describe("SyroWorkspace", () => {
@@ -95,44 +201,42 @@ describe("SyroWorkspace", () => {
         );
     }
 
-    it("initializes the syro tree and persists the current device identity", async () => {
+    it("initializes the flattened syro tree and persists the current device identity", async () => {
         const { adapter, files, directories } = createMockAdapter();
 
-        const layout = await createWorkspace(adapter).initialize();
+        const startup = await createWorkspace(adapter).initialize();
+        const layout = startup.layout;
 
+        expect(startup.startupDecision).toBe("ready");
         expect(layout.device.deviceId).toBe("d84f1111-2222-3333-4444-555555555555");
         expect(layout.device.shortDeviceId).toBe("d84f");
-        expect(layout.deviceRoot).toBe(".obsidian/plugins/syro/syro/devices/Desktop--d84f");
-        expect(layout.cardsPath).toBe(
-            ".obsidian/plugins/syro/syro/devices/Desktop--d84f/cards.json",
-        );
+        expect(layout.deviceRoot).toBe(".obsidian/plugins/syro/devices/Desktop--d84f");
+        expect(layout.cardsPath).toBe(".obsidian/plugins/syro/devices/Desktop--d84f/cards.json");
         expect(layout.cardsOverlayPath).toBe(
             ".obsidian/plugins/syro/local-state/Desktop--d84f/cards.review_overlay.json",
         );
         expect(layout.noteCachePath).toBe(
             ".obsidian/plugins/syro/local-state/Desktop--d84f/note_cache.json",
         );
-        expect(directories.has(".obsidian/plugins/syro/syro/devices/Desktop--d84f")).toBe(true);
+        expect(directories.has(".obsidian/plugins/syro/devices/Desktop--d84f")).toBe(true);
         expect(directories.has(".obsidian/plugins/syro/local-state/Desktop--d84f")).toBe(true);
 
         const savedDeviceMeta = JSON.parse(
-            files.get(".obsidian/plugins/syro/syro/devices/Desktop--d84f/device.json") ?? "{}",
+            files.get(".obsidian/plugins/syro/devices/Desktop--d84f/device.json") ?? "{}",
         );
         expect(savedDeviceMeta.deviceName).toBe("Desktop");
         expect(savedDeviceMeta.importedSessionIds).toEqual([]);
+        expect(savedDeviceMeta.importedSessionRetentionUntil).toEqual({});
 
-        const repeatedLayout = await createWorkspace(adapter).initialize();
-        expect(repeatedLayout.deviceRoot).toBe(layout.deviceRoot);
-        expect(adapter.write).toHaveBeenCalledWith(
-            ".obsidian/plugins/syro/syro/devices/Desktop--d84f/device.json",
-            expect.any(String),
-        );
+        const repeated = await createWorkspace(adapter).initialize();
+        expect(repeated.layout.deviceRoot).toBe(layout.deviceRoot);
+        expect(repeated.startupDecision).toBe("ready");
     });
 
-    it("copies legacy cards, notes, timeline, overlay, and cache files into the new layout", async () => {
+    it("creates backup plus migration marker only after generated files validate", async () => {
         const { adapter, files } = createMockAdapter();
-        files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[1]}');
-        files.set(".obsidian/plugins/syro/review_notes.json", '{"items":{"note.md":{}}}');
+        files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[]}');
+        files.set(".obsidian/plugins/syro/review_notes.json", createValidNotesPayload());
         files.set(".obsidian/plugins/syro/review_commits.json", '{"note.md":[{"id":"1"}]}');
         files.set(
             ".obsidian/plugins/syro/tracked_files.review_overlay.json",
@@ -140,34 +244,118 @@ describe("SyroWorkspace", () => {
         );
         files.set(".obsidian/plugins/syro/note_cache.json", '{"items":[{"path":"note.md"}]}');
 
-        const layout = await createWorkspace(adapter).initialize();
+        const startup = await createWorkspace(adapter).initialize();
+        const layout = startup.layout;
 
-        expect(files.get(layout.cardsPath)).toBe('{"items":[1]}');
-        expect(files.get(layout.notesPath)).toBe('{"items":{"note.md":{}}}');
+        expect(startup.startupDecision).toBe("ready");
+        expect(files.get(layout.cardsPath)).toBe('{"items":[]}');
+        expect(files.get(layout.notesPath)).toBe(createValidNotesPayload());
         expect(files.get(layout.timelinePath)).toBe('{"note.md":[{"id":"1"}]}');
         expect(files.get(layout.cardsOverlayPath)).toBe('{"items":[{"id":1}]}');
         expect(files.get(layout.noteCachePath)).toBe('{"items":[{"path":"note.md"}]}');
-        expect(files.get(".obsidian/plugins/syro/tracked_files.json")).toBe('{"items":[1]}');
-    });
+        expect(JSON.parse(files.get(layout.deckOptionsPath) ?? "{}")).toEqual(
+            JSON.parse(createValidDeckOptionsPayload()),
+        );
 
-    it("creates a copy-only migration backup and writes a one-time migration marker", async () => {
-        const { adapter, files } = createMockAdapter();
-        files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[1]}');
-        files.set(".obsidian/plugins/syro/review_notes.json", '{"items":{"note.md":{}}}');
-
-        const layout = await createWorkspace(adapter).initialize();
         const backupMetaPath = Array.from(files.keys()).find((path) =>
             path.endsWith("/meta.json"),
         );
-
         expect(backupMetaPath).toBeDefined();
         expect(backupMetaPath).toContain(".obsidian/plugins/syro/migration-backups/");
         expect(files.get(backupMetaPath!)).toContain('"sourceVersion": "0.0.11"');
-        expect(files.get(layout.migrationStatePath)).toContain('"targetVersion": "0.0.12"');
-
-        await createWorkspace(adapter).initialize();
         expect(
-            Array.from(files.keys()).filter((path) => path.endsWith("/meta.json") && path.includes("/migration-backups/")),
-        ).toHaveLength(1);
+            files.get(
+                backupMetaPath!.replace("/meta.json", "/deck-options.settings-snapshot.json"),
+            ),
+        ).toContain('"deckOptionsPresets"');
+        expect(files.get(layout.migrationStatePath)).toContain('"targetVersion": "0.0.12"');
+    });
+
+    it("enters read-only and skips the marker when migration validation fails", async () => {
+        const { adapter, files } = createMockAdapter();
+        files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[]}');
+        files.set(".obsidian/plugins/syro/review_notes.json", '{"items":{"note.md":{}}}');
+
+        const startup = await createWorkspace(adapter).initialize();
+
+        expect(startup.startupDecision).toBe("read-only");
+        expect(startup.readOnlyReason).toContain("Invalid formal file schema");
+        expect(files.has(normalizePath(startup.layout.migrationStatePath))).toBe(false);
+    });
+
+    it("requires baseline when another valid device exists and the current device has not joined yet", async () => {
+        const { adapter, files } = createMockAdapter();
+        await addSourceDevice(adapter, files, {
+            folderName: "Mobile--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Mobile",
+            shortDeviceId: "91ac",
+        });
+
+        const workspace = createWorkspace(adapter);
+        const startup = await workspace.initialize();
+
+        expect(startup.startupDecision).toBe("baseline-required");
+        expect(startup.candidates).toHaveLength(1);
+        expect(startup.recommendedSourceDeviceId).toBe("91ac1111-2222-3333-4444-555555555555");
+
+        const layout = await workspace.completeBaselineJoin({
+            deviceName: "Tablet",
+            sourceDeviceId: "91ac1111-2222-3333-4444-555555555555",
+        });
+
+        expect(layout.device.deviceName).toBe("Tablet");
+        expect(layout.device.baselineFromDeviceId).toBe("91ac1111-2222-3333-4444-555555555555");
+        expect(layout.device.baselineBuiltAt).toBeTruthy();
+        expect(layout.device.importedSessionIds).toEqual([]);
+        expect(layout.device.importedSessionRetentionUntil).toEqual({});
+        expect(files.get(layout.cardsPath)).toBe('{"items":[{"uuid":"card-1"}]}');
+        expect(JSON.parse(files.get(layout.deckOptionsPath) ?? "{}")).toEqual(
+            JSON.parse(createValidDeckOptionsPayload()),
+        );
+    });
+
+    it("requires rebuild when the current device is stale and a fresher peer exists", async () => {
+        const { adapter, files } = createMockAdapter();
+        const workspace = createWorkspace(adapter);
+        const initial = await workspace.initialize();
+
+        files.set(
+            normalizePath(initial.layout.deviceMetaPath),
+            createValidDeviceMetadata({
+                deviceId: initial.layout.device.deviceId,
+                deviceName: initial.layout.device.deviceName,
+                shortDeviceId: initial.layout.device.shortDeviceId,
+                createdAt: "2026-03-01T00:00:00.000Z",
+                updatedAt: "2026-03-01T00:00:00.000Z",
+                lastSeenAt: "2026-03-01T00:00:00.000Z",
+            }),
+        );
+
+        await addSourceDevice(adapter, files, {
+            folderName: "Mobile--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Mobile",
+            shortDeviceId: "91ac",
+            lastSeenAt: "2026-04-13T00:00:00.000Z",
+        });
+
+        const rebuiltStartup = await createWorkspace(adapter).initialize();
+        expect(rebuiltStartup.startupDecision).toBe("rebuild-required");
+        expect(rebuiltStartup.recommendedSourceDeviceId).toBe(
+            "91ac1111-2222-3333-4444-555555555555",
+        );
+    });
+
+    it("enters read-only when the persisted current device file becomes invalid", async () => {
+        const { adapter, files } = createMockAdapter();
+        const workspace = createWorkspace(adapter);
+        const initial = await workspace.initialize();
+
+        files.set(normalizePath(initial.layout.deviceMetaPath), "{broken");
+
+        const startup = await createWorkspace(adapter).initialize();
+        expect(startup.startupDecision).toBe("read-only");
+        expect(startup.readOnlyReason).toContain("device.json");
     });
 });

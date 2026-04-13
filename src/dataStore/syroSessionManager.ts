@@ -1,4 +1,5 @@
 import { App, DataAdapter } from "obsidian";
+import { gunzipSync, gzipSync, strFromU8, strToU8 } from "fflate";
 import type { DeckOptionsStoreFile } from "./deckOptionsStore";
 import type { SyroDeviceMetadata, SyroPersistenceLayout } from "./syroWorkspace";
 import { parseDeviceMetadata } from "./syroWorkspace";
@@ -14,6 +15,9 @@ const SYRO_BUFFER_LINE_VERSION = 1;
 const SYRO_ARCHIVE_ENTRY_VERSION = 1;
 const ACTIVE_DEVICE_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 const STALE_SESSION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+const IMPORTED_SESSION_RETENTION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+const SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const SESSION_RECORD_LIMIT = 100;
 
 type SessionAdapter = Pick<
     DataAdapter,
@@ -58,6 +62,14 @@ interface ActiveSyroSession {
     openedAt: string;
     records: SyroSessionRecord[];
 }
+
+export type SyroSessionSealReason =
+    | "manual"
+    | "background"
+    | "startup"
+    | "unload"
+    | "idle-timeout"
+    | "record-limit";
 
 type BufferedSessionLineParseResult = {
     raw: string;
@@ -154,42 +166,16 @@ function parseClosedAtMs(sessionId: string): number | null {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
-async function gzipText(content: string): Promise<ArrayBuffer> {
-    if (typeof CompressionStream === "undefined") {
-        const encoded = encodeURIComponent(content);
-        const bytes: number[] = [];
-        for (let index = 0; index < encoded.length; index++) {
-            const current = encoded[index];
-            if (current === "%") {
-                bytes.push(Number.parseInt(encoded.slice(index + 1, index + 3), 16));
-                index += 2;
-                continue;
-            }
-            bytes.push(current.charCodeAt(0));
-        }
-        return Uint8Array.from(bytes).buffer;
-    }
-
-    const stream = new Blob([content]).stream().pipeThrough(new CompressionStream("gzip"));
-    return await new Response(stream).arrayBuffer();
+function gzipText(content: string): ArrayBuffer {
+    const compressed = gzipSync(strToU8(content));
+    return compressed.buffer.slice(
+        compressed.byteOffset,
+        compressed.byteOffset + compressed.byteLength,
+    );
 }
 
-async function gunzipText(content: ArrayBuffer): Promise<string> {
-    if (typeof DecompressionStream === "undefined") {
-        let encoded = "";
-        for (const byte of new Uint8Array(content)) {
-            const char = String.fromCharCode(byte);
-            if (/^[A-Za-z0-9\\-_.!~*'()]$/.test(char)) {
-                encoded += char;
-            } else {
-                encoded += `%${byte.toString(16).padStart(2, "0").toUpperCase()}`;
-            }
-        }
-        return decodeURIComponent(encoded);
-    }
-
-    const stream = new Blob([content]).stream().pipeThrough(new DecompressionStream("gzip"));
-    return await new Response(stream).text();
+function gunzipText(content: ArrayBuffer): string {
+    return strFromU8(gunzipSync(new Uint8Array(content)));
 }
 
 function getArchivePackName(sessionId: string): string | null {
@@ -308,6 +294,8 @@ function serializeBufferedSessionLine(
 export class SyroSessionManager {
     private readonly adapter: SessionAdapter;
     private activeSession: ActiveSyroSession | null = null;
+    private syncReadOnlyReason: string | null = null;
+    private idleSealTimer: ReturnType<typeof setTimeout> | null = null;
 
     constructor(
         private readonly app: App,
@@ -318,11 +306,30 @@ export class SyroSessionManager {
 
     async initialize(): Promise<void> {
         await this.restoreActiveSessionBuffer();
+        this.scheduleIdleSealTimer();
+    }
+
+    setReadOnly(reason: string | null): void {
+        this.syncReadOnlyReason = reason;
+        if (reason) {
+            this.clearIdleSealTimer();
+            return;
+        }
+
+        this.scheduleIdleSealTimer();
     }
 
     async importPendingSessions(
         replaySession: (sessionId: string, records: SyroSessionRecord[]) => Promise<void>,
     ): Promise<SyroSessionImportResult> {
+        if (this.syncReadOnlyReason) {
+            return {
+                importedSessionIds: [],
+                deletedSessionIds: [],
+                archivedSessionIds: [],
+            };
+        }
+
         if (!(await this.shouldPersistNewRecords())) {
             return {
                 importedSessionIds: [],
@@ -386,6 +393,10 @@ export class SyroSessionManager {
             updatedAt?: string;
         },
     ): Promise<boolean> {
+        if (this.syncReadOnlyReason) {
+            return false;
+        }
+
         if (!this.activeSession && !(await this.shouldPersistNewRecords())) {
             return false;
         }
@@ -416,10 +427,23 @@ export class SyroSessionManager {
             this.layout.activeSessionBufferPath,
             `${serializeBufferedSessionLine(activeSession.sessionSeq, activeSession.openedAt, record)}\n`,
         );
+        this.scheduleIdleSealTimer();
+        if (activeSession.records.length >= SESSION_RECORD_LIMIT) {
+            await this.sealActiveSession("record-limit");
+        }
         return true;
     }
 
-    async flushActiveSession(): Promise<string | null> {
+    async flushActiveSession(reason: SyroSessionSealReason = "manual"): Promise<string | null> {
+        return this.sealActiveSession(reason);
+    }
+
+    async sealActiveSession(reason: SyroSessionSealReason): Promise<string | null> {
+        if (this.syncReadOnlyReason) {
+            return null;
+        }
+
+        this.clearIdleSealTimer();
         if (!this.activeSession || this.activeSession.records.length === 0) {
             await this.clearActiveSessionBuffer();
             this.activeSession = null;
@@ -452,6 +476,9 @@ export class SyroSessionManager {
         await this.markCurrentDeviceImported(sessionId);
         await this.clearActiveSessionBuffer();
         this.activeSession = null;
+        if (reason !== "unload") {
+            this.scheduleIdleSealTimer();
+        }
         return sessionId;
     }
 
@@ -612,6 +639,7 @@ export class SyroSessionManager {
 
         const cleanedBuffer = `${validLines.map((line) => line.raw).join("\n")}\n`;
         await this.adapter.write(this.layout.activeSessionBufferPath, cleanedBuffer);
+        this.scheduleIdleSealTimer();
     }
 
     private async writeBadBufferLines(badLines: string[]): Promise<void> {
@@ -695,6 +723,13 @@ export class SyroSessionManager {
         deletedSessionIds: string[];
         archivedSessionIds: string[];
     }> {
+        if (this.syncReadOnlyReason) {
+            return {
+                deletedSessionIds: [],
+                archivedSessionIds: [],
+            };
+        }
+
         const deviceEntries = await this.listValidDeviceEntries();
         const activeCutoff = Date.now() - ACTIVE_DEVICE_WINDOW_MS;
         const activeDevices = deviceEntries.filter((entry) => {
@@ -728,6 +763,10 @@ export class SyroSessionManager {
         }
 
         if (deletedSessionIds.length > 0 || archivedSessionIds.length > 0) {
+            await this.extendImportedSessionRetention(deviceEntries, [
+                ...deletedSessionIds,
+                ...archivedSessionIds,
+            ]);
             await this.trimImportedSessionIds(deviceEntries);
         }
 
@@ -757,13 +796,13 @@ export class SyroSessionManager {
         let combinedText = `${JSON.stringify(entry)}\n`;
         if (await this.adapter.exists(archivePath)) {
             const previousBinary = await this.adapter.readBinary(archivePath);
-            const previousText = await gunzipText(previousBinary);
+            const previousText = gunzipText(previousBinary);
             combinedText = previousText.endsWith("\n")
                 ? `${previousText}${JSON.stringify(entry)}\n`
                 : `${previousText}\n${JSON.stringify(entry)}\n`;
         }
 
-        await this.adapter.writeBinary(archivePath, await gzipText(combinedText));
+        await this.adapter.writeBinary(archivePath, gzipText(combinedText));
     }
 
     private async trimImportedSessionIds(deviceEntries: SyroDeviceEntry[]): Promise<void> {
@@ -773,17 +812,39 @@ export class SyroSessionManager {
 
         await Promise.all(
             deviceEntries.map(async (entry) => {
-                const trimmed = entry.metadata.importedSessionIds.filter((sessionId) =>
-                    retainedSessionIds.has(sessionId),
+                const now = Date.now();
+                const trimmed = entry.metadata.importedSessionIds.filter((sessionId) => {
+                    if (retainedSessionIds.has(sessionId)) {
+                        return true;
+                    }
+
+                    const retentionUntil = entry.metadata.importedSessionRetentionUntil[sessionId];
+                    const parsedRetention = Date.parse(retentionUntil);
+                    return Number.isFinite(parsedRetention) && parsedRetention > now;
+                });
+                const trimmedRetention = Object.fromEntries(
+                    Object.entries(entry.metadata.importedSessionRetentionUntil).filter(
+                        ([sessionId, retentionUntil]) =>
+                            trimmed.includes(sessionId) &&
+                            Number.isFinite(Date.parse(retentionUntil)) &&
+                            Date.parse(retentionUntil) > now,
+                    ),
                 );
-                if (trimmed.length === entry.metadata.importedSessionIds.length) {
+                if (
+                    trimmed.length === entry.metadata.importedSessionIds.length &&
+                    Object.keys(trimmedRetention).length ===
+                        Object.keys(entry.metadata.importedSessionRetentionUntil).length
+                ) {
                     return;
                 }
 
                 entry.metadata.importedSessionIds = trimmed;
+                entry.metadata.importedSessionRetentionUntil = trimmedRetention;
                 entry.metadata.updatedAt = new Date().toISOString();
                 if (entry.metadata.deviceId === this.layout.device.deviceId) {
                     this.layout.device.importedSessionIds = trimmed;
+                    this.layout.device.importedSessionRetentionUntil =
+                        entry.metadata.importedSessionRetentionUntil;
                     this.layout.device.updatedAt = entry.metadata.updatedAt;
                 }
 
@@ -793,6 +854,10 @@ export class SyroSessionManager {
     }
 
     private async markCurrentDeviceImported(sessionId: string): Promise<void> {
+        if (this.syncReadOnlyReason) {
+            return;
+        }
+
         if (!this.layout.device.importedSessionIds.includes(sessionId)) {
             this.layout.device.importedSessionIds.push(sessionId);
         }
@@ -803,6 +868,70 @@ export class SyroSessionManager {
         await this.adapter.write(
             this.layout.deviceMetaPath,
             JSON.stringify(this.layout.device, null, 2),
+        );
+    }
+
+    private clearIdleSealTimer(): void {
+        if (this.idleSealTimer !== null) {
+            clearTimeout(this.idleSealTimer);
+            this.idleSealTimer = null;
+        }
+    }
+
+    private scheduleIdleSealTimer(): void {
+        this.clearIdleSealTimer();
+        if (this.syncReadOnlyReason || !this.activeSession || this.activeSession.records.length === 0) {
+            return;
+        }
+
+        this.idleSealTimer = setTimeout(() => {
+            this.idleSealTimer = null;
+            void this.sealActiveSession("idle-timeout").catch((error) => {
+                console.error("[SR-Syro] idle session seal failed", error);
+            });
+        }, SESSION_IDLE_TIMEOUT_MS);
+    }
+
+    private async extendImportedSessionRetention(
+        deviceEntries: SyroDeviceEntry[],
+        sessionIds: string[],
+    ): Promise<void> {
+        if (sessionIds.length === 0) {
+            return;
+        }
+
+        const retentionUntil = new Date(Date.now() + IMPORTED_SESSION_RETENTION_WINDOW_MS).toISOString();
+        await Promise.all(
+            deviceEntries.map(async (entry) => {
+                let changed = false;
+                for (const sessionId of sessionIds) {
+                    if (!entry.metadata.importedSessionIds.includes(sessionId)) {
+                        continue;
+                    }
+
+                    const current = entry.metadata.importedSessionRetentionUntil[sessionId];
+                    if (current && current >= retentionUntil) {
+                        continue;
+                    }
+
+                    entry.metadata.importedSessionRetentionUntil[sessionId] = retentionUntil;
+                    changed = true;
+                }
+
+                if (!changed) {
+                    return;
+                }
+
+                entry.metadata.updatedAt = new Date().toISOString();
+                if (entry.metadata.deviceId === this.layout.device.deviceId) {
+                    this.layout.device.importedSessionRetentionUntil = {
+                        ...entry.metadata.importedSessionRetentionUntil,
+                    };
+                    this.layout.device.updatedAt = entry.metadata.updatedAt;
+                }
+
+                await this.adapter.write(entry.metaPath, JSON.stringify(entry.metadata, null, 2));
+            }),
         );
     }
 }

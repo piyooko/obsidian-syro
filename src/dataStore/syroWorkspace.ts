@@ -1,4 +1,5 @@
 import { App, DataAdapter, Platform } from "obsidian";
+import { createDeckOptionsStoreSnapshot } from "./deckOptionsStore";
 import { getStorePath } from "src/dataStore/dataLocation";
 import type { SRSettings } from "src/settings";
 import {
@@ -11,6 +12,8 @@ import {
 
 const SYRO_DEVICE_FILE_VERSION = 1;
 const SYRO_CURRENT_DEVICE_STATE_VERSION = 1;
+const SYRO_MIGRATION_STATE_VERSION = 1;
+const ACTIVE_DEVICE_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
 export interface CardsStorePathConfig {
     cardsPath: string;
@@ -41,6 +44,7 @@ export interface SyroDeviceMetadata {
     baselineFromDeviceId: string | null;
     baselineBuiltAt: string | null;
     importedSessionIds: string[];
+    importedSessionRetentionUntil: Record<string, string>;
 }
 
 interface PersistedCurrentDeviceState {
@@ -55,6 +59,48 @@ interface SyroMigrationStateFile {
     sourceVersion: string;
     targetVersion: string;
     hasLegacyInputs: boolean;
+}
+
+export type SyroStartupDecision =
+    | "ready"
+    | "baseline-required"
+    | "rebuild-required"
+    | "read-only";
+
+export interface SyroBaselineCandidate {
+    deviceId: string;
+    deviceName: string;
+    shortDeviceId: string;
+    deviceFolderName: string;
+    lastSeenAt: string;
+    baselineFromDeviceId: string | null;
+    baselineBuiltAt: string | null;
+}
+
+export interface SyroBaselineRequest {
+    deviceName: string;
+    sourceDeviceId: string;
+}
+
+export interface SyroRebuildRequest {
+    sourceDeviceId: string;
+    deviceName?: string;
+}
+
+export interface SyroMigrationValidationResult {
+    ok: boolean;
+    reason: string | null;
+    validatedPaths: string[];
+}
+
+export interface SyroWorkspaceInitializeResult {
+    startupDecision: SyroStartupDecision;
+    layout: SyroPersistenceLayout;
+    candidates: SyroBaselineCandidate[];
+    defaultDeviceName: string;
+    recommendedSourceDeviceId: string | null;
+    readOnlyReason: string | null;
+    migrationValidation: SyroMigrationValidationResult | null;
 }
 
 export interface SyroPersistenceLayout {
@@ -80,6 +126,7 @@ export interface SyroPersistenceLayout {
 
 type FileBackedAdapter = Pick<DataAdapter, "exists" | "mkdir" | "read" | "write"> & {
     basePath?: string;
+    list?: (path: string) => Promise<{ files: string[]; folders: string[] }>;
 };
 
 function normalizePath(path: string): string {
@@ -171,6 +218,25 @@ function parseImportedSessionIds(value: unknown): string[] {
         : [];
 }
 
+function parseStringMap(value: unknown): Record<string, string> {
+    if (!isRecord(value)) {
+        return {};
+    }
+
+    const result: Record<string, string> = {};
+    for (const [key, entry] of Object.entries(value)) {
+        if (typeof key !== "string" || key.length === 0) {
+            continue;
+        }
+        if (typeof entry !== "string" || entry.length === 0) {
+            continue;
+        }
+        result[key] = entry;
+    }
+
+    return result;
+}
+
 export function parseDeviceMetadata(value: unknown): SyroDeviceMetadata | null {
     if (!isRecord(value)) {
         return null;
@@ -207,6 +273,7 @@ export function parseDeviceMetadata(value: unknown): SyroDeviceMetadata | null {
         baselineFromDeviceId: getStringProp(value, "baselineFromDeviceId") ?? null,
         baselineBuiltAt: getStringProp(value, "baselineBuiltAt") ?? null,
         importedSessionIds: parseImportedSessionIds(getArrayProp(value, "importedSessionIds")),
+        importedSessionRetentionUntil: parseStringMap(value["importedSessionRetentionUntil"]),
     };
 }
 
@@ -265,6 +332,82 @@ async function copyFileIfMissing(
     await adapter.write(targetPath, data);
 }
 
+async function copyFile(
+    adapter: FileBackedAdapter,
+    sourcePath: string,
+    targetPath: string,
+): Promise<void> {
+    if (sourcePath === targetPath || !(await adapter.exists(sourcePath))) {
+        return;
+    }
+
+    const data = await adapter.read(sourcePath);
+    await ensureDirectory(adapter, dirname(targetPath));
+    await adapter.write(targetPath, data);
+}
+
+function isObjectLike(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+}
+
+function validateCardsStoreFile(raw: string): boolean {
+    const parsed = parseJsonUnknown(raw);
+    if (!isRecord(parsed)) {
+        return false;
+    }
+
+    const items = parsed["items"];
+    const trackedFiles = parsed["trackedFiles"];
+    const fileOrder = parsed["fileOrder"];
+
+    return (
+        (items === undefined || Array.isArray(items)) &&
+        (trackedFiles === undefined || Array.isArray(trackedFiles) || isObjectLike(trackedFiles)) &&
+        (fileOrder === undefined || Array.isArray(fileOrder))
+    );
+}
+
+function validateNotesStoreFile(raw: string): boolean {
+    const parsed = parseJsonUnknown(raw);
+    return (
+        isRecord(parsed) &&
+        getNumberProp(parsed, "version") === 1 &&
+        typeof parsed["nextItemId"] === "number" &&
+        isRecord(parsed["items"])
+    );
+}
+
+function validateTimelineStoreFile(raw: string): boolean {
+    const parsed = parseJsonUnknown(raw);
+    return isObjectLike(parsed);
+}
+
+function validateDeckOptionsStoreFile(raw: string): boolean {
+    const parsed = parseJsonUnknown(raw);
+    return (
+        isRecord(parsed) &&
+        getNumberProp(parsed, "version") === 1 &&
+        isObjectLike(parsed["fsrsSettings"]) &&
+        Array.isArray(parsed["deckOptionsPresets"]) &&
+        isObjectLike(parsed["deckPresetAssignment"])
+    );
+}
+
+type ExistingCurrentDeviceResult =
+    | {
+          status: "missing";
+      }
+    | {
+          status: "valid";
+          metadata: SyroDeviceMetadata;
+          deviceFolderName: string;
+      }
+    | {
+          status: "invalid";
+          reason: string;
+          persisted: PersistedCurrentDeviceState;
+      };
+
 export class SyroWorkspace {
     private readonly adapter: FileBackedAdapter;
 
@@ -276,7 +419,7 @@ export class SyroWorkspace {
         this.adapter = this.app.vault.adapter as FileBackedAdapter;
     }
 
-    async initialize(): Promise<SyroPersistenceLayout> {
+    async initialize(): Promise<SyroWorkspaceInitializeResult> {
         const roots = this.buildRootPaths();
 
         await ensureDirectory(this.adapter, roots.syncRoot);
@@ -286,70 +429,169 @@ export class SyroWorkspace {
         await ensureDirectory(this.adapter, roots.localRoot);
 
         const persistedCurrentDevice = this.loadPersistedCurrentDeviceState();
-        const existingMetadata = await this.loadExistingMetadata(persistedCurrentDevice);
-        const reusableMetadata =
-            existingMetadata &&
-            (!persistedCurrentDevice ||
-                existingMetadata.deviceId === persistedCurrentDevice.deviceId)
-                ? existingMetadata
-                : null;
-        const now = new Date().toISOString();
+        const existingCurrentDevice = await this.loadExistingCurrentDevice(persistedCurrentDevice);
+        const candidates = await this.listBaselineCandidates();
+        const hasLegacyInputs = await this.hasLegacyInputs();
+        const defaultDeviceName =
+            existingCurrentDevice.status === "valid"
+                ? existingCurrentDevice.metadata.deviceName
+                : createDefaultDeviceName();
 
-        const deviceId =
-            reusableMetadata?.deviceId ?? persistedCurrentDevice?.deviceId ?? createDeviceId();
-        const deviceName = reusableMetadata?.deviceName ?? createDefaultDeviceName();
-        const shortDeviceId = reusableMetadata?.shortDeviceId ?? createShortDeviceId(deviceId);
-        const deviceFolderName =
-            persistedCurrentDevice?.deviceFolderName &&
-            reusableMetadata?.deviceId === persistedCurrentDevice.deviceId
-                ? persistedCurrentDevice.deviceFolderName
-                : createDeviceFolderName(deviceName, shortDeviceId);
+        if (existingCurrentDevice.status === "invalid") {
+            return {
+                startupDecision: "read-only",
+                layout: this.createProvisionalLayout(
+                    roots,
+                    createDefaultDeviceName(),
+                    existingCurrentDevice.persisted.deviceId,
+                    existingCurrentDevice.persisted.deviceFolderName,
+                ),
+                candidates,
+                defaultDeviceName,
+                recommendedSourceDeviceId: this.pickRecommendedSourceDeviceId(candidates, null),
+                readOnlyReason: existingCurrentDevice.reason,
+                migrationValidation: null,
+            };
+        }
 
-        const deviceRoot = joinPath(roots.devicesRoot, deviceFolderName);
-        const localDeviceRoot = joinPath(roots.localRoot, deviceFolderName);
-        await ensureDirectory(this.adapter, deviceRoot);
-        await ensureDirectory(this.adapter, localDeviceRoot);
+        if (existingCurrentDevice.status === "valid") {
+            const now = new Date().toISOString();
+            const layout = this.buildLayout(roots, existingCurrentDevice.deviceFolderName, {
+                ...existingCurrentDevice.metadata,
+                updatedAt: now,
+                lastSeenAt: now,
+            });
+            const otherCandidates = candidates.filter(
+                (candidate) => candidate.deviceId !== existingCurrentDevice.metadata.deviceId,
+            );
+            const migrationResult = await this.prepareReadyLayout(layout, hasLegacyInputs);
+            if (!migrationResult.ok) {
+                return {
+                    startupDecision: "read-only",
+                    layout,
+                    candidates: otherCandidates,
+                    defaultDeviceName: layout.device.deviceName,
+                    recommendedSourceDeviceId: this.pickRecommendedSourceDeviceId(
+                        otherCandidates,
+                        null,
+                    ),
+                    readOnlyReason: migrationResult.reason,
+                    migrationValidation: migrationResult.validation,
+                };
+            }
 
-        const metadata: SyroDeviceMetadata = {
-            version: SYRO_DEVICE_FILE_VERSION,
-            deviceId,
-            deviceName,
-            shortDeviceId,
-            createdAt: reusableMetadata?.createdAt ?? now,
-            updatedAt: now,
-            lastSeenAt: now,
-            baselineFromDeviceId: reusableMetadata?.baselineFromDeviceId ?? null,
-            baselineBuiltAt: reusableMetadata?.baselineBuiltAt ?? null,
-            importedSessionIds: reusableMetadata?.importedSessionIds ?? [],
+            return {
+                startupDecision:
+                    otherCandidates.length > 0 && this.isStaleDevice(existingCurrentDevice.metadata.lastSeenAt)
+                        ? "rebuild-required"
+                        : "ready",
+                layout,
+                candidates: otherCandidates,
+                defaultDeviceName: layout.device.deviceName,
+                recommendedSourceDeviceId: this.pickRecommendedSourceDeviceId(
+                    otherCandidates,
+                    null,
+                ),
+                readOnlyReason: null,
+                migrationValidation: migrationResult.validation,
+            };
+        }
+
+        if (hasLegacyInputs || candidates.length === 0) {
+            const layout = this.createProvisionalLayout(roots, defaultDeviceName);
+            const migrationResult = await this.prepareReadyLayout(layout, hasLegacyInputs);
+            if (!migrationResult.ok) {
+                return {
+                    startupDecision: "read-only",
+                    layout,
+                    candidates,
+                    defaultDeviceName,
+                    recommendedSourceDeviceId: this.pickRecommendedSourceDeviceId(candidates, null),
+                    readOnlyReason: migrationResult.reason,
+                    migrationValidation: migrationResult.validation,
+                };
+            }
+
+            return {
+                startupDecision: "ready",
+                layout,
+                candidates,
+                defaultDeviceName,
+                recommendedSourceDeviceId: this.pickRecommendedSourceDeviceId(candidates, null),
+                readOnlyReason: null,
+                migrationValidation: migrationResult.validation,
+            };
+        }
+
+        return {
+            startupDecision: "baseline-required",
+            layout: this.createProvisionalLayout(roots, defaultDeviceName),
+            candidates,
+            defaultDeviceName,
+            recommendedSourceDeviceId: this.pickRecommendedSourceDeviceId(candidates, null),
+            readOnlyReason: null,
+            migrationValidation: null,
         };
+    }
 
-        const layout: SyroPersistenceLayout = {
-            ...roots,
-            deviceRoot,
-            deviceMetaPath: joinPath(deviceRoot, "device.json"),
-            cardsPath: joinPath(deviceRoot, "cards.json"),
-            notesPath: joinPath(deviceRoot, "notes.json"),
-            timelinePath: joinPath(deviceRoot, "timeline.json"),
-            deckOptionsPath: joinPath(deviceRoot, "deck-options.json"),
-            localDeviceRoot,
-            cardsOverlayPath: joinPath(localDeviceRoot, "cards.review_overlay.json"),
-            activeSessionBufferPath: joinPath(localDeviceRoot, "active-session-buffer.jsonl"),
-            mergeStatePath: joinPath(localDeviceRoot, "sync-merge-state.json"),
-            migrationStatePath: joinPath(localDeviceRoot, "migration-state.json"),
-            noteCachePath: joinPath(localDeviceRoot, "note_cache.json"),
-            device: metadata,
-        };
+    async completeBaselineJoin(request: SyroBaselineRequest): Promise<SyroPersistenceLayout> {
+        const roots = this.buildRootPaths();
+        const candidates = await this.listBaselineCandidates();
+        const source = candidates.find((candidate) => candidate.deviceId === request.sourceDeviceId);
+        if (!source) {
+            throw new Error("[SR-Syro] Baseline source device not found.");
+        }
 
-        await this.prepareMigrationBackup(layout);
-        await this.migrateLegacyFiles(layout);
-        await this.writeJson(layout.deviceMetaPath, metadata);
-        await this.writeMigrationState(layout);
+        const layout = this.createProvisionalLayout(roots, request.deviceName);
+        layout.device.baselineFromDeviceId = source.deviceId;
+        layout.device.baselineBuiltAt = new Date().toISOString();
+        layout.device.importedSessionIds = [];
+        layout.device.importedSessionRetentionUntil = {};
+
+        await this.copyBaselineDomainFiles(source, layout);
+        await this.writeJson(layout.deviceMetaPath, layout.device);
+        const validation = await this.validateGeneratedFiles(layout, true);
+        if (!validation.ok) {
+            throw new Error(validation.reason ?? "[SR-Syro] Baseline validation failed.");
+        }
+
         this.persistCurrentDeviceState({
             version: SYRO_CURRENT_DEVICE_STATE_VERSION,
-            deviceId,
-            deviceFolderName,
+            deviceId: layout.device.deviceId,
+            deviceFolderName: this.getDeviceFolderNameFromLayout(layout),
         });
+        return layout;
+    }
 
+    async rebuildFromBaseline(request: SyroRebuildRequest): Promise<SyroPersistenceLayout> {
+        const roots = this.buildRootPaths();
+        const candidates = await this.listBaselineCandidates();
+        const source = candidates.find((candidate) => candidate.deviceId === request.sourceDeviceId);
+        if (!source) {
+            throw new Error("[SR-Syro] Rebuild source device not found.");
+        }
+
+        const layout = this.createProvisionalLayout(
+            roots,
+            request.deviceName?.trim() || createDefaultDeviceName(),
+        );
+        layout.device.baselineFromDeviceId = source.deviceId;
+        layout.device.baselineBuiltAt = new Date().toISOString();
+        layout.device.importedSessionIds = [];
+        layout.device.importedSessionRetentionUntil = {};
+
+        await this.copyBaselineDomainFiles(source, layout);
+        await this.writeJson(layout.deviceMetaPath, layout.device);
+        const validation = await this.validateGeneratedFiles(layout, true);
+        if (!validation.ok) {
+            throw new Error(validation.reason ?? "[SR-Syro] Rebuild validation failed.");
+        }
+
+        this.persistCurrentDeviceState({
+            version: SYRO_CURRENT_DEVICE_STATE_VERSION,
+            deviceId: layout.device.deviceId,
+            deviceFolderName: this.getDeviceFolderNameFromLayout(layout),
+        });
         return layout;
     }
 
@@ -370,7 +612,7 @@ export class SyroWorkspace {
         | "device"
     > {
         const manifestRoot = trimTrailingSlash(this.manifestDir);
-        const syncRoot = joinPath(manifestRoot, "syro");
+        const syncRoot = manifestRoot;
         return {
             syncRoot,
             devicesRoot: joinPath(syncRoot, "devices"),
@@ -380,11 +622,11 @@ export class SyroWorkspace {
         };
     }
 
-    private async loadExistingMetadata(
+    private async loadExistingCurrentDevice(
         persistedCurrentDevice: PersistedCurrentDeviceState | null,
-    ): Promise<SyroDeviceMetadata | null> {
+    ): Promise<ExistingCurrentDeviceResult> {
         if (!persistedCurrentDevice) {
-            return null;
+            return { status: "missing" };
         }
 
         const deviceMetaPath = joinPath(
@@ -393,14 +635,31 @@ export class SyroWorkspace {
             "device.json",
         );
         if (!(await this.adapter.exists(deviceMetaPath))) {
-            return null;
+            return { status: "missing" };
         }
 
         try {
             const raw = await this.adapter.read(deviceMetaPath);
-            return parseDeviceMetadata(parseJsonUnknown(raw));
+            const parsed = parseDeviceMetadata(parseJsonUnknown(raw));
+            if (!parsed || parsed.deviceId !== persistedCurrentDevice.deviceId) {
+                return {
+                    status: "invalid",
+                    persisted: persistedCurrentDevice,
+                    reason: "[SR-Syro] Current device.json is invalid or does not match the persisted device identity.",
+                };
+            }
+
+            return {
+                status: "valid",
+                metadata: parsed,
+                deviceFolderName: persistedCurrentDevice.deviceFolderName,
+            };
         } catch {
-            return null;
+            return {
+                status: "invalid",
+                persisted: persistedCurrentDevice,
+                reason: "[SR-Syro] Current device.json could not be parsed reliably.",
+            };
         }
     }
 
@@ -487,6 +746,13 @@ export class SyroWorkspace {
             copiedFiles.push(name);
         }
 
+        const deckOptionsSnapshot = createDeckOptionsStoreSnapshot(this.settings);
+        await this.writeJson(
+            joinPath(backupDir, "deck-options.settings-snapshot.json"),
+            deckOptionsSnapshot.state,
+        );
+        copiedFiles.push("deck-options.settings-snapshot.json");
+
         await this.writeJson(joinPath(backupDir, "meta.json"), {
             createdAt: new Date().toISOString(),
             reason: "0.0.11-to-0.0.12-migration-backup",
@@ -513,7 +779,7 @@ export class SyroWorkspace {
         }
 
         const state: SyroMigrationStateFile = {
-            version: 1,
+            version: SYRO_MIGRATION_STATE_VERSION,
             completedAt: new Date().toISOString(),
             sourceVersion: "0.0.11",
             targetVersion: "0.0.12",
@@ -557,5 +823,284 @@ export class SyroWorkspace {
         await copyFileIfMissing(this.adapter, legacyTimelinePath, layout.timelinePath);
         await copyFileIfMissing(this.adapter, legacyOverlayPath, layout.cardsOverlayPath);
         await copyFileIfMissing(this.adapter, legacyNoteCachePath, layout.noteCachePath);
+        if (!(await this.adapter.exists(layout.deckOptionsPath))) {
+            const snapshot = createDeckOptionsStoreSnapshot(this.settings);
+            await this.writeJson(layout.deckOptionsPath, snapshot.state);
+        }
+    }
+
+    private buildLayout(
+        roots: Omit<
+            SyroPersistenceLayout,
+            | "deviceRoot"
+            | "deviceMetaPath"
+            | "cardsPath"
+            | "notesPath"
+            | "timelinePath"
+            | "deckOptionsPath"
+            | "localDeviceRoot"
+            | "cardsOverlayPath"
+            | "activeSessionBufferPath"
+            | "mergeStatePath"
+            | "migrationStatePath"
+            | "noteCachePath"
+            | "device"
+        >,
+        deviceFolderName: string,
+        metadata: SyroDeviceMetadata,
+    ): SyroPersistenceLayout {
+        const deviceRoot = joinPath(roots.devicesRoot, deviceFolderName);
+        const localDeviceRoot = joinPath(roots.localRoot, deviceFolderName);
+        return {
+            ...roots,
+            deviceRoot,
+            deviceMetaPath: joinPath(deviceRoot, "device.json"),
+            cardsPath: joinPath(deviceRoot, "cards.json"),
+            notesPath: joinPath(deviceRoot, "notes.json"),
+            timelinePath: joinPath(deviceRoot, "timeline.json"),
+            deckOptionsPath: joinPath(deviceRoot, "deck-options.json"),
+            localDeviceRoot,
+            cardsOverlayPath: joinPath(localDeviceRoot, "cards.review_overlay.json"),
+            activeSessionBufferPath: joinPath(localDeviceRoot, "active-session-buffer.jsonl"),
+            mergeStatePath: joinPath(localDeviceRoot, "sync-merge-state.json"),
+            migrationStatePath: joinPath(localDeviceRoot, "migration-state.json"),
+            noteCachePath: joinPath(localDeviceRoot, "note_cache.json"),
+            device: metadata,
+        };
+    }
+
+    private createProvisionalLayout(
+        roots: Omit<
+            SyroPersistenceLayout,
+            | "deviceRoot"
+            | "deviceMetaPath"
+            | "cardsPath"
+            | "notesPath"
+            | "timelinePath"
+            | "deckOptionsPath"
+            | "localDeviceRoot"
+            | "cardsOverlayPath"
+            | "activeSessionBufferPath"
+            | "mergeStatePath"
+            | "migrationStatePath"
+            | "noteCachePath"
+            | "device"
+        >,
+        deviceName: string,
+        forcedDeviceId?: string,
+        forcedDeviceFolderName?: string,
+    ): SyroPersistenceLayout {
+        const now = new Date().toISOString();
+        const deviceId = forcedDeviceId ?? createDeviceId();
+        const shortDeviceId = createShortDeviceId(deviceId);
+        const metadata: SyroDeviceMetadata = {
+            version: SYRO_DEVICE_FILE_VERSION,
+            deviceId,
+            deviceName: deviceName.trim() || createDefaultDeviceName(),
+            shortDeviceId,
+            createdAt: now,
+            updatedAt: now,
+            lastSeenAt: now,
+            baselineFromDeviceId: null,
+            baselineBuiltAt: null,
+            importedSessionIds: [],
+            importedSessionRetentionUntil: {},
+        };
+
+        return this.buildLayout(
+            roots,
+            forcedDeviceFolderName ?? createDeviceFolderName(metadata.deviceName, shortDeviceId),
+            metadata,
+        );
+    }
+
+    private async prepareReadyLayout(
+        layout: SyroPersistenceLayout,
+        shouldRunMigration: boolean,
+    ): Promise<{
+        ok: boolean;
+        reason: string | null;
+        validation: SyroMigrationValidationResult | null;
+    }> {
+        await ensureDirectory(this.adapter, layout.deviceRoot);
+        await ensureDirectory(this.adapter, layout.localDeviceRoot);
+
+        if (shouldRunMigration && !(await this.adapter.exists(layout.migrationStatePath))) {
+            await this.prepareMigrationBackup(layout);
+            await this.migrateLegacyFiles(layout);
+        }
+
+        await this.writeJson(layout.deviceMetaPath, layout.device);
+
+        const validation = await this.validateGeneratedFiles(layout, false);
+        if (!validation.ok) {
+            return {
+                ok: false,
+                reason:
+                    validation.reason ??
+                    "[SR-Syro] Migration validation failed for generated formal files.",
+                validation,
+            };
+        }
+
+        if (shouldRunMigration) {
+            await this.writeMigrationState(layout);
+        }
+
+        this.persistCurrentDeviceState({
+            version: SYRO_CURRENT_DEVICE_STATE_VERSION,
+            deviceId: layout.device.deviceId,
+            deviceFolderName: this.getDeviceFolderNameFromLayout(layout),
+        });
+
+        return {
+            ok: true,
+            reason: null,
+            validation,
+        };
+    }
+
+    private async validateGeneratedFiles(
+        layout: SyroPersistenceLayout,
+        requireDomainSnapshots: boolean,
+    ): Promise<SyroMigrationValidationResult> {
+        const checks: Array<[string, (raw: string) => boolean, boolean]> = [
+            [layout.deviceMetaPath, (raw) => parseDeviceMetadata(parseJsonUnknown(raw)) !== null, true],
+            [layout.cardsPath, validateCardsStoreFile, requireDomainSnapshots],
+            [layout.notesPath, validateNotesStoreFile, requireDomainSnapshots],
+            [layout.timelinePath, validateTimelineStoreFile, requireDomainSnapshots],
+            [layout.deckOptionsPath, validateDeckOptionsStoreFile, requireDomainSnapshots],
+        ];
+        const validatedPaths: string[] = [];
+
+        for (const [path, validator, required] of checks) {
+            if (!(await this.adapter.exists(path))) {
+                if (required) {
+                    return {
+                        ok: false,
+                        reason: `[SR-Syro] Missing required formal file: ${path}`,
+                        validatedPaths,
+                    };
+                }
+                continue;
+            }
+
+            try {
+                const raw = await this.adapter.read(path);
+                if (!raw || !validator(raw)) {
+                    return {
+                        ok: false,
+                        reason: `[SR-Syro] Invalid formal file schema: ${path}`,
+                        validatedPaths,
+                    };
+                }
+                validatedPaths.push(path);
+            } catch (error) {
+                return {
+                    ok: false,
+                    reason: `[SR-Syro] Failed to validate formal file ${path}: ${String(error)}`,
+                    validatedPaths,
+                };
+            }
+        }
+
+        return {
+            ok: true,
+            reason: null,
+            validatedPaths,
+        };
+    }
+
+    private async copyBaselineDomainFiles(
+        source: SyroBaselineCandidate,
+        targetLayout: SyroPersistenceLayout,
+    ): Promise<void> {
+        const sourceRoot = joinPath(this.buildRootPaths().devicesRoot, source.deviceFolderName);
+        await ensureDirectory(this.adapter, targetLayout.deviceRoot);
+        await ensureDirectory(this.adapter, targetLayout.localDeviceRoot);
+        await copyFile(this.adapter, joinPath(sourceRoot, "cards.json"), targetLayout.cardsPath);
+        await copyFile(this.adapter, joinPath(sourceRoot, "notes.json"), targetLayout.notesPath);
+        await copyFile(
+            this.adapter,
+            joinPath(sourceRoot, "timeline.json"),
+            targetLayout.timelinePath,
+        );
+        await copyFile(
+            this.adapter,
+            joinPath(sourceRoot, "deck-options.json"),
+            targetLayout.deckOptionsPath,
+        );
+    }
+
+    private async listBaselineCandidates(): Promise<SyroBaselineCandidate[]> {
+        if (!this.adapter.list) {
+            return [];
+        }
+
+        const listing = await this.adapter.list(trimTrailingSlash(this.buildRootPaths().devicesRoot));
+        const candidates: SyroBaselineCandidate[] = [];
+        for (const folderPath of listing.folders ?? []) {
+            const normalizedFolderPath = trimTrailingSlash(folderPath);
+            const deviceFolderName =
+                normalizedFolderPath.slice(normalizedFolderPath.lastIndexOf("/") + 1) ||
+                normalizedFolderPath;
+            const metaPath = joinPath(normalizedFolderPath, "device.json");
+            if (!(await this.adapter.exists(metaPath))) {
+                continue;
+            }
+
+            try {
+                const raw = await this.adapter.read(metaPath);
+                const metadata = parseDeviceMetadata(parseJsonUnknown(raw));
+                if (!metadata) {
+                    continue;
+                }
+
+                candidates.push({
+                    deviceId: metadata.deviceId,
+                    deviceName: metadata.deviceName,
+                    shortDeviceId: metadata.shortDeviceId,
+                    deviceFolderName,
+                    lastSeenAt: metadata.lastSeenAt,
+                    baselineFromDeviceId: metadata.baselineFromDeviceId,
+                    baselineBuiltAt: metadata.baselineBuiltAt,
+                });
+            } catch {
+                continue;
+            }
+        }
+
+        return candidates.sort((left, right) => right.lastSeenAt.localeCompare(left.lastSeenAt));
+    }
+
+    private pickRecommendedSourceDeviceId(
+        candidates: SyroBaselineCandidate[],
+        excludedDeviceId: string | null,
+    ): string | null {
+        const filtered = excludedDeviceId
+            ? candidates.filter((candidate) => candidate.deviceId !== excludedDeviceId)
+            : candidates;
+        return filtered[0]?.deviceId ?? null;
+    }
+
+    private isStaleDevice(lastSeenAt: string): boolean {
+        const parsed = Date.parse(lastSeenAt);
+        return !Number.isFinite(parsed) || parsed < Date.now() - ACTIVE_DEVICE_WINDOW_MS;
+    }
+
+    private getDeviceFolderNameFromLayout(layout: SyroPersistenceLayout): string {
+        const normalized = trimTrailingSlash(layout.deviceRoot);
+        return normalized.slice(normalized.lastIndexOf("/") + 1);
+    }
+
+    private async hasLegacyInputs(): Promise<boolean> {
+        const legacyFiles = this.getLegacySourceFiles();
+        for (const [, path] of legacyFiles) {
+            if (await this.adapter.exists(path)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

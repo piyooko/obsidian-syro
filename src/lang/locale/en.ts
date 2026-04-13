@@ -177,6 +177,7 @@ export default normalizeSentenceCaseLocale({
     NOTICE_CLOZE_CREATED: "Cloze c${nextId} created",
     DECK_TREE_FULL_SYNC_TITLE: "Sync changes (Incremental)",
     CMD_GLOBAL_SYNC_FULL: "Rebuild all cards (Reparse all notes)",
+    CMD_OPEN_SYRO_RECOVERY: "Open Syro Sync Recovery",
     SYNC_PROGRESS_START: "Syncing...",
     SYNC_PROGRESS_PARSE_NOTES: "Parsing notes (${current}/${total})...",
     SYNC_PROGRESS_BUILD_TREE: "Building deck tree...",
@@ -763,6 +764,18 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_AUTO_INCREMENTAL_SYNC: "Automatic Incremental Sync",
     SETTINGS_AUTO_INCREMENTAL_SYNC_DESC:
         "When disabled, file changes, review entry, and background polling will not run incremental sync automatically. Manual incremental sync still works, and startup initialization or rebuilds stay enabled.",
+    SYRO_RECOVERY_BASELINE_TITLE: "Syro needs a baseline before syncing",
+    SYRO_RECOVERY_BASELINE_DESC:
+        "This device has not joined the current sync set yet. Choose a source device and name this device to build a baseline snapshot.",
+    SYRO_RECOVERY_REBUILD_TITLE: "Syro needs to rebuild this device",
+    SYRO_RECOVERY_REBUILD_DESC:
+        "This device has fallen outside the active sync window. Instead of replaying old history, choose a source device and rebuild from the latest baseline.",
+    SYRO_RECOVERY_DEVICE_NAME: "Current device name",
+    SYRO_RECOVERY_SOURCE_DEVICE: "Source device",
+    NOTICE_SYRO_READ_ONLY: "Syro sync data is inconsistent. Read-only protection is now enabled.",
+    NOTICE_SYRO_RECOVERY_NOT_NEEDED: "There is no pending Syro recovery action right now.",
+    NOTICE_SYRO_RECOVERY_CANCELLED:
+        "Syro recovery was cancelled. Read-only protection remains active.",
     SETTINGS_OPT_DUE_FIRST_SEQUENTIAL: "Due first, then New (Sequential)",
     SETTINGS_OPT_DUE_FIRST_RANDOM: "Due first, then New (Random)",
     SETTINGS_OPT_NEW_FIRST_SEQUENTIAL: "New first, then Due (Sequential)",

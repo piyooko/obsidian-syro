@@ -73,6 +73,7 @@
         "@emotion/is-prop-valid": "^1.4.0",
         "chart.js": "^4.4.8",
         "clozecraft": "^0.4.0",
+        "fflate": "^0.8.2",
         "framer-motion": "^12.23.26",
         "lucide-react": "^0.562.0",
         "minimatch": "^10.0.1",

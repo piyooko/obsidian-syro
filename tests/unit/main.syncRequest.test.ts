@@ -55,7 +55,7 @@ describe("SRPlugin sync request orchestration", () => {
             trigger: "manual",
         });
 
-        expect(plugin.syroSessionManager.flushActiveSession).toHaveBeenCalledTimes(1);
+        expect(plugin.syroSessionManager.flushActiveSession).toHaveBeenCalledWith("manual");
         expect(plugin.sync).toHaveBeenCalledWith(FlashcardReviewMode.Review, "full", {
             trigger: "manual",
             force: false,

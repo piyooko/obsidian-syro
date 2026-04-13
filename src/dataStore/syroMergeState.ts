@@ -160,12 +160,18 @@ export class SyroMergeStateStore {
         });
     }
 
-    prune(retainedTargetUuids: Iterable<string>): void {
-        const keep = new Set(retainedTargetUuids);
-        for (const key of this.entities.keys()) {
-            if (!keep.has(key)) {
-                this.entities.delete(key);
+    pruneExpired(retentionMs: number, now = Date.now()): number {
+        let removed = 0;
+        for (const [key, value] of this.entities.entries()) {
+            const updatedAtMs = Date.parse(value.updatedAt);
+            if (!Number.isFinite(updatedAtMs) || now - updatedAtMs <= retentionMs) {
+                continue;
             }
+
+            this.entities.delete(key);
+            removed += 1;
         }
+
+        return removed;
     }
 }

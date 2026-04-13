@@ -77,8 +77,12 @@ import {
 } from "./dataStore/noteReviewStore";
 import { replaySyroSessionRecords } from "./dataStore/syroSessionReplay";
 import { SyroMergeStateStore } from "./dataStore/syroMergeState";
-import { SyroPersistenceLayout, SyroWorkspace } from "./dataStore/syroWorkspace";
-import { SyroSessionManager } from "./dataStore/syroSessionManager";
+import {
+    SyroPersistenceLayout,
+    SyroWorkspace,
+    type SyroWorkspaceInitializeResult,
+} from "./dataStore/syroWorkspace";
+import { SyroSessionManager, type SyroSessionSealReason } from "./dataStore/syroSessionManager";
 import Commands from "./commands";
 import { SrsAlgorithm } from "src/algorithms/algorithms";
 import { FsrsAlgorithm } from "src/algorithms/fsrs";
@@ -117,6 +121,10 @@ import {
 } from "./util/typeGuards";
 import { SyncProgressTip } from "src/ui/components/SyncProgressTip";
 import { installStyleSettingsHierarchyResetSupport } from "src/styleSettingsHierarchyReset";
+import {
+    SyroRecoveryModal,
+    type SyroRecoveryModalContext,
+} from "src/ui/modals/SyroRecoveryModal";
 import {
     cloneFolderTrackingRule,
     DEFAULT_FOLDER_TRACKING_RULE,
@@ -206,6 +214,7 @@ interface PluginData {
 }
 
 const AUTO_SYNC_COOLDOWN_MS = 15_000;
+const SYRO_MERGE_STATE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 const DEFAULT_DATA: PluginData = {
     settings: DEFAULT_SETTINGS,
@@ -300,10 +309,12 @@ export default class SRPlugin extends Plugin {
     private pendingPluginDataSavePromise: Promise<boolean> | null = null;
     private pluginDataSaveFailureNotified = false;
     private syroReadOnlyReason: string | null = null;
+    private syroWorkspace: SyroWorkspace | null = null;
     private syroLayout: SyroPersistenceLayout | null = null;
     private deckOptionsStore: DeckOptionsStore | null = null;
     private syroMergeState: SyroMergeStateStore | null = null;
     private syroSessionManager: SyroSessionManager | null = null;
+    private pendingSyroRecoveryContext: SyroRecoveryModalContext | null = null;
 
     private static _instance: SRPlugin;
     static getInstance() {
@@ -711,6 +722,14 @@ export default class SRPlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "open-sync-recovery",
+            name: t("CMD_OPEN_SYRO_RECOVERY"),
+            callback: () => {
+                this.runAsync(this.openPendingSyroRecovery(), "open syro recovery");
+            },
+        });
+
+        this.addCommand({
             id: "srs-cloze-same-level",
             name: t("CMD_CREATE_CLOZE_SAME_LEVEL"),
             icon: "flashcards",
@@ -776,7 +795,7 @@ export default class SRPlugin extends Plugin {
         this.runAsync(
             Promise.all([
                 this.flushReviewPersistence(1000),
-                this.syroSessionManager?.flushActiveSession() ?? Promise.resolve(null),
+                this.syroSessionManager?.flushActiveSession("unload") ?? Promise.resolve(null),
             ]),
             "flush review persistence on unload",
         );
@@ -1290,14 +1309,28 @@ export default class SRPlugin extends Plugin {
             pathHint?: string;
         }>,
     ): Promise<void> {
-        if (!this.syroMergeState || entities.length === 0) {
+        if (!this.syroMergeState || this.syroReadOnlyReason || entities.length === 0) {
             return;
         }
 
         for (const entity of entities) {
             this.syroMergeState.markEntity(entity);
         }
+        this.syroMergeState.pruneExpired(SYRO_MERGE_STATE_RETENTION_MS);
         await this.syroMergeState.save();
+    }
+
+    private clearSyroReadOnly(): void {
+        this.syroReadOnlyReason = null;
+        this.applySyroReadOnlyState();
+    }
+
+    private applySyroReadOnlyState(): void {
+        this.store?.setReadOnly(this.syroReadOnlyReason);
+        this.noteReviewStore?.setReadOnly(this.syroReadOnlyReason);
+        this.reviewCommitStore?.setReadOnly(this.syroReadOnlyReason);
+        this.deckOptionsStore?.setReadOnly(this.syroReadOnlyReason);
+        this.syroSessionManager?.setReadOnly(this.syroReadOnlyReason);
     }
 
     private enableSyroReadOnly(reason: string): void {
@@ -1306,14 +1339,140 @@ export default class SRPlugin extends Plugin {
         }
 
         this.syroReadOnlyReason = reason;
-        this.store?.setReadOnly(reason);
-        this.noteReviewStore?.setReadOnly(reason);
-        this.reviewCommitStore?.setReadOnly(reason);
-        this.deckOptionsStore?.setReadOnly(reason);
+        this.applySyroReadOnlyState();
 
         if (typeof process === "undefined" || process.env?.NODE_ENV !== "test") {
-            new Notice("当前同步数据异常，已进入只读保护。");
+            new Notice(t("NOTICE_SYRO_READ_ONLY"));
         }
+    }
+
+    private async awaitWorkspaceLayoutReady(): Promise<void> {
+        await new Promise<void>((resolve) => {
+            this.app.workspace.onLayoutReady(() => resolve());
+        });
+    }
+
+    private buildPendingSyroRecoveryContext(
+        startup: SyroWorkspaceInitializeResult,
+    ): SyroRecoveryModalContext | null {
+        if (
+            startup.startupDecision !== "baseline-required" &&
+            startup.startupDecision !== "rebuild-required"
+        ) {
+            return null;
+        }
+
+        return {
+            mode: startup.startupDecision,
+            defaultDeviceName: startup.defaultDeviceName,
+            candidates: startup.candidates,
+            recommendedSourceDeviceId: startup.recommendedSourceDeviceId,
+        };
+    }
+
+    private async resolveSyroWorkspaceInitialization(
+        startup: SyroWorkspaceInitializeResult,
+    ): Promise<SyroWorkspaceInitializeResult> {
+        const recoveryContext = this.buildPendingSyroRecoveryContext(startup);
+        this.pendingSyroRecoveryContext = recoveryContext;
+        if (!recoveryContext) {
+            return startup;
+        }
+
+        await this.awaitWorkspaceLayoutReady();
+        const modalResult = await new SyroRecoveryModal(this.app, recoveryContext).openAndWait();
+        if (!modalResult) {
+            return {
+                ...startup,
+                startupDecision: "read-only",
+                readOnlyReason: "[SR-Syro] Startup recovery was cancelled by the user.",
+            };
+        }
+
+        if (!this.syroWorkspace) {
+            return {
+                ...startup,
+                startupDecision: "read-only",
+                readOnlyReason: "[SR-Syro] Workspace recovery is unavailable.",
+            };
+        }
+
+        try {
+            const layout =
+                recoveryContext.mode === "baseline-required"
+                    ? await this.syroWorkspace.completeBaselineJoin({
+                          deviceName: modalResult.deviceName,
+                          sourceDeviceId: modalResult.sourceDeviceId,
+                      })
+                    : await this.syroWorkspace.rebuildFromBaseline({
+                          deviceName: modalResult.deviceName,
+                          sourceDeviceId: modalResult.sourceDeviceId,
+                      });
+            this.pendingSyroRecoveryContext = null;
+            return {
+                ...startup,
+                startupDecision: "ready",
+                layout,
+                readOnlyReason: null,
+            };
+        } catch (error) {
+            return {
+                ...startup,
+                startupDecision: "read-only",
+                readOnlyReason: `[SR-Syro] Failed to complete startup recovery: ${String(error)}`,
+            };
+        }
+    }
+
+    private async pruneSyroMergeState(): Promise<void> {
+        if (!this.syroMergeState || this.syroReadOnlyReason) {
+            return;
+        }
+
+        if (this.syroMergeState.pruneExpired(SYRO_MERGE_STATE_RETENTION_MS) > 0) {
+            await this.syroMergeState.save();
+        }
+    }
+
+    private async openPendingSyroRecovery(): Promise<void> {
+        if (!this.pendingSyroRecoveryContext || !this.syroWorkspace) {
+            new Notice(t("NOTICE_SYRO_RECOVERY_NOT_NEEDED"));
+            return;
+        }
+
+        await this.awaitWorkspaceLayoutReady();
+        const modalResult = await new SyroRecoveryModal(
+            this.app,
+            this.pendingSyroRecoveryContext,
+        ).openAndWait();
+        if (!modalResult) {
+            new Notice(t("NOTICE_SYRO_RECOVERY_CANCELLED"));
+            return;
+        }
+
+        try {
+            if (this.pendingSyroRecoveryContext.mode === "baseline-required") {
+                await this.syroWorkspace.completeBaselineJoin({
+                    deviceName: modalResult.deviceName,
+                    sourceDeviceId: modalResult.sourceDeviceId,
+                });
+            } else {
+                await this.syroWorkspace.rebuildFromBaseline({
+                    deviceName: modalResult.deviceName,
+                    sourceDeviceId: modalResult.sourceDeviceId,
+                });
+            }
+        } catch (error) {
+            this.enableSyroReadOnly(`[SR-Syro] Failed to complete recovery: ${String(error)}`);
+            return;
+        }
+
+        this.pendingSyroRecoveryContext = null;
+        this.clearSyroReadOnly();
+        await this.loadPluginData();
+        await this.refreshNoteReview({ trigger: "startup" });
+        this.syncEvents.emit("note-review-updated");
+        this.syncEvents.emit("sync-complete");
     }
 
     private async importPendingSyroSessions(): Promise<void> {
@@ -1342,6 +1501,7 @@ export default class SRPlugin extends Plugin {
                 mergeState: this.syroMergeState,
             });
         });
+        await this.pruneSyroMergeState();
     }
 
     private async appendSyroNoteSnapshot(
@@ -2276,7 +2436,13 @@ export default class SRPlugin extends Plugin {
                 request.trigger === "background" ||
                 request.trigger === "startup")
         ) {
-            await this.syroSessionManager?.flushActiveSession();
+            let sealReason: SyroSessionSealReason = "manual";
+            if (request.trigger === "background") {
+                sealReason = "background";
+            } else if (request.trigger === "startup") {
+                sealReason = "startup";
+            }
+            await this.syroSessionManager?.flushActiveSession(sealReason);
         }
 
         await this.importPendingSyroSessions?.();
@@ -3026,35 +3192,45 @@ export default class SRPlugin extends Plugin {
                 cloneFolderTrackingRule(rule),
             ]),
         );
-        this.syroLayout = await new SyroWorkspace(
-            this.app,
-            this.manifest.dir,
-            this.data.settings,
-        ).initialize();
+        this.clearSyroReadOnly();
+        this.syroWorkspace = new SyroWorkspace(this.app, this.manifest.dir, this.data.settings);
+        const startup = await this.resolveSyroWorkspaceInitialization(
+            await this.syroWorkspace.initialize(),
+        );
+        this.syroLayout = startup.layout;
         this.syroMergeState = new SyroMergeStateStore(this.syroLayout.mergeStatePath);
         await this.syroMergeState.load();
         this.deckOptionsStore = new DeckOptionsStore({
             deckOptionsPath: this.syroLayout.deckOptionsPath,
         });
         this.syroSessionManager = new SyroSessionManager(this.app, this.syroLayout);
+        if (startup.readOnlyReason) {
+            this.syroReadOnlyReason = startup.readOnlyReason;
+            this.applySyroReadOnlyState();
+        }
         await this.syroSessionManager.initialize();
+        this.applySyroReadOnlyState();
         await this.deckOptionsStore.loadIntoSettings(this.data.settings);
         this.store = new DataStore(this.data.settings, {
             cardsPath: this.syroLayout.cardsPath,
             cardsOverlayPath: this.syroLayout.cardsOverlayPath,
             auxiliaryDataDir: this.syroLayout.localDeviceRoot,
         });
+        this.applySyroReadOnlyState();
         await this.store.load();
         this.noteReviewStore = new NoteReviewStore(this.data.settings, {
             notesPath: this.syroLayout.notesPath,
         });
+        this.applySyroReadOnlyState();
         await this.noteReviewStore.load();
         await this.noteReviewStore.migrateFromLegacyStore(this.store);
         this.reviewCommitStore = new ReviewCommitStore(this.data.settings, {
             timelinePath: this.syroLayout.timelinePath,
         });
+        this.applySyroReadOnlyState();
         await this.reviewCommitStore.load();
         const syroLoadError =
+            startup.readOnlyReason ??
             this.deckOptionsStore.lastLoadError ??
             this.store.lastLoadError ??
             this.noteReviewStore.lastLoadError ??
@@ -3062,6 +3238,7 @@ export default class SRPlugin extends Plugin {
         if (syroLoadError) {
             this.enableSyroReadOnly(syroLoadError);
         }
+        await this.importPendingSyroSessions();
         this.reviewPersistenceCoordinator = new ReviewPersistenceCoordinator({
             shouldLogDebug: () => this.data.settings.showRuntimeDebugMessages,
             logDebug: (...args: unknown[]) => console.debug(...args),

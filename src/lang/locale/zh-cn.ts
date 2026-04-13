@@ -58,6 +58,7 @@ export default {
     NOTICE_CLOZE_CREATED: "已创建挖空 c${nextId}",
     DECK_TREE_FULL_SYNC_TITLE: "增量同步（仅处理改动）",
     CMD_GLOBAL_SYNC_FULL: "重建全部卡片（重新解析所有笔记）",
+    CMD_OPEN_SYRO_RECOVERY: "打开 Syro 同步恢复",
     SYNC_PROGRESS_START: "正在同步...",
     SYNC_PROGRESS_PARSE_NOTES: "正在解析笔记 (${current}/${total})...",
     SYNC_PROGRESS_BUILD_TREE: "正在构建牌组树...",
@@ -562,6 +563,17 @@ export default {
     SETTINGS_AUTO_INCREMENTAL_SYNC: "自动增量同步",
     SETTINGS_AUTO_INCREMENTAL_SYNC_DESC:
         "关闭后，文件变更、进入复习和后台轮询不会自动执行增量同步。你仍可手动执行增量同步，启动时需要的初始化或自动重建会保留。",
+    SYRO_RECOVERY_BASELINE_TITLE: "Syro 需要先建立基线",
+    SYRO_RECOVERY_BASELINE_DESC:
+        "当前设备还没有加入现有同步体系。请选择一个来源设备，并为当前设备命名，然后建立基线快照。",
+    SYRO_RECOVERY_REBUILD_TITLE: "Syro 需要重建当前设备",
+    SYRO_RECOVERY_REBUILD_DESC:
+        "当前设备已经超出活跃同步窗口。默认不再追旧历史，请选择一个来源设备，用最新基线重建当前设备。",
+    SYRO_RECOVERY_DEVICE_NAME: "当前设备名称",
+    SYRO_RECOVERY_SOURCE_DEVICE: "来源设备",
+    NOTICE_SYRO_READ_ONLY: "当前同步数据异常，已进入只读保护。",
+    NOTICE_SYRO_RECOVERY_NOT_NEEDED: "当前没有待处理的 Syro 恢复操作。",
+    NOTICE_SYRO_RECOVERY_CANCELLED: "已取消 Syro 恢复，当前仍保持只读保护。",
     SETTINGS_OPT_DUE_FIRST_SEQUENTIAL: "到期优先 (顺序)",
     SETTINGS_OPT_DUE_FIRST_RANDOM: "到期优先 (随机)",
     SETTINGS_OPT_NEW_FIRST_SEQUENTIAL: "新闪卡优先 (顺序)",
