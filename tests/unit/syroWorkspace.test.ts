@@ -156,6 +156,55 @@ async function addSourceDevice(
     files.set(`${sourceRoot}/notes.json`, createValidNotesPayload());
     files.set(`${sourceRoot}/timeline.json`, '{"note.md":[{"id":"1"}]}');
     files.set(`${sourceRoot}/deck-options.json`, createValidDeckOptionsPayload());
+    files.set(
+        `${sourceRoot}/settings.json`,
+        JSON.stringify({
+            version: 1,
+            settings: {
+                openRandomNote: true,
+            },
+        }),
+    );
+    files.set(
+        `${sourceRoot}/tracking-rules.json`,
+        JSON.stringify({
+            version: 1,
+            rules: {
+                inbox: {
+                    track: true,
+                    autoTag: true,
+                    tags: ["#inbox"],
+                    ownedTagsByPath: {},
+                    excludedPaths: [],
+                },
+            },
+            tombstones: {},
+        }),
+    );
+    files.set(
+        `${sourceRoot}/daily-state.json`,
+        JSON.stringify({
+            version: 1,
+            buryDate: "2026-04-13",
+            buryList: ["note-a"],
+            dailyDeckStats: {
+                date: "2026-04-13",
+                counts: {
+                    default: {
+                        new: 1,
+                        review: 2,
+                    },
+                },
+            },
+        }),
+    );
+    files.set(
+        `${sourceRoot}/note-cache.json`,
+        JSON.stringify({
+            version: 1,
+            items: [{ path: "note.md" }],
+        }),
+    );
 }
 
 describe("SyroWorkspace", () => {
@@ -213,13 +262,16 @@ describe("SyroWorkspace", () => {
         expect(layout.deviceRoot).toBe(".obsidian/plugins/syro/devices/Desktop--d84f");
         expect(layout.cardsPath).toBe(".obsidian/plugins/syro/devices/Desktop--d84f/cards.json");
         expect(layout.cardsOverlayPath).toBe(
-            ".obsidian/plugins/syro/local-state/Desktop--d84f/cards.review_overlay.json",
+            ".obsidian/plugins/syro/devices/Desktop--d84f/cards.review_overlay.json",
         );
         expect(layout.noteCachePath).toBe(
-            ".obsidian/plugins/syro/local-state/Desktop--d84f/note_cache.json",
+            ".obsidian/plugins/syro/devices/Desktop--d84f/note-cache.json",
+        );
+        expect(layout.activeSessionBufferPath).toBe(
+            ".obsidian/plugins/syro/sessions/open/Desktop--d84f.open.jsonl",
         );
         expect(directories.has(".obsidian/plugins/syro/devices/Desktop--d84f")).toBe(true);
-        expect(directories.has(".obsidian/plugins/syro/local-state/Desktop--d84f")).toBe(true);
+        expect(directories.has(".obsidian/plugins/syro/sessions/open")).toBe(true);
 
         const savedDeviceMeta = JSON.parse(
             files.get(".obsidian/plugins/syro/devices/Desktop--d84f/device.json") ?? "{}",
@@ -235,6 +287,7 @@ describe("SyroWorkspace", () => {
 
     it("creates backup plus migration marker only after generated files validate", async () => {
         const { adapter, files } = createMockAdapter();
+        files.set(".obsidian/plugins/syro/data.json", '{"settings":{"openRandomNote":true}}');
         files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[]}');
         files.set(".obsidian/plugins/syro/review_notes.json", createValidNotesPayload());
         files.set(".obsidian/plugins/syro/review_commits.json", '{"note.md":[{"id":"1"}]}');
@@ -268,7 +321,9 @@ describe("SyroWorkspace", () => {
                 backupMetaPath!.replace("/meta.json", "/deck-options.settings-snapshot.json"),
             ),
         ).toContain('"deckOptionsPresets"');
-        expect(files.get(layout.migrationStatePath)).toContain('"targetVersion": "0.0.12"');
+        expect(files.get(backupMetaPath!.replace("/meta.json", "/data.json"))).toContain(
+            '"openRandomNote":true',
+        );
     });
 
     it("enters read-only and skips the marker when migration validation fails", async () => {
@@ -280,7 +335,6 @@ describe("SyroWorkspace", () => {
 
         expect(startup.startupDecision).toBe("read-only");
         expect(startup.readOnlyReason).toContain("Invalid formal file schema");
-        expect(files.has(normalizePath(startup.layout.migrationStatePath))).toBe(false);
     });
 
     it("requires baseline when another valid device exists and the current device has not joined yet", async () => {
@@ -312,6 +366,35 @@ describe("SyroWorkspace", () => {
         expect(files.get(layout.cardsPath)).toBe('{"items":[{"uuid":"card-1"}]}');
         expect(JSON.parse(files.get(layout.deckOptionsPath) ?? "{}")).toEqual(
             JSON.parse(createValidDeckOptionsPayload()),
+        );
+        expect(JSON.parse(files.get(layout.settingsPath) ?? "{}")).toEqual(
+            expect.objectContaining({
+                version: 1,
+                settings: expect.objectContaining({
+                    openRandomNote: true,
+                }),
+            }),
+        );
+        expect(JSON.parse(files.get(layout.trackingRulesPath) ?? "{}")).toEqual(
+            expect.objectContaining({
+                version: 1,
+                rules: expect.objectContaining({
+                    inbox: expect.objectContaining({
+                        track: true,
+                    }),
+                }),
+            }),
+        );
+        expect(JSON.parse(files.get(layout.dailyStatePath) ?? "{}")).toEqual(
+            expect.objectContaining({
+                version: 1,
+                buryDate: "2026-04-13",
+            }),
+        );
+        expect(JSON.parse(files.get(layout.noteCachePath) ?? "{}")).toEqual(
+            expect.objectContaining({
+                version: 1,
+            }),
         );
     });
 

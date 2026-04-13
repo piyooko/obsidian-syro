@@ -32,7 +32,14 @@ type SessionAdapter = Pick<
     | "writeBinary"
 >;
 
-export type SyroSessionDomain = "cards" | "notes" | "timeline" | "deck-options";
+export type SyroSessionDomain =
+    | "cards"
+    | "notes"
+    | "timeline"
+    | "deck-options"
+    | "settings"
+    | "tracking-rules"
+    | "daily-state";
 
 export interface SyroSessionRecord {
     version: number;

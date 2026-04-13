@@ -4,7 +4,20 @@ import {
     DeckOptionsStore,
     type DeckOptionsStoreFile,
 } from "./deckOptionsStore";
+import {
+    extractDailyState,
+    extractSharedSettings,
+    extractTrackingRules,
+    SHARED_SETTINGS_FIELDS,
+    type DailyDeckStats,
+    type PersistedDailyState,
+    type PersistedSharedSettingsState,
+    type PersistedTrackingRulesState,
+    type PersistedTrackingRulesTombstone,
+    SyroJsonStateStore,
+} from "./syroPluginDataStore";
 import { DataStore, type TrackedCardSnapshot, type TrackedCardsFileSnapshot } from "./data";
+import { cloneFolderTrackingRule } from "src/folderTracking";
 import {
     NoteReviewStore,
     type NoteReviewEntrySnapshot,
@@ -15,14 +28,25 @@ import { ReviewCommitStore, type ReviewCommitLog } from "./reviewCommitStore";
 import { SyroMergeStateStore } from "./syroMergeState";
 import type { SyroSessionRecord } from "./syroSessionManager";
 import type { SRSettings } from "src/settings";
+import type { FolderTrackingRule } from "src/folderTracking";
 import { getArrayProp, getStringProp, isRecord } from "src/util/typeGuards";
 
 type ReplayDependencies = {
     settings: SRSettings;
+    data: {
+        buryDate: string;
+        buryList: string[];
+        dailyDeckStats: DailyDeckStats;
+        folderTrackingRules: Record<string, FolderTrackingRule>;
+    };
     store: DataStore;
     noteReviewStore: NoteReviewStore;
     reviewCommitStore: ReviewCommitStore;
     deckOptionsStore: DeckOptionsStore;
+    sharedSettingsStore: SyroJsonStateStore<PersistedSharedSettingsState>;
+    trackingRulesStore: SyroJsonStateStore<PersistedTrackingRulesState>;
+    dailyStateStore: SyroJsonStateStore<PersistedDailyState>;
+    trackingRulesTombstones: Record<string, PersistedTrackingRulesTombstone>;
     mergeState: SyroMergeStateStore;
 };
 
@@ -180,17 +204,246 @@ function parseTrackedFilePayload(payload: unknown): TrackedCardsFileSnapshot | n
     };
 }
 
+function parseSharedSettingsPatch(
+    payload: unknown,
+): {
+    changed: Record<string, unknown>;
+} | null {
+    if (!isRecord(payload) || !isRecord(payload["changed"])) {
+        return null;
+    }
+
+    return {
+        changed: cloneUnknown(payload["changed"] as Record<string, unknown>),
+    };
+}
+
+function parseTrackingRulePayload(
+    payload: unknown,
+): {
+    folderPath: string;
+    rule?: FolderTrackingRule;
+} | null {
+    if (!isRecord(payload)) {
+        return null;
+    }
+
+    const folderPath = getStringProp(payload, "folderPath")?.trim();
+    if (!folderPath) {
+        return null;
+    }
+
+    return {
+        folderPath,
+        rule: isRecord(payload["rule"])
+            ? cloneFolderTrackingRule(payload["rule"])
+            : undefined,
+    };
+}
+
+function parseDailyStateOpPayload(payload: unknown): Record<string, unknown> | null {
+    return isRecord(payload) ? cloneUnknown(payload as Record<string, unknown>) : null;
+}
+
+function ensureDailyStateDate(
+    data: ReplayDependencies["data"],
+    date: string,
+): "applied" | "stale" {
+    if (!date) {
+        return "stale";
+    }
+
+    const currentDate = data.dailyDeckStats.date || data.buryDate || "";
+    if (currentDate && currentDate > date) {
+        return "stale";
+    }
+
+    if (data.buryDate !== date) {
+        data.buryDate = date;
+        data.buryList.splice(0, data.buryList.length);
+    }
+
+    if (data.dailyDeckStats.date !== date) {
+        data.dailyDeckStats = {
+            date,
+            counts: {},
+        };
+    }
+
+    return "applied";
+}
+
 export async function replaySyroSessionRecords(
     records: SyroSessionRecord[],
     deps: ReplayDependencies,
 ): Promise<void> {
+    const sharedSettingsFields = new Set<string>(SHARED_SETTINGS_FIELDS as readonly string[]);
     let deckOptionsChanged = false;
+    let sharedSettingsChanged = false;
+    let trackingRulesChanged = false;
+    let dailyStateChanged = false;
     let notesChanged = false;
     let timelineChanged = false;
     let cardsChanged = false;
 
     for (const record of records) {
         switch (record.domain) {
+            case "settings": {
+                const patch = parseSharedSettingsPatch(record.payload);
+                if (!patch) {
+                    continue;
+                }
+
+                for (const [field, value] of Object.entries(patch.changed)) {
+                    if (!sharedSettingsFields.has(field)) {
+                        continue;
+                    }
+
+                    const targetUuid = `settings:${field}`;
+                    if (
+                        !deps.mergeState.shouldApply({
+                            targetUuid,
+                            updatedAt: record.updatedAt,
+                        })
+                    ) {
+                        continue;
+                    }
+
+                    const mutableSettings = deps.settings as unknown as Record<string, unknown>;
+                    mutableSettings[field] = cloneUnknown(value);
+                    deps.mergeState.markEntity({
+                        targetUuid,
+                        updatedAt: record.updatedAt,
+                        deleted: false,
+                        domain: "settings",
+                        entityType: "shared-setting",
+                        pathHint: record.pathHint,
+                    });
+                    sharedSettingsChanged = true;
+                }
+                break;
+            }
+
+            case "tracking-rules": {
+                const payload = parseTrackingRulePayload(record.payload);
+                if (!payload) {
+                    continue;
+                }
+
+                const targetUuid = `tracking-rule:${payload.folderPath}`;
+                if (
+                    !deps.mergeState.shouldApply({
+                        targetUuid,
+                        updatedAt: record.updatedAt,
+                    })
+                ) {
+                    continue;
+                }
+
+                if (record.opType === "remove-rule") {
+                    delete deps.data.folderTrackingRules[payload.folderPath];
+                    deps.trackingRulesTombstones[payload.folderPath] = {
+                        updatedAt: record.updatedAt,
+                    };
+                    deps.mergeState.markEntity({
+                        targetUuid,
+                        updatedAt: record.updatedAt,
+                        deleted: true,
+                        domain: "tracking-rules",
+                        entityType: "folder-tracking-rule",
+                        pathHint: payload.folderPath,
+                    });
+                } else if (payload.rule) {
+                    deps.data.folderTrackingRules[payload.folderPath] = cloneUnknown(payload.rule);
+                    delete deps.trackingRulesTombstones[payload.folderPath];
+                    deps.mergeState.markEntity({
+                        targetUuid,
+                        updatedAt: record.updatedAt,
+                        deleted: false,
+                        domain: "tracking-rules",
+                        entityType: "folder-tracking-rule",
+                        pathHint: payload.folderPath,
+                    });
+                }
+
+                trackingRulesChanged = true;
+                break;
+            }
+
+            case "daily-state": {
+                const payload = parseDailyStateOpPayload(record.payload);
+                if (!payload || !deps.mergeState.shouldApply(record)) {
+                    continue;
+                }
+
+                const date = getStringProp(payload, "date")?.trim() ?? "";
+                if (record.opType === "rollover-reset") {
+                    if (ensureDailyStateDate(deps.data, date) === "stale") {
+                        continue;
+                    }
+                    deps.data.buryList.splice(0, deps.data.buryList.length);
+                    deps.data.dailyDeckStats = {
+                        date,
+                        counts: {},
+                    };
+                } else if (record.opType === "bury-add") {
+                    if (ensureDailyStateDate(deps.data, date) === "stale") {
+                        continue;
+                    }
+                    for (const entry of getArrayProp(payload, "entries")) {
+                        if (typeof entry !== "string" || deps.data.buryList.includes(entry)) {
+                            continue;
+                        }
+                        deps.data.buryList.push(entry);
+                    }
+                } else if (record.opType === "bury-clear") {
+                    if (ensureDailyStateDate(deps.data, date) === "stale") {
+                        continue;
+                    }
+                    deps.data.buryList.splice(
+                        0,
+                        deps.data.buryList.length,
+                        ...getArrayProp(payload, "buryList").filter(
+                            (entry): entry is string => typeof entry === "string",
+                        ),
+                    );
+                } else if (record.opType === "deck-stats-delta") {
+                    if (ensureDailyStateDate(deps.data, date) === "stale") {
+                        continue;
+                    }
+                    const deckName = getStringProp(payload, "deckName")?.trim();
+                    if (!deckName) {
+                        continue;
+                    }
+                    const newDelta = Number(payload["newDelta"] ?? 0);
+                    const reviewDelta = Number(payload["reviewDelta"] ?? 0);
+                    const currentCounts = deps.data.dailyDeckStats.counts[deckName] ?? {
+                        new: 0,
+                        review: 0,
+                    };
+                    deps.data.dailyDeckStats.counts[deckName] = {
+                        new: Math.max(0, currentCounts.new + (Number.isFinite(newDelta) ? newDelta : 0)),
+                        review: Math.max(
+                            0,
+                            currentCounts.review + (Number.isFinite(reviewDelta) ? reviewDelta : 0),
+                        ),
+                    };
+                } else {
+                    continue;
+                }
+
+                deps.mergeState.markEntity({
+                    targetUuid: record.targetUuid,
+                    updatedAt: record.updatedAt,
+                    deleted: false,
+                    domain: "daily-state",
+                    entityType: "daily-state-op",
+                    pathHint: record.pathHint,
+                });
+                dailyStateChanged = true;
+                break;
+            }
+
             case "deck-options": {
                 if (!deps.mergeState.shouldApply(record)) {
                     continue;
@@ -482,8 +735,33 @@ export async function replaySyroSessionRecords(
         const snapshot = createDeckOptionsStoreSnapshot(deps.settings);
         await deps.deckOptionsStore.saveSerialized(snapshot.serialized);
     }
+    if (sharedSettingsChanged) {
+        await deps.sharedSettingsStore.save(extractSharedSettings(deps.settings));
+    }
+    if (trackingRulesChanged) {
+        await deps.trackingRulesStore.save(
+            extractTrackingRules(deps.data.folderTrackingRules, deps.trackingRulesTombstones),
+        );
+    }
+    if (dailyStateChanged) {
+        await deps.dailyStateStore.save(
+            extractDailyState({
+                buryDate: deps.data.buryDate,
+                buryList: deps.data.buryList,
+                dailyDeckStats: deps.data.dailyDeckStats,
+            }),
+        );
+    }
 
-    if (cardsChanged || notesChanged || timelineChanged || deckOptionsChanged) {
+    if (
+        cardsChanged ||
+        notesChanged ||
+        timelineChanged ||
+        deckOptionsChanged ||
+        sharedSettingsChanged ||
+        trackingRulesChanged ||
+        dailyStateChanged
+    ) {
         await deps.mergeState.save();
     }
 }

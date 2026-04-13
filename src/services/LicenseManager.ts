@@ -5,7 +5,6 @@ import { hasSupporterLicenseState } from "src/settings";
 import {
     getArrayProp,
     getBooleanProp,
-    getRecordProp,
     getStringProp,
     isRecord,
 } from "src/util/typeGuards";
@@ -71,29 +70,6 @@ function parseLicenseVerificationPayload(value: unknown): LicenseVerificationPay
         features: normalizeFeatureList(getArrayProp(value, "features")),
         error: getStringProp(value, "error"),
     };
-}
-
-function parsePersistedSupporterAccess(pluginData: unknown): boolean {
-    if (!isRecord(pluginData)) {
-        return false;
-    }
-
-    const pluginSettings = getRecordProp(pluginData, "settings");
-    if (!pluginSettings) {
-        return false;
-    }
-
-    const licenseStateRecord = getRecordProp(pluginSettings, "licenseState");
-    if (licenseStateRecord) {
-        const token = getStringProp(licenseStateRecord, "token");
-        const plan = getStringProp(licenseStateRecord, "plan");
-        const features = normalizeFeatureList(getArrayProp(licenseStateRecord, "features"));
-        if (token && (plan === "supporter" || features.includes("supporter"))) {
-            return true;
-        }
-    }
-
-    return getBooleanProp(pluginSettings, "isPro") === true;
 }
 
 function getClientPlatform(): string {
@@ -342,16 +318,23 @@ export class LicenseManager {
 
     async checkFeatureAccess(featureName: string): Promise<boolean> {
         try {
-            const pluginData = (await this.plugin.loadData()) as unknown;
-
-            if (parsePersistedSupporterAccess(pluginData)) {
-                return true;
+            const pluginWithData = this.plugin as Plugin & {
+                data?: {
+                    settings?: LicenseSettingsLike;
+                };
+            };
+            const settings = pluginWithData.data?.settings;
+            if (
+                settings &&
+                (hasSupporterLicenseState(settings.licenseState) || settings.isPro === true)
+            ) {
+                return await Promise.resolve(true);
             }
 
             new Notice(t("NOTICE_SUPPORTER_ONLY_FEATURE", { featureName }));
-            return false;
+            return await Promise.resolve(false);
         } catch {
-            return false;
+            return await Promise.resolve(false);
         }
     }
 }

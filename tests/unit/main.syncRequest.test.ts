@@ -191,15 +191,35 @@ describe("SRPlugin sync request orchestration", () => {
         );
     });
 
-    test("savePluginData persists deck options separately from the main plugin data snapshot", async () => {
+    test("savePluginData persists split state files, deck options, and a shell-only data.json", async () => {
+        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
         const plugin = {
             deckOptionsStore: {
                 hasSerializedStateChanged: jest.fn(async () => true),
                 saveSerialized: jest.fn(async () => undefined),
             },
             syroSessionManager: {
+                appendRecord: jest.fn(async () => true),
                 appendDeckOptionsChange: jest.fn(async () => true),
             },
+            sharedSettingsStore: {
+                save: jest.fn(async () => undefined),
+            },
+            trackingRulesStore: {
+                save: jest.fn(async () => undefined),
+            },
+            dailyStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            deviceStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            licenseStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            markSyroMergeState: jest.fn(async () => undefined),
+            saveDataShell,
+            dataShell: null as Record<string, unknown> | null,
             data: {
                 settings: {
                     ...DEFAULT_SETTINGS,
@@ -225,6 +245,7 @@ describe("SRPlugin sync request orchestration", () => {
                 },
                 folderTrackingRules: {},
             },
+            trackingRulesTombstones: {},
             saveData: jest.fn(async () => undefined),
         };
 
@@ -242,13 +263,20 @@ describe("SRPlugin sync request orchestration", () => {
             }),
             expect.any(String),
         );
+        expect(plugin.sharedSettingsStore.save).toHaveBeenCalledTimes(1);
+        expect(plugin.trackingRulesStore.save).toHaveBeenCalledTimes(1);
+        expect(plugin.dailyStateStore.save).toHaveBeenCalledTimes(1);
+        expect(plugin.deviceStateStore.save).toHaveBeenCalledTimes(1);
+        expect(plugin.licenseStateStore.save).toHaveBeenCalledTimes(1);
         expect(plugin.deckOptionsStore.saveSerialized).toHaveBeenCalledWith(expect.any(String));
         expect(plugin.saveData).toHaveBeenCalledWith(
             expect.objectContaining({
-                settings: expect.not.objectContaining({
-                    fsrsSettings: expect.anything(),
-                    deckOptionsPresets: expect.anything(),
-                    deckPresetAssignment: expect.anything(),
+                schemaVersion: "0.0.12",
+                migrations: expect.objectContaining({
+                    syro012: expect.objectContaining({
+                        completedAt: expect.any(String),
+                        sourceVersion: "0.0.11",
+                    }),
                 }),
             }),
         );

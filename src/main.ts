@@ -66,7 +66,6 @@ import {
 } from "./dataStore/data";
 import {
     createDeckOptionsStoreSnapshot,
-    createPersistableSettingsSnapshot,
     DeckOptionsStore,
 } from "./dataStore/deckOptionsStore";
 import { DataLocation } from "./dataStore/dataLocation";
@@ -77,6 +76,41 @@ import {
 } from "./dataStore/noteReviewStore";
 import { replaySyroSessionRecords } from "./dataStore/syroSessionReplay";
 import { SyroMergeStateStore } from "./dataStore/syroMergeState";
+import {
+    applyDailyState,
+    applyDeviceState,
+    applyLicenseState,
+    applySharedSettings,
+    applyTrackingRules,
+    createDefaultDailyState,
+    createDefaultSharedSettingsState,
+    createDefaultTrackingRulesState,
+    createSyro012DataShell,
+    diffDailyState,
+    diffSharedSettings,
+    diffTrackingRules,
+    extractDailyState,
+    extractDeviceState,
+    extractLicenseState,
+    extractSharedSettings,
+    extractTrackingRules,
+    hasSyro012MigrationMarker,
+    parseDailyState,
+    parseDeviceState,
+    parseLegacyPluginData,
+    parseLicenseState,
+    parseSharedSettingsState,
+    parseTrackingRulesState,
+    SyroJsonStateStore,
+    type DailyDeckStats,
+    type LegacyPluginData,
+    type PersistedDailyState,
+    type PersistedDeviceState,
+    type PersistedLicenseState,
+    type PersistedSharedSettingsState,
+    type PersistedTrackingRulesState,
+    type PersistedTrackingRulesTombstone,
+} from "./dataStore/syroPluginDataStore";
 import {
     SyroPersistenceLayout,
     SyroWorkspace,
@@ -166,11 +200,6 @@ import {
 import { getFirstRunTutorial } from "src/firstRunTutorial";
 import { InlineTitleReviewButtonManager } from "src/ui/components/InlineTitleReviewButtonManager";
 
-interface DailyDeckStats {
-    date: string;
-    counts: Record<string, { new: number; review: number }>;
-}
-
 function readFolderTrackingFrontmatterTags(frontmatter: unknown): string[] {
     if (!isRecord(frontmatter)) {
         return [];
@@ -215,18 +244,6 @@ interface PluginData {
 
 const AUTO_SYNC_COOLDOWN_MS = 15_000;
 const SYRO_MERGE_STATE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
-
-const DEFAULT_DATA: PluginData = {
-    settings: DEFAULT_SETTINGS,
-    buryDate: "",
-    buryList: [],
-    historyDeck: null,
-    dailyDeckStats: {
-        date: "",
-        counts: {},
-    },
-    folderTrackingRules: {},
-};
 
 const STYLE_SETTINGS_BRIDGE_RETRY_DELAYS_MS = [0, 400, 1400, 3200] as const;
 
@@ -312,6 +329,18 @@ export default class SRPlugin extends Plugin {
     private syroWorkspace: SyroWorkspace | null = null;
     private syroLayout: SyroPersistenceLayout | null = null;
     private deckOptionsStore: DeckOptionsStore | null = null;
+    private sharedSettingsStore: SyroJsonStateStore<PersistedSharedSettingsState> | null = null;
+    private trackingRulesStore: SyroJsonStateStore<PersistedTrackingRulesState> | null = null;
+    private dailyStateStore: SyroJsonStateStore<PersistedDailyState> | null = null;
+    private deviceStateStore: SyroJsonStateStore<PersistedDeviceState> | null = null;
+    private licenseStateStore: SyroJsonStateStore<PersistedLicenseState> | null = null;
+    private persistedSharedSettingsState: PersistedSharedSettingsState | null = null;
+    private persistedTrackingRulesState: PersistedTrackingRulesState | null = null;
+    private persistedDailyState: PersistedDailyState | null = null;
+    private persistedDeviceState: PersistedDeviceState | null = null;
+    private persistedLicenseState: PersistedLicenseState | null = null;
+    private trackingRulesTombstones: Record<string, PersistedTrackingRulesTombstone> = {};
+    private dataShell: LegacyPluginData | null = null;
     private syroMergeState: SyroMergeStateStore | null = null;
     private syroSessionManager: SyroSessionManager | null = null;
     private pendingSyroRecoveryContext: SyroRecoveryModalContext | null = null;
@@ -1304,7 +1333,14 @@ export default class SRPlugin extends Plugin {
             targetUuid: string;
             updatedAt: string;
             deleted: boolean;
-            domain: "cards" | "notes" | "timeline" | "deck-options";
+            domain:
+                | "cards"
+                | "notes"
+                | "timeline"
+                | "deck-options"
+                | "settings"
+                | "tracking-rules"
+                | "daily-state";
             entityType: string;
             pathHint?: string;
         }>,
@@ -1484,6 +1520,9 @@ export default class SRPlugin extends Plugin {
             !this.syroSessionManager ||
             !this.syroMergeState ||
             !this.deckOptionsStore ||
+            !this.sharedSettingsStore ||
+            !this.trackingRulesStore ||
+            !this.dailyStateStore ||
             !this.store ||
             !this.noteReviewStore ||
             !this.reviewCommitStore
@@ -1494,12 +1533,27 @@ export default class SRPlugin extends Plugin {
         await this.syroSessionManager.importPendingSessions(async (_sessionId, records) => {
             await replaySyroSessionRecords(records, {
                 settings: this.data.settings,
+                data: this.data,
                 store: this.store,
                 noteReviewStore: this.noteReviewStore,
                 reviewCommitStore: this.reviewCommitStore,
                 deckOptionsStore: this.deckOptionsStore,
+                sharedSettingsStore: this.sharedSettingsStore,
+                trackingRulesStore: this.trackingRulesStore,
+                dailyStateStore: this.dailyStateStore,
+                trackingRulesTombstones: this.trackingRulesTombstones,
                 mergeState: this.syroMergeState,
             });
+        });
+        this.persistedSharedSettingsState = extractSharedSettings(this.data.settings);
+        this.persistedTrackingRulesState = extractTrackingRules(
+            this.data.folderTrackingRules,
+            this.trackingRulesTombstones,
+        );
+        this.persistedDailyState = extractDailyState({
+            buryDate: this.data.buryDate,
+            buryList: this.data.buryList,
+            dailyDeckStats: this.data.dailyDeckStats,
         });
         await this.pruneSyroMergeState();
     }
@@ -3181,40 +3235,276 @@ export default class SRPlugin extends Plugin {
         return new SrTFile(this.app.vault, this.app.metadataCache, note);
     }
 
-    async loadPluginData(): Promise<void> {
-        const loadedData = (await this.loadData()) as Partial<PluginData> | null;
-        if (loadedData?.settings) upgradeSettings(loadedData.settings);
-        this.data = Object.assign({}, DEFAULT_DATA, loadedData);
-        this.data.settings = Object.assign({}, DEFAULT_SETTINGS, this.data.settings);
-        this.data.folderTrackingRules = Object.fromEntries(
-            Object.entries(this.data.folderTrackingRules ?? {}).map(([folderPath, rule]) => [
-                folderPath,
-                cloneFolderTrackingRule(rule),
-            ]),
+    private initializeRuntimePluginData(legacyData: LegacyPluginData): void {
+        const baseSettings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) as SRSettings;
+        const legacySettings = legacyData.settings
+            ? (JSON.parse(JSON.stringify(legacyData.settings)) as Partial<SRSettings>)
+            : {};
+        upgradeSettings(legacySettings as SRSettings);
+
+        this.data = {
+            settings: Object.assign(baseSettings, legacySettings),
+            buryDate: legacyData.buryDate ?? "",
+            buryList: [...(legacyData.buryList ?? [])],
+            historyDeck: legacyData.historyDeck ?? null,
+            dailyDeckStats: legacyData.dailyDeckStats ?? {
+                date: "",
+                counts: {},
+            },
+            folderTrackingRules: Object.fromEntries(
+                Object.entries(legacyData.folderTrackingRules ?? {}).map(([folderPath, rule]) => [
+                    folderPath,
+                    cloneFolderTrackingRule(rule),
+                ]),
+            ),
+        };
+        upgradeSettings(this.data.settings);
+    }
+
+    private initializeSplitStateStores(): void {
+        if (!this.syroLayout) {
+            return;
+        }
+
+        this.sharedSettingsStore = new SyroJsonStateStore(
+            this.syroLayout.settingsPath,
+            parseSharedSettingsState,
         );
+        this.trackingRulesStore = new SyroJsonStateStore(
+            this.syroLayout.trackingRulesPath,
+            parseTrackingRulesState,
+        );
+        this.dailyStateStore = new SyroJsonStateStore(
+            this.syroLayout.dailyStatePath,
+            parseDailyState,
+        );
+        this.deviceStateStore = new SyroJsonStateStore(
+            this.syroLayout.deviceStatePath,
+            parseDeviceState,
+        );
+        this.licenseStateStore = new SyroJsonStateStore(
+            this.syroLayout.licenseStatePath,
+            parseLicenseState,
+        );
+    }
+
+    private async saveDataShell(completedAt?: string): Promise<void> {
+        let existingCompletedAt: string | null = null;
+        const migrations = this.dataShell?.migrations;
+        const syro012Migration =
+            isRecord(migrations) && isRecord(migrations["syro012"]) ? migrations["syro012"] : null;
+        if (syro012Migration) {
+            existingCompletedAt = getStringProp(syro012Migration, "completedAt") ?? null;
+        }
+        const shell = createSyro012DataShell(
+            completedAt ?? existingCompletedAt ?? new Date().toISOString(),
+        );
+        this.dataShell = shell;
+        await this.saveData(shell);
+    }
+
+    private async validateMigratedSplitState(): Promise<string | null> {
+        const sharedState = await this.sharedSettingsStore?.load();
+        if (!sharedState) {
+            return this.sharedSettingsStore?.lastLoadError ?? "[SR-Syro] Invalid settings.json schema.";
+        }
+
+        const trackingRulesState = await this.trackingRulesStore?.load();
+        if (!trackingRulesState) {
+            return (
+                this.trackingRulesStore?.lastLoadError ??
+                "[SR-Syro] Invalid tracking-rules.json schema."
+            );
+        }
+
+        const dailyState = await this.dailyStateStore?.load();
+        if (!dailyState) {
+            return this.dailyStateStore?.lastLoadError ?? "[SR-Syro] Invalid daily-state.json schema.";
+        }
+
+        return null;
+    }
+
+    private async migrateLegacyPluginDataIfNeeded(rawData: unknown): Promise<string | null> {
+        if (
+            hasSyro012MigrationMarker(rawData) ||
+            !this.sharedSettingsStore ||
+            !this.trackingRulesStore ||
+            !this.dailyStateStore ||
+            !this.deviceStateStore ||
+            !this.licenseStateStore
+        ) {
+            this.dataShell = parseLegacyPluginData(rawData);
+            return null;
+        }
+
+        const sharedSettingsState = extractSharedSettings(this.data.settings);
+        const trackingRulesState = extractTrackingRules(this.data.folderTrackingRules, {});
+        const dailyState = extractDailyState({
+            buryDate: this.data.buryDate,
+            buryList: this.data.buryList,
+            dailyDeckStats: this.data.dailyDeckStats,
+        });
+        const deviceState = extractDeviceState({
+            settings: this.data.settings,
+            historyDeck: this.data.historyDeck,
+        });
+        const licenseState = extractLicenseState(this.data.settings);
+
+        await this.sharedSettingsStore.save(sharedSettingsState);
+        await this.trackingRulesStore.save(trackingRulesState);
+        await this.dailyStateStore.save(dailyState);
+        await this.deviceStateStore.save(deviceState);
+        await this.licenseStateStore.save(licenseState);
+
+        const validationError = await this.validateMigratedSplitState();
+        if (validationError) {
+            return validationError;
+        }
+
+        await this.saveDataShell(new Date().toISOString());
+        return null;
+    }
+
+    private async loadSplitPluginState(): Promise<string | null> {
+        if (
+            !this.sharedSettingsStore ||
+            !this.trackingRulesStore ||
+            !this.dailyStateStore ||
+            !this.deviceStateStore ||
+            !this.licenseStateStore
+        ) {
+            return null;
+        }
+
+        const sharedSettingsState = await this.sharedSettingsStore.load();
+        if (sharedSettingsState) {
+            applySharedSettings(this.data.settings, sharedSettingsState);
+            this.persistedSharedSettingsState = sharedSettingsState;
+        } else if (this.sharedSettingsStore.lastLoadError) {
+            return this.sharedSettingsStore.lastLoadError;
+        } else {
+            const nextState = extractSharedSettings(this.data.settings);
+            this.persistedSharedSettingsState = nextState;
+            if (!this.syroReadOnlyReason) {
+                await this.sharedSettingsStore.save(nextState);
+            }
+        }
+
+        const trackingRulesState = await this.trackingRulesStore.load();
+        if (trackingRulesState) {
+            applyTrackingRules(this.data.folderTrackingRules, trackingRulesState);
+            this.persistedTrackingRulesState = trackingRulesState;
+            this.trackingRulesTombstones = { ...trackingRulesState.tombstones };
+        } else if (this.trackingRulesStore.lastLoadError) {
+            return this.trackingRulesStore.lastLoadError;
+        } else {
+            const nextState = extractTrackingRules(this.data.folderTrackingRules, {});
+            this.persistedTrackingRulesState = nextState;
+            this.trackingRulesTombstones = {};
+            if (!this.syroReadOnlyReason) {
+                await this.trackingRulesStore.save(nextState);
+            }
+        }
+
+        const dailyState = await this.dailyStateStore.load();
+        if (dailyState) {
+            applyDailyState(this.data, dailyState);
+            this.persistedDailyState = dailyState;
+        } else if (this.dailyStateStore.lastLoadError) {
+            return this.dailyStateStore.lastLoadError;
+        } else {
+            const nextState = extractDailyState({
+                buryDate: this.data.buryDate,
+                buryList: this.data.buryList,
+                dailyDeckStats: this.data.dailyDeckStats,
+            });
+            this.persistedDailyState = nextState;
+            if (!this.syroReadOnlyReason) {
+                await this.dailyStateStore.save(nextState);
+            }
+        }
+
+        const deviceState = await this.deviceStateStore.load();
+        if (deviceState) {
+            applyDeviceState(
+                {
+                    settings: this.data.settings,
+                    historyDeck: this.data.historyDeck,
+                },
+                deviceState,
+            );
+            this.persistedDeviceState = deviceState;
+        } else {
+            const nextState = extractDeviceState({
+                settings: this.data.settings,
+                historyDeck: this.data.historyDeck,
+            });
+            this.persistedDeviceState = deviceState ?? nextState;
+            if (!this.syroReadOnlyReason) {
+                await this.deviceStateStore.save(nextState);
+            }
+        }
+
+        const licenseState = await this.licenseStateStore.load();
+        if (licenseState) {
+            applyLicenseState(this.data.settings, licenseState);
+            this.persistedLicenseState = licenseState;
+        } else {
+            const nextState = extractLicenseState(this.data.settings);
+            this.persistedLicenseState = licenseState ?? nextState;
+            if (!this.syroReadOnlyReason) {
+                await this.licenseStateStore.save(nextState);
+            }
+        }
+
+        upgradeSettings(this.data.settings);
+        return null;
+    }
+
+    async loadPluginData(): Promise<void> {
+        const loadedDataRaw = (await this.loadData()) as unknown;
+        const legacyData = parseLegacyPluginData(loadedDataRaw);
+        this.dataShell = legacyData;
+        this.initializeRuntimePluginData(legacyData);
         this.clearSyroReadOnly();
         this.syroWorkspace = new SyroWorkspace(this.app, this.manifest.dir, this.data.settings);
         const startup = await this.resolveSyroWorkspaceInitialization(
             await this.syroWorkspace.initialize(),
         );
         this.syroLayout = startup.layout;
+        this.initializeSplitStateStores();
         this.syroMergeState = new SyroMergeStateStore(this.syroLayout.mergeStatePath);
         await this.syroMergeState.load();
+        if (startup.readOnlyReason) {
+            this.syroReadOnlyReason = startup.readOnlyReason;
+        }
+
+        const migrationError =
+            this.syroReadOnlyReason === null
+                ? await this.migrateLegacyPluginDataIfNeeded(loadedDataRaw)
+                : null;
+        if (migrationError) {
+            this.enableSyroReadOnly(migrationError);
+        }
+
+        const splitStateLoadError = await this.loadSplitPluginState();
+        if (splitStateLoadError) {
+            this.enableSyroReadOnly(splitStateLoadError);
+        }
+
         this.deckOptionsStore = new DeckOptionsStore({
             deckOptionsPath: this.syroLayout.deckOptionsPath,
         });
         this.syroSessionManager = new SyroSessionManager(this.app, this.syroLayout);
-        if (startup.readOnlyReason) {
-            this.syroReadOnlyReason = startup.readOnlyReason;
-            this.applySyroReadOnlyState();
-        }
+        this.applySyroReadOnlyState();
         await this.syroSessionManager.initialize();
         this.applySyroReadOnlyState();
         await this.deckOptionsStore.loadIntoSettings(this.data.settings);
         this.store = new DataStore(this.data.settings, {
             cardsPath: this.syroLayout.cardsPath,
             cardsOverlayPath: this.syroLayout.cardsOverlayPath,
-            auxiliaryDataDir: this.syroLayout.localDeviceRoot,
+            auxiliaryDataDir: this.syroLayout.deviceRoot,
         });
         this.applySyroReadOnlyState();
         await this.store.load();
@@ -3230,7 +3520,7 @@ export default class SRPlugin extends Plugin {
         this.applySyroReadOnlyState();
         await this.reviewCommitStore.load();
         const syroLoadError =
-            startup.readOnlyReason ??
+            this.syroReadOnlyReason ??
             this.deckOptionsStore.lastLoadError ??
             this.store.lastLoadError ??
             this.noteReviewStore.lastLoadError ??
@@ -3251,17 +3541,164 @@ export default class SRPlugin extends Plugin {
     }
 
     async savePluginData(): Promise<void> {
-        if (!this.deckOptionsStore) {
-            await this.saveData(this.data);
+        if (
+            !this.deckOptionsStore ||
+            !this.sharedSettingsStore ||
+            !this.trackingRulesStore ||
+            !this.dailyStateStore ||
+            !this.deviceStateStore ||
+            !this.licenseStateStore
+        ) {
+            await this.saveDataShell();
             return;
         }
 
+        const sharedSettingsState = extractSharedSettings(this.data.settings);
+        const previousSharedSettingsState =
+            this.persistedSharedSettingsState ?? createDefaultSharedSettingsState();
+        const deviceState = extractDeviceState({
+            settings: this.data.settings,
+            historyDeck: this.data.historyDeck,
+        });
+        const licenseState = extractLicenseState(this.data.settings);
+        const previousTrackingRulesState =
+            this.persistedTrackingRulesState ?? createDefaultTrackingRulesState();
+        const trackingRulesState = extractTrackingRules(
+            this.data.folderTrackingRules,
+            this.trackingRulesTombstones,
+        );
+        const previousDailyState = this.persistedDailyState ?? createDefaultDailyState();
+        const dailyState = extractDailyState({
+            buryDate: this.data.buryDate,
+            buryList: this.data.buryList,
+            dailyDeckStats: this.data.dailyDeckStats,
+        });
+
         if (this.syroReadOnlyReason) {
-            await this.saveData({
-                ...this.data,
-                settings: createPersistableSettingsSnapshot(this.data.settings),
-            });
+            await this.deviceStateStore.save(deviceState);
+            await this.licenseStateStore.save(licenseState);
+            this.persistedDeviceState = deviceState;
+            this.persistedLicenseState = licenseState;
+            await this.saveDataShell();
             return;
+        }
+
+        const updatedAt = new Date().toISOString();
+        const sharedSettingsDiff = diffSharedSettings(previousSharedSettingsState, sharedSettingsState);
+        if (Object.keys(sharedSettingsDiff.changed).length > 0) {
+            const appended =
+                (await this.syroSessionManager?.appendRecord({
+                    domain: "settings",
+                    entityType: "shared-settings",
+                    opType: "patch",
+                    targetUuid: `settings:batch:${updatedAt}`,
+                    payload: sharedSettingsDiff,
+                    pathHint: this.syroLayout?.settingsPath,
+                    updatedAt,
+                })) ?? false;
+            if (appended) {
+                await this.markSyroMergeState(
+                    Object.keys(sharedSettingsDiff.changed).map((field) => ({
+                        targetUuid: `settings:${field}`,
+                        updatedAt,
+                        deleted: false,
+                        domain: "settings",
+                        entityType: "shared-setting",
+                        pathHint: this.syroLayout?.settingsPath,
+                    })),
+                );
+            }
+        }
+
+        for (const upsert of Object.keys(trackingRulesState.rules)) {
+            delete trackingRulesState.tombstones[upsert];
+        }
+        const trackingRulesDiff = diffTrackingRules(previousTrackingRulesState, trackingRulesState);
+        for (const removal of trackingRulesDiff.removals) {
+            trackingRulesState.tombstones[removal.folderPath] = {
+                updatedAt,
+            };
+        }
+
+        for (const upsert of trackingRulesDiff.upserts) {
+            const appended =
+                (await this.syroSessionManager?.appendRecord({
+                    domain: "tracking-rules",
+                    entityType: "folder-tracking-rule",
+                    opType: "upsert-rule",
+                    targetUuid: `tracking-rule:${upsert.folderPath}`,
+                    payload: {
+                        folderPath: upsert.folderPath,
+                        rule: upsert.rule,
+                    },
+                    pathHint: this.syroLayout?.trackingRulesPath,
+                    updatedAt,
+                })) ?? false;
+            if (appended) {
+                await this.markSyroMergeState([
+                    {
+                        targetUuid: `tracking-rule:${upsert.folderPath}`,
+                        updatedAt,
+                        deleted: false,
+                        domain: "tracking-rules",
+                        entityType: "folder-tracking-rule",
+                        pathHint: this.syroLayout?.trackingRulesPath,
+                    },
+                ]);
+            }
+        }
+        for (const removal of trackingRulesDiff.removals) {
+            const appended =
+                (await this.syroSessionManager?.appendRecord({
+                    domain: "tracking-rules",
+                    entityType: "folder-tracking-rule",
+                    opType: "remove-rule",
+                    targetUuid: `tracking-rule:${removal.folderPath}`,
+                    payload: {
+                        folderPath: removal.folderPath,
+                    },
+                    pathHint: this.syroLayout?.trackingRulesPath,
+                    updatedAt,
+                })) ?? false;
+            if (appended) {
+                await this.markSyroMergeState([
+                    {
+                        targetUuid: `tracking-rule:${removal.folderPath}`,
+                        updatedAt,
+                        deleted: true,
+                        domain: "tracking-rules",
+                        entityType: "folder-tracking-rule",
+                        pathHint: this.syroLayout?.trackingRulesPath,
+                    },
+                ]);
+            }
+        }
+
+        const dailyStateOperations = diffDailyState(previousDailyState, dailyState);
+        for (const [index, operation] of dailyStateOperations.entries()) {
+            const targetUuid = `daily-op:${updatedAt}:${index}:${operation.opType}`;
+            const appended =
+                (await this.syroSessionManager?.appendRecord({
+                    domain: "daily-state",
+                    entityType: "daily-state-op",
+                    opType: operation.opType,
+                    targetUuid,
+                    payload: operation,
+                    pathHint: this.syroLayout?.dailyStatePath,
+                    updatedAt,
+                })) ?? false;
+            if (appended) {
+                await this.markSyroMergeState([
+                    {
+                        targetUuid,
+                        updatedAt,
+                        deleted: false,
+                        domain: "daily-state",
+                        entityType: "daily-state-op",
+                        pathHint: this.syroLayout?.dailyStatePath,
+                    },
+                ]);
+            }
         }
 
         const deckOptionsSnapshot = createDeckOptionsStoreSnapshot(this.data.settings);
@@ -3269,14 +3706,13 @@ export default class SRPlugin extends Plugin {
             deckOptionsSnapshot.serialized,
         );
         if (deckOptionsChanged) {
-            const updatedAt = new Date().toISOString();
             const appended =
                 (await this.syroSessionManager?.appendDeckOptionsChange(
                     deckOptionsSnapshot.state,
                     updatedAt,
                 )) ?? false;
             if (appended) {
-                await this.markSyroMergeState?.([
+                await this.markSyroMergeState([
                     {
                         targetUuid: "deck-options:global",
                         updatedAt,
@@ -3288,11 +3724,20 @@ export default class SRPlugin extends Plugin {
                 ]);
             }
         }
+
+        await this.sharedSettingsStore.save(sharedSettingsState);
+        await this.trackingRulesStore.save(trackingRulesState);
+        await this.dailyStateStore.save(dailyState);
+        await this.deviceStateStore.save(deviceState);
+        await this.licenseStateStore.save(licenseState);
         await this.deckOptionsStore.saveSerialized(deckOptionsSnapshot.serialized);
-        await this.saveData({
-            ...this.data,
-            settings: createPersistableSettingsSnapshot(this.data.settings),
-        });
+        this.persistedSharedSettingsState = sharedSettingsState;
+        this.persistedTrackingRulesState = trackingRulesState;
+        this.persistedDailyState = dailyState;
+        this.persistedDeviceState = deviceState;
+        this.persistedLicenseState = licenseState;
+        this.trackingRulesTombstones = { ...trackingRulesState.tombstones };
+        await this.saveDataShell();
     }
 
     private getActiveLeaf(type: string): WorkspaceLeaf | null {
