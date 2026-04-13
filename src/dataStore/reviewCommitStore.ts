@@ -53,8 +53,10 @@ function cloneCommitLog<T extends ReviewCommitLog | ReviewCommitLog[] | undefine
 }
 
 export class ReviewCommitStore {
+    public lastLoadError: string | null = null;
     private data: ReviewCommitData = {};
     private dataPath: string;
+    private syncReadOnlyReason: string | null = null;
 
     constructor(settings: SRSettings, manifestDirOrPaths: string | ReviewCommitStorePathConfig) {
         if (typeof manifestDirOrPaths === "string") {
@@ -68,6 +70,7 @@ export class ReviewCommitStore {
     }
 
     async load(): Promise<void> {
+        this.lastLoadError = null;
         try {
             const adapter = Iadapter.instance.adapter;
             if (await adapter.exists(this.dataPath)) {
@@ -81,12 +84,16 @@ export class ReviewCommitStore {
                 }
             }
         } catch (error) {
+            this.lastLoadError = `[ReviewCommitStore] Failed to load timeline.json: ${String(error)}`;
             console.debug("[ReviewCommitStore] Load failed, using empty data:", error);
             this.data = {};
         }
     }
 
     async save(): Promise<void> {
+        if (this.syncReadOnlyReason) {
+            return;
+        }
         try {
             await Iadapter.instance.adapter.write(
                 this.dataPath,
@@ -97,6 +104,10 @@ export class ReviewCommitStore {
         }
     }
 
+    setReadOnly(reason: string | null): void {
+        this.syncReadOnlyReason = reason;
+    }
+
     getCommits(filePath: string): ReviewCommitLog[] {
         const commits = this.data[filePath] || [];
         return commits;
@@ -104,6 +115,20 @@ export class ReviewCommitStore {
 
     getCommit(filePath: string, commitId: string): ReviewCommitLog | null {
         return this.getCommits(filePath).find((commit) => commit.id === commitId) ?? null;
+    }
+
+    findCommitPath(commitId: string): string | null {
+        if (!commitId) {
+            return null;
+        }
+
+        for (const [filePath, commits] of Object.entries(this.data)) {
+            if (commits.some((commit) => commit.id === commitId)) {
+                return filePath;
+            }
+        }
+
+        return null;
     }
 
     getCommitSnapshot(filePath: string, commitId: string): ReviewCommitLog | null {
@@ -246,6 +271,40 @@ export class ReviewCommitStore {
         }
 
         return removedSnapshots;
+    }
+
+    upsertCommitSnapshot(filePath: string, commit: ReviewCommitLog): void {
+        const clonedCommit = cloneCommitLog(commit);
+        const existingPath = this.findCommitPath(commit.id);
+        if (existingPath) {
+            this.data[existingPath] = this.getCommits(existingPath).filter(
+                (existingCommit) => existingCommit.id !== commit.id,
+            );
+            if (this.data[existingPath].length === 0) {
+                delete this.data[existingPath];
+            }
+        }
+
+        const existingAtTarget = this.getCommits(filePath).filter(
+            (existingCommit) => existingCommit.id !== commit.id,
+        );
+        this.data[filePath] = [clonedCommit, ...existingAtTarget].sort(
+            (left, right) => (right.timestamp ?? 0) - (left.timestamp ?? 0),
+        );
+    }
+
+    removeCommitById(commitId: string, fallbackPath?: string): boolean {
+        const existingPath = this.findCommitPath(commitId) ?? fallbackPath ?? "";
+        if (!existingPath || !this.data[existingPath]) {
+            return false;
+        }
+
+        this.data[existingPath] = this.data[existingPath].filter((commit) => commit.id !== commitId);
+        if (this.data[existingPath].length === 0) {
+            delete this.data[existingPath];
+        }
+
+        return true;
     }
 
     async deleteCommit(filePath: string, commitId: string): Promise<void> {

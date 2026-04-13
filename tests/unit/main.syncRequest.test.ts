@@ -240,6 +240,7 @@ describe("SRPlugin sync request orchestration", () => {
                 deckOptionsPresets: expect.anything(),
                 deckPresetAssignment: expect.anything(),
             }),
+            expect.any(String),
         );
         expect(plugin.deckOptionsStore.saveSerialized).toHaveBeenCalledWith(expect.any(String));
         expect(plugin.saveData).toHaveBeenCalledWith(

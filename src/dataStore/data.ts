@@ -144,6 +144,7 @@ function cloneTrackedItem(item: TrackedItem | null | undefined): TrackedItem | n
  */
 export class DataStore {
     static instance: DataStore;
+    public lastLoadError: string | null = null;
 
     /**
      * @type {SrsData}
@@ -171,6 +172,7 @@ export class DataStore {
     private reviewOverlayFlushPromise: Promise<"success" | "stale" | "failed"> | null = null;
     private reviewOverlayRetryTimer: ReturnType<typeof setTimeout> | null = null;
     private reviewOverlayFailureNotified = false;
+    private syncReadOnlyReason: string | null = null;
 
     private getAlgorithmForItemType(itemType: RPITEMTYPE): SrsAlgorithm {
         const plugin = SRPlugin.getInstance();
@@ -339,16 +341,23 @@ export class DataStore {
             if (!raw) return null;
             const parsed = parseJsonUnknown(raw);
             if (!isRecord(parsed)) {
+                this.lastLoadError =
+                    this.lastLoadError ?? "[SR-Overlay] Invalid cards review overlay payload.";
                 return null;
             }
 
             const version = getNumberProp(parsed, "version");
             const items = getArrayProp(parsed, "items");
             if (version !== REVIEW_ITEM_OVERLAY_VERSION || !items) {
+                this.lastLoadError =
+                    this.lastLoadError ?? "[SR-Overlay] Invalid cards review overlay schema.";
                 return null;
             }
             return parsed as unknown as ReviewItemOverlayFile;
         } catch (error) {
+            this.lastLoadError =
+                this.lastLoadError ??
+                `[SR-Overlay] Failed to load review overlay: ${String(error)}`;
             console.warn("[SR-Overlay] Failed to load review overlay:", error);
             return null;
         }
@@ -652,6 +661,7 @@ export class DataStore {
      * load.
      */
     async load(path = this.dataPath) {
+        this.lastLoadError = null;
         try {
             const adapter = Iadapter.instance.adapter;
             let overlayMerged = false;
@@ -664,6 +674,9 @@ export class DataStore {
                 } else {
                     const parsed = parseJsonUnknown(data);
                     const parsedData = isRecord(parsed) ? (parsed as Partial<SrsData>) : null;
+                    if (!parsedData) {
+                        throw new Error("Invalid cards.json payload");
+                    }
                     this.data = Object.assign(Object.assign({}, DEFAULT_SRS_DATA), parsedData);
                     this.logDebug(
                         "[SR-Debug] Data loaded from disk. Items in JSON:",
@@ -693,12 +706,16 @@ export class DataStore {
                 this.persistedReviewOverlayVersion = 0;
             }
         } catch (error) {
+            this.lastLoadError = `[SR-Data] Failed to load cards.json: ${String(error)}`;
             this.logError("Error loading data", error);
             this.data = Object.assign({}, DEFAULT_SRS_DATA);
-            await this.save();
         } finally {
             this.toInstances();
         }
+    }
+
+    setReadOnly(reason: string | null): void {
+        this.syncReadOnlyReason = reason;
     }
 
     /**
@@ -740,6 +757,10 @@ export class DataStore {
      * save.
      */
     async save(path = this.dataPath) {
+        if (this.syncReadOnlyReason) {
+            this.logError("[SR-Readonly] Skip cards save:", this.syncReadOnlyReason);
+            return;
+        }
         if (this.saveSuppressionCount > 0) {
             this.saveRequestedWhileSuppressed = true;
             return;
@@ -970,6 +991,98 @@ export class DataStore {
         };
     }
 
+    findFileIdByUuid(uuid: string): string {
+        if (!uuid) {
+            return "";
+        }
+
+        for (const [fileID, trackedFile] of Object.entries(this.data.trackedFiles)) {
+            if (trackedFile?.uuid === uuid) {
+                return fileID;
+            }
+        }
+
+        return "";
+    }
+
+    findItemByUuid(uuid: string): RepetitionItem | null {
+        if (!uuid) {
+            return null;
+        }
+
+        return this.data.items.find((item) => item?.uuid === uuid) ?? null;
+    }
+
+    upsertCardSnapshot(snapshot: TrackedCardSnapshot): void {
+        const { fileID, trackedFile } = this.ensureTrackedFileRecord({
+            uuid: snapshot.trackedFileUuid,
+            path: snapshot.path,
+            tags: snapshot.trackedFileTags,
+        });
+        const localItemId = this.upsertClonedItem(snapshot.item, fileID);
+
+        trackedFile.path = snapshot.path;
+        trackedFile.tags = [...snapshot.trackedFileTags];
+        trackedFile.items = trackedFile.items ?? { file: -1 };
+        if (snapshot.item.itemType === RPITEMTYPE.NOTE) {
+            trackedFile.items.file = localItemId;
+            return;
+        }
+
+        const nextTrackedItems = (trackedFile.trackedItems ?? []).filter(
+            (item) => item.reviewId !== localItemId,
+        );
+        const nextTrackedItem = snapshot.trackedItem ? cloneTrackedItem(snapshot.trackedItem) : null;
+        if (nextTrackedItem) {
+            nextTrackedItem.reviewId = localItemId;
+            nextTrackedItems.push(nextTrackedItem);
+        }
+        trackedFile.trackedItems = nextTrackedItems;
+    }
+
+    renameTrackedFileFromSnapshot(snapshot: TrackedCardsFileSnapshot): void {
+        const fileIDByUuid = this.findFileIdByUuid(snapshot.uuid);
+        if (fileIDByUuid) {
+            const trackedFile = this.data.trackedFiles[fileIDByUuid];
+            trackedFile.path = snapshot.path;
+            trackedFile.tags = [...snapshot.tags];
+            return;
+        }
+
+        this.bootstrapTrackedFileFromSnapshot(snapshot);
+    }
+
+    removeCardByUuid(uuid: string, fallbackPath?: string): boolean {
+        const item = this.findItemByUuid(uuid);
+        if (!item) {
+            return false;
+        }
+
+        const trackedFile = item.fileID ? this.getFileByID(item.fileID) : null;
+        this.unTrackItem(item.ID);
+        if (trackedFile?.trackedItems) {
+            trackedFile.trackedItems = trackedFile.trackedItems.filter(
+                (trackedItem) => trackedItem.reviewId !== item.ID,
+            );
+        }
+        return true;
+    }
+
+    removeTrackedFileByUuid(uuid: string, fallbackPath?: string): boolean {
+        const fileID = this.findFileIdByUuid(uuid) || (fallbackPath ? this.getFileID(fallbackPath) : "");
+        if (!fileID || !this.data.trackedFiles[fileID]) {
+            return false;
+        }
+
+        const trackedFile = this.data.trackedFiles[fileID];
+        for (const itemId of trackedFile.itemIDs) {
+            this.unTrackItem(itemId);
+        }
+        delete this.data.trackedFiles[fileID];
+        this.data.fileOrder = (this.data.fileOrder ?? []).filter((existingId) => existingId !== fileID);
+        return true;
+    }
+
     renamePathPrefixWithSnapshots(
         oldPath: string,
         newPath: string,
@@ -1001,6 +1114,93 @@ export class DataStore {
         }
 
         return renamedSnapshots;
+    }
+
+    private bootstrapTrackedFileFromSnapshot(snapshot: TrackedCardsFileSnapshot): void {
+        const { fileID, trackedFile } = this.ensureTrackedFileRecord({
+            uuid: snapshot.uuid,
+            path: snapshot.path,
+            tags: snapshot.tags,
+        });
+        const localIdsByRemoteId = new Map<number, number>();
+        const nextItems: Record<string, number> = { file: -1 };
+
+        for (const relatedItem of snapshot.relatedItems) {
+            const localItemId = this.upsertClonedItem(relatedItem, fileID);
+            localIdsByRemoteId.set(relatedItem.ID, localItemId);
+            if (relatedItem.itemType === RPITEMTYPE.NOTE) {
+                nextItems.file = localItemId;
+            }
+        }
+
+        trackedFile.items = nextItems;
+        trackedFile.trackedItems = (snapshot.trackedItems ?? []).map((trackedItem) => {
+            const cloned = cloneTrackedItem(trackedItem) ?? trackedItem;
+            cloned.reviewId = localIdsByRemoteId.get(trackedItem.reviewId) ?? -1;
+            return cloned;
+        });
+    }
+
+    private ensureTrackedFileRecord(input: {
+        uuid: string;
+        path: string;
+        tags: string[];
+    }): { fileID: string; trackedFile: TrackedFile } {
+        const existingFileId = this.findFileIdByUuid(input.uuid) || this.getFileID(input.path);
+        if (existingFileId) {
+            const trackedFile = this.data.trackedFiles[existingFileId];
+            trackedFile.uuid = input.uuid;
+            trackedFile.path = input.path;
+            trackedFile.tags = [...input.tags];
+            if (!Array.isArray(trackedFile.trackedItems)) {
+                trackedFile.trackedItems = [];
+            }
+            trackedFile.items = trackedFile.items ?? { file: -1 };
+            return {
+                fileID: existingFileId,
+                trackedFile,
+            };
+        }
+
+        const fileID = generateFileID();
+        const trackedFile = TrackedFile.create({
+            uuid: input.uuid,
+            path: input.path,
+            items: { file: -1 },
+            trackedItems: [],
+            tags: [...input.tags],
+        });
+        this.data.trackedFiles[fileID] = trackedFile;
+        this.data.fileOrder = this.data.fileOrder ?? [];
+        this.data.fileOrder.push(fileID);
+        return {
+            fileID,
+            trackedFile,
+        };
+    }
+
+    private upsertClonedItem(snapshot: RepetitionItem, fileID: string): number {
+        const clonedItem = cloneRepetitionItem(snapshot);
+        if (!clonedItem) {
+            return -1;
+        }
+
+        const existingItem = this.findItemByUuid(clonedItem.uuid);
+        const targetId = existingItem?.ID ?? this.maxItemId + 1;
+        clonedItem.ID = targetId;
+        clonedItem.fileID = fileID;
+
+        if (existingItem) {
+            Object.assign(existingItem, clonedItem);
+            this.data.queues.remove(existingItem);
+        } else {
+            this.data.items.push(clonedItem);
+        }
+
+        this.reviewItemOverlayById.delete(targetId);
+        this.markReviewOverlayDirty();
+        this.markItemByIdIndexDirty();
+        return targetId;
     }
 
     untrackPathPrefixWithSnapshots(pathPrefix: string): TrackedCardsFileSnapshot[] {

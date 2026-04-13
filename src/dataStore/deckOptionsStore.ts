@@ -112,8 +112,10 @@ export function createPersistableSettingsSnapshot(
 }
 
 export class DeckOptionsStore {
+    public lastLoadError: string | null = null;
     private dataPath: string;
     private lastSerialized: string | null = null;
+    private syncReadOnlyReason: string | null = null;
 
     constructor(pathOrConfig: string | DeckOptionsStorePathConfig) {
         this.dataPath =
@@ -121,6 +123,7 @@ export class DeckOptionsStore {
     }
 
     async loadIntoSettings(settings: SRSettings): Promise<void> {
+        this.lastLoadError = null;
         const adapter = Iadapter.instance.adapter;
 
         try {
@@ -141,6 +144,7 @@ export class DeckOptionsStore {
                 !isRecord(parsed) ||
                 getNumberProp(parsed, "version") !== DECK_OPTIONS_STORE_VERSION
             ) {
+                this.lastLoadError = "[SR-DeckOptions] Invalid deck-options.json schema.";
                 console.warn(
                     "[SR-DeckOptions] Invalid deck-options.json schema, keeping in-memory settings.",
                 );
@@ -153,6 +157,7 @@ export class DeckOptionsStore {
                 deckPresetAssignment: parsed.deckPresetAssignment as Record<string, number>,
             });
         } catch (error) {
+            this.lastLoadError = `[SR-DeckOptions] Failed to load deck options store: ${String(error)}`;
             console.warn("[SR-DeckOptions] Failed to load deck options store:", error);
         }
     }
@@ -173,6 +178,9 @@ export class DeckOptionsStore {
     }
 
     async saveSerialized(serialized: string): Promise<void> {
+        if (this.syncReadOnlyReason) {
+            return;
+        }
         if (this.lastSerialized === serialized) {
             return;
         }
@@ -185,5 +193,9 @@ export class DeckOptionsStore {
         const snapshot = createDeckOptionsStoreSnapshot(settings);
         await this.saveSerialized(snapshot.serialized);
         return snapshot;
+    }
+
+    setReadOnly(reason: string | null): void {
+        this.syncReadOnlyReason = reason;
     }
 }

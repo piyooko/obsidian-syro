@@ -49,6 +49,14 @@ interface PersistedCurrentDeviceState {
     deviceFolderName: string;
 }
 
+interface SyroMigrationStateFile {
+    version: number;
+    completedAt: string;
+    sourceVersion: string;
+    targetVersion: string;
+    hasLegacyInputs: boolean;
+}
+
 export interface SyroPersistenceLayout {
     syncRoot: string;
     devicesRoot: string;
@@ -64,6 +72,7 @@ export interface SyroPersistenceLayout {
     localDeviceRoot: string;
     cardsOverlayPath: string;
     activeSessionBufferPath: string;
+    mergeStatePath: string;
     migrationStatePath: string;
     noteCachePath: string;
     device: SyroDeviceMetadata;
@@ -325,13 +334,16 @@ export class SyroWorkspace {
             localDeviceRoot,
             cardsOverlayPath: joinPath(localDeviceRoot, "cards.review_overlay.json"),
             activeSessionBufferPath: joinPath(localDeviceRoot, "active-session-buffer.jsonl"),
+            mergeStatePath: joinPath(localDeviceRoot, "sync-merge-state.json"),
             migrationStatePath: joinPath(localDeviceRoot, "migration-state.json"),
             noteCachePath: joinPath(localDeviceRoot, "note_cache.json"),
             device: metadata,
         };
 
+        await this.prepareMigrationBackup(layout);
         await this.migrateLegacyFiles(layout);
         await this.writeJson(layout.deviceMetaPath, metadata);
+        await this.writeMigrationState(layout);
         this.persistCurrentDeviceState({
             version: SYRO_CURRENT_DEVICE_STATE_VERSION,
             deviceId,
@@ -352,6 +364,7 @@ export class SyroWorkspace {
         | "localDeviceRoot"
         | "cardsOverlayPath"
         | "activeSessionBufferPath"
+        | "mergeStatePath"
         | "migrationStatePath"
         | "noteCachePath"
         | "device"
@@ -440,7 +453,76 @@ export class SyroWorkspace {
         await this.adapter.write(path, JSON.stringify(value, null, 2));
     }
 
-    private async migrateLegacyFiles(layout: SyroPersistenceLayout): Promise<void> {
+    private getMigrationBackupsRoot(): string {
+        return joinPath(trimTrailingSlash(this.manifestDir), "migration-backups");
+    }
+
+    private async prepareMigrationBackup(layout: SyroPersistenceLayout): Promise<void> {
+        if (await this.adapter.exists(layout.migrationStatePath)) {
+            return;
+        }
+
+        const legacyFiles = this.getLegacySourceFiles();
+        const existingLegacyFiles = [];
+        for (const [name, path] of legacyFiles) {
+            if (await this.adapter.exists(path)) {
+                existingLegacyFiles.push([name, path] as const);
+            }
+        }
+
+        if (existingLegacyFiles.length === 0) {
+            return;
+        }
+
+        const backupDir = joinPath(
+            this.getMigrationBackupsRoot(),
+            `${new Date().toISOString().replace(/:/g, "-")}-before-0.0.12`,
+        );
+        await ensureDirectory(this.adapter, backupDir);
+
+        const copiedFiles: string[] = [];
+        for (const [name, path] of existingLegacyFiles) {
+            const targetPath = joinPath(backupDir, name);
+            await copyFileIfMissing(this.adapter, path, targetPath);
+            copiedFiles.push(name);
+        }
+
+        await this.writeJson(joinPath(backupDir, "meta.json"), {
+            createdAt: new Date().toISOString(),
+            reason: "0.0.11-to-0.0.12-migration-backup",
+            sourceVersion: "0.0.11",
+            targetVersion: "0.0.12",
+            deviceNameAtMigration: layout.device.deviceName,
+            sourceFiles: copiedFiles,
+            notes: "copy-only backup generated before the Syro 0.0.12 layout migration",
+        });
+    }
+
+    private async writeMigrationState(layout: SyroPersistenceLayout): Promise<void> {
+        if (await this.adapter.exists(layout.migrationStatePath)) {
+            return;
+        }
+
+        const legacyFiles = this.getLegacySourceFiles();
+        let hasLegacyInputs = false;
+        for (const [, path] of legacyFiles) {
+            if (await this.adapter.exists(path)) {
+                hasLegacyInputs = true;
+                break;
+            }
+        }
+
+        const state: SyroMigrationStateFile = {
+            version: 1,
+            completedAt: new Date().toISOString(),
+            sourceVersion: "0.0.11",
+            targetVersion: "0.0.12",
+            hasLegacyInputs,
+        };
+        await this.writeJson(layout.migrationStatePath, state);
+    }
+
+    private getLegacySourceFiles(): Array<[string, string]> {
         const legacyCardsPath = normalizePath(getStorePath(this.manifestDir, this.settings));
         const legacyNotesPath = replaceFileName(legacyCardsPath, "review_notes.json");
         const legacyTimelinePath = replaceFileName(legacyCardsPath, "review_commits.json");
@@ -449,6 +531,25 @@ export class SyroWorkspace {
             "tracked_files.review_overlay.json",
         );
         const legacyNoteCachePath = replaceFileName(legacyCardsPath, "note_cache.json");
+
+        return [
+            ["tracked_files.json", legacyCardsPath],
+            ["review_notes.json", legacyNotesPath],
+            ["review_commits.json", legacyTimelinePath],
+            ["tracked_files.review_overlay.json", legacyOverlayPath],
+            ["note_cache.json", legacyNoteCachePath],
+        ];
+    }
+
+    private async migrateLegacyFiles(layout: SyroPersistenceLayout): Promise<void> {
+        const legacyFiles = this.getLegacySourceFiles();
+        const legacyCardsPath = legacyFiles.find(([name]) => name === "tracked_files.json")?.[1] ?? "";
+        const legacyNotesPath = legacyFiles.find(([name]) => name === "review_notes.json")?.[1] ?? "";
+        const legacyTimelinePath =
+            legacyFiles.find(([name]) => name === "review_commits.json")?.[1] ?? "";
+        const legacyOverlayPath =
+            legacyFiles.find(([name]) => name === "tracked_files.review_overlay.json")?.[1] ?? "";
+        const legacyNoteCachePath = legacyFiles.find(([name]) => name === "note_cache.json")?.[1] ?? "";
 
         // Copy-only migration keeps the old files intact so a partial rollout cannot strand user data.
         await copyFileIfMissing(this.adapter, legacyCardsPath, layout.cardsPath);

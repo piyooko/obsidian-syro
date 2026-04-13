@@ -55,10 +55,12 @@ function cloneItem(item: RepetitionItem): RepetitionItem {
 }
 
 export class NoteReviewStore {
+    public lastLoadError: string | null = null;
     private settings: SRSettings;
     private dataPath: string;
     private data: Record<string, NoteReviewEntry> = {};
     private nextItemId = 1;
+    private syncReadOnlyReason: string | null = null;
 
     constructor(settings: SRSettings, manifestDirOrPaths: string | NoteReviewStorePathConfig) {
         this.settings = settings;
@@ -73,6 +75,7 @@ export class NoteReviewStore {
     }
 
     async load(): Promise<void> {
+        this.lastLoadError = null;
         try {
             const adapter = Iadapter.instance.adapter;
             if (!(await adapter.exists(this.dataPath))) {
@@ -90,6 +93,7 @@ export class NoteReviewStore {
 
             const parsed = JSON.parse(raw) as NoteReviewStoreFile;
             if (parsed?.version !== NOTE_REVIEW_STORE_VERSION || typeof parsed.items !== "object") {
+                this.lastLoadError = "[SR-NoteReview] Invalid notes.json schema.";
                 this.data = {};
                 this.nextItemId = 1;
                 return;
@@ -116,6 +120,7 @@ export class NoteReviewStore {
                 this.nextItemId = Math.max(this.nextItemId, item.ID + 1);
             }
         } catch (error) {
+            this.lastLoadError = `[SR-NoteReview] Failed to load notes.json: ${String(error)}`;
             console.error("[SR-NoteReview] Failed to load note review store:", error);
             this.data = {};
             this.nextItemId = 1;
@@ -123,6 +128,9 @@ export class NoteReviewStore {
     }
 
     async save(): Promise<void> {
+        if (this.syncReadOnlyReason) {
+            return;
+        }
         try {
             const payload: NoteReviewStoreFile = {
                 version: NOTE_REVIEW_STORE_VERSION,
@@ -144,8 +152,26 @@ export class NoteReviewStore {
         }
     }
 
+    setReadOnly(reason: string | null): void {
+        this.syncReadOnlyReason = reason;
+    }
+
     getEntry(path: string): NoteReviewEntry | null {
         return this.data[path] ?? null;
+    }
+
+    findPathByUuid(uuid: string): string | null {
+        if (!uuid) {
+            return null;
+        }
+
+        for (const [path, entry] of Object.entries(this.data)) {
+            if (entry.item.uuid === uuid) {
+                return path;
+            }
+        }
+
+        return null;
     }
 
     getEntrySnapshot(path: string): NoteReviewEntrySnapshot | null {
@@ -300,6 +326,33 @@ export class NoteReviewStore {
         }
 
         return changed ? removedSnapshots : [];
+    }
+
+    upsertSnapshot(snapshot: NoteReviewEntrySnapshot): void {
+        const existingPath = this.findPathByUuid(snapshot.item.uuid);
+        if (existingPath && existingPath !== snapshot.path) {
+            delete this.data[existingPath];
+        }
+
+        const item = cloneItem(snapshot.item);
+        item.setTracked(snapshot.path);
+        item.updateDeckName(snapshot.deckName, false);
+        this.data[snapshot.path] = {
+            source: snapshot.source,
+            deckName: snapshot.deckName,
+            item,
+        };
+        this.nextItemId = Math.max(this.nextItemId, item.ID + 1);
+    }
+
+    removeByUuid(uuid: string, fallbackPath?: string): boolean {
+        const existingPath = this.findPathByUuid(uuid) ?? fallbackPath ?? "";
+        if (!existingPath || !this.data[existingPath]) {
+            return false;
+        }
+
+        delete this.data[existingPath];
+        return true;
     }
 
     cleanupMissingFiles(vault: Vault): boolean {

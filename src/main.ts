@@ -75,6 +75,8 @@ import {
     NoteReviewSource,
     type NoteReviewEntrySnapshot,
 } from "./dataStore/noteReviewStore";
+import { replaySyroSessionRecords } from "./dataStore/syroSessionReplay";
+import { SyroMergeStateStore } from "./dataStore/syroMergeState";
 import { SyroPersistenceLayout, SyroWorkspace } from "./dataStore/syroWorkspace";
 import { SyroSessionManager } from "./dataStore/syroSessionManager";
 import Commands from "./commands";
@@ -297,8 +299,10 @@ export default class SRPlugin extends Plugin {
     private pendingPluginDataSaveRequested = false;
     private pendingPluginDataSavePromise: Promise<boolean> | null = null;
     private pluginDataSaveFailureNotified = false;
+    private syroReadOnlyReason: string | null = null;
     private syroLayout: SyroPersistenceLayout | null = null;
     private deckOptionsStore: DeckOptionsStore | null = null;
+    private syroMergeState: SyroMergeStateStore | null = null;
     private syroSessionManager: SyroSessionManager | null = null;
 
     private static _instance: SRPlugin;
@@ -1276,13 +1280,82 @@ export default class SRPlugin extends Plugin {
         this.syncEvents.emit("timeline-review-card-updated");
     }
 
+    private async markSyroMergeState(
+        entities: Array<{
+            targetUuid: string;
+            updatedAt: string;
+            deleted: boolean;
+            domain: "cards" | "notes" | "timeline" | "deck-options";
+            entityType: string;
+            pathHint?: string;
+        }>,
+    ): Promise<void> {
+        if (!this.syroMergeState || entities.length === 0) {
+            return;
+        }
+
+        for (const entity of entities) {
+            this.syroMergeState.markEntity(entity);
+        }
+        await this.syroMergeState.save();
+    }
+
+    private enableSyroReadOnly(reason: string): void {
+        if (this.syroReadOnlyReason === reason) {
+            return;
+        }
+
+        this.syroReadOnlyReason = reason;
+        this.store?.setReadOnly(reason);
+        this.noteReviewStore?.setReadOnly(reason);
+        this.reviewCommitStore?.setReadOnly(reason);
+        this.deckOptionsStore?.setReadOnly(reason);
+
+        if (typeof process === "undefined" || process.env?.NODE_ENV !== "test") {
+            new Notice("当前同步数据异常，已进入只读保护。");
+        }
+    }
+
+    private async importPendingSyroSessions(): Promise<void> {
+        if (this.syroReadOnlyReason) {
+            return;
+        }
+
+        if (
+            !this.syroSessionManager ||
+            !this.syroMergeState ||
+            !this.deckOptionsStore ||
+            !this.store ||
+            !this.noteReviewStore ||
+            !this.reviewCommitStore
+        ) {
+            return;
+        }
+
+        await this.syroSessionManager.importPendingSessions(async (_sessionId, records) => {
+            await replaySyroSessionRecords(records, {
+                settings: this.data.settings,
+                store: this.store,
+                noteReviewStore: this.noteReviewStore,
+                reviewCommitStore: this.reviewCommitStore,
+                deckOptionsStore: this.deckOptionsStore,
+                mergeState: this.syroMergeState,
+            });
+        });
+    }
+
     private async appendSyroNoteSnapshot(
         opType: string,
         snapshot: NoteReviewEntrySnapshot,
         extraPayload?: Record<string, unknown>,
     ): Promise<boolean> {
+        if (this.syroReadOnlyReason) {
+            return false;
+        }
+
         const targetUuid = snapshot.item.uuid || `note:${snapshot.path}`;
-        return (
+        const updatedAt = new Date().toISOString();
+        const appended =
             (await this.syroSessionManager?.appendRecord({
                 domain: "notes",
                 entityType: "note-review",
@@ -1296,8 +1369,21 @@ export default class SRPlugin extends Plugin {
                     ...extraPayload,
                 },
                 pathHint: snapshot.path,
-            })) ?? false
-        );
+                updatedAt,
+            })) ?? false;
+        if (appended) {
+            await this.markSyroMergeState([
+                {
+                    targetUuid,
+                    updatedAt,
+                    deleted: opType === "remove",
+                    domain: "notes",
+                    entityType: "note-review",
+                    pathHint: snapshot.path,
+                },
+            ]);
+        }
+        return appended;
     }
 
     private async appendSyroTimelineEntry(
@@ -1305,19 +1391,38 @@ export default class SRPlugin extends Plugin {
         notePath: string,
         commit: ReviewCommitLog,
     ): Promise<boolean> {
-        return (
+        if (this.syroReadOnlyReason) {
+            return false;
+        }
+
+        const targetUuid = `timeline-entry:${commit.id}`;
+        const updatedAt = new Date().toISOString();
+        const appended =
             (await this.syroSessionManager?.appendRecord({
                 domain: "timeline",
                 entityType: "timeline-entry",
                 opType,
-                targetUuid: `timeline-entry:${notePath}:${commit.id}`,
+                targetUuid,
                 payload: {
                     notePath,
                     commit,
                 },
                 pathHint: notePath,
-            })) ?? false
-        );
+                updatedAt,
+            })) ?? false;
+        if (appended) {
+            await this.markSyroMergeState([
+                {
+                    targetUuid,
+                    updatedAt,
+                    deleted: opType === "delete",
+                    domain: "timeline",
+                    entityType: "timeline-entry",
+                    pathHint: notePath,
+                },
+            ]);
+        }
+        return appended;
     }
 
     private async appendSyroCardSnapshot(
@@ -1325,9 +1430,14 @@ export default class SRPlugin extends Plugin {
         snapshot: TrackedCardSnapshot,
         extraPayload?: Record<string, unknown>,
     ): Promise<boolean> {
+        if (this.syroReadOnlyReason) {
+            return false;
+        }
+
         const targetUuid =
             snapshot.item.uuid || `card:${snapshot.path}:${snapshot.trackedItem?.reviewId ?? snapshot.item.ID}`;
-        return (
+        const updatedAt = new Date().toISOString();
+        const appended =
             (await this.syroSessionManager?.appendRecord({
                 domain: "cards",
                 entityType: "card-item",
@@ -1342,8 +1452,21 @@ export default class SRPlugin extends Plugin {
                     ...extraPayload,
                 },
                 pathHint: snapshot.path,
-            })) ?? false
-        );
+                updatedAt,
+            })) ?? false;
+        if (appended) {
+            await this.markSyroMergeState([
+                {
+                    targetUuid,
+                    updatedAt,
+                    deleted: opType === "remove",
+                    domain: "cards",
+                    entityType: "card-item",
+                    pathHint: snapshot.path,
+                },
+            ]);
+        }
+        return appended;
     }
 
     private async appendSyroTrackedFileSnapshot(
@@ -1351,8 +1474,13 @@ export default class SRPlugin extends Plugin {
         snapshot: TrackedCardsFileSnapshot,
         extraPayload?: Record<string, unknown>,
     ): Promise<boolean> {
+        if (this.syroReadOnlyReason) {
+            return false;
+        }
+
         const targetUuid = snapshot.uuid || `tracked-file:${snapshot.path}`;
-        return (
+        const updatedAt = new Date().toISOString();
+        const appended =
             (await this.syroSessionManager?.appendRecord({
                 domain: "cards",
                 entityType: "tracked-file",
@@ -1368,8 +1496,30 @@ export default class SRPlugin extends Plugin {
                     ...extraPayload,
                 },
                 pathHint: snapshot.path,
-            })) ?? false
-        );
+                updatedAt,
+            })) ?? false;
+        if (appended) {
+            const mergeEntities = [
+                {
+                    targetUuid,
+                    updatedAt,
+                    deleted: opType === "delete-file",
+                    domain: "cards" as const,
+                    entityType: "tracked-file",
+                    pathHint: snapshot.path,
+                },
+                ...snapshot.relatedItems.map((item) => ({
+                    targetUuid: item.uuid || `card:${snapshot.path}:${item.ID}`,
+                    updatedAt,
+                    deleted: opType === "delete-file",
+                    domain: "cards" as const,
+                    entityType: "card-item",
+                    pathHint: snapshot.path,
+                })),
+            ];
+            await this.markSyroMergeState(mergeEntities);
+        }
+        return appended;
     }
 
     public async appendSyroNoteUpsert(
@@ -1493,7 +1643,12 @@ export default class SRPlugin extends Plugin {
         newPath: string,
         commits: ReviewCommitLog[],
     ): Promise<boolean> {
-        return (
+        if (this.syroReadOnlyReason) {
+            return false;
+        }
+
+        const updatedAt = new Date().toISOString();
+        const appended =
             (await this.syroSessionManager?.appendRecord({
                 domain: "timeline",
                 entityType: "timeline-file",
@@ -1505,15 +1660,41 @@ export default class SRPlugin extends Plugin {
                     commits,
                 },
                 pathHint: newPath,
-            })) ?? false
-        );
+                updatedAt,
+            })) ?? false;
+        if (appended) {
+            await this.markSyroMergeState([
+                {
+                    targetUuid: `timeline-file:${oldPath}`,
+                    updatedAt,
+                    deleted: false,
+                    domain: "timeline",
+                    entityType: "timeline-file",
+                    pathHint: newPath,
+                },
+                ...commits.map((commit) => ({
+                    targetUuid: `timeline-entry:${commit.id}`,
+                    updatedAt,
+                    deleted: false,
+                    domain: "timeline" as const,
+                    entityType: "timeline-entry",
+                    pathHint: newPath,
+                })),
+            ]);
+        }
+        return appended;
     }
 
     public async appendSyroTimelineDeleteFile(
         notePath: string,
         commits: ReviewCommitLog[],
     ): Promise<boolean> {
-        return (
+        if (this.syroReadOnlyReason) {
+            return false;
+        }
+
+        const updatedAt = new Date().toISOString();
+        const appended =
             (await this.syroSessionManager?.appendRecord({
                 domain: "timeline",
                 entityType: "timeline-file",
@@ -1524,8 +1705,29 @@ export default class SRPlugin extends Plugin {
                     commits,
                 },
                 pathHint: notePath,
-            })) ?? false
-        );
+                updatedAt,
+            })) ?? false;
+        if (appended) {
+            await this.markSyroMergeState([
+                {
+                    targetUuid: `timeline-file:${notePath}`,
+                    updatedAt,
+                    deleted: true,
+                    domain: "timeline",
+                    entityType: "timeline-file",
+                    pathHint: notePath,
+                },
+                ...commits.map((commit) => ({
+                    targetUuid: `timeline-entry:${commit.id}`,
+                    updatedAt,
+                    deleted: true,
+                    domain: "timeline" as const,
+                    entityType: "timeline-entry",
+                    pathHint: notePath,
+                })),
+            ]);
+        }
+        return appended;
     }
 
     public showNoteReviewIgnoreNotice(reason: NoteReviewIgnoreReason): void {
@@ -2069,12 +2271,15 @@ export default class SRPlugin extends Plugin {
         }
 
         if (
-            request.trigger === "manual" ||
-            request.trigger === "background" ||
-            request.trigger === "startup"
+            !this.syroReadOnlyReason &&
+            (request.trigger === "manual" ||
+                request.trigger === "background" ||
+                request.trigger === "startup")
         ) {
             await this.syroSessionManager?.flushActiveSession();
         }
+
+        await this.importPendingSyroSessions?.();
 
         await this.sync(request.reviewMode, request.mode, {
             trigger: request.trigger,
@@ -2826,6 +3031,8 @@ export default class SRPlugin extends Plugin {
             this.manifest.dir,
             this.data.settings,
         ).initialize();
+        this.syroMergeState = new SyroMergeStateStore(this.syroLayout.mergeStatePath);
+        await this.syroMergeState.load();
         this.deckOptionsStore = new DeckOptionsStore({
             deckOptionsPath: this.syroLayout.deckOptionsPath,
         });
@@ -2847,6 +3054,14 @@ export default class SRPlugin extends Plugin {
             timelinePath: this.syroLayout.timelinePath,
         });
         await this.reviewCommitStore.load();
+        const syroLoadError =
+            this.deckOptionsStore.lastLoadError ??
+            this.store.lastLoadError ??
+            this.noteReviewStore.lastLoadError ??
+            this.reviewCommitStore.lastLoadError;
+        if (syroLoadError) {
+            this.enableSyroReadOnly(syroLoadError);
+        }
         this.reviewPersistenceCoordinator = new ReviewPersistenceCoordinator({
             shouldLogDebug: () => this.data.settings.showRuntimeDebugMessages,
             logDebug: (...args: unknown[]) => console.debug(...args),
@@ -2864,12 +3079,37 @@ export default class SRPlugin extends Plugin {
             return;
         }
 
+        if (this.syroReadOnlyReason) {
+            await this.saveData({
+                ...this.data,
+                settings: createPersistableSettingsSnapshot(this.data.settings),
+            });
+            return;
+        }
+
         const deckOptionsSnapshot = createDeckOptionsStoreSnapshot(this.data.settings);
         const deckOptionsChanged = await this.deckOptionsStore.hasSerializedStateChanged(
             deckOptionsSnapshot.serialized,
         );
         if (deckOptionsChanged) {
-            await this.syroSessionManager?.appendDeckOptionsChange(deckOptionsSnapshot.state);
+            const updatedAt = new Date().toISOString();
+            const appended =
+                (await this.syroSessionManager?.appendDeckOptionsChange(
+                    deckOptionsSnapshot.state,
+                    updatedAt,
+                )) ?? false;
+            if (appended) {
+                await this.markSyroMergeState?.([
+                    {
+                        targetUuid: "deck-options:global",
+                        updatedAt,
+                        deleted: false,
+                        domain: "deck-options",
+                        entityType: "deck-options",
+                        pathHint: this.syroLayout?.deckOptionsPath,
+                    },
+                ]);
+            }
         }
         await this.deckOptionsStore.saveSerialized(deckOptionsSnapshot.serialized);
         await this.saveData({

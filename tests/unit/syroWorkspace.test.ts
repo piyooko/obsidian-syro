@@ -149,4 +149,25 @@ describe("SyroWorkspace", () => {
         expect(files.get(layout.noteCachePath)).toBe('{"items":[{"path":"note.md"}]}');
         expect(files.get(".obsidian/plugins/syro/tracked_files.json")).toBe('{"items":[1]}');
     });
+
+    it("creates a copy-only migration backup and writes a one-time migration marker", async () => {
+        const { adapter, files } = createMockAdapter();
+        files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[1]}');
+        files.set(".obsidian/plugins/syro/review_notes.json", '{"items":{"note.md":{}}}');
+
+        const layout = await createWorkspace(adapter).initialize();
+        const backupMetaPath = Array.from(files.keys()).find((path) =>
+            path.endsWith("/meta.json"),
+        );
+
+        expect(backupMetaPath).toBeDefined();
+        expect(backupMetaPath).toContain(".obsidian/plugins/syro/migration-backups/");
+        expect(files.get(backupMetaPath!)).toContain('"sourceVersion": "0.0.11"');
+        expect(files.get(layout.migrationStatePath)).toContain('"targetVersion": "0.0.12"');
+
+        await createWorkspace(adapter).initialize();
+        expect(
+            Array.from(files.keys()).filter((path) => path.endsWith("/meta.json") && path.includes("/migration-backups/")),
+        ).toHaveLength(1);
+    });
 });
