@@ -98,6 +98,18 @@ describe("sync progress display defaults", () => {
         expect(settings.syncProgressDisplayMode).toBe(DEFAULT_SYNC_PROGRESS_DISPLAY_MODE);
     });
 
+    test("anki cloze conversion stays disabled by default when the setting is missing", () => {
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            convertAnkiClozesToClozes: undefined,
+        } as unknown as SRSettings;
+
+        upgradeSettings(settings);
+
+        expect(settings.convertAnkiClozesToClozes).toBe(false);
+        expect(settingsToUIState(settings).convertAnkiClozesToClozes).toBe(false);
+    });
+
     test("settings UI falls back to the new default when persisted data is missing it", () => {
         const settings = {
             ...DEFAULT_SETTINGS,

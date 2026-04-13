@@ -100,7 +100,7 @@ export function settingsToUIState(settings: SRSettings): UISettingsState {
         convertHighlightsToClozes: settings.convertHighlightsToClozes ?? true,
         convertBoldTextToClozes: settings.convertBoldTextToClozes ?? false,
         convertCurlyBracketsToClozes: settings.convertCurlyBracketsToClozes ?? false,
-        convertAnkiClozesToClozes: settings.convertAnkiClozesToClozes ?? true,
+        convertAnkiClozesToClozes: settings.convertAnkiClozesToClozes ?? false,
         enableNoteCachePersistence: settings.enableNoteCachePersistence ?? true,
         autoIncrementalSync: settings.autoIncrementalSync ?? true,
         syncProgressDisplayMode:

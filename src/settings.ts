@@ -927,7 +927,7 @@ export function upgradeSettings(settings: SRSettings) {
     syncDefaultClozePatterns(settings);
 
     if (settings.convertAnkiClozesToClozes === undefined) {
-        settings.convertAnkiClozesToClozes = true;
+        settings.convertAnkiClozesToClozes = false;
     }
 
     // Keep the unfinished popover disabled for all vaults until it is production-ready.
