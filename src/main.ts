@@ -59,7 +59,11 @@ import { convertToStringOrEmpty } from "./util/utils";
 import { setDebugParser } from "src/parser";
 
 // Legacy migration note retained from the pre-Syro codebase.
-import { DataStore } from "./dataStore/data";
+import {
+    DataStore,
+    type TrackedCardSnapshot,
+    type TrackedCardsFileSnapshot,
+} from "./dataStore/data";
 import {
     createDeckOptionsStoreSnapshot,
     createPersistableSettingsSnapshot,
@@ -1316,6 +1320,58 @@ export default class SRPlugin extends Plugin {
         );
     }
 
+    private async appendSyroCardSnapshot(
+        opType: string,
+        snapshot: TrackedCardSnapshot,
+        extraPayload?: Record<string, unknown>,
+    ): Promise<boolean> {
+        const targetUuid =
+            snapshot.item.uuid || `card:${snapshot.path}:${snapshot.trackedItem?.reviewId ?? snapshot.item.ID}`;
+        return (
+            (await this.syroSessionManager?.appendRecord({
+                domain: "cards",
+                entityType: "card-item",
+                opType,
+                targetUuid,
+                payload: {
+                    path: snapshot.path,
+                    trackedFileUuid: snapshot.trackedFileUuid,
+                    trackedFileTags: snapshot.trackedFileTags,
+                    trackedItem: snapshot.trackedItem,
+                    item: snapshot.item,
+                    ...extraPayload,
+                },
+                pathHint: snapshot.path,
+            })) ?? false
+        );
+    }
+
+    private async appendSyroTrackedFileSnapshot(
+        opType: "rename-file" | "delete-file",
+        snapshot: TrackedCardsFileSnapshot,
+        extraPayload?: Record<string, unknown>,
+    ): Promise<boolean> {
+        const targetUuid = snapshot.uuid || `tracked-file:${snapshot.path}`;
+        return (
+            (await this.syroSessionManager?.appendRecord({
+                domain: "cards",
+                entityType: "tracked-file",
+                opType,
+                targetUuid,
+                payload: {
+                    uuid: snapshot.uuid,
+                    path: snapshot.path,
+                    tags: snapshot.tags,
+                    items: snapshot.items,
+                    trackedItems: snapshot.trackedItems,
+                    relatedItems: snapshot.relatedItems,
+                    ...extraPayload,
+                },
+                pathHint: snapshot.path,
+            })) ?? false
+        );
+    }
+
     public async appendSyroNoteUpsert(
         snapshot: NoteReviewEntrySnapshot | null,
         opType = "upsert",
@@ -1351,6 +1407,52 @@ export default class SRPlugin extends Plugin {
             oldPath,
             newPath: snapshot.path,
         });
+    }
+
+    public async appendSyroCardUpsert(
+        snapshot: TrackedCardSnapshot | null,
+        opType = "upsert",
+    ): Promise<boolean> {
+        if (!snapshot) {
+            return false;
+        }
+
+        return this.appendSyroCardSnapshot(opType, snapshot);
+    }
+
+    public async appendSyroCardRemove(
+        snapshot: TrackedCardSnapshot | null,
+        opType = "remove",
+    ): Promise<boolean> {
+        if (!snapshot) {
+            return false;
+        }
+
+        return this.appendSyroCardSnapshot(opType, snapshot);
+    }
+
+    public async appendSyroCardsRenameFile(
+        oldPath: string,
+        snapshot: TrackedCardsFileSnapshot | null,
+    ): Promise<boolean> {
+        if (!snapshot) {
+            return false;
+        }
+
+        return this.appendSyroTrackedFileSnapshot("rename-file", snapshot, {
+            oldPath,
+            newPath: snapshot.path,
+        });
+    }
+
+    public async appendSyroCardsDeleteFile(
+        snapshot: TrackedCardsFileSnapshot | null,
+    ): Promise<boolean> {
+        if (!snapshot) {
+            return false;
+        }
+
+        return this.appendSyroTrackedFileSnapshot("delete-file", snapshot);
     }
 
     public async appendSyroTimelineAdd(

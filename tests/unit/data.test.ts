@@ -1,6 +1,7 @@
 import { NoteEaseList } from "src/NoteEaseList";
 import { DEFAULT_DECKNAME } from "src/constants";
 import { DataStore } from "src/dataStore/data";
+import { Iadapter } from "src/dataStore/adapter";
 import { ItemTrans } from "src/dataStore/itemTrans";
 import { Queue } from "src/dataStore/queue";
 import { CardQueue, RPITEMTYPE } from "src/dataStore/repetitionItem";
@@ -12,6 +13,12 @@ import { createDefaultFsrsSettings, DEFAULT_SETTINGS } from "src/settings";
 import { Tags } from "src/tags";
 
 function createStore(): DataStore {
+    (Iadapter as any)._instance = {
+        adapter: {},
+        vault: {
+            getAbstractFileByPath: (): null => null,
+        },
+    };
     const store = new DataStore(DEFAULT_SETTINGS, "./");
     store.resetData();
     store.data.queues = Queue.create(store.data.queues as any);
@@ -105,6 +112,87 @@ describe("DataStore algorithm binding", () => {
         expect(item.queue).toBe(CardQueue.Learn);
         expect(intervalMinutes).toBeGreaterThan(1.5);
         expect(intervalMinutes).toBeLessThan(2.5);
+    });
+
+    test("getCardSnapshot returns cloned card state with tracked file uuid", () => {
+        const store = createStore();
+        store.trackFile("card-path.md", RPITEMTYPE.CARD, false);
+
+        const trackedFile = store.getTrackedFile("card-path.md");
+        const trackedItem = new TrackedItem(
+            "card-hash",
+            0,
+            "context",
+            CardType.SingleLineBasic,
+            {
+                startOffset: 1,
+                endOffset: 2,
+                blockStartOffset: 0,
+                blockEndOffset: 3,
+            },
+            "c1",
+        );
+        trackedFile.trackedItems.push(trackedItem);
+        store.updateCardItems(trackedFile, trackedItem, "#flashcards", false);
+
+        const item = store.getItembyID(trackedItem.reviewId);
+        const snapshot = store.getCardSnapshot(item.ID);
+
+        expect(snapshot).not.toBeNull();
+        expect(snapshot?.path).toBe("card-path.md");
+        expect(snapshot?.trackedFileUuid).toBe(trackedFile.uuid);
+        expect(snapshot?.trackedItem).not.toBe(trackedItem);
+        expect(snapshot?.item).not.toBe(item);
+        expect(snapshot?.item.uuid).toBe(item.uuid);
+
+        if (!snapshot) {
+            throw new Error("Expected card snapshot");
+        }
+
+        snapshot.item.timesReviewed = 99;
+        snapshot.trackedItem!.lineNo = 12;
+        expect(item.timesReviewed).not.toBe(99);
+        expect(trackedItem.lineNo).toBe(0);
+    });
+
+    test("path prefix snapshot helpers keep tracked file uuid stable across rename and delete", () => {
+        const store = createStore();
+        store.trackFile("folder/one.md", RPITEMTYPE.CARD, false);
+        store.trackFile("folder/sub/two.md", RPITEMTYPE.CARD, false);
+
+        const originalOne = store.getTrackedFile("folder/one.md");
+        const originalTwo = store.getTrackedFile("folder/sub/two.md");
+
+        const renamed = store.renamePathPrefixWithSnapshots("folder", "archive");
+
+        expect(renamed).toHaveLength(2);
+        expect(renamed).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    oldPath: "folder/one.md",
+                    newPath: "archive/one.md",
+                    file: expect.objectContaining({ uuid: originalOne.uuid, path: "archive/one.md" }),
+                }),
+                expect.objectContaining({
+                    oldPath: "folder/sub/two.md",
+                    newPath: "archive/sub/two.md",
+                    file: expect.objectContaining({
+                        uuid: originalTwo.uuid,
+                        path: "archive/sub/two.md",
+                    }),
+                }),
+            ]),
+        );
+
+        const removed = store.untrackPathPrefixWithSnapshots("archive");
+
+        expect(removed).toHaveLength(2);
+        expect(removed).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ uuid: originalOne.uuid, path: "archive/one.md" }),
+                expect.objectContaining({ uuid: originalTwo.uuid, path: "archive/sub/two.md" }),
+            ]),
+        );
     });
 
     test("itemToReviewDecks recreates missing note items from tracked files", () => {

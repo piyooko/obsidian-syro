@@ -46,6 +46,18 @@ describe("trackFileEvents syro session hooks", () => {
             path: "archive/renamed.md",
             commits: [{ id: "commit-1", message: "saved", timestamp: 1 }],
         };
+        const cardSnapshot = {
+            oldPath: "folder/original.md",
+            newPath: "archive/renamed.md",
+            file: {
+                uuid: "tracked-file-1",
+                path: "archive/renamed.md",
+                tags: ["card", "#flashcards"],
+                items: { file: -1 },
+                trackedItems: [] as never[],
+                relatedItems: [] as never[],
+            },
+        };
         const plugin = {
             data: {
                 settings: {
@@ -76,8 +88,11 @@ describe("trackFileEvents syro session hooks", () => {
             ensureFolderTrackingForFile: jest.fn(async () => false),
             getResolvedFolderTrackingRule: jest.fn(() => null),
             store: {
-                getTrackedFile: jest.fn(() => null),
+                renamePathPrefixWithSnapshots: jest.fn(() => [cardSnapshot]),
+                save: jest.fn(async () => undefined),
             },
+            appendSyroCardsRenameFile: jest.fn(async () => true),
+            markSyncDirty: jest.fn(),
             refreshNoteReview: jest.fn(async () => undefined),
             requestSync: jest.fn(async () => undefined),
             redrawReviewQueueView: jest.fn(),
@@ -102,6 +117,13 @@ describe("trackFileEvents syro session hooks", () => {
             "archive/renamed.md",
             timelineSnapshot.commits,
         );
+        expect(plugin.appendSyroCardsRenameFile).toHaveBeenCalledWith(
+            "folder/original.md",
+            cardSnapshot.file,
+        );
+        expect(plugin.store.save).toHaveBeenCalled();
+        expect(plugin.markSyncDirty).toHaveBeenCalled();
+        expect(plugin.requestSync).toHaveBeenCalledWith({ trigger: "file-event" });
         expect(plugin.refreshNoteReview).toHaveBeenCalledWith({ trigger: "file-event" });
     });
 
@@ -115,6 +137,14 @@ describe("trackFileEvents syro session hooks", () => {
         const timelineSnapshot = {
             path: "archive/deleted.md",
             commits: [{ id: "commit-1", message: "saved", timestamp: 1 }],
+        };
+        const cardSnapshot = {
+            uuid: "tracked-file-1",
+            path: "archive/deleted.md",
+            tags: ["card", "#flashcards"],
+            items: { file: -1 },
+            trackedItems: [] as never[],
+            relatedItems: [] as never[],
         };
         const plugin = {
             data: {
@@ -144,8 +174,11 @@ describe("trackFileEvents syro session hooks", () => {
             appendSyroTimelineDeleteFile: jest.fn(async () => true),
             removeFolderTrackingPaths: jest.fn(() => false),
             store: {
-                getTrackedFile: jest.fn(() => null),
+                untrackPathPrefixWithSnapshots: jest.fn(() => [cardSnapshot]),
+                save: jest.fn(async () => undefined),
             },
+            appendSyroCardsDeleteFile: jest.fn(async () => true),
+            markSyncDirty: jest.fn(),
             refreshNoteReview: jest.fn(async () => undefined),
             requestSync: jest.fn(async () => undefined),
             redrawReviewQueueView: jest.fn(),
@@ -169,6 +202,10 @@ describe("trackFileEvents syro session hooks", () => {
             "archive/deleted.md",
             timelineSnapshot.commits,
         );
+        expect(plugin.appendSyroCardsDeleteFile).toHaveBeenCalledWith(cardSnapshot);
+        expect(plugin.store.save).toHaveBeenCalled();
+        expect(plugin.markSyncDirty).toHaveBeenCalled();
+        expect(plugin.requestSync).toHaveBeenCalledWith({ trigger: "file-event" });
         expect(plugin.refreshNoteReview).toHaveBeenCalledWith({ trigger: "file-event" });
     });
 });

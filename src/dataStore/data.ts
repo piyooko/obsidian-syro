@@ -9,9 +9,10 @@ import { WeightedMultiplierAlgorithm } from "src/algorithms/weightedMultiplier";
 import { FsrsAlgorithm } from "src/algorithms/fsrs";
 
 import { getStorePath } from "src/dataStore/dataLocation";
+import { isPathInsideFolder, renamePathPrefix } from "src/folderTracking";
 import { Tags } from "src/tags";
 import { SrsAlgorithm } from "src/algorithms/algorithms";
-import { TrackedFile } from "./trackedFile";
+import { TrackedFile, TrackedItem } from "./trackedFile";
 import { RPITEMTYPE, RepetitionItem, ReviewResult, CardQueue } from "./repetitionItem";
 import { DEFAULT_QUEUE_DATA, Queue } from "./queue";
 import { Iadapter } from "./adapter";
@@ -85,10 +86,58 @@ interface ReviewItemOverlayFile {
     items: ReviewItemDelta[];
 }
 
+export interface TrackedCardSnapshot {
+    path: string;
+    trackedFileUuid: string;
+    trackedFileTags: string[];
+    trackedItem: TrackedItem | null;
+    item: RepetitionItem;
+}
+
+export interface TrackedCardsFileSnapshot {
+    uuid: string;
+    path: string;
+    tags: string[];
+    items: Record<string, number>;
+    trackedItems: TrackedItem[];
+    relatedItems: RepetitionItem[];
+}
+
+export interface RenamedTrackedCardsFileSnapshot {
+    oldPath: string;
+    newPath: string;
+    file: TrackedCardsFileSnapshot;
+}
+
 type LegacyFileIndexItem = RepetitionItem & {
     fileIndex?: string | number;
     fileID?: string;
 };
+
+function cloneRepetitionItem(item: RepetitionItem | null | undefined): RepetitionItem | null {
+    if (!item) {
+        return null;
+    }
+
+    const cloned = parseJsonUnknown(JSON.stringify(item)) as RepetitionItem;
+    return RepetitionItem.create(cloned);
+}
+
+function cloneTrackedItem(item: TrackedItem | null | undefined): TrackedItem | null {
+    if (!item) {
+        return null;
+    }
+
+    return new TrackedItem(
+        item.fingerprint,
+        item.lineNo,
+        item.context,
+        item.cardType,
+        { ...item.span },
+        item.clozeId,
+        item.reviewId,
+    );
+}
 
 /**
  * DataStore.
@@ -872,6 +921,106 @@ export class DataStore {
         const trackedFile = this.data.trackedFiles[item.fileID];
 
         return trackedFile?.path ?? null;
+    }
+
+    getCardSnapshot(itemId: number): TrackedCardSnapshot | null {
+        const item = this.getItembyID(itemId);
+        if (!item?.fileID) {
+            return null;
+        }
+
+        const trackedFile = this.getFileByID(item.fileID);
+        const clonedItem = cloneRepetitionItem(item);
+        if (!trackedFile || !clonedItem) {
+            return null;
+        }
+
+        const trackedItem =
+            item.itemType === RPITEMTYPE.CARD
+                ? (trackedFile.trackedItems ?? []).find((candidate) => candidate.reviewId === itemId) ??
+                  null
+                : null;
+
+        return {
+            path: trackedFile.path,
+            trackedFileUuid: trackedFile.uuid,
+            trackedFileTags: [...(trackedFile.tags ?? [])],
+            trackedItem: cloneTrackedItem(trackedItem),
+            item: clonedItem,
+        };
+    }
+
+    getTrackedFileSnapshot(path: string): TrackedCardsFileSnapshot | null {
+        const trackedFile = this.getTrackedFile(path);
+        if (!trackedFile) {
+            return null;
+        }
+
+        return {
+            uuid: trackedFile.uuid,
+            path: trackedFile.path,
+            tags: [...(trackedFile.tags ?? [])],
+            items: { ...(trackedFile.items ?? {}) },
+            trackedItems: (trackedFile.trackedItems ?? [])
+                .map((item) => cloneTrackedItem(item))
+                .filter((item): item is TrackedItem => item !== null),
+            relatedItems: trackedFile.itemIDs
+                .map((id) => cloneRepetitionItem(this.getItembyID(id)))
+                .filter((item): item is RepetitionItem => item !== null),
+        };
+    }
+
+    renamePathPrefixWithSnapshots(
+        oldPath: string,
+        newPath: string,
+    ): RenamedTrackedCardsFileSnapshot[] {
+        const renamedSnapshots: RenamedTrackedCardsFileSnapshot[] = [];
+
+        for (const trackedFile of Object.values(this.data.trackedFiles)) {
+            if (!trackedFile?.path) {
+                continue;
+            }
+
+            const nextPath = renamePathPrefix(trackedFile.path, oldPath, newPath);
+            if (nextPath === trackedFile.path) {
+                continue;
+            }
+
+            const previousPath = trackedFile.path;
+            trackedFile.rename(nextPath);
+            const snapshot = this.getTrackedFileSnapshot(nextPath);
+            if (!snapshot) {
+                continue;
+            }
+
+            renamedSnapshots.push({
+                oldPath: previousPath,
+                newPath: nextPath,
+                file: snapshot,
+            });
+        }
+
+        return renamedSnapshots;
+    }
+
+    untrackPathPrefixWithSnapshots(pathPrefix: string): TrackedCardsFileSnapshot[] {
+        const removedSnapshots: TrackedCardsFileSnapshot[] = [];
+        const trackedPaths = Object.values(this.data.trackedFiles)
+            .map((trackedFile) => trackedFile?.path)
+            .filter((path): path is string => typeof path === "string" && path.length > 0)
+            .filter((path) => isPathInsideFolder(pathPrefix, path));
+
+        for (const trackedPath of trackedPaths) {
+            const snapshot = this.getTrackedFileSnapshot(trackedPath);
+            if (!snapshot) {
+                continue;
+            }
+
+            this.untrackFile(trackedPath, false);
+            removedSnapshots.push(snapshot);
+        }
+
+        return removedSnapshots;
     }
 
     getReviewedCounts() {

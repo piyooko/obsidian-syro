@@ -14,7 +14,7 @@ import { CardScheduleInfo, NoteCardScheduleParser } from "./CardSchedule";
 import { Note } from "./Note";
 import { IDeckTreeIterator } from "./DeckTreeIterator";
 import { IQuestionPostponementList } from "./QuestionPostponementList";
-import { DataStore } from "./dataStore/data";
+import { DataStore, type TrackedCardSnapshot } from "./dataStore/data";
 import { DataLocation } from "./dataStore/dataLocation";
 import { RPITEMTYPE, CardQueue, RepetitionItem, ReviewResult } from "./dataStore/repetitionItem";
 import { Notice } from "obsidian";
@@ -141,6 +141,37 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         void question.writeQuestion(this.settings).catch((error) => {
             console.error("[SR] background question write failed", error);
         });
+    }
+
+    private queueSyroCardSession(
+        label: string,
+        action: Promise<boolean> | null | undefined,
+    ): void {
+        if (action == null) {
+            return;
+        }
+
+        void action.catch((error) => {
+            console.error(`[SR-Syro] Failed to append cards ${label} session`, error);
+        });
+    }
+
+    private queueSyroCardUpsert(snapshot: TrackedCardSnapshot | null, opType: string): void {
+        const plugin = SRPlugin.getInstance();
+        if (!plugin || !snapshot) {
+            return;
+        }
+
+        this.queueSyroCardSession(opType, plugin.appendSyroCardUpsert(snapshot, opType));
+    }
+
+    private queueSyroCardRemove(snapshot: TrackedCardSnapshot | null, opType: string): void {
+        const plugin = SRPlugin.getInstance();
+        if (!plugin || !snapshot) {
+            return;
+        }
+
+        this.queueSyroCardSession(opType, plugin.appendSyroCardRemove(snapshot, opType));
     }
 
     private refreshGlobalStatusBar(): void {
@@ -552,6 +583,9 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
                 currentDeckPath: this.getDeckPath(this.currentDeck),
             });
         }
+        if (this.reviewMode === FlashcardReviewMode.Review) {
+            this.queueSyroCardUpsert(store.getCardSnapshot(card.Id), "review");
+        }
         this.logRuntimeDebug("[SR-DynSync] sequencer.processReview: completed");
     }
 
@@ -832,6 +866,8 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
                 this.getLearnAheadMillis(),
             );
         }
+
+        this.queueSyroCardUpsert(store.getCardSnapshot(card.Id), "undo");
     }
 
     async untrackCurrentCard(): Promise<void> {
@@ -856,8 +892,10 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         }
 
         const store = DataStore.getInstance();
-        store.unTrackItem(this.currentCard.Id);
+        const removedSnapshot = store.getCardSnapshot(card.Id);
+        store.unTrackItem(card.Id);
         await store.save();
+        this.queueSyroCardRemove(removedSnapshot, "remove");
 
         if (this._isLearning) {
             const deck = this.findDeckForCard(card);

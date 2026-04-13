@@ -94,10 +94,12 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                 }
             }
 
-            const trackedFile = plugin.store.getTrackedFile(oldPath);
-            if (trackedFile) {
-                trackedFile.rename(file.path);
+            const renamedTrackedFiles = plugin.store.renamePathPrefixWithSnapshots(oldPath, file.path);
+            if (renamedTrackedFiles.length > 0) {
                 await plugin.store.save();
+                for (const snapshot of renamedTrackedFiles) {
+                    await plugin.appendSyroCardsRenameFile(snapshot.oldPath, snapshot.file);
+                }
                 plugin.markSyncDirty();
                 debouncedSync();
             }
@@ -162,9 +164,12 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                 }
             }
 
-            if (plugin.store.getTrackedFile(file.path)) {
-                plugin.store.untrackFile(file.path);
+            const removedTrackedFiles = plugin.store.untrackPathPrefixWithSnapshots(file.path);
+            if (removedTrackedFiles.length > 0) {
                 await plugin.store.save();
+                for (const snapshot of removedTrackedFiles) {
+                    await plugin.appendSyroCardsDeleteFile(snapshot);
+                }
                 plugin.markSyncDirty();
                 debouncedSync();
             }

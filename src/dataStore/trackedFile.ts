@@ -55,10 +55,15 @@ export class TrackedItem {
 export type CardInfo = TrackedItem;
 
 export interface ITrackedFile {
+    uuid?: string;
     path: string;
     items: Record<string, number>;
     trackedItems?: TrackedItem[];
     tags: string[];
+}
+
+function generateTrackedFileUUID(): string {
+    return "tf_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 8);
 }
 
 // ============================================================================
@@ -71,6 +76,7 @@ export interface CardItemSummary {
 
 // 记录一个笔记文件里所有复习项（笔记复习 + 闪卡复习）的容器类
 export class TrackedFile implements ITrackedFile {
+    uuid: string;
     path: string;
     items: Record<string, number>; // 存笔记级的复习 ID，通常是 { file: 123 }
     trackedItems?: TrackedItem[]; // 存该文件下所有的闪卡项
@@ -97,6 +103,10 @@ export class TrackedFile implements ITrackedFile {
 
     static create(data: ITrackedFile): TrackedFile {
         const tf = new TrackedFile(data.path);
+        tf.uuid =
+            typeof data.uuid === "string" && data.uuid.trim().length > 0
+                ? data.uuid
+                : generateTrackedFileUUID();
         const type = (data.tags?.[0] as RPITEMTYPE) || RPITEMTYPE.NOTE;
         const dname = data.tags?.[1];
         tf.setTracked(type, dname);
@@ -124,6 +134,7 @@ export class TrackedFile implements ITrackedFile {
     }
 
     constructor(path: string = "", type: RPITEMTYPE = RPITEMTYPE.NOTE, dname?: string) {
+        this.uuid = generateTrackedFileUUID();
         this.path = path;
         this.items = {};
         if (type === RPITEMTYPE.CARD) {
