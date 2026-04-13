@@ -99,7 +99,8 @@ export interface SyroPersistenceLayout {
     devicesRoot: string;
     sessionsRoot: string;
     openSessionsRoot: string;
-    sessionsArchiveRoot: string;
+    closedSessionsRoot: string;
+    archivedSessionsRoot: string;
     deviceRoot: string;
     deviceMetaPath: string;
     cardsPath: string;
@@ -113,7 +114,6 @@ export interface SyroPersistenceLayout {
     licenseStatePath: string;
     cardsOverlayPath: string;
     activeSessionBufferPath: string;
-    mergeStatePath: string;
     noteCachePath: string;
     device: SyroDeviceMetadata;
 }
@@ -420,7 +420,8 @@ export class SyroWorkspace {
         await ensureDirectory(this.adapter, roots.devicesRoot);
         await ensureDirectory(this.adapter, roots.sessionsRoot);
         await ensureDirectory(this.adapter, roots.openSessionsRoot);
-        await ensureDirectory(this.adapter, roots.sessionsArchiveRoot);
+        await ensureDirectory(this.adapter, roots.closedSessionsRoot);
+        await ensureDirectory(this.adapter, roots.archivedSessionsRoot);
 
         const persistedCurrentDevice = this.loadPersistedCurrentDeviceState();
         const existingCurrentDevice = await this.loadExistingCurrentDevice(persistedCurrentDevice);
@@ -604,7 +605,6 @@ export class SyroWorkspace {
         | "licenseStatePath"
         | "cardsOverlayPath"
         | "activeSessionBufferPath"
-        | "mergeStatePath"
         | "noteCachePath"
         | "device"
     > {
@@ -614,8 +614,9 @@ export class SyroWorkspace {
             syncRoot,
             devicesRoot: joinPath(syncRoot, "devices"),
             sessionsRoot: joinPath(syncRoot, "sessions"),
-            sessionsArchiveRoot: joinPath(syncRoot, "sessions-archive"),
             openSessionsRoot: joinPath(syncRoot, "sessions", "open"),
+            closedSessionsRoot: joinPath(syncRoot, "sessions", "closed"),
+            archivedSessionsRoot: joinPath(syncRoot, "sessions", "archive"),
         };
     }
 
@@ -715,8 +716,14 @@ export class SyroWorkspace {
 
     private async prepareMigrationBackup(layout: SyroPersistenceLayout): Promise<void> {
         const legacyFiles = this.getLegacySourceFiles();
+        const compatibilityFiles = this.getCompatibilitySourceFiles(layout);
         const existingLegacyFiles = [];
         for (const [name, path] of legacyFiles) {
+            if (await this.adapter.exists(path)) {
+                existingLegacyFiles.push([name, path] as const);
+            }
+        }
+        for (const [name, path] of compatibilityFiles) {
             if (await this.adapter.exists(path)) {
                 existingLegacyFiles.push([name, path] as const);
             }
@@ -778,6 +785,25 @@ export class SyroWorkspace {
         ];
     }
 
+    private getCompatibilitySourceFiles(layout: SyroPersistenceLayout): Array<[string, string]> {
+        const legacyLocalStateRoot = joinPath(trimTrailingSlash(this.manifestDir), "local-state");
+        return [
+            ["sync-merge-state.json", joinPath(layout.deviceRoot, "sync-merge-state.json")],
+            [
+                "local-state/cards.review_overlay.json",
+                joinPath(legacyLocalStateRoot, "cards.review_overlay.json"),
+            ],
+            [
+                "local-state/active-session-buffer.jsonl",
+                joinPath(legacyLocalStateRoot, "active-session-buffer.jsonl"),
+            ],
+            [
+                "local-state/migration-state.json",
+                joinPath(legacyLocalStateRoot, "migration-state.json"),
+            ],
+        ];
+    }
+
     private async migrateLegacyFiles(layout: SyroPersistenceLayout): Promise<void> {
         const legacyFiles = this.getLegacySourceFiles();
         const legacyCardsPath = legacyFiles.find(([name]) => name === "tracked_files.json")?.[1] ?? "";
@@ -792,12 +818,14 @@ export class SyroWorkspace {
         await copyFileIfMissing(this.adapter, legacyCardsPath, layout.cardsPath);
         await copyFileIfMissing(this.adapter, legacyNotesPath, layout.notesPath);
         await copyFileIfMissing(this.adapter, legacyTimelinePath, layout.timelinePath);
-        await copyFileIfMissing(this.adapter, legacyOverlayPath, layout.cardsOverlayPath);
         await copyFileIfMissing(this.adapter, legacyNoteCachePath, layout.noteCachePath);
         if (!(await this.adapter.exists(layout.deckOptionsPath))) {
             const snapshot = createDeckOptionsStoreSnapshot(this.settings);
             await this.writeJson(layout.deckOptionsPath, snapshot.state);
         }
+
+        await this.migrateCompatibilityLayout(layout);
+        await copyFileIfMissing(this.adapter, legacyOverlayPath, layout.cardsOverlayPath);
     }
 
     private buildLayout(
@@ -816,7 +844,6 @@ export class SyroWorkspace {
             | "licenseStatePath"
             | "cardsOverlayPath"
             | "activeSessionBufferPath"
-            | "mergeStatePath"
             | "noteCachePath"
             | "device"
         >,
@@ -842,7 +869,6 @@ export class SyroWorkspace {
                 roots.openSessionsRoot,
                 `${deviceFolderName}.open.jsonl`,
             ),
-            mergeStatePath: joinPath(deviceRoot, "sync-merge-state.json"),
             noteCachePath: joinPath(deviceRoot, "note-cache.json"),
             device: metadata,
         };
@@ -864,7 +890,6 @@ export class SyroWorkspace {
             | "licenseStatePath"
             | "cardsOverlayPath"
             | "activeSessionBufferPath"
-            | "mergeStatePath"
             | "noteCachePath"
             | "device"
         >,
@@ -947,6 +972,13 @@ export class SyroWorkspace {
             [layout.notesPath, validateNotesStoreFile, requireDomainSnapshots],
             [layout.timelinePath, validateTimelineStoreFile, requireDomainSnapshots],
             [layout.deckOptionsPath, validateDeckOptionsStoreFile, requireDomainSnapshots],
+            [layout.settingsPath, (raw) => isRecord(parseJsonUnknown(raw)), requireDomainSnapshots],
+            [
+                layout.trackingRulesPath,
+                (raw) => isRecord(parseJsonUnknown(raw)),
+                requireDomainSnapshots,
+            ],
+            [layout.dailyStatePath, (raw) => isRecord(parseJsonUnknown(raw)), requireDomainSnapshots],
         ];
         const validatedPaths: string[] = [];
 
@@ -1097,6 +1129,82 @@ export class SyroWorkspace {
             }
         }
 
+        const roots = this.buildRootPaths();
+        if (await this.adapter.exists(joinPath(roots.syncRoot, "sessions-archive"))) {
+            return true;
+        }
+        if (await this.adapter.exists(joinPath(roots.syncRoot, "local-state"))) {
+            return true;
+        }
+
+        const sessionListing = this.adapter.list
+            ? await this.adapter.list(trimTrailingSlash(roots.sessionsRoot))
+            : { files: [], folders: [] };
+        if (
+            (sessionListing.files ?? []).some((filePath) =>
+                normalizePath(filePath).toLowerCase().endsWith(".jsonl"),
+            )
+        ) {
+            return true;
+        }
+
         return false;
+    }
+
+    private async migrateCompatibilityLayout(layout: SyroPersistenceLayout): Promise<void> {
+        await this.migrateLocalStateFiles(layout);
+        await this.migrateClosedSessionFiles(layout);
+        await this.migrateArchiveFiles(layout);
+    }
+
+    private async migrateLocalStateFiles(layout: SyroPersistenceLayout): Promise<void> {
+        const legacyLocalStateRoot = joinPath(trimTrailingSlash(this.manifestDir), "local-state");
+        await copyFileIfMissing(
+            this.adapter,
+            joinPath(legacyLocalStateRoot, "cards.review_overlay.json"),
+            layout.cardsOverlayPath,
+        );
+        await copyFileIfMissing(
+            this.adapter,
+            joinPath(legacyLocalStateRoot, "active-session-buffer.jsonl"),
+            layout.activeSessionBufferPath,
+        );
+    }
+
+    private async migrateClosedSessionFiles(layout: SyroPersistenceLayout): Promise<void> {
+        if (!this.adapter.list) {
+            return;
+        }
+
+        const listing = await this.adapter.list(trimTrailingSlash(layout.sessionsRoot));
+        for (const filePath of listing.files ?? []) {
+            const normalized = normalizePath(filePath);
+            if (!normalized.toLowerCase().endsWith(".jsonl")) {
+                continue;
+            }
+
+            const fileName = normalized.slice(normalized.lastIndexOf("/") + 1);
+            const targetPath = joinPath(layout.closedSessionsRoot, fileName);
+            await copyFileIfMissing(this.adapter, normalized, targetPath);
+        }
+    }
+
+    private async migrateArchiveFiles(layout: SyroPersistenceLayout): Promise<void> {
+        if (!this.adapter.list) {
+            return;
+        }
+
+        const legacyArchiveRoot = joinPath(trimTrailingSlash(this.manifestDir), "sessions-archive");
+        if (!(await this.adapter.exists(legacyArchiveRoot))) {
+            return;
+        }
+
+        const listing = await this.adapter.list(trimTrailingSlash(legacyArchiveRoot));
+        for (const filePath of listing.files ?? []) {
+            const normalized = normalizePath(filePath);
+            const fileName = normalized.slice(normalized.lastIndexOf("/") + 1);
+            const targetPath = joinPath(layout.archivedSessionsRoot, fileName);
+            await copyFileIfMissing(this.adapter, normalized, targetPath);
+        }
     }
 }

@@ -195,6 +195,8 @@ describe("SRPlugin sync request orchestration", () => {
         const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
         const plugin = {
             deckOptionsStore: {
+                getSyncEntities: jest.fn(() => ({})),
+                markSyncEntity: jest.fn(),
                 hasSerializedStateChanged: jest.fn(async () => true),
                 saveSerialized: jest.fn(async () => undefined),
             },
@@ -217,7 +219,6 @@ describe("SRPlugin sync request orchestration", () => {
             licenseStateStore: {
                 save: jest.fn(async () => undefined),
             },
-            markSyroMergeState: jest.fn(async () => undefined),
             saveDataShell,
             dataShell: null as Record<string, unknown> | null,
             data: {

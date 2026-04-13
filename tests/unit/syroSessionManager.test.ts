@@ -258,7 +258,7 @@ describe("SyroSessionManager", () => {
 
         expect(sessionId).toBe("2026-04-13T12-34-56__d84f__0001");
         expect(
-            files.get(normalizePath(`${layout.sessionsRoot}/${sessionId}.jsonl`)),
+            files.get(normalizePath(`${layout.closedSessionsRoot}/${sessionId}.jsonl`)),
         ).toContain('"sessionId":"2026-04-13T12-34-56__d84f__0001"');
         expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(false);
 
@@ -288,14 +288,16 @@ describe("SyroSessionManager", () => {
 
         const sessionId = await restoredManager.flushActiveSession();
         expect(sessionId).toBe("2026-04-13T12-34-56__d84f__0001");
-        expect(files.has(normalizePath(`${layout.sessionsRoot}/${sessionId}.jsonl`))).toBe(true);
+        expect(files.has(normalizePath(`${layout.closedSessionsRoot}/${sessionId}.jsonl`))).toBe(
+            true,
+        );
     });
 
     test("imports pending sessions, quarantines bad lines, and confirms the imported session", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);
 
-        const remoteSessionPath = `${layout.sessionsRoot}/2026-04-12T08-00-00__91ac__0001.jsonl`;
+        const remoteSessionPath = `${layout.closedSessionsRoot}/2026-04-12T08-00-00__91ac__0001.jsonl`;
         files.set(
             normalizePath(remoteSessionPath),
             [
@@ -352,7 +354,7 @@ describe("SyroSessionManager", () => {
         });
 
         files.set(
-            normalizePath(`${layout.sessionsRoot}/${sessionId}.jsonl`),
+            normalizePath(`${layout.closedSessionsRoot}/${sessionId}.jsonl`),
             JSON.stringify({
                 version: 1,
                 sessionId,
@@ -386,7 +388,9 @@ describe("SyroSessionManager", () => {
         const result = await manager.importPendingSessions(async () => undefined);
 
         expect(result.deletedSessionIds).toContain(sessionId);
-        expect(files.has(normalizePath(`${layout.sessionsRoot}/${sessionId}.jsonl`))).toBe(false);
+        expect(files.has(normalizePath(`${layout.closedSessionsRoot}/${sessionId}.jsonl`))).toBe(
+            false,
+        );
 
         const retainedCurrentMeta = JSON.parse(
             files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
@@ -413,7 +417,7 @@ describe("SyroSessionManager", () => {
         });
 
         files.set(
-            normalizePath(`${layout.sessionsRoot}/${sessionId}.jsonl`),
+            normalizePath(`${layout.closedSessionsRoot}/${sessionId}.jsonl`),
             JSON.stringify({
                 version: 1,
                 sessionId,
@@ -446,9 +450,13 @@ describe("SyroSessionManager", () => {
         await manager.initialize();
         const result = await manager.importPendingSessions(async () => undefined);
 
-        const archivePath = normalizePath(`${layout.sessionsArchiveRoot}/91ac__2026-03.sessionpack.gz`);
+        const archivePath = normalizePath(
+            `${layout.archivedSessionsRoot}/91ac__2026-03.sessionpack.gz`,
+        );
         expect(result.archivedSessionIds).toContain(sessionId);
-        expect(files.has(normalizePath(`${layout.sessionsRoot}/${sessionId}.jsonl`))).toBe(false);
+        expect(files.has(normalizePath(`${layout.closedSessionsRoot}/${sessionId}.jsonl`))).toBe(
+            false,
+        );
         expect(files.has(archivePath)).toBe(true);
 
         const archiveBuffer = Buffer.from(files.get(archivePath) ?? "", "base64");
@@ -476,7 +484,9 @@ describe("SyroSessionManager", () => {
         await jest.advanceTimersByTimeAsync(5 * 60 * 1000);
 
         expect(
-            files.has(normalizePath(`${layout.sessionsRoot}/2026-04-13T12-39-56__d84f__0001.jsonl`)),
+            files.has(
+                normalizePath(`${layout.closedSessionsRoot}/2026-04-13T12-39-56__d84f__0001.jsonl`),
+            ),
         ).toBe(true);
         expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(false);
     });
@@ -503,7 +513,47 @@ describe("SyroSessionManager", () => {
         }
 
         expect(
-            files.has(normalizePath(`${layout.sessionsRoot}/2026-04-13T12-34-56__d84f__0001.jsonl`)),
+            files.has(
+                normalizePath(`${layout.closedSessionsRoot}/2026-04-13T12-34-56__d84f__0001.jsonl`),
+            ),
+        ).toBe(true);
+        expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(false);
+    });
+
+    test("seals the local open session before importing foreign closed sessions", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        await addSecondaryDevice(adapter, files);
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+
+        await manager.appendDeckOptionsChange(createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state);
+
+        const remoteSessionPath = `${layout.closedSessionsRoot}/2026-04-12T08-00-00__91ac__0001.jsonl`;
+        files.set(
+            normalizePath(remoteSessionPath),
+            JSON.stringify({
+                version: 1,
+                sessionId: "2026-04-12T08-00-00__91ac__0001",
+                opId: "op-remote",
+                deviceId: "91ac1111-2222-3333-4444-555555555555",
+                deviceName: "Mobile",
+                domain: "deck-options",
+                entityType: "deck-options",
+                opType: "replace",
+                targetUuid: "deck-options:global",
+                createdAt: "2026-04-12T08:00:00.000Z",
+                updatedAt: "2026-04-12T08:00:00.000Z",
+                payload: createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state,
+            }),
+        );
+
+        await manager.importPendingSessions(async () => undefined);
+
+        expect(
+            files.has(
+                normalizePath(`${layout.closedSessionsRoot}/2026-04-13T12-34-56__d84f__0001.jsonl`),
+            ),
         ).toBe(true);
         expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(false);
     });

@@ -346,6 +346,7 @@ export class SyroSessionManager {
         }
 
         const importedSessionIds: string[] = [];
+        await this.flushOwnOpenSessionBeforeImport();
         const sessionFiles = await this.listSessionFiles();
 
         for (const filePath of sessionFiles) {
@@ -459,7 +460,7 @@ export class SyroSessionManager {
 
         const sessionId = this.createClosedSessionId(this.activeSession.sessionSeq);
         const sessionFileName = `${sessionId}.jsonl`;
-        const finalPath = joinPath(this.layout.sessionsRoot, sessionFileName);
+        const finalPath = joinPath(this.layout.closedSessionsRoot, sessionFileName);
 
         if (!(await this.adapter.exists(finalPath))) {
             const tempPath = `${finalPath}.tmp`;
@@ -514,7 +515,7 @@ export class SyroSessionManager {
     }
 
     private async getNextSessionSeq(): Promise<number> {
-        const listing = await this.safeList(this.layout.sessionsRoot);
+        const listing = await this.safeList(this.layout.closedSessionsRoot);
         const pattern = new RegExp(
             `__${this.layout.device.shortDeviceId}__(\\d+)\\.jsonl$`,
             "i",
@@ -666,7 +667,7 @@ export class SyroSessionManager {
     }
 
     private async listSessionFiles(): Promise<string[]> {
-        const listing = await this.safeList(this.layout.sessionsRoot);
+        const listing = await this.safeList(this.layout.closedSessionsRoot);
         return listing.files
             .map((filePath) => normalizePath(filePath))
             .filter((filePath) => filePath.toLowerCase().endsWith(".jsonl"))
@@ -786,12 +787,12 @@ export class SyroSessionManager {
     private async archiveSessionFile(filePath: string, sessionId: string): Promise<void> {
         const archivePackName = getArchivePackName(sessionId);
         if (!archivePackName || !this.adapter.readBinary || !this.adapter.writeBinary) {
-            const fallbackPath = joinPath(this.layout.sessionsArchiveRoot, `${sessionId}.jsonl`);
+            const fallbackPath = joinPath(this.layout.archivedSessionsRoot, `${sessionId}.jsonl`);
             await this.adapter.write(fallbackPath, await this.adapter.read(filePath));
             return;
         }
 
-        const archivePath = joinPath(this.layout.sessionsArchiveRoot, archivePackName);
+        const archivePath = joinPath(this.layout.archivedSessionsRoot, archivePackName);
         const content = await this.adapter.read(filePath);
         const entry: ArchivedSessionPackEntry = {
             version: SYRO_ARCHIVE_ENTRY_VERSION,
@@ -858,6 +859,14 @@ export class SyroSessionManager {
                 await this.adapter.write(entry.metaPath, JSON.stringify(entry.metadata, null, 2));
             }),
         );
+    }
+
+    private async flushOwnOpenSessionBeforeImport(): Promise<void> {
+        if (!this.activeSession || this.activeSession.records.length === 0) {
+            return;
+        }
+
+        await this.sealActiveSession("startup");
     }
 
     private async markCurrentDeviceImported(sessionId: string): Promise<void> {

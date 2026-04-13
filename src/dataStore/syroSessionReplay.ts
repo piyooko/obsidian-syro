@@ -5,8 +5,8 @@ import {
     type DeckOptionsStoreFile,
 } from "./deckOptionsStore";
 import {
-    extractDailyState,
-    extractSharedSettings,
+    extractDailyStateWithMetadata,
+    extractSharedSettingsWithMetadata,
     extractTrackingRules,
     SHARED_SETTINGS_FIELDS,
     type DailyDeckStats,
@@ -25,11 +25,11 @@ import {
 } from "./noteReviewStore";
 import { RepetitionItem } from "./repetitionItem";
 import { ReviewCommitStore, type ReviewCommitLog } from "./reviewCommitStore";
-import { SyroMergeStateStore } from "./syroMergeState";
 import type { SyroSessionRecord } from "./syroSessionManager";
 import type { SRSettings } from "src/settings";
 import type { FolderTrackingRule } from "src/folderTracking";
 import { getArrayProp, getStringProp, isRecord } from "src/util/typeGuards";
+import { compareIsoTime } from "./syroSyncMeta";
 
 type ReplayDependencies = {
     settings: SRSettings;
@@ -46,8 +46,10 @@ type ReplayDependencies = {
     sharedSettingsStore: SyroJsonStateStore<PersistedSharedSettingsState>;
     trackingRulesStore: SyroJsonStateStore<PersistedTrackingRulesState>;
     dailyStateStore: SyroJsonStateStore<PersistedDailyState>;
+    sharedSettingsUpdatedAtByField: Record<string, string>;
+    trackingRulesUpdatedAtByFolderPath: Record<string, string>;
     trackingRulesTombstones: Record<string, PersistedTrackingRulesTombstone>;
-    mergeState: SyroMergeStateStore;
+    dailyStateAppliedOpIds: Record<string, string>;
 };
 
 function cloneUnknown<T>(value: T): T {
@@ -273,6 +275,27 @@ function ensureDailyStateDate(
     return "applied";
 }
 
+function hasNewerOrEqualTimestamp(current: string | null | undefined, next: string): boolean {
+    return !!current && compareIsoTime(current, next) >= 0;
+}
+
+function getTrackingRuleWatermark(
+    deps: ReplayDependencies,
+    folderPath: string,
+): string | null {
+    const liveUpdatedAt = deps.trackingRulesUpdatedAtByFolderPath[folderPath];
+    const tombstoneUpdatedAt = deps.trackingRulesTombstones[folderPath]?.updatedAt;
+    if (!liveUpdatedAt) {
+        return tombstoneUpdatedAt ?? null;
+    }
+    if (!tombstoneUpdatedAt) {
+        return liveUpdatedAt;
+    }
+    return compareIsoTime(liveUpdatedAt, tombstoneUpdatedAt) >= 0
+        ? liveUpdatedAt
+        : tombstoneUpdatedAt;
+}
+
 export async function replaySyroSessionRecords(
     records: SyroSessionRecord[],
     deps: ReplayDependencies,
@@ -282,6 +305,7 @@ export async function replaySyroSessionRecords(
     let sharedSettingsChanged = false;
     let trackingRulesChanged = false;
     let dailyStateChanged = false;
+    let dailyStateMetadataChanged = false;
     let notesChanged = false;
     let timelineChanged = false;
     let cardsChanged = false;
@@ -299,26 +323,18 @@ export async function replaySyroSessionRecords(
                         continue;
                     }
 
-                    const targetUuid = `settings:${field}`;
                     if (
-                        !deps.mergeState.shouldApply({
-                            targetUuid,
-                            updatedAt: record.updatedAt,
-                        })
+                        hasNewerOrEqualTimestamp(
+                            deps.sharedSettingsUpdatedAtByField[field],
+                            record.updatedAt,
+                        )
                     ) {
                         continue;
                     }
 
                     const mutableSettings = deps.settings as unknown as Record<string, unknown>;
                     mutableSettings[field] = cloneUnknown(value);
-                    deps.mergeState.markEntity({
-                        targetUuid,
-                        updatedAt: record.updatedAt,
-                        deleted: false,
-                        domain: "settings",
-                        entityType: "shared-setting",
-                        pathHint: record.pathHint,
-                    });
+                    deps.sharedSettingsUpdatedAtByField[field] = record.updatedAt;
                     sharedSettingsChanged = true;
                 }
                 break;
@@ -330,40 +346,25 @@ export async function replaySyroSessionRecords(
                     continue;
                 }
 
-                const targetUuid = `tracking-rule:${payload.folderPath}`;
                 if (
-                    !deps.mergeState.shouldApply({
-                        targetUuid,
-                        updatedAt: record.updatedAt,
-                    })
+                    hasNewerOrEqualTimestamp(
+                        getTrackingRuleWatermark(deps, payload.folderPath),
+                        record.updatedAt,
+                    )
                 ) {
                     continue;
                 }
 
                 if (record.opType === "remove-rule") {
                     delete deps.data.folderTrackingRules[payload.folderPath];
+                    delete deps.trackingRulesUpdatedAtByFolderPath[payload.folderPath];
                     deps.trackingRulesTombstones[payload.folderPath] = {
                         updatedAt: record.updatedAt,
                     };
-                    deps.mergeState.markEntity({
-                        targetUuid,
-                        updatedAt: record.updatedAt,
-                        deleted: true,
-                        domain: "tracking-rules",
-                        entityType: "folder-tracking-rule",
-                        pathHint: payload.folderPath,
-                    });
                 } else if (payload.rule) {
                     deps.data.folderTrackingRules[payload.folderPath] = cloneUnknown(payload.rule);
+                    deps.trackingRulesUpdatedAtByFolderPath[payload.folderPath] = record.updatedAt;
                     delete deps.trackingRulesTombstones[payload.folderPath];
-                    deps.mergeState.markEntity({
-                        targetUuid,
-                        updatedAt: record.updatedAt,
-                        deleted: false,
-                        domain: "tracking-rules",
-                        entityType: "folder-tracking-rule",
-                        pathHint: payload.folderPath,
-                    });
                 }
 
                 trackingRulesChanged = true;
@@ -372,7 +373,11 @@ export async function replaySyroSessionRecords(
 
             case "daily-state": {
                 const payload = parseDailyStateOpPayload(record.payload);
-                if (!payload || !deps.mergeState.shouldApply(record)) {
+                if (
+                    !payload ||
+                    deps.dailyStateAppliedOpIds[record.opId] ||
+                    deps.dailyStateAppliedOpIds[record.targetUuid]
+                ) {
                     continue;
                 }
 
@@ -432,20 +437,15 @@ export async function replaySyroSessionRecords(
                     continue;
                 }
 
-                deps.mergeState.markEntity({
-                    targetUuid: record.targetUuid,
-                    updatedAt: record.updatedAt,
-                    deleted: false,
-                    domain: "daily-state",
-                    entityType: "daily-state-op",
-                    pathHint: record.pathHint,
-                });
+                deps.dailyStateAppliedOpIds[record.opId] = record.updatedAt;
+                deps.dailyStateAppliedOpIds[record.targetUuid] = record.updatedAt;
                 dailyStateChanged = true;
+                dailyStateMetadataChanged = true;
                 break;
             }
 
             case "deck-options": {
-                if (!deps.mergeState.shouldApply(record)) {
+                if (!deps.deckOptionsStore.shouldApplySyncEntity(record.targetUuid, record.updatedAt)) {
                     continue;
                 }
 
@@ -455,7 +455,13 @@ export async function replaySyroSessionRecords(
                 }
 
                 applyDeckOptionsStateToSettings(deps.settings, state);
-                deps.mergeState.markRecord(record, false);
+                deps.deckOptionsStore.markSyncEntity({
+                    targetUuid: record.targetUuid,
+                    updatedAt: record.updatedAt,
+                    deleted: false,
+                    entityType: record.entityType,
+                    pathHint: record.pathHint,
+                });
                 deckOptionsChanged = true;
                 break;
             }
@@ -467,36 +473,22 @@ export async function replaySyroSessionRecords(
                 }
 
                 const targetUuid = snapshot.item.uuid || record.targetUuid;
-                if (
-                    !deps.mergeState.shouldApply({
-                        targetUuid,
-                        updatedAt: record.updatedAt,
-                    })
-                ) {
+                if (!deps.noteReviewStore.shouldApplySyncEntity(targetUuid, record.updatedAt)) {
                     continue;
                 }
 
                 if (record.opType === "remove") {
                     deps.noteReviewStore.removeByUuid(snapshot.item.uuid, snapshot.path);
-                    deps.mergeState.markEntity({
-                        targetUuid,
-                        updatedAt: record.updatedAt,
-                        deleted: true,
-                        domain: "notes",
-                        entityType: "note-review",
-                        pathHint: snapshot.path,
-                    });
                 } else {
                     deps.noteReviewStore.upsertSnapshot(snapshot);
-                    deps.mergeState.markEntity({
-                        targetUuid,
-                        updatedAt: record.updatedAt,
-                        deleted: false,
-                        domain: "notes",
-                        entityType: "note-review",
-                        pathHint: snapshot.path,
-                    });
                 }
+                deps.noteReviewStore.markSyncEntity({
+                    targetUuid,
+                    updatedAt: record.updatedAt,
+                    deleted: record.opType === "remove",
+                    entityType: "note-review",
+                    pathHint: snapshot.path,
+                });
                 notesChanged = true;
                 break;
             }
@@ -510,35 +502,26 @@ export async function replaySyroSessionRecords(
 
                     const childTargetUuid = buildTimelineEntryTargetUuid(payload.commit.id);
                     if (
-                        !deps.mergeState.shouldApply({
-                            targetUuid: childTargetUuid,
-                            updatedAt: record.updatedAt,
-                        })
+                        !deps.reviewCommitStore.shouldApplySyncEntity(
+                            childTargetUuid,
+                            record.updatedAt,
+                        )
                     ) {
                         continue;
                     }
 
                     if (record.opType === "delete") {
                         deps.reviewCommitStore.removeCommitById(payload.commit.id, payload.notePath);
-                        deps.mergeState.markEntity({
-                            targetUuid: childTargetUuid,
-                            updatedAt: record.updatedAt,
-                            deleted: true,
-                            domain: "timeline",
-                            entityType: "timeline-entry",
-                            pathHint: payload.notePath,
-                        });
                     } else {
                         deps.reviewCommitStore.upsertCommitSnapshot(payload.notePath, payload.commit);
-                        deps.mergeState.markEntity({
-                            targetUuid: childTargetUuid,
-                            updatedAt: record.updatedAt,
-                            deleted: false,
-                            domain: "timeline",
-                            entityType: "timeline-entry",
-                            pathHint: payload.notePath,
-                        });
                     }
+                    deps.reviewCommitStore.markSyncEntity({
+                        targetUuid: childTargetUuid,
+                        updatedAt: record.updatedAt,
+                        deleted: record.opType === "delete",
+                        entityType: "timeline-entry",
+                        pathHint: payload.notePath,
+                    });
 
                     timelineChanged = true;
                     break;
@@ -549,7 +532,7 @@ export async function replaySyroSessionRecords(
                     continue;
                 }
 
-                if (!deps.mergeState.shouldApply(record)) {
+                if (!deps.reviewCommitStore.shouldApplySyncEntity(record.targetUuid, record.updatedAt)) {
                     continue;
                 }
 
@@ -557,20 +540,19 @@ export async function replaySyroSessionRecords(
                     for (const commit of payload.commits) {
                         const childTargetUuid = buildTimelineEntryTargetUuid(commit.id);
                         if (
-                            !deps.mergeState.shouldApply({
-                                targetUuid: childTargetUuid,
-                                updatedAt: record.updatedAt,
-                            })
+                            !deps.reviewCommitStore.shouldApplySyncEntity(
+                                childTargetUuid,
+                                record.updatedAt,
+                            )
                         ) {
                             continue;
                         }
 
                         deps.reviewCommitStore.upsertCommitSnapshot(payload.newPath, commit);
-                        deps.mergeState.markEntity({
+                        deps.reviewCommitStore.markSyncEntity({
                             targetUuid: childTargetUuid,
                             updatedAt: record.updatedAt,
                             deleted: false,
-                            domain: "timeline",
                             entityType: "timeline-entry",
                             pathHint: payload.newPath,
                         });
@@ -579,7 +561,13 @@ export async function replaySyroSessionRecords(
                     if (payload.oldPath && payload.oldPath !== payload.newPath) {
                         deps.reviewCommitStore.deleteFile(payload.oldPath);
                     }
-                    deps.mergeState.markRecord(record, false);
+                    deps.reviewCommitStore.markSyncEntity({
+                        targetUuid: record.targetUuid,
+                        updatedAt: record.updatedAt,
+                        deleted: false,
+                        entityType: "timeline-file",
+                        pathHint: payload.newPath,
+                    });
                     timelineChanged = true;
                     break;
                 }
@@ -589,26 +577,31 @@ export async function replaySyroSessionRecords(
                     for (const commit of payload.commits) {
                         const childTargetUuid = buildTimelineEntryTargetUuid(commit.id);
                         if (
-                            !deps.mergeState.shouldApply({
-                                targetUuid: childTargetUuid,
-                                updatedAt: record.updatedAt,
-                            })
+                            !deps.reviewCommitStore.shouldApplySyncEntity(
+                                childTargetUuid,
+                                record.updatedAt,
+                            )
                         ) {
                             continue;
                         }
 
                         deps.reviewCommitStore.removeCommitById(commit.id, targetPath);
-                        deps.mergeState.markEntity({
+                        deps.reviewCommitStore.markSyncEntity({
                             targetUuid: childTargetUuid,
                             updatedAt: record.updatedAt,
                             deleted: true,
-                            domain: "timeline",
                             entityType: "timeline-entry",
                             pathHint: targetPath,
                         });
                     }
 
-                    deps.mergeState.markRecord(record, true);
+                    deps.reviewCommitStore.markSyncEntity({
+                        targetUuid: record.targetUuid,
+                        updatedAt: record.updatedAt,
+                        deleted: true,
+                        entityType: "timeline-file",
+                        pathHint: targetPath,
+                    });
                     timelineChanged = true;
                 }
                 break;
@@ -622,28 +615,15 @@ export async function replaySyroSessionRecords(
                     }
 
                     const cardTargetUuid = buildCardTargetUuid(snapshot.item.uuid);
-                    if (
-                        !deps.mergeState.shouldApply({
-                            targetUuid: cardTargetUuid,
-                            updatedAt: record.updatedAt,
-                        })
-                    ) {
+                    if (!deps.store.shouldApplySyncEntity(cardTargetUuid, record.updatedAt)) {
                         continue;
                     }
 
                     if (record.opType === "remove") {
                         deps.store.removeCardByUuid(snapshot.item.uuid, snapshot.path);
-                        deps.mergeState.markEntity({
-                            targetUuid: cardTargetUuid,
-                            updatedAt: record.updatedAt,
-                            deleted: true,
-                            domain: "cards",
-                            entityType: "card-item",
-                            pathHint: snapshot.path,
-                        });
                     } else {
                         const fileTargetUuid = buildTrackedFileTargetUuid(snapshot.trackedFileUuid);
-                        const fileMergeState = deps.mergeState.get(fileTargetUuid);
+                        const fileMergeState = deps.store.getSyncEntities()[fileTargetUuid];
                         if (fileMergeState && fileMergeState.updatedAt > record.updatedAt) {
                             const currentFileId = deps.store.findFileIdByUuid(snapshot.trackedFileUuid);
                             const currentFile = currentFileId
@@ -656,15 +636,14 @@ export async function replaySyroSessionRecords(
                         }
 
                         deps.store.upsertCardSnapshot(snapshot);
-                        deps.mergeState.markEntity({
-                            targetUuid: cardTargetUuid,
-                            updatedAt: record.updatedAt,
-                            deleted: false,
-                            domain: "cards",
-                            entityType: "card-item",
-                            pathHint: snapshot.path,
-                        });
                     }
+                    deps.store.markSyncEntity({
+                        targetUuid: cardTargetUuid,
+                        updatedAt: record.updatedAt,
+                        deleted: record.opType === "remove",
+                        entityType: "card-item",
+                        pathHint: snapshot.path,
+                    });
 
                     cardsChanged = true;
                     break;
@@ -676,44 +655,45 @@ export async function replaySyroSessionRecords(
                 }
 
                 const fileTargetUuid = buildTrackedFileTargetUuid(snapshot.uuid);
-                if (
-                    !deps.mergeState.shouldApply({
-                        targetUuid: fileTargetUuid,
-                        updatedAt: record.updatedAt,
-                    })
-                ) {
+                if (!deps.store.shouldApplySyncEntity(fileTargetUuid, record.updatedAt)) {
                     continue;
                 }
                 if (record.opType === "delete-file") {
                     deps.store.removeTrackedFileByUuid(snapshot.uuid, snapshot.path);
-                    deps.mergeState.markEntity({
+                    deps.store.markSyncEntity({
                         targetUuid: fileTargetUuid,
                         updatedAt: record.updatedAt,
                         deleted: true,
-                        domain: "cards",
                         entityType: "tracked-file",
                         pathHint: snapshot.path,
                     });
                     for (const relatedItem of snapshot.relatedItems) {
-                        deps.mergeState.markEntity({
+                        deps.store.markSyncEntity({
                             targetUuid: buildCardTargetUuid(relatedItem.uuid),
                             updatedAt: record.updatedAt,
                             deleted: true,
-                            domain: "cards",
                             entityType: "card-item",
                             pathHint: snapshot.path,
                         });
                     }
                 } else if (record.opType === "rename-file") {
                     deps.store.renameTrackedFileFromSnapshot(snapshot);
-                    deps.mergeState.markEntity({
+                    deps.store.markSyncEntity({
                         targetUuid: fileTargetUuid,
                         updatedAt: record.updatedAt,
                         deleted: false,
-                        domain: "cards",
                         entityType: "tracked-file",
                         pathHint: snapshot.path,
                     });
+                    for (const relatedItem of snapshot.relatedItems) {
+                        deps.store.markSyncEntity({
+                            targetUuid: buildCardTargetUuid(relatedItem.uuid),
+                            updatedAt: record.updatedAt,
+                            deleted: false,
+                            entityType: "card-item",
+                            pathHint: snapshot.path,
+                        });
+                    }
                 }
 
                 cardsChanged = true;
@@ -732,36 +712,39 @@ export async function replaySyroSessionRecords(
         await deps.reviewCommitStore.save();
     }
     if (deckOptionsChanged) {
-        const snapshot = createDeckOptionsStoreSnapshot(deps.settings);
+        const snapshot = createDeckOptionsStoreSnapshot(
+            deps.settings,
+            deps.deckOptionsStore.getSyncEntities(),
+        );
         await deps.deckOptionsStore.saveSerialized(snapshot.serialized);
     }
     if (sharedSettingsChanged) {
-        await deps.sharedSettingsStore.save(extractSharedSettings(deps.settings));
+        await deps.sharedSettingsStore.save(
+            extractSharedSettingsWithMetadata(
+                deps.settings,
+                deps.sharedSettingsUpdatedAtByField,
+            ),
+        );
     }
     if (trackingRulesChanged) {
         await deps.trackingRulesStore.save(
-            extractTrackingRules(deps.data.folderTrackingRules, deps.trackingRulesTombstones),
+            extractTrackingRules(
+                deps.data.folderTrackingRules,
+                deps.trackingRulesUpdatedAtByFolderPath,
+                deps.trackingRulesTombstones,
+            ),
         );
     }
-    if (dailyStateChanged) {
+    if (dailyStateChanged || dailyStateMetadataChanged) {
         await deps.dailyStateStore.save(
-            extractDailyState({
-                buryDate: deps.data.buryDate,
-                buryList: deps.data.buryList,
-                dailyDeckStats: deps.data.dailyDeckStats,
-            }),
+            extractDailyStateWithMetadata(
+                {
+                    buryDate: deps.data.buryDate,
+                    buryList: deps.data.buryList,
+                    dailyDeckStats: deps.data.dailyDeckStats,
+                },
+                deps.dailyStateAppliedOpIds,
+            ),
         );
-    }
-
-    if (
-        cardsChanged ||
-        notesChanged ||
-        timelineChanged ||
-        deckOptionsChanged ||
-        sharedSettingsChanged ||
-        trackingRulesChanged ||
-        dailyStateChanged
-    ) {
-        await deps.mergeState.save();
     }
 }

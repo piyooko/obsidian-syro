@@ -1,6 +1,14 @@
 import { Iadapter } from "./adapter";
 import type { DeckOptionsStorePathConfig } from "./syroWorkspace";
 import {
+    cloneSyncEntities,
+    markSyncEntity,
+    parseSyncEntities,
+    pruneSyncEntities,
+    shouldApplySyncEntity,
+    type PersistedSyncEntityState,
+} from "./syroSyncMeta";
+import {
     normalizeDeckOptionsPresets,
     normalizeFsrsSettings,
     syncFsrsSettingsCompatibilityMirror,
@@ -17,6 +25,7 @@ export interface DeckOptionsStoreFile {
     fsrsSettings: FsrsSettings;
     deckOptionsPresets: DeckOptionsPreset[];
     deckPresetAssignment: Record<string, number>;
+    syncEntities?: Record<string, PersistedSyncEntityState>;
 }
 
 export interface DeckOptionsStoreSnapshot {
@@ -56,6 +65,7 @@ function normalizeDeckPresetAssignment(
 
 function normalizeDeckOptionsState(
     settings: Pick<SRSettings, "fsrsSettings" | "deckOptionsPresets" | "deckPresetAssignment">,
+    syncEntities: Record<string, PersistedSyncEntityState> = {},
 ): DeckOptionsStoreFile {
     const normalizedSettings = {
         ...settings,
@@ -77,13 +87,15 @@ function normalizeDeckOptionsState(
         fsrsSettings: normalizedSettings.fsrsSettings,
         deckOptionsPresets: normalizedSettings.deckOptionsPresets,
         deckPresetAssignment: normalizedSettings.deckPresetAssignment,
+        syncEntities: cloneSyncEntities(syncEntities),
     };
 }
 
 export function createDeckOptionsStoreSnapshot(
     settings: Pick<SRSettings, "fsrsSettings" | "deckOptionsPresets" | "deckPresetAssignment">,
+    syncEntities: Record<string, PersistedSyncEntityState> = {},
 ): DeckOptionsStoreSnapshot {
-    const state = normalizeDeckOptionsState(settings);
+    const state = normalizeDeckOptionsState(settings, syncEntities);
     return {
         state,
         serialized: JSON.stringify(state, null, 2),
@@ -116,6 +128,7 @@ export class DeckOptionsStore {
     private dataPath: string;
     private lastSerialized: string | null = null;
     private syncReadOnlyReason: string | null = null;
+    private syncEntities: Record<string, PersistedSyncEntityState> = {};
 
     constructor(pathOrConfig: string | DeckOptionsStorePathConfig) {
         this.dataPath =
@@ -128,12 +141,14 @@ export class DeckOptionsStore {
 
         try {
             if (!(await adapter.exists(this.dataPath))) {
+                this.syncEntities = {};
                 await this.saveFromSettings(settings);
                 return;
             }
 
             const raw = await adapter.read(this.dataPath);
             if (!raw) {
+                this.syncEntities = {};
                 await this.saveFromSettings(settings);
                 return;
             }
@@ -156,9 +171,11 @@ export class DeckOptionsStore {
                 deckOptionsPresets: parsed.deckOptionsPresets as DeckOptionsPreset[],
                 deckPresetAssignment: parsed.deckPresetAssignment as Record<string, number>,
             });
+            this.syncEntities = parseSyncEntities(parsed["syncEntities"]);
         } catch (error) {
             this.lastLoadError = `[SR-DeckOptions] Failed to load deck options store: ${String(error)}`;
             console.warn("[SR-DeckOptions] Failed to load deck options store:", error);
+            this.syncEntities = {};
         }
     }
 
@@ -190,12 +207,34 @@ export class DeckOptionsStore {
     }
 
     async saveFromSettings(settings: SRSettings): Promise<DeckOptionsStoreSnapshot> {
-        const snapshot = createDeckOptionsStoreSnapshot(settings);
+        const snapshot = createDeckOptionsStoreSnapshot(settings, this.syncEntities);
         await this.saveSerialized(snapshot.serialized);
         return snapshot;
     }
 
     setReadOnly(reason: string | null): void {
         this.syncReadOnlyReason = reason;
+    }
+
+    getSyncEntities(): Record<string, PersistedSyncEntityState> {
+        return cloneSyncEntities(this.syncEntities);
+    }
+
+    shouldApplySyncEntity(targetUuid: string, updatedAt: string): boolean {
+        return shouldApplySyncEntity(this.syncEntities, targetUuid, updatedAt);
+    }
+
+    markSyncEntity(input: {
+        targetUuid: string;
+        updatedAt: string;
+        deleted: boolean;
+        entityType: string;
+        pathHint?: string;
+    }): boolean {
+        return markSyncEntity(this.syncEntities, input);
+    }
+
+    pruneSyncEntities(retentionMs: number): boolean {
+        return pruneSyncEntities(this.syncEntities, retentionMs);
     }
 }

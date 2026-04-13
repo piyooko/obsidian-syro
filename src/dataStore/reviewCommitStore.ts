@@ -5,6 +5,14 @@ import { isPathInsideFolder, renamePathPrefix } from "src/folderTracking";
 import type { TimelineReviewResponse } from "src/ui/timeline/reviewResponseTimeline";
 import type { TimelineDisplayDuration } from "src/ui/timeline/timelineMessage";
 import type { ReviewCommitStorePathConfig } from "./syroWorkspace";
+import {
+    cloneSyncEntities,
+    markSyncEntity,
+    parseSyncEntities,
+    pruneSyncEntities,
+    shouldApplySyncEntity,
+    type PersistedSyncEntityState,
+} from "./syroSyncMeta";
 
 export interface ReviewCommitLog {
     id: string;
@@ -32,6 +40,14 @@ export interface ReviewCommitData {
     [filePath: string]: ReviewCommitLog[];
 }
 
+interface ReviewCommitStoreFile {
+    version: number;
+    files: ReviewCommitData;
+    syncEntities?: Record<string, PersistedSyncEntityState>;
+}
+
+const REVIEW_COMMIT_STORE_VERSION = 1;
+
 export interface TimelineFileSnapshot {
     path: string;
     commits: ReviewCommitLog[];
@@ -56,6 +72,7 @@ export class ReviewCommitStore {
     public lastLoadError: string | null = null;
     private data: ReviewCommitData = {};
     private dataPath: string;
+    private syncEntities: Record<string, PersistedSyncEntityState> = {};
     private syncReadOnlyReason: string | null = null;
 
     constructor(settings: SRSettings, manifestDirOrPaths: string | ReviewCommitStorePathConfig) {
@@ -77,16 +94,38 @@ export class ReviewCommitStore {
                 const raw = await adapter.read(this.dataPath);
                 if (raw) {
                     const parsed = JSON.parse(raw) as unknown;
-                    this.data =
-                        typeof parsed === "object" && parsed !== null
-                            ? (parsed as ReviewCommitData)
-                            : {};
+                    if (
+                        typeof parsed === "object" &&
+                        parsed !== null &&
+                        typeof (parsed as ReviewCommitStoreFile).version === "number" &&
+                        typeof (parsed as ReviewCommitStoreFile).files === "object"
+                    ) {
+                        const parsedFile = parsed as ReviewCommitStoreFile;
+                        this.data =
+                            typeof parsedFile.files === "object" && parsedFile.files !== null
+                                ? parsedFile.files
+                                : {};
+                        this.syncEntities = parseSyncEntities(parsedFile.syncEntities);
+                    } else {
+                        this.data =
+                            typeof parsed === "object" && parsed !== null
+                                ? (parsed as ReviewCommitData)
+                                : {};
+                        this.syncEntities = {};
+                    }
+                } else {
+                    this.data = {};
+                    this.syncEntities = {};
                 }
+            } else {
+                this.data = {};
+                this.syncEntities = {};
             }
         } catch (error) {
             this.lastLoadError = `[ReviewCommitStore] Failed to load timeline.json: ${String(error)}`;
             console.debug("[ReviewCommitStore] Load failed, using empty data:", error);
             this.data = {};
+            this.syncEntities = {};
         }
     }
 
@@ -97,7 +136,15 @@ export class ReviewCommitStore {
         try {
             await Iadapter.instance.adapter.write(
                 this.dataPath,
-                JSON.stringify(this.data, null, 2),
+                JSON.stringify(
+                    {
+                        version: REVIEW_COMMIT_STORE_VERSION,
+                        files: this.data,
+                        syncEntities: cloneSyncEntities(this.syncEntities),
+                    },
+                    null,
+                    2,
+                ),
             );
         } catch (error) {
             console.error("[ReviewCommitStore] Save failed:", error);
@@ -333,5 +380,27 @@ export class ReviewCommitStore {
             return cloneCommitLog(log);
         }
         return null;
+    }
+
+    getSyncEntities(): Record<string, PersistedSyncEntityState> {
+        return cloneSyncEntities(this.syncEntities);
+    }
+
+    shouldApplySyncEntity(targetUuid: string, updatedAt: string): boolean {
+        return shouldApplySyncEntity(this.syncEntities, targetUuid, updatedAt);
+    }
+
+    markSyncEntity(input: {
+        targetUuid: string;
+        updatedAt: string;
+        deleted: boolean;
+        entityType: string;
+        pathHint?: string;
+    }): boolean {
+        return markSyncEntity(this.syncEntities, input);
+    }
+
+    pruneSyncEntities(retentionMs: number): boolean {
+        return pruneSyncEntities(this.syncEntities, retentionMs);
     }
 }

@@ -13,6 +13,14 @@ import { isPathInsideFolder, renamePathPrefix } from "src/folderTracking";
 import { Tags } from "src/tags";
 import { parseJsonUnknown } from "src/util/typeGuards";
 import type { NoteReviewStorePathConfig } from "src/dataStore/syroWorkspace";
+import {
+    cloneSyncEntities,
+    markSyncEntity,
+    parseSyncEntities,
+    pruneSyncEntities,
+    shouldApplySyncEntity,
+    type PersistedSyncEntityState,
+} from "./syroSyncMeta";
 
 export type NoteReviewSource = "manual" | "tag" | "folder";
 
@@ -26,6 +34,7 @@ interface NoteReviewStoreFile {
     version: number;
     nextItemId: number;
     items: Record<string, PersistedNoteReviewEntry>;
+    syncEntities?: Record<string, PersistedSyncEntityState>;
 }
 
 export interface NoteReviewEntry {
@@ -60,6 +69,7 @@ export class NoteReviewStore {
     private dataPath: string;
     private data: Record<string, NoteReviewEntry> = {};
     private nextItemId = 1;
+    private syncEntities: Record<string, PersistedSyncEntityState> = {};
     private syncReadOnlyReason: string | null = null;
 
     constructor(settings: SRSettings, manifestDirOrPaths: string | NoteReviewStorePathConfig) {
@@ -81,6 +91,7 @@ export class NoteReviewStore {
             if (!(await adapter.exists(this.dataPath))) {
                 this.data = {};
                 this.nextItemId = 1;
+                this.syncEntities = {};
                 return;
             }
 
@@ -88,6 +99,7 @@ export class NoteReviewStore {
             if (!raw) {
                 this.data = {};
                 this.nextItemId = 1;
+                this.syncEntities = {};
                 return;
             }
 
@@ -96,11 +108,13 @@ export class NoteReviewStore {
                 this.lastLoadError = "[SR-NoteReview] Invalid notes.json schema.";
                 this.data = {};
                 this.nextItemId = 1;
+                this.syncEntities = {};
                 return;
             }
 
             this.nextItemId = Math.max(1, parsed.nextItemId ?? 1);
             this.data = {};
+            this.syncEntities = parseSyncEntities(parsed.syncEntities);
 
             for (const [path, entry] of Object.entries(parsed.items)) {
                 if (!entry?.item) continue;
@@ -124,6 +138,7 @@ export class NoteReviewStore {
             console.error("[SR-NoteReview] Failed to load note review store:", error);
             this.data = {};
             this.nextItemId = 1;
+            this.syncEntities = {};
         }
     }
 
@@ -136,6 +151,7 @@ export class NoteReviewStore {
                 version: NOTE_REVIEW_STORE_VERSION,
                 nextItemId: this.nextItemId,
                 items: {},
+                syncEntities: cloneSyncEntities(this.syncEntities),
             };
 
             for (const [path, entry] of Object.entries(this.data)) {
@@ -441,6 +457,28 @@ export class NoteReviewStore {
         }
 
         return changed;
+    }
+
+    getSyncEntities(): Record<string, PersistedSyncEntityState> {
+        return cloneSyncEntities(this.syncEntities);
+    }
+
+    shouldApplySyncEntity(targetUuid: string, updatedAt: string): boolean {
+        return shouldApplySyncEntity(this.syncEntities, targetUuid, updatedAt);
+    }
+
+    markSyncEntity(input: {
+        targetUuid: string;
+        updatedAt: string;
+        deleted: boolean;
+        entityType: string;
+        pathHint?: string;
+    }): boolean {
+        return markSyncEntity(this.syncEntities, input);
+    }
+
+    pruneSyncEntities(retentionMs: number): boolean {
+        return pruneSyncEntities(this.syncEntities, retentionMs);
     }
 
     private inferLegacySource(noteFile: TFile | null, trackedFile: TrackedFile): NoteReviewSource {

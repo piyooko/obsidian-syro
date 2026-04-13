@@ -5,6 +5,9 @@ import {
     type FolderTrackingRule,
 } from "src/folderTracking";
 import {
+    parseTimestampMap,
+} from "./syroSyncMeta";
+import {
     DEFAULT_SETTINGS,
     normalizeLicenseState,
     type LicenseState,
@@ -31,15 +34,21 @@ export interface DailyDeckStats {
 export interface PersistedSharedSettingsState {
     version: number;
     settings: Partial<SRSettings> & Record<string, unknown>;
+    updatedAtByField: Record<string, string>;
 }
 
 export interface PersistedTrackingRulesTombstone {
     updatedAt: string;
 }
 
+export interface PersistedTrackingRuleEntry {
+    rule: FolderTrackingRule;
+    updatedAt: string;
+}
+
 export interface PersistedTrackingRulesState {
     version: number;
-    rules: Record<string, FolderTrackingRule>;
+    rules: Record<string, PersistedTrackingRuleEntry>;
     tombstones: Record<string, PersistedTrackingRulesTombstone>;
 }
 
@@ -48,6 +57,7 @@ export interface PersistedDailyState {
     buryDate: string;
     buryList: string[];
     dailyDeckStats: DailyDeckStats;
+    appliedOpIds: Record<string, string>;
 }
 
 export interface PersistedDeviceState {
@@ -97,6 +107,7 @@ export interface TrackingRulesDiff {
     upserts: Array<{
         folderPath: string;
         rule: FolderTrackingRule;
+        updatedAt?: string;
     }>;
     removals: Array<{
         folderPath: string;
@@ -328,17 +339,6 @@ function parseDailyDeckStats(value: unknown): DailyDeckStats {
     };
 }
 
-function cloneTrackingRules(
-    rules: Record<string, FolderTrackingRule> | null | undefined,
-): Record<string, FolderTrackingRule> {
-    return Object.fromEntries(
-        Object.entries(rules ?? {}).map(([folderPath, rule]) => [
-            folderPath,
-            cloneFolderTrackingRule(rule),
-        ]),
-    );
-}
-
 function parseTrackingRuleTombstones(
     value: unknown,
 ): Record<string, PersistedTrackingRulesTombstone> {
@@ -362,6 +362,38 @@ function parseTrackingRuleTombstones(
         };
     }
     return tombstones;
+}
+
+function parseTrackingRuleEntries(
+    value: unknown,
+): Record<string, PersistedTrackingRuleEntry> {
+    if (!isRecord(value)) {
+        return {};
+    }
+
+    const rules: Record<string, PersistedTrackingRuleEntry> = {};
+    for (const [folderPath, entry] of Object.entries(value)) {
+        if (!isRecord(entry)) {
+            continue;
+        }
+
+        const updatedAt =
+            getStringProp(entry, "updatedAt")?.trim() ?? "1970-01-01T00:00:00.000Z";
+        if (isRecord(entry["rule"])) {
+            rules[folderPath] = {
+                rule: cloneFolderTrackingRule(entry["rule"]),
+                updatedAt,
+            };
+            continue;
+        }
+
+        rules[folderPath] = {
+            rule: cloneFolderTrackingRule(entry),
+            updatedAt,
+        };
+    }
+
+    return rules;
 }
 
 function pickSettingsFields<T extends readonly (keyof SRSettings)[]>(
@@ -412,6 +444,18 @@ export function extractSharedSettings(settings: SRSettings): PersistedSharedSett
     return {
         version: SYRO_SHARED_SETTINGS_VERSION,
         settings: pickSettingsFields(settings, SHARED_SETTINGS_FIELDS),
+        updatedAtByField: {},
+    };
+}
+
+export function extractSharedSettingsWithMetadata(
+    settings: SRSettings,
+    updatedAtByField: Record<string, string>,
+): PersistedSharedSettingsState {
+    return {
+        version: SYRO_SHARED_SETTINGS_VERSION,
+        settings: pickSettingsFields(settings, SHARED_SETTINGS_FIELDS),
+        updatedAtByField: parseTimestampMap(updatedAtByField),
     };
 }
 
@@ -428,13 +472,14 @@ export function createDefaultSharedSettingsState(): PersistedSharedSettingsState
 
 export function parseSharedSettingsState(value: unknown): PersistedSharedSettingsState | null {
     const settings = parseSettingsSubset(value, SYRO_SHARED_SETTINGS_VERSION, SHARED_SETTINGS_FIELDS);
-    if (!settings) {
+    if (!settings || !isRecord(value)) {
         return null;
     }
 
     return {
         version: SYRO_SHARED_SETTINGS_VERSION,
         settings,
+        updatedAtByField: parseTimestampMap(value["updatedAtByField"]),
     };
 }
 
@@ -453,11 +498,23 @@ export function diffSharedSettings(
 
 export function extractTrackingRules(
     rules: Record<string, FolderTrackingRule>,
+    updatedAtByFolderPath: Record<string, string> = {},
     tombstones: Record<string, PersistedTrackingRulesTombstone> = {},
 ): PersistedTrackingRulesState {
     return {
         version: SYRO_TRACKING_RULES_VERSION,
-        rules: cloneTrackingRules(rules),
+        rules: Object.fromEntries(
+            Object.entries(rules).map(([folderPath, rule]) => [
+                folderPath,
+                {
+                    rule: cloneFolderTrackingRule(rule),
+                    updatedAt:
+                        updatedAtByFolderPath[folderPath] ??
+                        tombstones[folderPath]?.updatedAt ??
+                        "1970-01-01T00:00:00.000Z",
+                },
+            ]),
+        ),
         tombstones: cloneUnknown(tombstones),
     };
 }
@@ -479,16 +536,9 @@ export function parseTrackingRulesState(value: unknown): PersistedTrackingRulesS
         return null;
     }
 
-    const rules = Object.fromEntries(
-        Object.entries(value["rules"]).map(([folderPath, rule]) => [
-            folderPath,
-            cloneFolderTrackingRule(rule),
-        ]),
-    );
-
     return {
         version: SYRO_TRACKING_RULES_VERSION,
-        rules,
+        rules: parseTrackingRuleEntries(value["rules"]),
         tombstones: parseTrackingRuleTombstones(value["tombstones"]),
     };
 }
@@ -497,7 +547,12 @@ export function applyTrackingRules(
     target: Record<string, FolderTrackingRule>,
     persisted: PersistedTrackingRulesState,
 ): void {
-    const nextRules = cloneTrackingRules(persisted.rules);
+    const nextRules = Object.fromEntries(
+        Object.entries(persisted.rules).map(([folderPath, entry]) => [
+            folderPath,
+            cloneFolderTrackingRule(entry.rule),
+        ]),
+    );
     for (const key of Object.keys(target)) {
         delete target[key];
     }
@@ -516,11 +571,12 @@ export function diffTrackingRules(
     for (const folderPath of nextKeys) {
         if (
             !previousKeys.has(folderPath) ||
-            !deepEqual(previous.rules[folderPath], next.rules[folderPath])
+            !deepEqual(previous.rules[folderPath]?.rule, next.rules[folderPath]?.rule)
         ) {
             upserts.push({
                 folderPath,
-                rule: cloneFolderTrackingRule(next.rules[folderPath]),
+                rule: cloneFolderTrackingRule(next.rules[folderPath].rule),
+                updatedAt: next.rules[folderPath].updatedAt,
             });
         }
     }
@@ -550,6 +606,24 @@ export function extractDailyState(input: {
         buryDate: input.buryDate ?? "",
         buryList: sanitizeStringArray(input.buryList),
         dailyDeckStats: cloneUnknown(parseDailyDeckStats(input.dailyDeckStats)),
+        appliedOpIds: {},
+    };
+}
+
+export function extractDailyStateWithMetadata(
+    input: {
+        buryDate: string;
+        buryList: string[];
+        dailyDeckStats: DailyDeckStats;
+    },
+    appliedOpIds: Record<string, string>,
+): PersistedDailyState {
+    return {
+        version: SYRO_DAILY_STATE_VERSION,
+        buryDate: input.buryDate ?? "",
+        buryList: sanitizeStringArray(input.buryList),
+        dailyDeckStats: cloneUnknown(parseDailyDeckStats(input.dailyDeckStats)),
+        appliedOpIds: parseTimestampMap(appliedOpIds),
     };
 }
 
@@ -562,6 +636,7 @@ export function createDefaultDailyState(): PersistedDailyState {
             date: "",
             counts: {},
         },
+        appliedOpIds: {},
     };
 }
 
@@ -575,6 +650,7 @@ export function parseDailyState(value: unknown): PersistedDailyState | null {
         buryDate: getStringProp(value, "buryDate")?.trim() ?? "",
         buryList: sanitizeStringArray(value["buryList"]),
         dailyDeckStats: parseDailyDeckStats(value["dailyDeckStats"]),
+        appliedOpIds: parseTimestampMap(value["appliedOpIds"]),
     };
 }
 

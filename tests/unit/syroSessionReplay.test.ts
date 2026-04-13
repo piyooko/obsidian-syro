@@ -9,7 +9,6 @@ import { NoteReviewStore } from "src/dataStore/noteReviewStore";
 import { Queue } from "src/dataStore/queue";
 import { RepetitionItem, RPITEMTYPE } from "src/dataStore/repetitionItem";
 import { ReviewCommitStore } from "src/dataStore/reviewCommitStore";
-import { SyroMergeStateStore } from "src/dataStore/syroMergeState";
 import { replaySyroSessionRecords } from "src/dataStore/syroSessionReplay";
 import {
     createDefaultDailyState,
@@ -118,7 +117,6 @@ function createReplayDependencies(
     const deckOptionsStore = new DeckOptionsStore({
         deckOptionsPath: "syro/devices/Desktop--d84f/deck-options.json",
     });
-    const mergeState = new SyroMergeStateStore("syro/devices/Desktop--d84f/sync-merge-state.json");
     const sharedSettingsStore = new SyroJsonStateStore(
         "syro/devices/Desktop--d84f/settings.json",
         parseSharedSettingsState,
@@ -148,8 +146,10 @@ function createReplayDependencies(
         sharedSettingsStore,
         trackingRulesStore,
         dailyStateStore,
+        sharedSettingsUpdatedAtByField: {} as Record<string, string>,
+        trackingRulesUpdatedAtByFolderPath: {} as Record<string, string>,
         trackingRulesTombstones: createDefaultTrackingRulesState().tombstones,
-        mergeState,
+        dailyStateAppliedOpIds: {} as Record<string, string>,
     };
 }
 
@@ -167,7 +167,6 @@ describe("replaySyroSessionRecords", () => {
         const { adapter, files } = createMockAdapter();
         const settings = createSettings();
         const deps = createReplayDependencies(adapter, settings);
-        await deps.mergeState.load();
 
         const noteItem = new RepetitionItem(1, "", RPITEMTYPE.NOTE, "default", {
             currentInterval: 1,
@@ -259,9 +258,15 @@ describe("replaySyroSessionRecords", () => {
             expect.objectContaining({ id: "commit-1", message: "hello" }),
         );
         expect(settings.fsrsSettings.enable_fuzz).toBe(false);
-        expect(files.get("syro/devices/Desktop--d84f/sync-merge-state.json")).toContain("note-1");
+        expect(files.get("syro/devices/Desktop--d84f/notes.json")).toContain('"syncEntities"');
+        expect(files.get("syro/devices/Desktop--d84f/timeline.json")).toContain(
+            '"timeline-entry:commit-1"',
+        );
         expect(files.get("syro/devices/Desktop--d84f/deck-options.json")).toContain(
             '"enable_fuzz": false',
+        );
+        expect(files.get("syro/devices/Desktop--d84f/deck-options.json")).toContain(
+            '"syncEntities"',
         );
     });
 
@@ -269,7 +274,6 @@ describe("replaySyroSessionRecords", () => {
         const { adapter, files } = createMockAdapter();
         const settings = createSettings();
         const deps = createReplayDependencies(adapter, settings);
-        await deps.mergeState.load();
 
         await replaySyroSessionRecords(
             [
@@ -377,8 +381,17 @@ describe("replaySyroSessionRecords", () => {
         expect(files.get("syro/devices/Desktop--d84f/settings.json")).toContain(
             '"openRandomNote": true',
         );
+        expect(files.get("syro/devices/Desktop--d84f/settings.json")).toContain(
+            '"updatedAtByField"',
+        );
         expect(files.get("syro/devices/Desktop--d84f/tracking-rules.json")).toContain('"Inbox"');
+        expect(files.get("syro/devices/Desktop--d84f/tracking-rules.json")).toContain(
+            '"updatedAt"',
+        );
         expect(files.get("syro/devices/Desktop--d84f/daily-state.json")).toContain('"note-a"');
+        expect(files.get("syro/devices/Desktop--d84f/daily-state.json")).toContain(
+            '"appliedOpIds"',
+        );
     });
 
     test("keeps the renamed tracked file path when an older card upsert arrives later", async () => {
@@ -411,7 +424,6 @@ describe("replaySyroSessionRecords", () => {
 
         const targetStore = createStoreWithAdapter(adapter);
         const deps = createReplayDependencies(adapter, settings, targetStore);
-        await deps.mergeState.load();
 
         await replaySyroSessionRecords(
             [
@@ -483,7 +495,6 @@ describe("replaySyroSessionRecords", () => {
 
         const targetStore = createStoreWithAdapter(adapter);
         const deps = createReplayDependencies(adapter, settings, targetStore);
-        await deps.mergeState.load();
 
         await replaySyroSessionRecords(
             [

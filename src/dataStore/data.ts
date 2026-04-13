@@ -20,6 +20,14 @@ import type { CardsStorePathConfig } from "./syroWorkspace";
 import { t } from "src/lang/helpers";
 import { createEmptyCard } from "ts-fsrs";
 import { getArrayProp, getNumberProp, isRecord, parseJsonUnknown } from "src/util/typeGuards";
+import {
+    cloneSyncEntities,
+    markSyncEntity,
+    parseSyncEntities,
+    pruneSyncEntities,
+    shouldApplySyncEntity,
+    type PersistedSyncEntityState,
+} from "./syroSyncMeta";
 
 /**
  * SrsData.
@@ -44,6 +52,7 @@ export interface SrsData {
     items: RepetitionItem[];
     trackedFiles: Record<string, TrackedFile>;
     fileOrder: string[];
+    syncEntities: Record<string, PersistedSyncEntityState>;
 
     /**
      * @type {number}
@@ -64,6 +73,7 @@ export const DEFAULT_SRS_DATA: SrsData = {
     items: [],
     trackedFiles: {},
     fileOrder: [],
+    syncEntities: {},
     mtime: 0,
 };
 
@@ -678,6 +688,7 @@ export class DataStore {
                         throw new Error("Invalid cards.json payload");
                     }
                     this.data = Object.assign(Object.assign({}, DEFAULT_SRS_DATA), parsedData);
+                    this.data.syncEntities = parseSyncEntities(parsedData?.syncEntities);
                     this.logDebug(
                         "[SR-Debug] Data loaded from disk. Items in JSON:",
                         parsedData && Array.isArray(parsedData.items) ? parsedData.items.length : 0,
@@ -1228,6 +1239,28 @@ export class DataStore {
     }
     getReviewedCardCounts(): ReviewedCounts {
         return this.data.reviewedCardCounts;
+    }
+
+    getSyncEntities(): Record<string, PersistedSyncEntityState> {
+        return cloneSyncEntities(this.data.syncEntities);
+    }
+
+    shouldApplySyncEntity(targetUuid: string, updatedAt: string): boolean {
+        return shouldApplySyncEntity(this.data.syncEntities, targetUuid, updatedAt);
+    }
+
+    markSyncEntity(input: {
+        targetUuid: string;
+        updatedAt: string;
+        deleted: boolean;
+        entityType: string;
+        pathHint?: string;
+    }): boolean {
+        return markSyncEntity(this.data.syncEntities, input);
+    }
+
+    pruneSyncEntities(retentionMs: number): boolean {
+        return pruneSyncEntities(this.data.syncEntities, retentionMs);
     }
 
     /**

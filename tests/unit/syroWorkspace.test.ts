@@ -286,7 +286,7 @@ describe("SyroWorkspace", () => {
     });
 
     it("creates backup plus migration marker only after generated files validate", async () => {
-        const { adapter, files } = createMockAdapter();
+        const { adapter, files, directories } = createMockAdapter();
         files.set(".obsidian/plugins/syro/data.json", '{"settings":{"openRandomNote":true}}');
         files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[]}');
         files.set(".obsidian/plugins/syro/review_notes.json", createValidNotesPayload());
@@ -324,6 +324,53 @@ describe("SyroWorkspace", () => {
         expect(files.get(backupMetaPath!.replace("/meta.json", "/data.json"))).toContain(
             '"openRandomNote":true',
         );
+    });
+
+    it("migrates compatibility local-state and legacy session roots into the new tree", async () => {
+        const { adapter, files, directories } = createMockAdapter();
+        files.set(".obsidian/plugins/syro/data.json", '{"settings":{"openRandomNote":true}}');
+        files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[]}');
+        files.set(".obsidian/plugins/syro/review_notes.json", createValidNotesPayload());
+        files.set(".obsidian/plugins/syro/review_commits.json", '{"note.md":[{"id":"1"}]}');
+        files.set(
+            ".obsidian/plugins/syro/tracked_files.review_overlay.json",
+            '{"items":[{"id":"legacy-overlay"}]}',
+        );
+        files.set(
+            ".obsidian/plugins/syro/local-state/cards.review_overlay.json",
+            '{"items":[{"id":"compat-overlay"}]}',
+        );
+        files.set(
+            ".obsidian/plugins/syro/local-state/active-session-buffer.jsonl",
+            '{"version":1,"sessionId":"open-1","opId":"op-1"}\n',
+        );
+        files.set(
+            ".obsidian/plugins/syro/sessions/2026-04-12T15-30-12__d84f__0001.jsonl",
+            '{"version":1,"sessionId":"closed-1","opId":"op-1"}\n',
+        );
+        files.set(
+            ".obsidian/plugins/syro/sessions-archive/d84f__2026-04.sessionpack.gz",
+            "gzip-bytes",
+        );
+        directories.add(".obsidian/plugins/syro/local-state");
+        directories.add(".obsidian/plugins/syro/sessions-archive");
+
+        const startup = await createWorkspace(adapter).initialize();
+        const layout = startup.layout;
+
+        expect(startup.startupDecision).toBe("ready");
+        expect(files.get(layout.cardsOverlayPath)).toBe('{"items":[{"id":"compat-overlay"}]}');
+        expect(files.get(layout.activeSessionBufferPath)).toBe(
+            '{"version":1,"sessionId":"open-1","opId":"op-1"}\n',
+        );
+        expect(
+            files.get(
+                ".obsidian/plugins/syro/sessions/closed/2026-04-12T15-30-12__d84f__0001.jsonl",
+            ),
+        ).toBe('{"version":1,"sessionId":"closed-1","opId":"op-1"}\n');
+        expect(
+            files.get(".obsidian/plugins/syro/sessions/archive/d84f__2026-04.sessionpack.gz"),
+        ).toBe("gzip-bytes");
     });
 
     it("enters read-only and skips the marker when migration validation fails", async () => {
