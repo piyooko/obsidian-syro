@@ -120,6 +120,8 @@ import {
 import {
     SyroPersistenceLayout,
     SyroWorkspace,
+    type SyroInvalidDeviceEntry,
+    type SyroValidDeviceEntry,
     type SyroWorkspaceInitializeResult,
 } from "./dataStore/syroWorkspace";
 import { SyroSessionManager, type SyroSessionSealReason } from "./dataStore/syroSessionManager";
@@ -147,6 +149,11 @@ import TabViewManager from "src/ui/views/TabViewManager";
 import { TabView } from "src/ui/views/TabView";
 import { DeckStatsService } from "./dataStore/deckStatsService";
 import { SRSettingTab } from "src/ui/settings/settings-react";
+import {
+    SyroDeviceSelectionModal,
+    type SyroDeviceSelectionModalContext,
+} from "src/ui/modals/SyroDeviceSelectionModal";
+import { SyroDeleteInvalidDeviceModal } from "src/ui/modals/SyroDeleteInvalidDeviceModal";
 import { clozeDecorationPlugin, initializeClozeDecoration } from "./editor/cloze-decoration";
 import { latexPopoverExtension, initializeLatexPopover } from "./editor/latex-popover-manager";
 import { latexClozePreprocessorPlugin } from "./editor/latex-cloze-preprocessor";
@@ -246,6 +253,14 @@ interface PluginData {
     historyDeck: string | null;
     dailyDeckStats: DailyDeckStats;
     folderTrackingRules: Record<string, FolderTrackingRule>;
+}
+
+export interface SyroDeviceManagementState {
+    currentDevice: SyroValidDeviceEntry | null;
+    validDevices: SyroValidDeviceEntry[];
+    invalidDevices: SyroInvalidDeviceEntry[];
+    hasPendingAction: boolean;
+    readOnlyReason: string | null;
 }
 
 const AUTO_SYNC_COOLDOWN_MS = 15_000;
@@ -351,6 +366,7 @@ export default class SRPlugin extends Plugin {
     private dataShell: LegacyPluginData | null = null;
     private syroSessionManager: SyroSessionManager | null = null;
     private pendingSyroRecoveryContext: SyroRecoveryModalContext | null = null;
+    private pendingSyroDeviceSelectionContext: SyroDeviceSelectionModalContext | null = null;
 
     private static _instance: SRPlugin;
     static getInstance() {
@@ -1385,25 +1401,94 @@ export default class SRPlugin extends Plugin {
         };
     }
 
+    private buildPendingSyroDeviceSelectionContext(
+        startup: SyroWorkspaceInitializeResult,
+    ): SyroDeviceSelectionModalContext | null {
+        if (startup.startupDecision !== "select-current-device") {
+            return null;
+        }
+
+        return {
+            defaultDeviceName: startup.defaultDeviceName,
+            candidates: startup.validDevices,
+        };
+    }
+
+    private createReadyStartupResult(
+        startup: SyroWorkspaceInitializeResult,
+        layout: SyroPersistenceLayout,
+        currentDevice: SyroValidDeviceEntry | null,
+        validDevices: SyroValidDeviceEntry[],
+        invalidDevices: SyroInvalidDeviceEntry[],
+    ): SyroWorkspaceInitializeResult {
+        const otherDevices = currentDevice
+            ? validDevices.filter((entry) => entry.deviceId !== currentDevice.deviceId)
+            : validDevices;
+        return {
+            ...startup,
+            startupDecision: "ready",
+            layout,
+            currentDevice,
+            validDevices,
+            invalidDevices,
+            candidates: otherDevices,
+            defaultDeviceName: currentDevice?.deviceName ?? startup.defaultDeviceName,
+            recommendedSourceDeviceId: otherDevices[0]?.deviceId ?? null,
+            readOnlyReason: null,
+        };
+    }
+
+    private async runSyroRecoveryFlow(
+        context: SyroRecoveryModalContext,
+    ): Promise<SyroPersistenceLayout | null> {
+        const modalResult = await new SyroRecoveryModal(this.app, context).openAndWait();
+        if (!modalResult || !this.syroWorkspace) {
+            return null;
+        }
+
+        return context.mode === "baseline-required"
+            ? this.syroWorkspace.completeBaselineJoin({
+                  deviceName: modalResult.deviceName,
+                  sourceDeviceId: modalResult.sourceDeviceId,
+              })
+            : this.syroWorkspace.rebuildFromBaseline({
+                  deviceName: modalResult.deviceName,
+                  sourceDeviceId: modalResult.sourceDeviceId,
+              });
+    }
+
+    private async runSyroDeviceSelectionFlow(
+        context: SyroDeviceSelectionModalContext,
+    ): Promise<SyroPersistenceLayout | null> {
+        const selectionResult = await new SyroDeviceSelectionModal(this.app, context).openAndWait();
+        if (!selectionResult || !this.syroWorkspace) {
+            return null;
+        }
+
+        if (selectionResult.action === "use-existing") {
+            return this.syroWorkspace.adoptExistingDevice(selectionResult.deviceId);
+        }
+
+        return this.runSyroRecoveryFlow({
+            mode: "baseline-required",
+            defaultDeviceName: context.defaultDeviceName,
+            candidates: context.candidates,
+            recommendedSourceDeviceId: context.candidates[0]?.deviceId ?? null,
+        });
+    }
+
     private async resolveSyroWorkspaceInitialization(
         startup: SyroWorkspaceInitializeResult,
     ): Promise<SyroWorkspaceInitializeResult> {
         const recoveryContext = this.buildPendingSyroRecoveryContext(startup);
+        const deviceSelectionContext = this.buildPendingSyroDeviceSelectionContext(startup);
         this.pendingSyroRecoveryContext = recoveryContext;
-        if (!recoveryContext) {
+        this.pendingSyroDeviceSelectionContext = deviceSelectionContext;
+        if (!recoveryContext && !deviceSelectionContext) {
             return startup;
         }
 
         await this.awaitWorkspaceLayoutReady();
-        const modalResult = await new SyroRecoveryModal(this.app, recoveryContext).openAndWait();
-        if (!modalResult) {
-            return {
-                ...startup,
-                startupDecision: "read-only",
-                readOnlyReason: "[SR-Syro] Startup recovery was cancelled by the user.",
-            };
-        }
-
         if (!this.syroWorkspace) {
             return {
                 ...startup,
@@ -1413,23 +1498,29 @@ export default class SRPlugin extends Plugin {
         }
 
         try {
-            const layout =
-                recoveryContext.mode === "baseline-required"
-                    ? await this.syroWorkspace.completeBaselineJoin({
-                          deviceName: modalResult.deviceName,
-                          sourceDeviceId: modalResult.sourceDeviceId,
-                      })
-                    : await this.syroWorkspace.rebuildFromBaseline({
-                          deviceName: modalResult.deviceName,
-                          sourceDeviceId: modalResult.sourceDeviceId,
-                      });
+            const layout = deviceSelectionContext
+                ? await this.runSyroDeviceSelectionFlow(deviceSelectionContext)
+                : recoveryContext
+                  ? await this.runSyroRecoveryFlow(recoveryContext)
+                  : null;
+            if (!layout) {
+                return {
+                    ...startup,
+                    startupDecision: "read-only",
+                    readOnlyReason: "[SR-Syro] Startup recovery was cancelled by the user.",
+                };
+            }
+
+            const inventory = await this.syroWorkspace.listDeviceInventory();
             this.pendingSyroRecoveryContext = null;
-            return {
-                ...startup,
-                startupDecision: "ready",
+            this.pendingSyroDeviceSelectionContext = null;
+            return this.createReadyStartupResult(
+                startup,
                 layout,
-                readOnlyReason: null,
-            };
+                inventory.currentDevice,
+                inventory.validDevices,
+                inventory.invalidDevices,
+            );
         } catch (error) {
             return {
                 ...startup,
@@ -1712,45 +1803,117 @@ export default class SRPlugin extends Plugin {
         return null;
     }
 
-    private async openPendingSyroRecovery(): Promise<void> {
-        if (!this.pendingSyroRecoveryContext || !this.syroWorkspace) {
+    private async reloadAfterSyroDeviceChange(): Promise<void> {
+        this.pendingSyroRecoveryContext = null;
+        this.pendingSyroDeviceSelectionContext = null;
+        this.clearSyroReadOnly();
+        await this.loadPluginData();
+        await this.refreshNoteReview({ trigger: "startup" });
+        this.syncEvents.emit("note-review-updated");
+        this.syncEvents.emit("sync-complete");
+    }
+
+    public async openPendingSyroRecovery(): Promise<void> {
+        if (
+            (!this.pendingSyroRecoveryContext && !this.pendingSyroDeviceSelectionContext) ||
+            !this.syroWorkspace
+        ) {
             new Notice(t("NOTICE_SYRO_RECOVERY_NOT_NEEDED"));
             return;
         }
 
         await this.awaitWorkspaceLayoutReady();
-        const modalResult = await new SyroRecoveryModal(
-            this.app,
-            this.pendingSyroRecoveryContext,
-        ).openAndWait();
-        if (!modalResult) {
-            new Notice(t("NOTICE_SYRO_RECOVERY_CANCELLED"));
-            return;
-        }
-
         try {
-            if (this.pendingSyroRecoveryContext.mode === "baseline-required") {
-                await this.syroWorkspace.completeBaselineJoin({
-                    deviceName: modalResult.deviceName,
-                    sourceDeviceId: modalResult.sourceDeviceId,
-                });
-            } else {
-                await this.syroWorkspace.rebuildFromBaseline({
-                    deviceName: modalResult.deviceName,
-                    sourceDeviceId: modalResult.sourceDeviceId,
-                });
+            const layout = this.pendingSyroDeviceSelectionContext
+                ? await this.runSyroDeviceSelectionFlow(this.pendingSyroDeviceSelectionContext)
+                : this.pendingSyroRecoveryContext
+                  ? await this.runSyroRecoveryFlow(this.pendingSyroRecoveryContext)
+                  : null;
+            if (!layout) {
+                new Notice(t("NOTICE_SYRO_RECOVERY_CANCELLED"));
+                return;
             }
         } catch (error) {
             this.enableSyroReadOnly(`[SR-Syro] Failed to complete recovery: ${String(error)}`);
             return;
         }
 
-        this.pendingSyroRecoveryContext = null;
-        this.clearSyroReadOnly();
-        await this.loadPluginData();
-        await this.refreshNoteReview({ trigger: "startup" });
-        this.syncEvents.emit("note-review-updated");
-        this.syncEvents.emit("sync-complete");
+        await this.reloadAfterSyroDeviceChange();
+    }
+
+    private async flushBeforeSyroDeviceMutation(): Promise<void> {
+        await this.flushPendingPluginDataSave();
+        await this.syroSessionManager?.flushActiveSession("manual");
+    }
+
+    public async getSyroDeviceManagementState(): Promise<SyroDeviceManagementState> {
+        if (!this.syroWorkspace) {
+            return {
+                currentDevice: null,
+                validDevices: [],
+                invalidDevices: [],
+                hasPendingAction: false,
+                readOnlyReason: this.syroReadOnlyReason,
+            };
+        }
+
+        const inventory = await this.syroWorkspace.listDeviceInventory();
+        const fallbackCurrentDevice =
+            this.syroLayout?.device.deviceId != null
+                ? inventory.validDevices.find(
+                      (entry) => entry.deviceId === this.syroLayout?.device.deviceId,
+                  ) ?? null
+                : null;
+
+        return {
+            currentDevice: inventory.currentDevice ?? fallbackCurrentDevice,
+            validDevices: inventory.validDevices,
+            invalidDevices: inventory.invalidDevices,
+            hasPendingAction:
+                this.pendingSyroRecoveryContext !== null ||
+                this.pendingSyroDeviceSelectionContext !== null,
+            readOnlyReason: this.syroReadOnlyReason,
+        };
+    }
+
+    public async setCurrentSyroDevice(deviceId: string): Promise<void> {
+        if (!this.syroWorkspace) {
+            throw new Error("[SR-Syro] Workspace is unavailable.");
+        }
+
+        await this.flushBeforeSyroDeviceMutation();
+        await this.syroWorkspace.adoptExistingDevice(deviceId);
+        await this.reloadAfterSyroDeviceChange();
+        new Notice(t("NOTICE_SYRO_DEVICE_SELECTED"));
+    }
+
+    public async renameCurrentSyroDevice(nextDeviceName: string): Promise<void> {
+        if (!this.syroWorkspace || !this.syroLayout) {
+            throw new Error("[SR-Syro] Current device is unavailable.");
+        }
+
+        await this.flushBeforeSyroDeviceMutation();
+        this.syroLayout = await this.syroWorkspace.renameCurrentDevice(this.syroLayout, nextDeviceName);
+        await this.reloadAfterSyroDeviceChange();
+        new Notice(t("NOTICE_SYRO_DEVICE_RENAMED"));
+    }
+
+    public async deleteInvalidSyroDeviceDirectory(deviceFolderName: string): Promise<void> {
+        if (!this.syroWorkspace) {
+            throw new Error("[SR-Syro] Workspace is unavailable.");
+        }
+
+        await this.awaitWorkspaceLayoutReady();
+        const confirmed = await new SyroDeleteInvalidDeviceModal(
+            this.app,
+            deviceFolderName,
+        ).openAndWait();
+        if (!confirmed) {
+            return;
+        }
+
+        await this.syroWorkspace.deleteInvalidDeviceDirectory(deviceFolderName);
+        new Notice(t("NOTICE_SYRO_INVALID_DEVICE_DELETED"));
     }
 
     private async importPendingSyroSessions(): Promise<void> {

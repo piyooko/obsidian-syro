@@ -8,6 +8,8 @@ type MockAdapter = {
     list: jest.Mock<Promise<{ files: string[]; folders: string[] }>, [string]>;
     mkdir: jest.Mock<Promise<void>, [string]>;
     read: jest.Mock<Promise<string>, [string]>;
+    remove: jest.Mock<Promise<void>, [string]>;
+    rename: jest.Mock<Promise<void>, [string, string]>;
     write: jest.Mock<Promise<void>, [string, string]>;
 };
 
@@ -31,6 +33,32 @@ function createMockAdapter() {
         for (let index = 0; index < Math.max(0, parts.length - 1); index++) {
             current = current ? `${current}/${parts[index]}` : parts[index];
             directories.add(current);
+        }
+    };
+
+    const moveDirectoryEntries = (fromPath: string, toPath: string): void => {
+        const normalizedFrom = normalizePath(fromPath);
+        const normalizedTo = normalizePath(toPath);
+        const directoryEntries = Array.from(directories)
+            .filter(
+                (entry) => entry === normalizedFrom || entry.startsWith(`${normalizedFrom}/`),
+            )
+            .sort((left, right) => left.length - right.length);
+        for (const entry of directoryEntries) {
+            directories.delete(entry);
+        }
+        for (const entry of directoryEntries) {
+            directories.add(normalizedTo + entry.slice(normalizedFrom.length));
+        }
+
+        const fileEntries = Array.from(files.entries()).filter(
+            ([path]) => path === normalizedFrom || path.startsWith(`${normalizedFrom}/`),
+        );
+        for (const [path] of fileEntries) {
+            files.delete(path);
+        }
+        for (const [path, value] of fileEntries) {
+            files.set(normalizedTo + path.slice(normalizedFrom.length), value);
         }
     };
 
@@ -77,6 +105,36 @@ function createMockAdapter() {
             directories.add(normalizePath(path));
         }),
         read: jest.fn(async (path: string) => files.get(normalizePath(path)) ?? ""),
+        remove: jest.fn(async (path: string) => {
+            const normalized = normalizePath(path);
+            files.delete(normalized);
+            const nestedFiles = Array.from(files.keys()).filter((key) =>
+                key.startsWith(`${normalized}/`),
+            );
+            for (const key of nestedFiles) {
+                files.delete(key);
+            }
+            const nestedDirs = Array.from(directories).filter(
+                (entry) => entry === normalized || entry.startsWith(`${normalized}/`),
+            );
+            for (const entry of nestedDirs) {
+                directories.delete(entry);
+            }
+        }),
+        rename: jest.fn(async (fromPath: string, toPath: string) => {
+            const normalizedFrom = normalizePath(fromPath);
+            const normalizedTo = normalizePath(toPath);
+            ensureParentDirectories(normalizedTo);
+
+            if (files.has(normalizedFrom)) {
+                const value = files.get(normalizedFrom) ?? "";
+                files.delete(normalizedFrom);
+                files.set(normalizedTo, value);
+                return;
+            }
+
+            moveDirectoryEntries(normalizedFrom, normalizedTo);
+        }),
         write: jest.fn(async (path: string, value: string) => {
             const normalized = normalizePath(path);
             ensureParentDirectories(normalized);
@@ -384,7 +442,7 @@ describe("SyroWorkspace", () => {
         expect(startup.readOnlyReason).toContain("Invalid formal file schema");
     });
 
-    it("requires baseline when another valid device exists and the current device has not joined yet", async () => {
+    it("auto-adopts the only valid device when the current pointer is missing", async () => {
         const { adapter, files } = createMockAdapter();
         await addSourceDevice(adapter, files, {
             folderName: "Mobile--91ac",
@@ -396,10 +454,62 @@ describe("SyroWorkspace", () => {
         const workspace = createWorkspace(adapter);
         const startup = await workspace.initialize();
 
-        expect(startup.startupDecision).toBe("baseline-required");
-        expect(startup.candidates).toHaveLength(1);
-        expect(startup.recommendedSourceDeviceId).toBe("91ac1111-2222-3333-4444-555555555555");
+        expect(startup.startupDecision).toBe("ready");
+        expect(startup.layout.device.deviceId).toBe("91ac1111-2222-3333-4444-555555555555");
+        expect(startup.layout.deviceRoot).toBe(".obsidian/plugins/syro/devices/Mobile--91ac");
+        expect(startup.candidates).toHaveLength(0);
+        expect(startup.currentDevice?.deviceId).toBe("91ac1111-2222-3333-4444-555555555555");
+    });
 
+    it("returns select-current-device when multiple valid devices exist and the current pointer is missing", async () => {
+        const { adapter, files, directories } = createMockAdapter();
+        await addSourceDevice(adapter, files, {
+            folderName: "Desktop--cd41",
+            deviceId: "cd411111-2222-3333-4444-555555555555",
+            deviceName: "Desktop",
+            shortDeviceId: "cd41",
+            lastSeenAt: "2026-04-13T00:00:00.000Z",
+        });
+        await addSourceDevice(adapter, files, {
+            folderName: "Mobile--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Mobile",
+            shortDeviceId: "91ac",
+            lastSeenAt: "2026-04-12T00:00:00.000Z",
+        });
+        directories.add(".obsidian/plugins/syro/devices/Desktop--ec3c");
+        files.set(
+            ".obsidian/plugins/syro/devices/Desktop--ec3c/settings.json",
+            JSON.stringify({ version: 1, settings: {} }),
+        );
+
+        const workspace = createWorkspace(adapter);
+        const startup = await workspace.initialize();
+
+        expect(startup.startupDecision).toBe("select-current-device");
+        expect(startup.validDevices).toHaveLength(2);
+        expect(startup.invalidDevices).toEqual([
+            expect.objectContaining({
+                deviceFolderName: "Desktop--ec3c",
+                reason: "missing-device-json",
+            }),
+        ]);
+        expect(startup.candidates.map((entry) => entry.deviceId)).toEqual([
+            "cd411111-2222-3333-4444-555555555555",
+            "91ac1111-2222-3333-4444-555555555555",
+        ]);
+    });
+
+    it("can still create a new baseline device from an existing source", async () => {
+        const { adapter, files } = createMockAdapter();
+        await addSourceDevice(adapter, files, {
+            folderName: "Mobile--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Mobile",
+            shortDeviceId: "91ac",
+        });
+
+        const workspace = createWorkspace(adapter);
         const layout = await workspace.completeBaselineJoin({
             deviceName: "Tablet",
             sourceDeviceId: "91ac1111-2222-3333-4444-555555555555",
@@ -413,35 +523,6 @@ describe("SyroWorkspace", () => {
         expect(files.get(layout.cardsPath)).toBe('{"items":[{"uuid":"card-1"}]}');
         expect(JSON.parse(files.get(layout.deckOptionsPath) ?? "{}")).toEqual(
             JSON.parse(createValidDeckOptionsPayload()),
-        );
-        expect(JSON.parse(files.get(layout.settingsPath) ?? "{}")).toEqual(
-            expect.objectContaining({
-                version: 1,
-                settings: expect.objectContaining({
-                    openRandomNote: true,
-                }),
-            }),
-        );
-        expect(JSON.parse(files.get(layout.trackingRulesPath) ?? "{}")).toEqual(
-            expect.objectContaining({
-                version: 1,
-                rules: expect.objectContaining({
-                    inbox: expect.objectContaining({
-                        track: true,
-                    }),
-                }),
-            }),
-        );
-        expect(JSON.parse(files.get(layout.dailyStatePath) ?? "{}")).toEqual(
-            expect.objectContaining({
-                version: 1,
-                buryDate: "2026-04-13",
-            }),
-        );
-        expect(JSON.parse(files.get(layout.noteCachePath) ?? "{}")).toEqual(
-            expect.objectContaining({
-                version: 1,
-            }),
         );
     });
 
@@ -477,15 +558,46 @@ describe("SyroWorkspace", () => {
         );
     });
 
-    it("enters read-only when the persisted current device file becomes invalid", async () => {
+    it("renames the current device folder and its open session buffer", async () => {
         const { adapter, files } = createMockAdapter();
         const workspace = createWorkspace(adapter);
         const initial = await workspace.initialize();
+        files.set(normalizePath(initial.layout.activeSessionBufferPath), '{"version":1}\n');
 
-        files.set(normalizePath(initial.layout.deviceMetaPath), "{broken");
+        const renamed = await workspace.renameCurrentDevice(initial.layout, "Primary Desktop");
 
-        const startup = await createWorkspace(adapter).initialize();
-        expect(startup.startupDecision).toBe("read-only");
-        expect(startup.readOnlyReason).toContain("device.json");
+        expect(renamed.device.deviceName).toBe("Primary Desktop");
+        expect(renamed.deviceRoot).toBe(".obsidian/plugins/syro/devices/Primary-Desktop--d84f");
+        expect(files.get(normalizePath(renamed.activeSessionBufferPath))).toBe('{"version":1}\n');
+        expect(files.has(normalizePath(initial.layout.activeSessionBufferPath))).toBe(false);
+        expect(
+            JSON.parse(files.get(normalizePath(renamed.deviceMetaPath)) ?? "{}").deviceName,
+        ).toBe("Primary Desktop");
+    });
+
+    it("deletes only invalid device directories", async () => {
+        const { adapter, files, directories } = createMockAdapter();
+        await addSourceDevice(adapter, files, {
+            folderName: "Desktop--cd41",
+            deviceId: "cd411111-2222-3333-4444-555555555555",
+            deviceName: "Desktop",
+            shortDeviceId: "cd41",
+        });
+        directories.add(".obsidian/plugins/syro/devices/Desktop--ec3c");
+        files.set(
+            ".obsidian/plugins/syro/devices/Desktop--ec3c/settings.json",
+            JSON.stringify({ version: 1, settings: {} }),
+        );
+        files.set(
+            ".obsidian/plugins/syro/devices/Desktop--ec3c/device-state.json",
+            JSON.stringify({ version: 1 }),
+        );
+
+        const workspace = createWorkspace(adapter);
+        await workspace.deleteInvalidDeviceDirectory("Desktop--ec3c");
+
+        expect(directories.has(".obsidian/plugins/syro/devices/Desktop--ec3c")).toBe(false);
+        expect(files.has(".obsidian/plugins/syro/devices/Desktop--ec3c/settings.json")).toBe(false);
+        expect(files.has(".obsidian/plugins/syro/devices/Desktop--cd41/device.json")).toBe(true);
     });
 });

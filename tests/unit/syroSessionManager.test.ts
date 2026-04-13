@@ -245,6 +245,22 @@ describe("SyroSessionManager", () => {
         expect(bufferRaw).toContain('"sessionSeq":1');
     });
 
+    test("ignores orphan device directories without device.json when deciding whether to persist sessions", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        await adapter.mkdir(".obsidian/plugins/syro/devices/Desktop--ec3c");
+        await adapter.write(
+            ".obsidian/plugins/syro/devices/Desktop--ec3c/settings.json",
+            JSON.stringify({ version: 1 }),
+        );
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+
+        const deckOptionsState = createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state;
+        await expect(manager.appendDeckOptionsChange(deckOptionsState)).resolves.toBe(false);
+        expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(false);
+    });
+
     test("flushes the active buffer into a formal session file and confirms it locally", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);

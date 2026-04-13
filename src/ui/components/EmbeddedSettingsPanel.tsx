@@ -19,6 +19,7 @@
 import { Notice } from "obsidian";
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { FileText, Layout, Shield, Cpu } from "lucide-react";
+import type { SyroInvalidDeviceEntry, SyroValidDeviceEntry } from "src/dataStore/syroWorkspace";
 import { t } from "src/lang/helpers";
 import {
     MAX_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
@@ -260,12 +261,35 @@ function isMobileSettingsLayout(): boolean {
 interface EmbeddedSettingsPanelProps {
     settings: UISettingsState;
     onSettingsChange: (newSettings: UISettingsState) => void;
+    loadSyroDeviceManagement?: () => Promise<EmbeddedSyroDeviceManagementState>;
+    onSyroRenameCurrentDevice?: (deviceName: string) => Promise<void>;
+    onSyroSetCurrentDevice?: (deviceId: string) => Promise<void>;
+    onSyroOpenRecovery?: () => Promise<void>;
+    onSyroDeleteInvalidDevice?: (deviceFolderName: string) => Promise<void>;
     version?: string;
 }
 
 interface TabProps {
     settings: UISettingsState;
     onChange: <K extends keyof UISettingsState>(key: K, value: UISettingsState[K]) => void;
+}
+
+interface EmbeddedSyroDeviceManagementState {
+    currentDevice: SyroValidDeviceEntry | null;
+    validDevices: SyroValidDeviceEntry[];
+    invalidDevices: SyroInvalidDeviceEntry[];
+    hasPendingAction: boolean;
+    readOnlyReason: string | null;
+}
+
+interface SyncTabProps extends TabProps {
+    deviceManagement: EmbeddedSyroDeviceManagementState | null;
+    deviceManagementLoading: boolean;
+    deviceManagementError: string | null;
+    onRenameCurrentDevice?: (deviceName: string) => Promise<void>;
+    onSetCurrentDevice?: (deviceId: string) => Promise<void>;
+    onOpenRecovery?: () => Promise<void>;
+    onDeleteInvalidDevice?: (deviceFolderName: string) => Promise<void>;
 }
 
 const getClozeContextModeDesc = (mode: string) => {
@@ -281,6 +305,46 @@ const getClozeContextModeDesc = (mode: string) => {
             return t("SETTINGS_CLOZE_CONTEXT_SINGLE_DESC");
     }
 };
+
+const getInvalidDeviceReasonLabel = (reason: SyroInvalidDeviceEntry["reason"]): string => {
+    switch (reason) {
+        case "missing-device-json":
+            return t("SETTINGS_SYNC_INVALID_REASON_MISSING_DEVICE_JSON");
+        case "invalid-device-json":
+            return t("SETTINGS_SYNC_INVALID_REASON_INVALID_DEVICE_JSON");
+        case "unreadable-device-json":
+        default:
+            return t("SETTINGS_SYNC_INVALID_REASON_UNREADABLE_DEVICE_JSON");
+    }
+};
+
+const DeviceInfoCard: React.FC<{
+    device: SyroValidDeviceEntry;
+    badge?: string;
+}> = ({ device, badge }) => (
+    <div className="setting-item sr-device-management-card">
+        <div className="setting-item-info">
+            <div className="setting-item-name">{device.deviceName}</div>
+            <div className="setting-item-description sr-device-management-meta">
+                <div>
+                    {t("SETTINGS_SYNC_DEVICE_ID")}: {device.deviceId}
+                </div>
+                <div>
+                    {t("SETTINGS_SYNC_SHORT_DEVICE_ID")}: {device.shortDeviceId}
+                </div>
+                <div>
+                    {t("SETTINGS_SYNC_DEVICE_FOLDER")}: {device.deviceFolderName}
+                </div>
+                <div>
+                    {t("SETTINGS_SYNC_DEVICE_LAST_SEEN")}: {device.lastSeenAt}
+                </div>
+            </div>
+        </div>
+        <div className="setting-item-control">
+            {badge ? <span className="sr-device-management-badge">{badge}</span> : null}
+        </div>
+    </div>
+);
 
 // ==========================================
 // Tab Header Component
@@ -1360,43 +1424,261 @@ const NotesTab: React.FC<TabProps> = ({ settings, onChange }) => {
     );
 };
 
-const SyncTab: React.FC<TabProps> = ({ settings, onChange }) => (
-    <div className="sr-settings-sections">
-        <Section title={t("SETTINGS_SECTION_SYNC")}>
-            <ToggleRow
-                label={t("SETTINGS_AUTO_INCREMENTAL_SYNC")}
-                desc={t("SETTINGS_AUTO_INCREMENTAL_SYNC_DESC")}
-                value={settings.autoIncrementalSync}
-                onChange={(v) => onChange("autoIncrementalSync", v)}
-            />
-            <ToggleRow
-                label={t("SETTINGS_NOTE_CACHE_PERSISTENCE")}
-                desc={t("SETTINGS_NOTE_CACHE_PERSISTENCE_DESC")}
-                value={settings.enableNoteCachePersistence}
-                onChange={(v) => onChange("enableNoteCachePersistence", v)}
-            />
-            <SelectRow
-                label={t("SETTINGS_SYNC_PROGRESS_DISPLAY")}
-                desc={t("SETTINGS_SYNC_PROGRESS_DISPLAY_DESC")}
-                value={settings.syncProgressDisplayMode}
-                options={[
-                    { label: t("SETTINGS_SYNC_PROGRESS_DISPLAY_ALWAYS"), value: "always" },
-                    {
-                        label: t("SETTINGS_SYNC_PROGRESS_DISPLAY_FULL_ONLY"),
-                        value: "full-only",
-                    },
-                    { label: t("SETTINGS_SYNC_PROGRESS_DISPLAY_NEVER"), value: "never" },
-                ]}
-                onChange={(v) =>
-                    onChange(
-                        "syncProgressDisplayMode",
-                        v as UISettingsState["syncProgressDisplayMode"],
-                    )
-                }
-            />
-        </Section>
-    </div>
-);
+const SyncTab: React.FC<SyncTabProps> = ({
+    settings,
+    onChange,
+    deviceManagement,
+    deviceManagementLoading,
+    deviceManagementError,
+    onRenameCurrentDevice,
+    onSetCurrentDevice,
+    onOpenRecovery,
+    onDeleteInvalidDevice,
+}) => {
+    const [renameValue, setRenameValue] = useState("");
+    const [actionKey, setActionKey] = useState<string | null>(null);
+
+    useEffect(() => {
+        setRenameValue(deviceManagement?.currentDevice?.deviceName ?? "");
+    }, [deviceManagement?.currentDevice?.deviceId, deviceManagement?.currentDevice?.deviceName]);
+
+    const runAction = useCallback(
+        async (
+            nextActionKey: string,
+            task: (() => Promise<void> | void) | undefined,
+        ) => {
+            if (!task) {
+                return;
+            }
+
+            setActionKey(nextActionKey);
+            try {
+                await task();
+            } catch (error) {
+                console.error("[SR-Settings] Syro device management action failed", error);
+                new Notice(
+                    error instanceof Error && error.message
+                        ? error.message
+                        : t("SETTINGS_SYNC_DEVICE_LOAD_ERROR"),
+                );
+            } finally {
+                setActionKey(null);
+            }
+        },
+        [],
+    );
+
+    const currentDevice = deviceManagement?.currentDevice ?? null;
+    const otherValidDevices =
+        deviceManagement?.validDevices.filter(
+            (entry) => entry.deviceId !== deviceManagement.currentDevice?.deviceId,
+        ) ?? [];
+
+    return (
+        <div className="sr-settings-sections">
+            <Section title={t("SETTINGS_SECTION_SYNC")}>
+                <ToggleRow
+                    label={t("SETTINGS_AUTO_INCREMENTAL_SYNC")}
+                    desc={t("SETTINGS_AUTO_INCREMENTAL_SYNC_DESC")}
+                    value={settings.autoIncrementalSync}
+                    onChange={(v) => onChange("autoIncrementalSync", v)}
+                />
+                <ToggleRow
+                    label={t("SETTINGS_NOTE_CACHE_PERSISTENCE")}
+                    desc={t("SETTINGS_NOTE_CACHE_PERSISTENCE_DESC")}
+                    value={settings.enableNoteCachePersistence}
+                    onChange={(v) => onChange("enableNoteCachePersistence", v)}
+                />
+                <SelectRow
+                    label={t("SETTINGS_SYNC_PROGRESS_DISPLAY")}
+                    desc={t("SETTINGS_SYNC_PROGRESS_DISPLAY_DESC")}
+                    value={settings.syncProgressDisplayMode}
+                    options={[
+                        { label: t("SETTINGS_SYNC_PROGRESS_DISPLAY_ALWAYS"), value: "always" },
+                        {
+                            label: t("SETTINGS_SYNC_PROGRESS_DISPLAY_FULL_ONLY"),
+                            value: "full-only",
+                        },
+                        { label: t("SETTINGS_SYNC_PROGRESS_DISPLAY_NEVER"), value: "never" },
+                    ]}
+                    onChange={(v) =>
+                        onChange(
+                            "syncProgressDisplayMode",
+                            v as UISettingsState["syncProgressDisplayMode"],
+                        )
+                    }
+                />
+            </Section>
+
+            <Section title={t("SETTINGS_SYNC_DEVICE_MANAGEMENT")}>
+                <ActionRow
+                    label={t("SETTINGS_SYNC_OPEN_RECOVERY")}
+                    desc={
+                        deviceManagement?.hasPendingAction
+                            ? t("SETTINGS_SYNC_OPEN_RECOVERY_DESC")
+                            : deviceManagement?.readOnlyReason
+                              ? deviceManagement.readOnlyReason
+                              : t("SETTINGS_SYNC_OPEN_RECOVERY_DESC")
+                    }
+                >
+                    <button
+                        disabled={actionKey === "open-recovery"}
+                        onClick={() =>
+                            void runAction("open-recovery", () => onOpenRecovery?.())
+                        }
+                    >
+                        {t("OPEN")}
+                    </button>
+                </ActionRow>
+                {deviceManagementLoading ? (
+                    <div className="setting-item">
+                        <div className="setting-item-info">
+                            <div className="setting-item-description">
+                                {t("SETTINGS_SYNC_DEVICE_LOADING")}
+                            </div>
+                        </div>
+                    </div>
+                ) : null}
+                {deviceManagementError ? (
+                    <div className="setting-item">
+                        <div className="setting-item-info">
+                            <div className="setting-item-description">
+                                {deviceManagementError}
+                            </div>
+                        </div>
+                    </div>
+                ) : null}
+            </Section>
+
+            <Section title={t("SETTINGS_SYNC_CURRENT_DEVICE")}>
+                {currentDevice ? (
+                    <>
+                        <DeviceInfoCard
+                            device={currentDevice}
+                            badge={t("SETTINGS_SYNC_CURRENT_DEVICE_BADGE")}
+                        />
+                        <InputRow
+                            label={t("SETTINGS_SYNC_RENAME_CURRENT_DEVICE")}
+                            desc={t("SETTINGS_SYNC_RENAME_CURRENT_DEVICE_DESC")}
+                            value={renameValue}
+                            onChange={setRenameValue}
+                            disabled={actionKey === "rename-device"}
+                        />
+                        <ActionRow label={t("SETTINGS_SYNC_SAVE_DEVICE_NAME")}>
+                            <button
+                                disabled={
+                                    actionKey === "rename-device" ||
+                                    renameValue.trim().length === 0 ||
+                                    renameValue.trim() === currentDevice.deviceName
+                                }
+                                onClick={() =>
+                                    void runAction("rename-device", () =>
+                                        onRenameCurrentDevice?.(renameValue),
+                                    )
+                                }
+                            >
+                                {t("SAVE")}
+                            </button>
+                        </ActionRow>
+                    </>
+                ) : (
+                    <div className="setting-item">
+                        <div className="setting-item-info">
+                            <div className="setting-item-description">
+                                {t("SETTINGS_SYNC_NO_CURRENT_DEVICE")}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </Section>
+
+            <Section title={t("SETTINGS_SYNC_DEVICE_LIST")}>
+                {otherValidDevices.length > 0 ? (
+                    otherValidDevices.map((device) => (
+                        <ActionRow
+                            key={device.deviceId}
+                            label={`${device.deviceName} (${device.shortDeviceId})`}
+                            desc={
+                                <>
+                                    <div>
+                                        {t("SETTINGS_SYNC_DEVICE_FOLDER")}: {device.deviceFolderName}
+                                    </div>
+                                    <div>
+                                        {t("SETTINGS_SYNC_DEVICE_LAST_SEEN")}: {device.lastSeenAt}
+                                    </div>
+                                </>
+                            }
+                        >
+                            <button
+                                disabled={actionKey === `set-current:${device.deviceId}`}
+                                onClick={() =>
+                                    void runAction(`set-current:${device.deviceId}`, () =>
+                                        onSetCurrentDevice?.(device.deviceId),
+                                    )
+                                }
+                            >
+                                {t("SETTINGS_SYNC_SET_CURRENT_DEVICE")}
+                            </button>
+                        </ActionRow>
+                    ))
+                ) : (
+                    <div className="setting-item">
+                        <div className="setting-item-info">
+                            <div className="setting-item-description">
+                                {t("SETTINGS_SYNC_VALID_DEVICE_EMPTY")}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </Section>
+
+            <Section title={t("SETTINGS_SYNC_INVALID_DEVICE_DIRS")}>
+                {deviceManagement?.invalidDevices.length ? (
+                    deviceManagement.invalidDevices.map((entry) => (
+                        <ActionRow
+                            key={entry.deviceFolderName}
+                            label={entry.deviceFolderName}
+                            desc={
+                                <>
+                                    <div>
+                                        {t("SETTINGS_SYNC_INVALID_DEVICE_REASON")}:{" "}
+                                        {getInvalidDeviceReasonLabel(entry.reason)}
+                                    </div>
+                                    <div>
+                                        {t("SETTINGS_SYNC_INVALID_DEVICE_FILES")}:{" "}
+                                        {[...entry.files, ...entry.folders.map((name) => `${name}/`)]
+                                            .join(", ") || "-"}
+                                    </div>
+                                </>
+                            }
+                        >
+                            <button
+                                disabled={actionKey === `delete-invalid:${entry.deviceFolderName}`}
+                                onClick={() =>
+                                    void runAction(
+                                        `delete-invalid:${entry.deviceFolderName}`,
+                                        () =>
+                                            onDeleteInvalidDevice?.(entry.deviceFolderName),
+                                    )
+                                }
+                            >
+                                {t("SETTINGS_SYNC_DELETE_INVALID_DEVICE")}
+                            </button>
+                        </ActionRow>
+                    ))
+                ) : (
+                    <div className="setting-item">
+                        <div className="setting-item-info">
+                            <div className="setting-item-description">
+                                {t("SETTINGS_SYNC_INVALID_DEVICE_EMPTY")}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </Section>
+        </div>
+    );
+};
 
 // ==========================================
 // UI Tab
@@ -1645,12 +1927,21 @@ const LicenseTab: React.FC<LicenseTabProps> = ({ settings, onChange }) => {
 export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
     settings: initialSettings,
     onSettingsChange,
+    loadSyroDeviceManagement,
+    onSyroRenameCurrentDevice,
+    onSyroSetCurrentDevice,
+    onSyroOpenRecovery,
+    onSyroDeleteInvalidDevice,
     version: _version = "0.0.1",
 }) => {
     const mobileNavbarOffset = useMobileNavbarOffset();
     const [activeTab, setActiveTab] = useState<TabId>("flashcards");
     const [headerActiveTab, setHeaderActiveTab] = useState<TabId>("flashcards");
     const [settings, setSettings] = useState<UISettingsState>(initialSettings);
+    const [deviceManagement, setDeviceManagement] =
+        useState<EmbeddedSyroDeviceManagementState | null>(null);
+    const [deviceManagementLoading, setDeviceManagementLoading] = useState(false);
+    const [deviceManagementError, setDeviceManagementError] = useState<string | null>(null);
     const [isSwipeAnimating, setIsSwipeAnimating] = useState(false);
     const contentViewportRef = useRef<HTMLDivElement>(null);
     const contentTrackRef = useRef<HTMLDivElement>(null);
@@ -1671,6 +1962,31 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
     useEffect(() => {
         setHeaderActiveTab(activeTab);
     }, [activeTab]);
+
+    const reloadDeviceManagement = useCallback(async () => {
+        if (!loadSyroDeviceManagement) {
+            setDeviceManagement(null);
+            setDeviceManagementError(null);
+            setDeviceManagementLoading(false);
+            return;
+        }
+
+        setDeviceManagementLoading(true);
+        try {
+            const nextState = await loadSyroDeviceManagement();
+            setDeviceManagement(nextState);
+            setDeviceManagementError(null);
+        } catch (error) {
+            console.error("[SR-Settings] Failed to load Syro device management state", error);
+            setDeviceManagementError(t("SETTINGS_SYNC_DEVICE_LOAD_ERROR"));
+        } finally {
+            setDeviceManagementLoading(false);
+        }
+    }, [loadSyroDeviceManagement]);
+
+    useEffect(() => {
+        void reloadDeviceManagement();
+    }, [reloadDeviceManagement]);
 
     const handleChange = useCallback(
         <K extends keyof UISettingsState>(key: K, value: UISettingsState[K]) => {
@@ -1736,14 +2052,37 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
                 case "ui":
                     return <UITab settings={settings} onChange={handleChange} />;
                 case "sync":
-                    return <SyncTab settings={settings} onChange={handleChange} />;
+                    return (
+                        <SyncTab
+                            settings={settings}
+                            onChange={handleChange}
+                            deviceManagement={deviceManagement}
+                            deviceManagementLoading={deviceManagementLoading}
+                            deviceManagementError={deviceManagementError}
+                            onRenameCurrentDevice={onSyroRenameCurrentDevice}
+                            onSetCurrentDevice={onSyroSetCurrentDevice}
+                            onOpenRecovery={onSyroOpenRecovery}
+                            onDeleteInvalidDevice={onSyroDeleteInvalidDevice}
+                        />
+                    );
                 case "license":
                     return <LicenseTab settings={settings} onChange={handleChange} />;
                 default:
                     return null;
             }
         },
-        [handleChange, settings],
+        [
+            deviceManagement,
+            deviceManagementError,
+            deviceManagementLoading,
+            handleChange,
+            onSyroDeleteInvalidDevice,
+            onSyroOpenRecovery,
+            onSyroRenameCurrentDevice,
+            onSyroSetCurrentDevice,
+            reloadDeviceManagement,
+            settings,
+        ],
     );
 
     useLayoutEffect(() => {

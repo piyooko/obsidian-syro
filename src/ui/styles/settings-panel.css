@@ -257,6 +257,29 @@
     margin-right: 12px;
 }
 
+.sr-device-management-card {
+    align-items: flex-start;
+}
+
+.sr-device-management-meta {
+    display: grid;
+    gap: 4px;
+}
+
+.sr-device-management-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 56px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+}
+
 .sr-settings-panel .setting-item-name {
     font-size: 14px;
     /* 调整字号 */

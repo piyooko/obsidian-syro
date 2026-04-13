@@ -1,5 +1,6 @@
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
+import type { SyroInvalidDeviceEntry, SyroValidDeviceEntry } from "src/dataStore/syroWorkspace";
 import { EmbeddedSettingsPanel } from "src/ui/components/EmbeddedSettingsPanel";
 import type { UISettingsState } from "src/ui/types/settingsTypes";
 
@@ -122,7 +123,17 @@ function findFirstSettingGroup(container: HTMLElement): HTMLElement | null {
     return container.querySelector<HTMLElement>(".setting-group");
 }
 
-function renderPanel(settings: UISettingsState, options: { mobile?: boolean } = {}) {
+function renderPanel(
+    settings: UISettingsState,
+    options: {
+        mobile?: boolean;
+        loadSyroDeviceManagement?: () => Promise<any>;
+        onSyroRenameCurrentDevice?: (deviceName: string) => Promise<void>;
+        onSyroSetCurrentDevice?: (deviceId: string) => Promise<void>;
+        onSyroOpenRecovery?: () => Promise<void>;
+        onSyroDeleteInvalidDevice?: (deviceFolderName: string) => Promise<void>;
+    } = {},
+) {
     const container = document.createElement("div");
     container.classList.add("sr-settings-container");
     document.body.appendChild(container);
@@ -136,6 +147,11 @@ function renderPanel(settings: UISettingsState, options: { mobile?: boolean } = 
             React.createElement(EmbeddedSettingsPanel, {
                 settings,
                 onSettingsChange: jest.fn(),
+                loadSyroDeviceManagement: options.loadSyroDeviceManagement,
+                onSyroRenameCurrentDevice: options.onSyroRenameCurrentDevice,
+                onSyroSetCurrentDevice: options.onSyroSetCurrentDevice,
+                onSyroOpenRecovery: options.onSyroOpenRecovery,
+                onSyroDeleteInvalidDevice: options.onSyroDeleteInvalidDevice,
                 version: "0.0.7",
             }),
         );
@@ -150,6 +166,86 @@ function renderPanel(settings: UISettingsState, options: { mobile?: boolean } = 
             platformMock.isMobile = false;
             container.remove();
         },
+    };
+}
+
+async function flushPromises() {
+    await act(async () => {
+        await Promise.resolve();
+    });
+}
+
+type TestDeviceManagementState = {
+    currentDevice: SyroValidDeviceEntry | null;
+    validDevices: SyroValidDeviceEntry[];
+    invalidDevices: SyroInvalidDeviceEntry[];
+    hasPendingAction: boolean;
+    readOnlyReason: string | null;
+};
+
+function createDeviceManagementState(): TestDeviceManagementState {
+    const currentDevice: SyroValidDeviceEntry = {
+        deviceId: "cd411111-2222-3333-4444-555555555555",
+        deviceName: "Desktop",
+        shortDeviceId: "cd41",
+        deviceFolderName: "Desktop--cd41",
+        lastSeenAt: "2026-04-13T00:00:00.000Z",
+        baselineFromDeviceId: null,
+        baselineBuiltAt: null,
+        deviceRoot: ".obsidian/plugins/syro/devices/Desktop--cd41",
+        deviceMetaPath: ".obsidian/plugins/syro/devices/Desktop--cd41/device.json",
+        metadata: {
+            version: 1,
+            deviceId: "cd411111-2222-3333-4444-555555555555",
+            deviceName: "Desktop",
+            shortDeviceId: "cd41",
+            createdAt: "2026-04-12T00:00:00.000Z",
+            updatedAt: "2026-04-13T00:00:00.000Z",
+            lastSeenAt: "2026-04-13T00:00:00.000Z",
+            baselineFromDeviceId: null,
+            baselineBuiltAt: null,
+            importedSessionIds: [],
+            importedSessionRetentionUntil: {},
+        },
+    };
+    const peerDevice: SyroValidDeviceEntry = {
+        deviceId: "91ac1111-2222-3333-4444-555555555555",
+        deviceName: "Mobile",
+        shortDeviceId: "91ac",
+        deviceFolderName: "Mobile--91ac",
+        lastSeenAt: "2026-04-12T00:00:00.000Z",
+        baselineFromDeviceId: null,
+        baselineBuiltAt: null,
+        deviceRoot: ".obsidian/plugins/syro/devices/Mobile--91ac",
+        deviceMetaPath: ".obsidian/plugins/syro/devices/Mobile--91ac/device.json",
+        metadata: {
+            version: 1,
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Mobile",
+            shortDeviceId: "91ac",
+            createdAt: "2026-04-12T00:00:00.000Z",
+            updatedAt: "2026-04-12T00:00:00.000Z",
+            lastSeenAt: "2026-04-12T00:00:00.000Z",
+            baselineFromDeviceId: null,
+            baselineBuiltAt: null,
+            importedSessionIds: [],
+            importedSessionRetentionUntil: {},
+        },
+    };
+    const invalidDevice: SyroInvalidDeviceEntry = {
+        deviceFolderName: "Desktop--ec3c",
+        deviceRoot: ".obsidian/plugins/syro/devices/Desktop--ec3c",
+        reason: "missing-device-json",
+        files: ["settings.json", "device-state.json"],
+        folders: [],
+    };
+
+    return {
+        currentDevice,
+        validDevices: [currentDevice, peerDevice],
+        invalidDevices: [invalidDevice],
+        hasPendingAction: true,
+        readOnlyReason: null,
     };
 }
 
@@ -917,6 +1013,55 @@ describe("EmbeddedSettingsPanel", () => {
 
             swipeElement(actionButton as HTMLElement, { x: 220, y: 180 }, { x: 70, y: 186 });
             expect(getActiveTabText(view.container)).toContain("License");
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("shows Syro device management details on the Sync tab", async () => {
+        const deviceManagement = createDeviceManagementState();
+        const view = renderPanel(createSettings(), {
+            loadSyroDeviceManagement: async () => deviceManagement,
+        });
+
+        try {
+            openTab(view.container, "Sync");
+            await flushPromises();
+
+            expect(view.container.textContent).toContain("Device management");
+            expect(view.container.textContent).toContain("Desktop--cd41");
+            expect(view.container.textContent).toContain("Mobile--91ac");
+            expect(view.container.textContent).toContain("Desktop--ec3c");
+            expect(view.container.textContent).toContain("Missing device.JSON");
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("invokes the set-current-device callback from the Sync tab", async () => {
+        const onSyroSetCurrentDevice = jest.fn(async () => {});
+        const deviceManagement = createDeviceManagementState();
+        const view = renderPanel(createSettings(), {
+            loadSyroDeviceManagement: async () => deviceManagement,
+            onSyroSetCurrentDevice,
+        });
+
+        try {
+            openTab(view.container, "Sync");
+            await flushPromises();
+
+            const button = Array.from(view.container.querySelectorAll<HTMLButtonElement>("button")).find(
+                (entry) => entry.textContent?.includes("Set as current device"),
+            );
+            expect(button).toBeTruthy();
+
+            await act(async () => {
+                button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            expect(onSyroSetCurrentDevice).toHaveBeenCalledWith(
+                "91ac1111-2222-3333-4444-555555555555",
+            );
         } finally {
             view.cleanup();
         }
