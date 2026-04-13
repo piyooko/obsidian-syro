@@ -60,9 +60,15 @@ import { setDebugParser } from "src/parser";
 
 // Legacy migration note retained from the pre-Syro codebase.
 import { DataStore } from "./dataStore/data";
+import {
+    createDeckOptionsStoreSnapshot,
+    createPersistableSettingsSnapshot,
+    DeckOptionsStore,
+} from "./dataStore/deckOptionsStore";
 import { DataLocation } from "./dataStore/dataLocation";
 import { NoteReviewStore, NoteReviewSource } from "./dataStore/noteReviewStore";
 import { SyroPersistenceLayout, SyroWorkspace } from "./dataStore/syroWorkspace";
+import { SyroSessionManager } from "./dataStore/syroSessionManager";
 import Commands from "./commands";
 import { SrsAlgorithm } from "src/algorithms/algorithms";
 import { FsrsAlgorithm } from "src/algorithms/fsrs";
@@ -284,6 +290,8 @@ export default class SRPlugin extends Plugin {
     private pendingPluginDataSavePromise: Promise<boolean> | null = null;
     private pluginDataSaveFailureNotified = false;
     private syroLayout: SyroPersistenceLayout | null = null;
+    private deckOptionsStore: DeckOptionsStore | null = null;
+    private syroSessionManager: SyroSessionManager | null = null;
 
     private static _instance: SRPlugin;
     static getInstance() {
@@ -753,7 +761,13 @@ export default class SRPlugin extends Plugin {
     }
 
     onunload(): void {
-        this.runAsync(this.flushReviewPersistence(1000), "flush review persistence on unload");
+        this.runAsync(
+            Promise.all([
+                this.flushReviewPersistence(1000),
+                this.syroSessionManager?.flushActiveSession() ?? Promise.resolve(null),
+            ]),
+            "flush review persistence on unload",
+        );
         this.app.workspace.getLeavesOfType(REVIEW_QUEUE_VIEW_TYPE).forEach((leaf) => leaf.detach());
         this.tabViewManager.closeAllTabViews();
         this.reviewFloatBar.close();
@@ -1792,6 +1806,14 @@ export default class SRPlugin extends Plugin {
             return { ...queuedRequest, status: "queued", reason: "busy" };
         }
 
+        if (
+            request.trigger === "manual" ||
+            request.trigger === "background" ||
+            request.trigger === "startup"
+        ) {
+            await this.syroSessionManager?.flushActiveSession();
+        }
+
         await this.sync(request.reviewMode, request.mode, {
             trigger: request.trigger,
             force: request.force,
@@ -2540,6 +2562,12 @@ export default class SRPlugin extends Plugin {
             this.manifest.dir,
             this.data.settings,
         ).initialize();
+        this.deckOptionsStore = new DeckOptionsStore({
+            deckOptionsPath: this.syroLayout.deckOptionsPath,
+        });
+        this.syroSessionManager = new SyroSessionManager(this.app, this.syroLayout);
+        await this.syroSessionManager.initialize();
+        await this.deckOptionsStore.loadIntoSettings(this.data.settings);
         this.store = new DataStore(this.data.settings, {
             cardsPath: this.syroLayout.cardsPath,
             cardsOverlayPath: this.syroLayout.cardsOverlayPath,
@@ -2567,7 +2595,23 @@ export default class SRPlugin extends Plugin {
     }
 
     async savePluginData(): Promise<void> {
-        await this.saveData(this.data);
+        if (!this.deckOptionsStore) {
+            await this.saveData(this.data);
+            return;
+        }
+
+        const deckOptionsSnapshot = createDeckOptionsStoreSnapshot(this.data.settings);
+        const deckOptionsChanged = await this.deckOptionsStore.hasSerializedStateChanged(
+            deckOptionsSnapshot.serialized,
+        );
+        if (deckOptionsChanged) {
+            await this.syroSessionManager?.appendDeckOptionsChange(deckOptionsSnapshot.state);
+        }
+        await this.deckOptionsStore.saveSerialized(deckOptionsSnapshot.serialized);
+        await this.saveData({
+            ...this.data,
+            settings: createPersistableSettingsSnapshot(this.data.settings),
+        });
     }
 
     private getActiveLeaf(type: string): WorkspaceLeaf | null {

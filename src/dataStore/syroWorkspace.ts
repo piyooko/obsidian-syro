@@ -26,6 +26,10 @@ export interface ReviewCommitStorePathConfig {
     timelinePath: string;
 }
 
+export interface DeckOptionsStorePathConfig {
+    deckOptionsPath: string;
+}
+
 export interface SyroDeviceMetadata {
     version: number;
     deviceId: string;
@@ -158,7 +162,7 @@ function parseImportedSessionIds(value: unknown): string[] {
         : [];
 }
 
-function parseDeviceMetadata(value: unknown): SyroDeviceMetadata | null {
+export function parseDeviceMetadata(value: unknown): SyroDeviceMetadata | null {
     if (!isRecord(value)) {
         return null;
     }

@@ -52,7 +52,7 @@ describe("SRPlugin status bar card count", () => {
         expect((SRPlugin.prototype as any).getStatusBarReviewableCardCount.call(plugin)).toBe(0);
     });
 
-    test("uses the largest top-level deck total for the status bar card count", () => {
+    test("sums reviewable counts across top-level decks for the status bar card count", () => {
         const now = 1_700_000_000_000;
         jest.spyOn(Date, "now").mockReturnValue(now);
 
@@ -70,7 +70,7 @@ describe("SRPlugin status bar card count", () => {
 
         const plugin = createPluginForStatusBar(root, 15);
 
-        expect((SRPlugin.prototype as any).getStatusBarReviewableCardCount.call(plugin)).toBe(4);
+        expect((SRPlugin.prototype as any).getStatusBarReviewableCardCount.call(plugin)).toBe(7);
     });
 
     test("deduplicates cards within each top-level deck total", () => {

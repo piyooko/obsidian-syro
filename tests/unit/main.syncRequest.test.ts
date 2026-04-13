@@ -1,6 +1,7 @@
 import SRPlugin from "src/main";
 import { FlashcardReviewMode } from "src/scheduling";
 import { SR_TAB_VIEW } from "src/constants";
+import { DEFAULT_SETTINGS } from "src/settings";
 
 describe("SRPlugin sync request orchestration", () => {
     test("requestSync queues a rebuild instead of dropping it while a sync is running", async () => {
@@ -33,6 +34,38 @@ describe("SRPlugin sync request orchestration", () => {
             force: false,
             status: "queued",
             reason: "busy",
+        });
+    });
+
+    test("requestSync seals the active syro session before manual sync runs", async () => {
+        const plugin = {
+            data: { settings: { showSchedulingDebugMessages: false } },
+            shouldSkipDisabledAutomaticIncrementalSync: jest.fn(() => false),
+            shouldSkipAutomaticSync: jest.fn(() => false),
+            syncLock: false,
+            syroSessionManager: {
+                flushActiveSession: jest.fn(async () => "2026-04-13T12-00-00__d84f__0001"),
+            },
+            sync: jest.fn(async () => undefined),
+        };
+
+        const result = await (SRPlugin.prototype.requestSync as unknown as Function).call(plugin, {
+            reviewMode: FlashcardReviewMode.Review,
+            mode: "full",
+            trigger: "manual",
+        });
+
+        expect(plugin.syroSessionManager.flushActiveSession).toHaveBeenCalledTimes(1);
+        expect(plugin.sync).toHaveBeenCalledWith(FlashcardReviewMode.Review, "full", {
+            trigger: "manual",
+            force: false,
+        });
+        expect(result).toEqual({
+            reviewMode: FlashcardReviewMode.Review,
+            mode: "full",
+            trigger: "manual",
+            force: false,
+            status: "executed",
         });
     });
 
@@ -155,6 +188,68 @@ describe("SRPlugin sync request orchestration", () => {
         expect(plugin.tabViewManager.openSRTabView).toHaveBeenCalledWith(
             FlashcardReviewMode.Review,
             { targetDeckPath: "folder/note" },
+        );
+    });
+
+    test("savePluginData persists deck options separately from the main plugin data snapshot", async () => {
+        const plugin = {
+            deckOptionsStore: {
+                hasSerializedStateChanged: jest.fn(async () => true),
+                saveSerialized: jest.fn(async () => undefined),
+            },
+            syroSessionManager: {
+                appendDeckOptionsChange: jest.fn(async () => true),
+            },
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    fsrsSettings: {
+                        ...DEFAULT_SETTINGS.fsrsSettings,
+                        enable_fuzz: false,
+                    },
+                    deckOptionsPresets: [
+                        ...DEFAULT_SETTINGS.deckOptionsPresets,
+                        {
+                            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                            name: "Reading",
+                        },
+                    ],
+                    deckPresetAssignment: { Reading: 1 },
+                },
+                buryDate: "",
+                buryList: [] as string[],
+                historyDeck: null as string | null,
+                dailyDeckStats: {
+                    date: "",
+                    counts: {},
+                },
+                folderTrackingRules: {},
+            },
+            saveData: jest.fn(async () => undefined),
+        };
+
+        await (SRPlugin.prototype.savePluginData as unknown as Function).call(plugin);
+
+        expect(plugin.deckOptionsStore.hasSerializedStateChanged).toHaveBeenCalledWith(
+            expect.any(String),
+        );
+        expect(plugin.syroSessionManager.appendDeckOptionsChange).toHaveBeenCalledWith(
+            expect.objectContaining({
+                version: 1,
+                fsrsSettings: expect.anything(),
+                deckOptionsPresets: expect.anything(),
+                deckPresetAssignment: expect.anything(),
+            }),
+        );
+        expect(plugin.deckOptionsStore.saveSerialized).toHaveBeenCalledWith(expect.any(String));
+        expect(plugin.saveData).toHaveBeenCalledWith(
+            expect.objectContaining({
+                settings: expect.not.objectContaining({
+                    fsrsSettings: expect.anything(),
+                    deckOptionsPresets: expect.anything(),
+                    deckPresetAssignment: expect.anything(),
+                }),
+            }),
         );
     });
 });
