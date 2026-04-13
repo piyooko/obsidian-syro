@@ -22,6 +22,14 @@ function isRedrawableView(view: unknown): view is RedrawableView {
     );
 }
 
+function getDeviceManagementErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message.trim().length > 0) {
+        return error.message;
+    }
+
+    return t("SETTINGS_SYNC_DEVICE_LOAD_ERROR");
+}
+
 export class SRSettingTab extends PluginSettingTab {
     private plugin: SRPlugin;
     private root: Root | null = null;
@@ -53,7 +61,7 @@ export class SRSettingTab extends PluginSettingTab {
                         this.display();
                     } catch (error) {
                         console.error("[SR-Settings] Failed to rename current Syro device", error);
-                        new Notice(t("SETTINGS_SYNC_DEVICE_LOAD_ERROR"));
+                        new Notice(getDeviceManagementErrorMessage(error));
                     }
                 },
                 onSyroSetCurrentDevice: async (deviceId) => {
@@ -62,7 +70,7 @@ export class SRSettingTab extends PluginSettingTab {
                         this.display();
                     } catch (error) {
                         console.error("[SR-Settings] Failed to switch current Syro device", error);
-                        new Notice(t("SETTINGS_SYNC_DEVICE_LOAD_ERROR"));
+                        new Notice(getDeviceManagementErrorMessage(error));
                     }
                 },
                 onSyroOpenRecovery: async () => {
@@ -71,7 +79,7 @@ export class SRSettingTab extends PluginSettingTab {
                         this.display();
                     } catch (error) {
                         console.error("[SR-Settings] Failed to open Syro recovery", error);
-                        new Notice(t("SETTINGS_SYNC_DEVICE_LOAD_ERROR"));
+                        new Notice(getDeviceManagementErrorMessage(error));
                     }
                 },
                 onSyroDeleteInvalidDevice: async (deviceFolderName) => {
@@ -83,7 +91,7 @@ export class SRSettingTab extends PluginSettingTab {
                             "[SR-Settings] Failed to delete invalid Syro device directory",
                             error,
                         );
-                        new Notice(t("SETTINGS_SYNC_DEVICE_LOAD_ERROR"));
+                        new Notice(getDeviceManagementErrorMessage(error));
                     }
                 },
                 version: this.plugin.manifest.version,

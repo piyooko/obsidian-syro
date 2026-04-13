@@ -155,7 +155,7 @@ export interface SyroPersistenceLayout {
 
 type FileBackedAdapter = Pick<
     DataAdapter,
-    "exists" | "mkdir" | "read" | "remove" | "rename" | "write"
+    "exists" | "mkdir" | "read" | "remove" | "rename" | "rmdir" | "write"
 > & {
     basePath?: string;
     list?: (path: string) => Promise<{ files: string[]; folders: string[] }>;
@@ -974,6 +974,11 @@ export class SyroWorkspace {
             for (const folderPath of listing.folders ?? []) {
                 await this.removeDirectoryRecursive(folderPath);
             }
+        }
+
+        if (typeof this.adapter.rmdir === "function") {
+            await this.adapter.rmdir(normalizedDir, false);
+            return;
         }
 
         await this.adapter.remove(normalizedDir);

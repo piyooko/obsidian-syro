@@ -10,6 +10,7 @@ type MockAdapter = {
     read: jest.Mock<Promise<string>, [string]>;
     remove: jest.Mock<Promise<void>, [string]>;
     rename: jest.Mock<Promise<void>, [string, string]>;
+    rmdir: jest.Mock<Promise<void>, [string, boolean]>;
     write: jest.Mock<Promise<void>, [string, string]>;
 };
 
@@ -108,18 +109,6 @@ function createMockAdapter() {
         remove: jest.fn(async (path: string) => {
             const normalized = normalizePath(path);
             files.delete(normalized);
-            const nestedFiles = Array.from(files.keys()).filter((key) =>
-                key.startsWith(`${normalized}/`),
-            );
-            for (const key of nestedFiles) {
-                files.delete(key);
-            }
-            const nestedDirs = Array.from(directories).filter(
-                (entry) => entry === normalized || entry.startsWith(`${normalized}/`),
-            );
-            for (const entry of nestedDirs) {
-                directories.delete(entry);
-            }
         }),
         rename: jest.fn(async (fromPath: string, toPath: string) => {
             const normalizedFrom = normalizePath(fromPath);
@@ -134,6 +123,35 @@ function createMockAdapter() {
             }
 
             moveDirectoryEntries(normalizedFrom, normalizedTo);
+        }),
+        rmdir: jest.fn(async (path: string, recursive: boolean) => {
+            const normalized = normalizePath(path);
+            if (recursive) {
+                const nestedFiles = Array.from(files.keys()).filter((key) =>
+                    key === normalized || key.startsWith(`${normalized}/`),
+                );
+                for (const key of nestedFiles) {
+                    files.delete(key);
+                }
+                const nestedDirs = Array.from(directories).filter(
+                    (entry) => entry === normalized || entry.startsWith(`${normalized}/`),
+                );
+                for (const entry of nestedDirs) {
+                    directories.delete(entry);
+                }
+                return;
+            }
+
+            const hasNestedFiles = Array.from(files.keys()).some((key) =>
+                key.startsWith(`${normalized}/`),
+            );
+            const hasNestedDirs = Array.from(directories).some(
+                (entry) => entry !== normalized && entry.startsWith(`${normalized}/`),
+            );
+            if (hasNestedFiles || hasNestedDirs) {
+                throw new Error("Directory is not empty.");
+            }
+            directories.delete(normalized);
         }),
         write: jest.fn(async (path: string, value: string) => {
             const normalized = normalizePath(path);
@@ -599,5 +617,9 @@ describe("SyroWorkspace", () => {
         expect(directories.has(".obsidian/plugins/syro/devices/Desktop--ec3c")).toBe(false);
         expect(files.has(".obsidian/plugins/syro/devices/Desktop--ec3c/settings.json")).toBe(false);
         expect(files.has(".obsidian/plugins/syro/devices/Desktop--cd41/device.json")).toBe(true);
+        expect(adapter.rmdir).toHaveBeenCalledWith(
+            ".obsidian/plugins/syro/devices/Desktop--ec3c",
+            false,
+        );
     });
 });
