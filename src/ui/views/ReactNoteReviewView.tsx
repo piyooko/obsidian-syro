@@ -616,11 +616,6 @@ export class ReactNoteReviewView extends ItemView {
         );
         this.registerEvent(
             this.app.vault.on("rename", (file, oldPath) => {
-                // Keep timeline entries in sync with renamed files.
-                if (this.commitStore && oldPath) {
-                    this.commitStore.renameFile(oldPath, file.path);
-                    this.runAsync(this.commitStore.save(), "save renamed commit store");
-                }
                 if (oldPath && this.plugin.data.settings.sidebarTimelineSelectedPath === oldPath) {
                     this.plugin.data.settings.sidebarTimelineSelectedPath = file.path;
                     this.runAsync(this.plugin.savePluginData(), "save renamed timeline selection");
@@ -1269,6 +1264,10 @@ export class ReactNoteReviewView extends ItemView {
             if (noteItem) {
                 noteItem.priority = newPriority;
                 await this.plugin.noteReviewStore.save();
+                await this.plugin.appendSyroNoteUpsert(
+                    this.plugin.noteReviewStore.getEntrySnapshot(file.path),
+                    "priority",
+                );
                 this.plugin.updateAndSortDueNotes();
                 this.plugin.syncEvents.emit("note-review-updated");
             } else {
@@ -1367,12 +1366,13 @@ export class ReactNoteReviewView extends ItemView {
         }
 
         const context = captureTimelineContext(this.app, path);
-        await this.commitStore.addCommit(
+        const commit = await this.commitStore.addCommit(
             path,
             message,
             context.contextAnchor,
             context.scrollPercentage,
         );
+        await this.plugin.appendSyroTimelineAdd(path, commit);
         await this.applyManualTimelineDurationSchedule(path, message);
         this.commitLogs = this.commitStore.getCommits(path);
         this.redraw();
@@ -1418,9 +1418,11 @@ export class ReactNoteReviewView extends ItemView {
                 .onClick(() => {
                     if (!this.commitStore || !this.selectedItem) return;
                     const selectedPath = this.selectedItem.path;
+                    const removedCommit = this.commitStore.getCommitSnapshot(selectedPath, commitId);
                     this.runAsync(
                         (async () => {
                             await this.commitStore.deleteCommit(selectedPath, commitId);
+                            await this.plugin.appendSyroTimelineDelete(selectedPath, removedCommit);
                             this.commitLogs = this.commitStore.getCommits(selectedPath);
                             this.redraw();
                             new Notice(t("SIDEBAR_COMMIT_DELETED"));
@@ -1516,7 +1518,8 @@ export class ReactNoteReviewView extends ItemView {
         payload: ReviewCommitEditPayload,
     ): Promise<void> {
         if (!this.commitStore || !this.selectedItem) return;
-        await this.commitStore.editCommit(this.selectedItem.path, commitId, payload);
+        const updatedCommit = await this.commitStore.editCommit(this.selectedItem.path, commitId, payload);
+        await this.plugin.appendSyroTimelineEdit(this.selectedItem.path, updatedCommit);
         if (payload.entryType === "manual") {
             await this.applyManualTimelineDurationSchedule(this.selectedItem.path, payload.message);
         }
@@ -1567,6 +1570,10 @@ export class ReactNoteReviewView extends ItemView {
 
         item.applyManualTimelineSchedule(parsed.durationPrefix.totalDays);
         await this.plugin.noteReviewStore.save();
+        await this.plugin.appendSyroNoteUpsert(
+            this.plugin.noteReviewStore.getEntrySnapshot(notePath),
+            "manual-schedule",
+        );
 
         this.plugin.reviewDecks = this.plugin.noteReviewStore.buildReviewDecks(this.app.vault);
         this.plugin.updateAndSortDueNotes();

@@ -34,6 +34,19 @@ export interface NoteReviewEntry {
     item: RepetitionItem;
 }
 
+export interface NoteReviewEntrySnapshot {
+    path: string;
+    source: NoteReviewSource;
+    deckName: string;
+    item: RepetitionItem;
+}
+
+export interface RenamedNoteReviewEntrySnapshot {
+    oldPath: string;
+    newPath: string;
+    entry: NoteReviewEntrySnapshot;
+}
+
 const NOTE_REVIEW_STORE_VERSION = 1;
 
 function cloneItem(item: RepetitionItem): RepetitionItem {
@@ -135,6 +148,20 @@ export class NoteReviewStore {
         return this.data[path] ?? null;
     }
 
+    getEntrySnapshot(path: string): NoteReviewEntrySnapshot | null {
+        const entry = this.getEntry(path);
+        if (!entry) {
+            return null;
+        }
+
+        return {
+            path,
+            source: entry.source,
+            deckName: entry.deckName,
+            item: cloneItem(entry.item),
+        };
+    }
+
     getEntries(): Record<string, NoteReviewEntry> {
         return this.data;
     }
@@ -190,29 +217,56 @@ export class NoteReviewStore {
     }
 
     remove(path: string): boolean {
-        if (!this.data[path]) return false;
+        return this.removeWithSnapshot(path) !== null;
+    }
+
+    removeWithSnapshot(path: string): NoteReviewEntrySnapshot | null {
+        const snapshot = this.getEntrySnapshot(path);
+        if (!snapshot) return null;
         delete this.data[path];
-        return true;
+        return snapshot;
     }
 
     rename(oldPath: string, newPath: string): boolean {
+        return this.renameWithSnapshot(oldPath, newPath) !== null;
+    }
+
+    renameWithSnapshot(oldPath: string, newPath: string): NoteReviewEntrySnapshot | null {
         const entry = this.data[oldPath];
-        if (!entry || oldPath === newPath) return false;
+        if (!entry || oldPath === newPath) return null;
         delete this.data[oldPath];
         entry.item.setTracked(newPath);
         this.data[newPath] = entry;
-        return true;
+        return this.getEntrySnapshot(newPath);
     }
 
     renamePathPrefix(oldPath: string, newPath: string): boolean {
+        return this.renamePathPrefixWithSnapshots(oldPath, newPath).length > 0;
+    }
+
+    renamePathPrefixWithSnapshots(
+        oldPath: string,
+        newPath: string,
+    ): RenamedNoteReviewEntrySnapshot[] {
         let changed = false;
         const nextData: Record<string, NoteReviewEntry> = {};
+        const snapshots: RenamedNoteReviewEntrySnapshot[] = [];
 
         for (const [path, entry] of Object.entries(this.data)) {
             const nextPath = renamePathPrefix(path, oldPath, newPath);
             if (nextPath !== path) {
                 entry.item.setTracked(nextPath);
                 changed = true;
+                snapshots.push({
+                    oldPath: path,
+                    newPath: nextPath,
+                    entry: {
+                        path: nextPath,
+                        source: entry.source,
+                        deckName: entry.deckName,
+                        item: cloneItem(entry.item),
+                    },
+                });
             }
             nextData[nextPath] = entry;
         }
@@ -221,22 +275,31 @@ export class NoteReviewStore {
             this.data = nextData;
         }
 
-        return changed;
+        return snapshots;
     }
 
     removePathPrefix(path: string): boolean {
+        return this.removePathPrefixWithSnapshots(path).length > 0;
+    }
+
+    removePathPrefixWithSnapshots(path: string): NoteReviewEntrySnapshot[] {
         let changed = false;
+        const removedSnapshots: NoteReviewEntrySnapshot[] = [];
 
         for (const entryPath of this.listPaths()) {
             if (!isPathInsideFolder(path, entryPath)) {
                 continue;
             }
 
+            const snapshot = this.getEntrySnapshot(entryPath);
+            if (snapshot) {
+                removedSnapshots.push(snapshot);
+            }
             delete this.data[entryPath];
             changed = true;
         }
 
-        return changed;
+        return changed ? removedSnapshots : [];
     }
 
     cleanupMissingFiles(vault: Vault): boolean {

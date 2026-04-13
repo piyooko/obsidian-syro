@@ -33,13 +33,20 @@ describe("reviewResponseTimeline", () => {
             response: ReviewResponse.Good,
         });
 
-        expect(committed).toBe(false);
+        expect(committed).toBeNull();
         expect(commitStore.addCommit).not.toHaveBeenCalled();
     });
 
     it("writes review-response entries with metadata when enabled", async () => {
         const commitStore = {
-            addCommit: jest.fn(async () => undefined),
+            addCommit: jest.fn(async () => ({
+                id: "commit-1",
+                message: "",
+                timestamp: 1,
+                entryType: "review-response",
+                reviewResponse: "Hard",
+                displayDuration: { raw: "9d", totalDays: 9 },
+            })),
         } as CommitStoreLike as unknown as ReviewCommitStore;
 
         const committed = await autoCommitReviewResponseToTimeline({
@@ -51,7 +58,13 @@ describe("reviewResponseTimeline", () => {
             intervalDays: 9,
         });
 
-        expect(committed).toBe(true);
+        expect(committed).toEqual(
+            expect.objectContaining({
+                id: "commit-1",
+                reviewResponse: "Hard",
+                displayDuration: { raw: "9d", totalDays: 9 },
+            }),
+        );
         expect(commitStore.addCommit).toHaveBeenCalledWith("note.md", "", undefined, undefined, {
             entryType: "review-response",
             reviewResponse: "Hard",

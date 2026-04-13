@@ -170,20 +170,18 @@ export async function autoCommitReviewResponseToTimeline(opts: {
     notePath: string;
     response: ReviewResponse;
     intervalDays?: number | null;
-}): Promise<boolean> {
+}): Promise<ReviewCommitLog | null> {
     const { app, commitStore, enabled, notePath, response, intervalDays } = opts;
-    if (!enabled || !commitStore) return false;
+    if (!enabled || !commitStore) return null;
 
     const reviewResponse = mapReviewResponseToTimelineValue(response);
-    if (!reviewResponse) return false;
+    if (!reviewResponse) return null;
     const displayDuration = normalizeTimelineDisplayDuration(intervalDays);
 
     const context = captureTimelineContext(app, notePath);
-    await commitStore.addCommit(notePath, "", context.contextAnchor, context.scrollPercentage, {
+    return commitStore.addCommit(notePath, "", context.contextAnchor, context.scrollPercentage, {
         entryType: "review-response",
         reviewResponse,
         displayDuration,
     });
-
-    return true;
 }

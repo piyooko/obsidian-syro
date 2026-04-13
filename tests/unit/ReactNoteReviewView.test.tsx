@@ -259,6 +259,7 @@ function createView(options: {
         savePluginData: jest.fn(async () => {}),
         noteReviewStore: {
             getItem: jest.fn(() => null),
+            getEntrySnapshot: jest.fn(() => null),
             ensureTracked: jest.fn(),
             save: jest.fn(async () => {}),
             buildReviewDecks: jest.fn(() => ({})),
@@ -275,6 +276,13 @@ function createView(options: {
             emit: jest.fn(),
             on: jest.fn(() => () => {}),
         },
+        appendSyroNoteUpsert: jest.fn(async () => true),
+        appendSyroNoteRemove: jest.fn(async () => true),
+        appendSyroTimelineAdd: jest.fn(async () => true),
+        appendSyroTimelineEdit: jest.fn(async () => true),
+        appendSyroTimelineDelete: jest.fn(async () => true),
+        appendSyroTimelineRenameFile: jest.fn(async () => true),
+        appendSyroTimelineDeleteFile: jest.fn(async () => true),
         reviewFloatBar: {
             display: jest.fn(),
         },
@@ -733,16 +741,35 @@ describe("ReactNoteReviewView", () => {
             storedItem = trackedItem;
             return trackedItem;
         });
+        plugin.noteReviewStore.getEntrySnapshot.mockImplementation(() => ({
+            path,
+            source: "manual",
+            deckName: DEFAULT_DECKNAME,
+            item: {
+                uuid: "note-1",
+            },
+        }));
 
         const commitStore = {
             getCommits: jest.fn(() => []),
-            addCommit: jest.fn(async () => undefined),
+            addCommit: jest.fn(async () => ({
+                id: "timeline-1",
+                message: "2d:: revisit",
+                timestamp: 1,
+            })),
         };
         (view as any).commitStore = commitStore;
 
         await (view as any).handleCommit(path, "2d:: revisit");
 
         expect(commitStore.addCommit).toHaveBeenCalledWith(path, "2d:: revisit", null, 0);
+        expect(plugin.appendSyroTimelineAdd).toHaveBeenCalledWith(
+            path,
+            expect.objectContaining({
+                id: "timeline-1",
+                message: "2d:: revisit",
+            }),
+        );
         expect(plugin.clearFolderTrackingExclusion).toHaveBeenCalledWith(path);
         expect(plugin.noteReviewStore.ensureTracked).toHaveBeenCalledWith(
             path,
@@ -752,6 +779,12 @@ describe("ReactNoteReviewView", () => {
         );
         expect(trackedItem.applyManualTimelineSchedule).toHaveBeenCalledWith(2);
         expect(plugin.noteReviewStore.save).toHaveBeenCalled();
+        expect(plugin.appendSyroNoteUpsert).toHaveBeenCalledWith(
+            expect.objectContaining({
+                path,
+            }),
+            "manual-schedule",
+        );
         expect(plugin.noteReviewStore.buildReviewDecks).toHaveBeenCalledWith(
             (view as any).app.vault,
         );
@@ -773,18 +806,98 @@ describe("ReactNoteReviewView", () => {
 
             const commitStore = {
                 getCommits: jest.fn(() => []),
-                addCommit: jest.fn(async () => undefined),
+                addCommit: jest.fn(async () => ({
+                    id: "timeline-1",
+                    message: "2d:: blocked",
+                    timestamp: 1,
+                })),
             };
             (view as any).commitStore = commitStore;
 
             await (view as any).handleCommit(path, "2d:: blocked");
 
             expect(commitStore.addCommit).toHaveBeenCalledWith(path, "2d:: blocked", null, 0);
+            expect(plugin.appendSyroTimelineAdd).toHaveBeenCalledWith(
+                path,
+                expect.objectContaining({
+                    id: "timeline-1",
+                    message: "2d:: blocked",
+                }),
+            );
             expect(plugin.noteReviewStore.ensureTracked).not.toHaveBeenCalled();
             expect(plugin.noteReviewStore.save).not.toHaveBeenCalled();
+            expect(plugin.appendSyroNoteUpsert).not.toHaveBeenCalled();
             expect(plugin.showNoteReviewIgnoreNotice).toHaveBeenCalledWith(reason);
         },
     );
+
+    it("emits a note session after changing sidebar priority", async () => {
+        const path = "notes/Priority.md";
+        const { plugin, view } = createView({
+            activeMarkdownPath: path,
+            availableFiles: [path],
+        });
+        plugin.noteReviewStore.getItem.mockReturnValue({
+            priority: 5,
+        });
+        plugin.noteReviewStore.getEntrySnapshot = jest.fn(() => ({
+            path,
+            source: "manual",
+            deckName: DEFAULT_DECKNAME,
+            item: {
+                uuid: "note-1",
+            },
+        }));
+
+        await (view as any).handlePriorityChange(
+            {
+                path,
+                noteFile: { path },
+            },
+            9,
+        );
+
+        expect(plugin.noteReviewStore.save).toHaveBeenCalled();
+        expect(plugin.appendSyroNoteUpsert).toHaveBeenCalledWith(
+            expect.objectContaining({
+                path,
+            }),
+            "priority",
+        );
+        expect(plugin.updateAndSortDueNotes).toHaveBeenCalled();
+        expect(plugin.syncEvents.emit).toHaveBeenCalledWith("note-review-updated");
+    });
+
+    it("emits a timeline edit session after editing a commit", async () => {
+        const path = "notes/Edit Commit.md";
+        const { plugin, view } = createView({
+            activeMarkdownPath: path,
+            availableFiles: [path],
+        });
+        (view as any).selectedItem = { path };
+        (view as any).commitStore = {
+            editCommit: jest.fn(async () => ({
+                id: "commit-1",
+                message: "updated",
+                timestamp: 1,
+                entryType: "manual",
+            })),
+            getCommits: jest.fn(() => []),
+        };
+
+        await (view as any).handleEditCommit("commit-1", {
+            message: "updated",
+            entryType: "manual",
+        });
+
+        expect(plugin.appendSyroTimelineEdit).toHaveBeenCalledWith(
+            path,
+            expect.objectContaining({
+                id: "commit-1",
+                message: "updated",
+            }),
+        );
+    });
 
     it("follows the current review card note into a standalone timeline item when enabled", () => {
         const path = "notes/Card Source.md";

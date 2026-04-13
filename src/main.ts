@@ -66,7 +66,11 @@ import {
     DeckOptionsStore,
 } from "./dataStore/deckOptionsStore";
 import { DataLocation } from "./dataStore/dataLocation";
-import { NoteReviewStore, NoteReviewSource } from "./dataStore/noteReviewStore";
+import {
+    NoteReviewStore,
+    NoteReviewSource,
+    type NoteReviewEntrySnapshot,
+} from "./dataStore/noteReviewStore";
 import { SyroPersistenceLayout, SyroWorkspace } from "./dataStore/syroWorkspace";
 import { SyroSessionManager } from "./dataStore/syroSessionManager";
 import Commands from "./commands";
@@ -127,7 +131,7 @@ import {
     SerializedNote,
     validateCachedNoteBindings,
 } from "src/cache/noteCacheStore";
-import { ReviewCommitStore } from "src/dataStore/reviewCommitStore";
+import { ReviewCommitStore, type ReviewCommitLog } from "src/dataStore/reviewCommitStore";
 import { ReviewPersistenceCoordinator } from "src/services/reviewPersistenceCoordinator";
 import { autoCommitReviewResponseToTimeline } from "src/ui/timeline/reviewResponseTimeline";
 import {
@@ -1268,6 +1272,160 @@ export default class SRPlugin extends Plugin {
         this.syncEvents.emit("timeline-review-card-updated");
     }
 
+    private async appendSyroNoteSnapshot(
+        opType: string,
+        snapshot: NoteReviewEntrySnapshot,
+        extraPayload?: Record<string, unknown>,
+    ): Promise<boolean> {
+        const targetUuid = snapshot.item.uuid || `note:${snapshot.path}`;
+        return (
+            (await this.syroSessionManager?.appendRecord({
+                domain: "notes",
+                entityType: "note-review",
+                opType,
+                targetUuid,
+                payload: {
+                    path: snapshot.path,
+                    source: snapshot.source,
+                    deckName: snapshot.deckName,
+                    item: snapshot.item,
+                    ...extraPayload,
+                },
+                pathHint: snapshot.path,
+            })) ?? false
+        );
+    }
+
+    private async appendSyroTimelineEntry(
+        opType: "add" | "edit" | "delete",
+        notePath: string,
+        commit: ReviewCommitLog,
+    ): Promise<boolean> {
+        return (
+            (await this.syroSessionManager?.appendRecord({
+                domain: "timeline",
+                entityType: "timeline-entry",
+                opType,
+                targetUuid: `timeline-entry:${notePath}:${commit.id}`,
+                payload: {
+                    notePath,
+                    commit,
+                },
+                pathHint: notePath,
+            })) ?? false
+        );
+    }
+
+    public async appendSyroNoteUpsert(
+        snapshot: NoteReviewEntrySnapshot | null,
+        opType = "upsert",
+    ): Promise<boolean> {
+        if (!snapshot) {
+            return false;
+        }
+
+        return this.appendSyroNoteSnapshot(opType, snapshot);
+    }
+
+    public async appendSyroNoteRemove(
+        snapshot: NoteReviewEntrySnapshot | null,
+        opType = "remove",
+    ): Promise<boolean> {
+        if (!snapshot) {
+            return false;
+        }
+
+        return this.appendSyroNoteSnapshot(opType, snapshot);
+    }
+
+    public async appendSyroNoteRename(
+        oldPath: string,
+        snapshot: NoteReviewEntrySnapshot | null,
+        opType = "rename",
+    ): Promise<boolean> {
+        if (!snapshot) {
+            return false;
+        }
+
+        return this.appendSyroNoteSnapshot(opType, snapshot, {
+            oldPath,
+            newPath: snapshot.path,
+        });
+    }
+
+    public async appendSyroTimelineAdd(
+        notePath: string,
+        commit: ReviewCommitLog | null,
+    ): Promise<boolean> {
+        if (!commit) {
+            return false;
+        }
+
+        return this.appendSyroTimelineEntry("add", notePath, commit);
+    }
+
+    public async appendSyroTimelineEdit(
+        notePath: string,
+        commit: ReviewCommitLog | null,
+    ): Promise<boolean> {
+        if (!commit) {
+            return false;
+        }
+
+        return this.appendSyroTimelineEntry("edit", notePath, commit);
+    }
+
+    public async appendSyroTimelineDelete(
+        notePath: string,
+        commit: ReviewCommitLog | null,
+    ): Promise<boolean> {
+        if (!commit) {
+            return false;
+        }
+
+        return this.appendSyroTimelineEntry("delete", notePath, commit);
+    }
+
+    public async appendSyroTimelineRenameFile(
+        oldPath: string,
+        newPath: string,
+        commits: ReviewCommitLog[],
+    ): Promise<boolean> {
+        return (
+            (await this.syroSessionManager?.appendRecord({
+                domain: "timeline",
+                entityType: "timeline-file",
+                opType: "rename-file",
+                targetUuid: `timeline-file:${oldPath}`,
+                payload: {
+                    oldPath,
+                    newPath,
+                    commits,
+                },
+                pathHint: newPath,
+            })) ?? false
+        );
+    }
+
+    public async appendSyroTimelineDeleteFile(
+        notePath: string,
+        commits: ReviewCommitLog[],
+    ): Promise<boolean> {
+        return (
+            (await this.syroSessionManager?.appendRecord({
+                domain: "timeline",
+                entityType: "timeline-file",
+                opType: "delete-file",
+                targetUuid: `timeline-file:${notePath}`,
+                payload: {
+                    notePath,
+                    commits,
+                },
+                pathHint: notePath,
+            })) ?? false
+        );
+    }
+
     public showNoteReviewIgnoreNotice(reason: NoteReviewIgnoreReason): void {
         new Notice(
             t(reason === "ignored-folder" ? "NOTE_IN_IGNORED_FOLDER" : "NOTE_IN_IGNORED_TAGS"),
@@ -1641,6 +1799,7 @@ export default class SRPlugin extends Plugin {
             this.noteAlgorithm,
         );
         await this.noteReviewStore.save();
+        await this.appendSyroNoteUpsert(this.noteReviewStore.getEntrySnapshot(file.path), "track");
         await this.refreshNoteReview({ trigger: "manual" });
     }
 
@@ -1650,8 +1809,9 @@ export default class SRPlugin extends Plugin {
             this.excludeNoteFromFolderTracking(file.path);
         }
 
-        this.noteReviewStore.remove(file.path);
+        const removedSnapshot = this.noteReviewStore.removeWithSnapshot(file.path);
         await this.noteReviewStore.save();
+        await this.appendSyroNoteRemove(removedSnapshot, "remove");
 
         if (this.reviewFloatBar.isDisplay() && this.data.settings.autoNextNote) {
             await this.reviewNextNote(this.lastSelectedReviewDeck);
@@ -2323,8 +2483,9 @@ export default class SRPlugin extends Plugin {
         }
 
         await this.noteReviewStore.save();
+        await this.appendSyroNoteUpsert(this.noteReviewStore.getEntrySnapshot(note.path), "review");
         try {
-            await autoCommitReviewResponseToTimeline({
+            const timelineCommit = await autoCommitReviewResponseToTimeline({
                 app: this.app,
                 commitStore: this.reviewCommitStore,
                 enabled: settings.timelineAutoCommitReviewSelection,
@@ -2332,6 +2493,7 @@ export default class SRPlugin extends Plugin {
                 response,
                 intervalDays: timelineIntervalDays,
             });
+            await this.appendSyroTimelineAdd(note.path, timelineCommit);
         } catch (error) {
             console.error("[Timeline] Failed to auto-log review response:", error);
         }

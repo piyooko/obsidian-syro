@@ -36,12 +36,17 @@ describe("reviewCommitStore", () => {
         expect(entry.entryType).toBe("manual");
         expect(entry.reviewResponse).toBeUndefined();
 
-        await store.editCommit("note.md", entry.id, {
+        const updated = await store.editCommit("note.md", entry.id, {
             message: "manual note updated",
             entryType: "manual",
         });
 
         const [saved] = store.getCommits("note.md");
+        expect(updated).toMatchObject({
+            id: entry.id,
+            message: "manual note updated",
+            entryType: "manual",
+        });
         expect(saved.message).toBe("manual note updated");
         expect(saved.entryType).toBe("manual");
         expect(saved.lastEdited).toEqual(expect.any(Number));
@@ -92,5 +97,54 @@ describe("reviewCommitStore", () => {
 
         await store.addCommit("note.md", "before start", undefined, -0.25);
         expect(store.getLatestScrollPercentage("note.md")).toBe(0);
+    });
+
+    it("returns cloned snapshots for commit and file mutations", async () => {
+        const store = new ReviewCommitStore(DEFAULT_SETTINGS, ".obsidian/plugins/syro");
+        await store.load();
+
+        const entry = await store.addCommit("folder/note.md", "snapshot me");
+        const commitSnapshot = store.getCommitSnapshot("folder/note.md", entry.id);
+        const renamed = store.renameFileWithSnapshot("folder/note.md", "folder/renamed.md");
+
+        if (!commitSnapshot || !renamed) {
+            throw new Error("Expected timeline snapshots");
+        }
+
+        commitSnapshot.message = "changed locally";
+        renamed.commits[0].message = "changed locally";
+        expect(store.getCommits("folder/renamed.md")[0].message).toBe("snapshot me");
+
+        const deleted = store.deleteFileWithSnapshot("folder/renamed.md");
+        if (!deleted) {
+            throw new Error("Expected deleted timeline snapshot");
+        }
+
+        expect(store.getCommit("folder/note.md", entry.id)).toBeNull();
+        expect(renamed.oldPath).toBe("folder/note.md");
+        expect(renamed.newPath).toBe("folder/renamed.md");
+        expect(deleted.path).toBe("folder/renamed.md");
+        expect(deleted.commits[0].message).toBe("snapshot me");
+    });
+
+    it("renames and deletes timeline files by path prefix", async () => {
+        const store = new ReviewCommitStore(DEFAULT_SETTINGS, ".obsidian/plugins/syro");
+        await store.load();
+
+        await store.addCommit("folder/a.md", "a");
+        await store.addCommit("folder/sub/b.md", "b");
+        await store.addCommit("elsewhere/c.md", "c");
+
+        const renamed = store.renamePathPrefixWithSnapshots("folder", "archive/folder");
+        expect(renamed).toHaveLength(2);
+        expect(store.getCommits("archive/folder/a.md")).toHaveLength(1);
+        expect(store.getCommits("archive/folder/sub/b.md")).toHaveLength(1);
+        expect(store.getCommits("folder/a.md")).toHaveLength(0);
+
+        const removed = store.deletePathPrefixWithSnapshots("archive/folder");
+        expect(removed).toHaveLength(2);
+        expect(store.getCommits("archive/folder/a.md")).toHaveLength(0);
+        expect(store.getCommits("archive/folder/sub/b.md")).toHaveLength(0);
+        expect(store.getCommits("elsewhere/c.md")).toHaveLength(1);
     });
 });

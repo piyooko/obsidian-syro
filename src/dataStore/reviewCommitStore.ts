@@ -1,6 +1,7 @@
 ﻿import { Iadapter } from "./adapter";
 import { getStorePath } from "./dataLocation";
 import { SRSettings } from "src/settings";
+import { isPathInsideFolder, renamePathPrefix } from "src/folderTracking";
 import type { TimelineReviewResponse } from "src/ui/timeline/reviewResponseTimeline";
 import type { TimelineDisplayDuration } from "src/ui/timeline/timelineMessage";
 import type { ReviewCommitStorePathConfig } from "./syroWorkspace";
@@ -29,6 +30,26 @@ export interface ReviewCommitEditPayload {
 
 export interface ReviewCommitData {
     [filePath: string]: ReviewCommitLog[];
+}
+
+export interface TimelineFileSnapshot {
+    path: string;
+    commits: ReviewCommitLog[];
+}
+
+export interface RenamedTimelineFileSnapshot extends TimelineFileSnapshot {
+    oldPath: string;
+    newPath: string;
+}
+
+function cloneCommitLog<T extends ReviewCommitLog | ReviewCommitLog[] | undefined | null>(
+    value: T,
+): T {
+    if (value == null) {
+        return value;
+    }
+
+    return JSON.parse(JSON.stringify(value)) as T;
 }
 
 export class ReviewCommitStore {
@@ -81,6 +102,18 @@ export class ReviewCommitStore {
         return commits;
     }
 
+    getCommit(filePath: string, commitId: string): ReviewCommitLog | null {
+        return this.getCommits(filePath).find((commit) => commit.id === commitId) ?? null;
+    }
+
+    getCommitSnapshot(filePath: string, commitId: string): ReviewCommitLog | null {
+        return cloneCommitLog(this.getCommit(filePath, commitId));
+    }
+
+    getCommitsSnapshot(filePath: string): ReviewCommitLog[] {
+        return cloneCommitLog(this.getCommits(filePath)) ?? [];
+    }
+
     getLatestScrollPercentage(filePath: string): number | undefined {
         const commits = this.getCommits(filePath);
         for (const commit of commits) {
@@ -126,18 +159,93 @@ export class ReviewCommitStore {
         this.data[filePath].unshift(log);
 
         await this.save();
-        return log;
+        return cloneCommitLog(log);
     }
 
-    renameFile(oldPath: string, newPath: string): void {
-        if (this.data[oldPath]) {
-            this.data[newPath] = this.data[oldPath];
-            delete this.data[oldPath];
+    renameFile(oldPath: string, newPath: string): boolean {
+        return this.renameFileWithSnapshot(oldPath, newPath) !== null;
+    }
+
+    renameFileWithSnapshot(oldPath: string, newPath: string): RenamedTimelineFileSnapshot | null {
+        if (!this.data[oldPath] || oldPath === newPath) {
+            return null;
         }
+
+        this.data[newPath] = this.data[oldPath];
+        delete this.data[oldPath];
+
+        return {
+            path: newPath,
+            oldPath,
+            newPath,
+            commits: this.getCommitsSnapshot(newPath),
+        };
     }
 
-    deleteFile(filePath: string): void {
+    deleteFile(filePath: string): boolean {
+        return this.deleteFileWithSnapshot(filePath) !== null;
+    }
+
+    deleteFileWithSnapshot(filePath: string): TimelineFileSnapshot | null {
+        if (!this.data[filePath]) {
+            return null;
+        }
+
+        const snapshot: TimelineFileSnapshot = {
+            path: filePath,
+            commits: this.getCommitsSnapshot(filePath),
+        };
         delete this.data[filePath];
+        return snapshot;
+    }
+
+    renamePathPrefixWithSnapshots(
+        oldPath: string,
+        newPath: string,
+    ): RenamedTimelineFileSnapshot[] {
+        const renamedSnapshots: RenamedTimelineFileSnapshot[] = [];
+        const nextData: ReviewCommitData = {};
+        let changed = false;
+
+        for (const [filePath, commits] of Object.entries(this.data)) {
+            const nextPath = renamePathPrefix(filePath, oldPath, newPath);
+            nextData[nextPath] = commits;
+            if (nextPath === filePath) {
+                continue;
+            }
+
+            changed = true;
+            renamedSnapshots.push({
+                path: nextPath,
+                oldPath: filePath,
+                newPath: nextPath,
+                commits: cloneCommitLog(commits) ?? [],
+            });
+        }
+
+        if (changed) {
+            this.data = nextData;
+        }
+
+        return renamedSnapshots;
+    }
+
+    deletePathPrefixWithSnapshots(path: string): TimelineFileSnapshot[] {
+        const removedSnapshots: TimelineFileSnapshot[] = [];
+
+        for (const filePath of Object.keys(this.data)) {
+            if (!isPathInsideFolder(path, filePath)) {
+                continue;
+            }
+
+            removedSnapshots.push({
+                path: filePath,
+                commits: this.getCommitsSnapshot(filePath),
+            });
+            delete this.data[filePath];
+        }
+
+        return removedSnapshots;
     }
 
     async deleteCommit(filePath: string, commitId: string): Promise<void> {
@@ -153,8 +261,8 @@ export class ReviewCommitStore {
         filePath: string,
         commitId: string,
         payload: ReviewCommitEditPayload,
-    ): Promise<void> {
-        if (!this.data[filePath]) return;
+    ): Promise<ReviewCommitLog | null> {
+        if (!this.data[filePath]) return null;
         const log = this.data[filePath].find((l) => l.id === commitId);
         if (log) {
             log.message = payload.message.trim();
@@ -163,6 +271,8 @@ export class ReviewCommitStore {
             log.displayDuration = payload.displayDuration;
             log.lastEdited = Date.now();
             await this.save();
+            return cloneCommitLog(log);
         }
+        return null;
     }
 }

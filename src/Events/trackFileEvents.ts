@@ -46,15 +46,18 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
     plugin.registerEvent(
         plugin.app.vault.on("rename", async (file, oldPath) => {
             let noteChanged = false;
-
-            if (plugin.noteReviewStore.rename(oldPath, file.path)) {
+            const renamedNote = plugin.noteReviewStore.renameWithSnapshot(oldPath, file.path);
+            const renamedNotesByPrefix = plugin.noteReviewStore.renamePathPrefixWithSnapshots(
+                oldPath,
+                file.path,
+            );
+            if (renamedNote || renamedNotesByPrefix.length > 0) {
                 await plugin.noteReviewStore.save();
                 noteChanged = true;
-            }
-
-            if (plugin.noteReviewStore.renamePathPrefix(oldPath, file.path)) {
-                await plugin.noteReviewStore.save();
-                noteChanged = true;
+                await plugin.appendSyroNoteRename(oldPath, renamedNote);
+                for (const snapshot of renamedNotesByPrefix) {
+                    await plugin.appendSyroNoteRename(snapshot.oldPath, snapshot.entry);
+                }
             }
 
             if (plugin.renameFolderTrackingPaths(oldPath, file.path)) {
@@ -67,6 +70,27 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                     plugin.getResolvedFolderTrackingRule(file.path)?.rule.track === true;
                 if (folderRuleChanged || shouldTrackByFolder) {
                     noteChanged = true;
+                }
+            }
+
+            const renamedTimeline = plugin.reviewCommitStore.renameFileWithSnapshot(oldPath, file.path);
+            const renamedTimelineByPrefix =
+                plugin.reviewCommitStore.renamePathPrefixWithSnapshots(oldPath, file.path);
+            if (renamedTimeline || renamedTimelineByPrefix.length > 0) {
+                await plugin.reviewCommitStore.save();
+                if (renamedTimeline) {
+                    await plugin.appendSyroTimelineRenameFile(
+                        renamedTimeline.oldPath,
+                        renamedTimeline.newPath,
+                        renamedTimeline.commits,
+                    );
+                }
+                for (const snapshot of renamedTimelineByPrefix) {
+                    await plugin.appendSyroTimelineRenameFile(
+                        snapshot.oldPath,
+                        snapshot.newPath,
+                        snapshot.commits,
+                    );
                 }
             }
 
@@ -105,18 +129,37 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
     plugin.registerEvent(
         plugin.app.vault.on("delete", async (file) => {
             let noteChanged = false;
-            if (plugin.noteReviewStore.remove(file.path)) {
+            const removedNote = plugin.noteReviewStore.removeWithSnapshot(file.path);
+            const removedNotesByPrefix = plugin.noteReviewStore.removePathPrefixWithSnapshots(
+                file.path,
+            );
+            if (removedNote || removedNotesByPrefix.length > 0) {
                 await plugin.noteReviewStore.save();
                 noteChanged = true;
-            }
-
-            if (plugin.noteReviewStore.removePathPrefix(file.path)) {
-                await plugin.noteReviewStore.save();
-                noteChanged = true;
+                await plugin.appendSyroNoteRemove(removedNote);
+                for (const snapshot of removedNotesByPrefix) {
+                    await plugin.appendSyroNoteRemove(snapshot);
+                }
             }
 
             if (plugin.removeFolderTrackingPaths(file.path)) {
                 noteChanged = true;
+            }
+
+            const removedTimeline = plugin.reviewCommitStore.deleteFileWithSnapshot(file.path);
+            const removedTimelineByPrefix =
+                plugin.reviewCommitStore.deletePathPrefixWithSnapshots(file.path);
+            if (removedTimeline || removedTimelineByPrefix.length > 0) {
+                await plugin.reviewCommitStore.save();
+                if (removedTimeline) {
+                    await plugin.appendSyroTimelineDeleteFile(
+                        removedTimeline.path,
+                        removedTimeline.commits,
+                    );
+                }
+                for (const snapshot of removedTimelineByPrefix) {
+                    await plugin.appendSyroTimelineDeleteFile(snapshot.path, snapshot.commits);
+                }
             }
 
             if (plugin.store.getTrackedFile(file.path)) {
