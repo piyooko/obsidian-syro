@@ -25,6 +25,11 @@ import {
 } from "./noteReviewStore";
 import { RepetitionItem } from "./repetitionItem";
 import { ReviewCommitStore, type ReviewCommitLog } from "./reviewCommitStore";
+import {
+    classifySyroSessionRecordImpact,
+    createEmptySyroSessionReplaySummary,
+    type SyroSessionReplaySummary,
+} from "./syroSessionImpact";
 import type { SyroSessionRecord } from "./syroSessionManager";
 import type { SRSettings } from "src/settings";
 import type { FolderTrackingRule } from "src/folderTracking";
@@ -299,7 +304,7 @@ function getTrackingRuleWatermark(
 export async function replaySyroSessionRecords(
     records: SyroSessionRecord[],
     deps: ReplayDependencies,
-): Promise<void> {
+): Promise<SyroSessionReplaySummary> {
     const sharedSettingsFields = new Set<string>(SHARED_SETTINGS_FIELDS as readonly string[]);
     let deckOptionsChanged = false;
     let sharedSettingsChanged = false;
@@ -309,6 +314,7 @@ export async function replaySyroSessionRecords(
     let notesChanged = false;
     let timelineChanged = false;
     let cardsChanged = false;
+    const replaySummary = createEmptySyroSessionReplaySummary();
 
     for (const record of records) {
         switch (record.domain) {
@@ -336,6 +342,7 @@ export async function replaySyroSessionRecords(
                     mutableSettings[field] = cloneUnknown(value);
                     deps.sharedSettingsUpdatedAtByField[field] = record.updatedAt;
                     sharedSettingsChanged = true;
+                    replaySummary.requiresGlobalSync = true;
                 }
                 break;
             }
@@ -368,6 +375,7 @@ export async function replaySyroSessionRecords(
                 }
 
                 trackingRulesChanged = true;
+                replaySummary.requiresGlobalSync = true;
                 break;
             }
 
@@ -441,6 +449,7 @@ export async function replaySyroSessionRecords(
                 deps.dailyStateAppliedOpIds[record.targetUuid] = record.updatedAt;
                 dailyStateChanged = true;
                 dailyStateMetadataChanged = true;
+                replaySummary.dailyStateChanged = true;
                 break;
             }
 
@@ -463,6 +472,7 @@ export async function replaySyroSessionRecords(
                     pathHint: record.pathHint,
                 });
                 deckOptionsChanged = true;
+                replaySummary.requiresGlobalSync = true;
                 break;
             }
 
@@ -490,6 +500,11 @@ export async function replaySyroSessionRecords(
                     pathHint: snapshot.path,
                 });
                 notesChanged = true;
+                if (classifySyroSessionRecordImpact(record) === "runtime-only") {
+                    replaySummary.noteReviewChanged = true;
+                } else {
+                    replaySummary.requiresGlobalSync = true;
+                }
                 break;
             }
 
@@ -524,6 +539,7 @@ export async function replaySyroSessionRecords(
                     });
 
                     timelineChanged = true;
+                    replaySummary.timelineChanged = true;
                     break;
                 }
 
@@ -569,6 +585,7 @@ export async function replaySyroSessionRecords(
                         pathHint: payload.newPath,
                     });
                     timelineChanged = true;
+                    replaySummary.requiresGlobalSync = true;
                     break;
                 }
 
@@ -603,6 +620,7 @@ export async function replaySyroSessionRecords(
                         pathHint: targetPath,
                     });
                     timelineChanged = true;
+                    replaySummary.requiresGlobalSync = true;
                 }
                 break;
             }
@@ -646,6 +664,11 @@ export async function replaySyroSessionRecords(
                     });
 
                     cardsChanged = true;
+                    if (classifySyroSessionRecordImpact(record) === "runtime-only") {
+                        replaySummary.cardsRuntimeChanged = true;
+                    } else {
+                        replaySummary.requiresGlobalSync = true;
+                    }
                     break;
                 }
 
@@ -697,6 +720,7 @@ export async function replaySyroSessionRecords(
                 }
 
                 cardsChanged = true;
+                replaySummary.requiresGlobalSync = true;
                 break;
             }
         }
@@ -747,4 +771,6 @@ export async function replaySyroSessionRecords(
             ),
         );
     }
+
+    return replaySummary;
 }

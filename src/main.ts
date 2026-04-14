@@ -1,5 +1,6 @@
 import {
     App,
+    DataAdapter,
     getAllTags,
     Menu,
     Notice,
@@ -129,6 +130,10 @@ import {
     type SyroSessionImportResult,
     type SyroSessionSealReason,
 } from "./dataStore/syroSessionManager";
+import {
+    createEmptySyroSessionReplaySummary,
+    hasSyroSessionReplayChanges,
+} from "./dataStore/syroSessionImpact";
 import Commands from "./commands";
 import { SrsAlgorithm } from "src/algorithms/algorithms";
 import { FsrsAlgorithm } from "src/algorithms/fsrs";
@@ -241,6 +246,10 @@ function clearFolderTrackingFrontmatterTags(frontmatter: unknown): void {
     delete frontmatter["tags"];
 }
 
+function normalizeSyroPath(path: string): string {
+    return path.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/g, "");
+}
+
 export interface LearningQueueItem {
     card: Card;
     dueTime: number;
@@ -268,6 +277,7 @@ export interface SyroDeviceManagementState {
 }
 
 const AUTO_SYNC_COOLDOWN_MS = 15_000;
+const REMOTE_DELTA_POLL_INTERVAL_MS = 7_000;
 
 const STYLE_SETTINGS_BRIDGE_RETRY_DELAYS_MS = [0, 400, 1400, 3200] as const;
 
@@ -328,6 +338,9 @@ export default class SRPlugin extends Plugin {
     private lastSemanticChangeAt = 0;
     private noteReviewRefreshLock = false;
     private noteReviewRefreshPending = false;
+    private remoteDeltaSyncLock = false;
+    private remoteDeltaSyncPending = false;
+    private remoteDeltaFingerprint = "";
 
     // Derived from earlier pre-Syro command handling.
     public store: DataStore;
@@ -585,11 +598,31 @@ export default class SRPlugin extends Plugin {
         this.registerInterval(
             window.setInterval(
                 () => {
-                    this.runAsync(this.requestSync({ trigger: "background" }), "background sync");
+                    this.queueRemoteDeltaSyncCheck("interval");
                 },
-                30 * 60 * 1000,
+                REMOTE_DELTA_POLL_INTERVAL_MS,
             ),
         );
+        if (typeof document !== "undefined") {
+            this.registerDomEvent(document, "visibilitychange", () => {
+                if (document.visibilityState === "hidden") {
+                    this.queueBackgroundSyroSessionSeal("hidden");
+                } else if (document.visibilityState === "visible") {
+                    this.queueRemoteDeltaSyncCheck("visible");
+                }
+            });
+        }
+        if (typeof window !== "undefined") {
+            this.registerDomEvent(window, "focus", () => {
+                this.queueRemoteDeltaSyncCheck("focus");
+            });
+            this.registerDomEvent(window, "blur", () => {
+                this.queueBackgroundSyroSessionSeal("blur");
+            });
+            this.registerDomEvent(window, "pagehide", () => {
+                this.queueBackgroundSyroSessionSeal("pagehide");
+            });
+        }
 
         // Initialize Note Status Bar Item
         this.statusBarNote = this.addStatusBarItem();
@@ -818,6 +851,7 @@ export default class SRPlugin extends Plugin {
         this.app.workspace.onLayoutReady(() => {
             this.runAsync(this.initReviewQueueView(), "init review queue view");
             void this.refreshNoteReview({ trigger: "startup" });
+            this.queueRemoteDeltaSyncCheck("startup");
             setTimeout(() => {
                 if (this.syncLock) {
                     return;
@@ -1107,6 +1141,363 @@ export default class SRPlugin extends Plugin {
         );
     }
 
+    private shouldEnableRemoteDeltaPolling(): boolean {
+        return (
+            !!this.syroLayout &&
+            !!this.syroSessionManager &&
+            !this.syroReadOnlyReason &&
+            this.data?.settings?.autoIncrementalSync !== false &&
+            !this.pendingSyroRecoveryContext &&
+            !this.pendingSyroDeviceSelectionContext
+        );
+    }
+
+    private queueRemoteDeltaSyncCheck(reason = "interval"): void {
+        if (!this.shouldEnableRemoteDeltaPolling()) {
+            return;
+        }
+
+        if (this.remoteDeltaSyncLock || this.syncLock || this.noteReviewRefreshLock) {
+            this.remoteDeltaSyncPending = true;
+            return;
+        }
+
+        this.runAsync(this.runRemoteDeltaSync(reason), `syro remote delta ${reason}`);
+    }
+
+    private queueBackgroundSyroSessionSeal(source = "background"): void {
+        if (this.syroReadOnlyReason || !this.syroSessionManager) {
+            return;
+        }
+
+        this.runAsync(
+            this.syroSessionManager.flushActiveSession("background"),
+            `syro session seal ${source}`,
+        );
+    }
+
+    private replayPendingRemoteDeltaSyncIfNeeded(): void {
+        if (!this.remoteDeltaSyncPending) {
+            return;
+        }
+
+        this.remoteDeltaSyncPending = false;
+        this.queueRemoteDeltaSyncCheck("pending");
+    }
+
+    private async runRemoteDeltaSync(reason = "interval"): Promise<void> {
+        if (this.remoteDeltaSyncLock) {
+            this.remoteDeltaSyncPending = true;
+            return;
+        }
+
+        this.remoteDeltaSyncLock = true;
+        try {
+            let nextReason = reason;
+            do {
+                this.remoteDeltaSyncPending = false;
+                await this.runRemoteDeltaSyncOnce(nextReason);
+                nextReason = "pending";
+            } while (
+                this.remoteDeltaSyncPending &&
+                !this.syncLock &&
+                !this.noteReviewRefreshLock &&
+                this.shouldEnableRemoteDeltaPolling()
+            );
+        } finally {
+            this.remoteDeltaSyncLock = false;
+            this.replayPendingRemoteDeltaSyncIfNeeded();
+        }
+    }
+
+    private async runRemoteDeltaSyncOnce(reason = "interval"): Promise<void> {
+        if (!this.shouldEnableRemoteDeltaPolling()) {
+            return;
+        }
+
+        if (this.syncLock || this.noteReviewRefreshLock) {
+            this.remoteDeltaSyncPending = true;
+            return;
+        }
+
+        const nextFingerprint = await this.captureRemoteDeltaFingerprint();
+        if (!nextFingerprint) {
+            this.remoteDeltaFingerprint = "";
+            return;
+        }
+
+        const pendingScan = (await this.syroSessionManager?.peekPendingSessions()) ?? {
+            pendingSessionIds: [],
+            impact: null,
+        };
+        const fingerprintChanged = nextFingerprint !== this.remoteDeltaFingerprint;
+        if (!fingerprintChanged && pendingScan.pendingSessionIds.length === 0) {
+            return;
+        }
+
+        if (fingerprintChanged) {
+            this.logRuntimeDebug("[SR-Syro] Remote delta fingerprint changed.", {
+                reason,
+                previousFingerprint: this.remoteDeltaFingerprint,
+                nextFingerprint,
+            });
+        }
+
+        if (
+            pendingScan.pendingSessionIds.length > 0 &&
+            pendingScan.impact === "requires-global-sync"
+        ) {
+            await this.requestSync({ trigger: "remote-poll", force: true });
+            await this.updateRemoteDeltaFingerprint();
+            return;
+        }
+
+        const importResult = await this.importPendingSyroSessions({
+            sealOwnOpenSession: false,
+        });
+        const outcome = await this.applyLightweightSessionDelta(importResult);
+        if (outcome === "escalated") {
+            await this.updateRemoteDeltaFingerprint();
+            return;
+        }
+
+        if (
+            importResult &&
+            this.data.settings.showRuntimeDebugMessages &&
+            (importResult.importedSessionIds.length > 0 ||
+                importResult.deletedSessionIds.length > 0 ||
+                importResult.archivedSessionIds.length > 0)
+        ) {
+            console.debug("[SR-Syro] Applied remote delta import.", {
+                reason,
+                pendingScan,
+                importResult,
+            });
+        }
+
+        await this.updateRemoteDeltaFingerprint();
+    }
+
+    private async applyLightweightSessionDelta(
+        importResult: SyroSessionImportResult | null,
+    ): Promise<"noop" | "applied" | "escalated"> {
+        const replayImpact =
+            importResult?.replayImpact ?? createEmptySyroSessionReplaySummary();
+        if (!hasSyroSessionReplayChanges(replayImpact)) {
+            return "noop";
+        }
+
+        if (replayImpact.requiresGlobalSync) {
+            await this.requestSync({ trigger: "remote-poll", force: true });
+            return "escalated";
+        }
+
+        if (replayImpact.cardsRuntimeChanged) {
+            if (!this.rebindDeckTreeRuntimeBindings()) {
+                await this.requestSync({ trigger: "remote-poll", force: true });
+                return "escalated";
+            }
+
+            this.refreshCurrentDeckRuntimeState(
+                this.lastSyncReviewMode ?? FlashcardReviewMode.Review,
+            );
+        }
+
+        if (replayImpact.noteReviewChanged) {
+            await this.refreshNoteReview({ trigger: "remote-poll" });
+        }
+
+        this.syncEvents.emit("sync-complete");
+        return "applied";
+    }
+
+    private rebindDeckTreeRuntimeBindings(): boolean {
+        if (!this.store || !this.deckTree) {
+            return false;
+        }
+
+        if (this.deckTree.getCardCount(CardListType.All, true) === 0) {
+            return false;
+        }
+
+        return this.rebindDeckNodeRuntime(this.deckTree);
+    }
+
+    private rebindDeckNodeRuntime(deck: Deck): boolean {
+        const cards = Array.from(
+            new Set([...deck.newFlashcards, ...deck.dueFlashcards, ...deck.learningFlashcards]),
+        );
+        deck.newFlashcards = [];
+        deck.dueFlashcards = [];
+        deck.learningFlashcards = [];
+
+        for (const card of cards) {
+            if (typeof card.Id !== "number" || card.Id < 0) {
+                return false;
+            }
+
+            const item = this.store.getItembyID(card.Id);
+            if (!item) {
+                return false;
+            }
+
+            card.repetitionItem = item;
+            card.scheduleInfo = NoteCardScheduleParser.createInfo_algo(item.getSched() ?? null);
+
+            switch (card.cardListType) {
+                case CardListType.LearningCard:
+                    deck.learningFlashcards.push(card);
+                    break;
+                case CardListType.DueCard:
+                    deck.dueFlashcards.push(card);
+                    break;
+                default:
+                    deck.newFlashcards.push(card);
+                    break;
+            }
+        }
+
+        for (const subdeck of deck.subdecks) {
+            if (!this.rebindDeckNodeRuntime(subdeck)) {
+                return false;
+            }
+        }
+
+        deck.sortSubdecksList();
+        return true;
+    }
+
+    private refreshCurrentDeckRuntimeState(reviewMode: FlashcardReviewMode): void {
+        this.deckTree.sortSubdecksList();
+        this.collectLearningCardsFromStore(this.deckTree);
+        this.remainingDeckTree = DeckTreeFilter.filterForRemainingCards(
+            this.questionPostponementList,
+            this.deckTree,
+            reviewMode,
+        );
+
+        const calc: DeckTreeStatsCalculator = new DeckTreeStatsCalculator();
+        this.cardStats = calc.calculate(this.deckTree);
+        setDueDates(this.cardStats.delayedDays.dict, this.cardStats.delayedDays.dict);
+
+        const statsService = DeckStatsService.getInstance();
+        statsService.setSyncEvents(this.syncEvents);
+        statsService.clearCache();
+
+        const learnAheadMillis = Math.max(0, this.data.settings.learnAheadMinutes) * 60 * 1000;
+        this.recalculateDeckStatsCache(this.deckTree, learnAheadMillis);
+
+        const fbar = this.reviewFloatBar;
+        if (fbar) {
+            fbar.cardtotalCB = () => {
+                return this.remainingDeckTree.getCardCount(CardListType.All, true);
+            };
+            fbar.notetotalCB = () => {
+                return this.noteStats?.getTotalCount?.() ?? 0;
+            };
+        }
+
+        this.updateStatusBar();
+    }
+
+    private recalculateDeckStatsCache(deck: Deck, learnAheadMillis: number): void {
+        const statsService = DeckStatsService.getInstance();
+        statsService.recalculateDeck(deck, learnAheadMillis);
+        for (const subdeck of deck.subdecks) {
+            this.recalculateDeckStatsCache(subdeck, learnAheadMillis);
+        }
+    }
+
+    private async updateRemoteDeltaFingerprint(): Promise<void> {
+        this.remoteDeltaFingerprint = await this.captureRemoteDeltaFingerprint();
+    }
+
+    private async captureRemoteDeltaFingerprint(): Promise<string> {
+        if (!this.syroLayout) {
+            return "";
+        }
+
+        type SyroFingerprintStat = {
+            mtime: number;
+            size: number;
+        };
+
+        const adapter = this.app.vault.adapter as DataAdapter & {
+            stat?: (path: string) => Promise<{ mtime?: number; size?: number } | null>;
+        };
+        const readFingerprintStat = async (path: string): Promise<SyroFingerprintStat | null> => {
+            if (typeof adapter.stat !== "function") {
+                return null;
+            }
+
+            try {
+                const rawStat = (await adapter.stat(path)) as unknown;
+                if (!rawStat || typeof rawStat !== "object") {
+                    return null;
+                }
+
+                const candidate = rawStat as {
+                    mtime?: unknown;
+                    size?: unknown;
+                };
+                return {
+                    mtime: typeof candidate.mtime === "number" ? candidate.mtime : 0,
+                    size: typeof candidate.size === "number" ? candidate.size : 0,
+                };
+            } catch {
+                return null;
+            }
+        };
+        const entries: string[] = [];
+        const closedListing = await this.safeVaultList(this.syroLayout.closedSessionsRoot);
+        const closedFiles = closedListing.files
+            .map((filePath) => normalizeSyroPath(filePath))
+            .filter((filePath) => filePath.toLowerCase().endsWith(".jsonl"))
+            .sort((left, right) => left.localeCompare(right));
+
+        for (const filePath of closedFiles) {
+            const stat = await readFingerprintStat(filePath);
+            entries.push(
+                `${filePath}|${stat?.mtime ?? 0}|${stat?.size ?? 0}`,
+            );
+        }
+
+        const deviceListing = await this.safeVaultList(this.syroLayout.devicesRoot);
+        const deviceFolders = deviceListing.folders
+            .map((folderPath) => normalizeSyroPath(folderPath))
+            .sort((left, right) => left.localeCompare(right));
+
+        for (const deviceFolder of deviceFolders) {
+            const metaPath = normalizeSyroPath(`${deviceFolder}/device.json`);
+            const exists = await adapter.exists(metaPath).catch(() => false);
+            if (!exists) {
+                continue;
+            }
+
+            const stat = await readFingerprintStat(metaPath);
+            entries.push(
+                `${metaPath}|${stat?.mtime ?? 0}|${stat?.size ?? 0}`,
+            );
+        }
+
+        return entries.join("\n");
+    }
+
+    private async safeVaultList(root: string): Promise<{ files: string[]; folders: string[] }> {
+        try {
+            const listing = await this.app.vault.adapter.list(normalizeSyroPath(root));
+            return {
+                files: listing?.files ?? [],
+                folders: listing?.folders ?? [],
+            };
+        } catch {
+            return {
+                files: [],
+                folders: [],
+            };
+        }
+    }
+
     public requestReviewSessionReloadAfterNextFullSync(): void {
         this.pendingReviewSessionReloadAfterFullSync = true;
     }
@@ -1183,6 +1574,68 @@ export default class SRPlugin extends Plugin {
         }
     }
 
+    private buildPersistedNoteCachePayload(
+        signature: string,
+        cache: Map<string, { mtime: number; note: Note }>,
+    ): PersistedNoteCacheFile {
+        const items: PersistedNoteCacheItem[] = [];
+        for (const [notePath, entry] of cache.entries()) {
+            items.push({
+                path: notePath,
+                mtime: entry.mtime,
+                data: serializeNote(entry.note),
+            });
+        }
+        items.sort((left, right) => left.path.localeCompare(right.path));
+
+        return {
+            version: NOTE_CACHE_VERSION,
+            signature,
+            items,
+        };
+    }
+
+    private hasNoteCacheMetadataChanges(
+        nextCache: Map<string, { mtime: number }>,
+        baselineCacheByPath: Map<string, { mtime: number }>,
+    ): boolean {
+        if (nextCache.size !== baselineCacheByPath.size) {
+            return true;
+        }
+
+        for (const [notePath, entry] of nextCache.entries()) {
+            const baseline = baselineCacheByPath.get(notePath);
+            if (!baseline || baseline.mtime !== entry.mtime) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private shouldPersistNoteCacheAfterSync(options: {
+        syncMode: SyncMode;
+        signatureChanged: boolean;
+        cacheFileMissing: boolean;
+        reparsedNotes: boolean;
+        nextCache: Map<string, { mtime: number }>;
+        baselineCacheByPath: Map<string, { mtime: number }>;
+    }): boolean {
+        if (
+            options.syncMode === "full" ||
+            options.signatureChanged ||
+            options.cacheFileMissing ||
+            options.reparsedNotes
+        ) {
+            return true;
+        }
+
+        return this.hasNoteCacheMetadataChanges(
+            options.nextCache,
+            options.baselineCacheByPath,
+        );
+    }
+
     private async saveNoteCacheToDisk(
         signature: string,
         cache: Map<string, { mtime: number; note: Note }>,
@@ -1190,21 +1643,16 @@ export default class SRPlugin extends Plugin {
         try {
             const adapter = Iadapter.instance.adapter;
             const path = this.getNoteCacheStorePath();
-            const items: PersistedNoteCacheItem[] = [];
-            for (const [notePath, entry] of cache.entries()) {
-                items.push({
-                    path: notePath,
-                    mtime: entry.mtime,
-                    data: serializeNote(entry.note),
-                });
+            const payload = this.buildPersistedNoteCachePayload(signature, cache);
+            const serialized = JSON.stringify(payload);
+            if (await adapter.exists(path)) {
+                const existing = await adapter.read(path);
+                if (existing === serialized) {
+                    return;
+                }
             }
 
-            const payload: PersistedNoteCacheFile = {
-                version: NOTE_CACHE_VERSION,
-                signature,
-                items,
-            };
-            await adapter.write(path, JSON.stringify(payload));
+            await adapter.write(path, serialized);
         } catch (error) {
             console.warn("[SR-Cache] Failed to save note_cache.json:", error);
         }
@@ -1945,7 +2393,11 @@ export default class SRPlugin extends Plugin {
         new Notice(t("NOTICE_SYRO_INVALID_DEVICE_DELETED"));
     }
 
-    private async importPendingSyroSessions(): Promise<SyroSessionImportResult | null> {
+    private async importPendingSyroSessions(
+        options: {
+            sealOwnOpenSession?: boolean;
+        } = {},
+    ): Promise<SyroSessionImportResult | null> {
         if (this.syroReadOnlyReason) {
             return null;
         }
@@ -1963,23 +2415,26 @@ export default class SRPlugin extends Plugin {
             return null;
         }
 
-        const result = await this.syroSessionManager.importPendingSessions(async (_sessionId, records) => {
-            await replaySyroSessionRecords(records, {
-                settings: this.data.settings,
-                data: this.data,
-                store: this.store,
-                noteReviewStore: this.noteReviewStore,
-                reviewCommitStore: this.reviewCommitStore,
-                deckOptionsStore: this.deckOptionsStore,
-                sharedSettingsStore: this.sharedSettingsStore,
-                trackingRulesStore: this.trackingRulesStore,
-                dailyStateStore: this.dailyStateStore,
-                sharedSettingsUpdatedAtByField: this.sharedSettingsUpdatedAtByField,
-                trackingRulesUpdatedAtByFolderPath: this.trackingRulesUpdatedAtByFolderPath,
-                trackingRulesTombstones: this.trackingRulesTombstones,
-                dailyStateAppliedOpIds: this.dailyStateAppliedOpIds,
-            });
-        });
+        const result = await this.syroSessionManager.importPendingSessions(
+            async (_sessionId, records) => {
+                return replaySyroSessionRecords(records, {
+                    settings: this.data.settings,
+                    data: this.data,
+                    store: this.store,
+                    noteReviewStore: this.noteReviewStore,
+                    reviewCommitStore: this.reviewCommitStore,
+                    deckOptionsStore: this.deckOptionsStore,
+                    sharedSettingsStore: this.sharedSettingsStore,
+                    trackingRulesStore: this.trackingRulesStore,
+                    dailyStateStore: this.dailyStateStore,
+                    sharedSettingsUpdatedAtByField: this.sharedSettingsUpdatedAtByField,
+                    trackingRulesUpdatedAtByFolderPath: this.trackingRulesUpdatedAtByFolderPath,
+                    trackingRulesTombstones: this.trackingRulesTombstones,
+                    dailyStateAppliedOpIds: this.dailyStateAppliedOpIds,
+                });
+            },
+            options,
+        );
         this.persistedSharedSettingsState = extractSharedSettingsWithMetadata(
             this.data.settings,
             this.sharedSettingsUpdatedAtByField,
@@ -2807,6 +3262,7 @@ export default class SRPlugin extends Plugin {
             } while (this.noteReviewRefreshPending);
         } finally {
             this.noteReviewRefreshLock = false;
+            this.replayPendingRemoteDeltaSyncIfNeeded();
         }
     }
 
@@ -2926,7 +3382,9 @@ export default class SRPlugin extends Plugin {
             await this.syroSessionManager?.flushActiveSession(sealReason);
         }
 
-        const sessionImportResult = await this.importPendingSyroSessions?.();
+        const sessionImportResult = await this.importPendingSyroSessions?.({
+            sealOwnOpenSession: request.trigger !== "remote-poll",
+        });
         if (
             sessionImportResult &&
             this.data.settings.showRuntimeDebugMessages &&
@@ -2941,6 +3399,7 @@ export default class SRPlugin extends Plugin {
             trigger: request.trigger,
             force: request.force,
         });
+        await this.updateRemoteDeltaFingerprint();
         return { ...request, status: "executed" };
     }
 
@@ -2970,6 +3429,12 @@ export default class SRPlugin extends Plugin {
         const currentSignature = this.getSyncSignature(settings);
         let syncMode: SyncMode = mode;
         const persistedCacheByPath = new Map<string, { mtime: number; data: SerializedNote }>();
+        const noteCachePath = settings.enableNoteCachePersistence
+            ? this.getNoteCacheStorePath()
+            : null;
+        const noteCacheFileMissing = noteCachePath
+            ? !(await Iadapter.instance.adapter.exists(noteCachePath))
+            : false;
 
         if (
             settings.enableNoteCachePersistence &&
@@ -2992,11 +3457,13 @@ export default class SRPlugin extends Plugin {
             }
         }
 
+        const noteCacheSignatureChanged =
+            !!this.noteCacheSignature && this.noteCacheSignature !== currentSignature;
         if (!this.noteCacheSignature) {
             this.noteCacheSignature = currentSignature;
         }
 
-        if (this.noteCacheSignature !== currentSignature) {
+        if (noteCacheSignatureChanged) {
             this.noteCacheSignature = currentSignature;
             this.noteCache.clear();
             persistedCacheByPath.clear();
@@ -3051,7 +3518,14 @@ export default class SRPlugin extends Plugin {
             releaseSaveSuppression = this.store ? this.store.suspendSaves() : null;
             const useCache = syncMode === "incremental";
             const previousCache = this.noteCache;
+            const previousCacheMetadataByPath = new Map<string, { mtime: number }>();
+            for (const [notePath, entry] of previousCache.entries()) {
+                previousCacheMetadataByPath.set(notePath, {
+                    mtime: entry.mtime,
+                });
+            }
             const nextCache = new Map<string, { mtime: number; note: Note }>();
+            let noteCacheReparsedNotes = false;
             this.noteCache = nextCache;
             const BATCH_SIZE = 50;
             progressTip?.update(
@@ -3078,6 +3552,7 @@ export default class SRPlugin extends Plugin {
                         }
                         if (!note) {
                             note = await this.loadNote(noteFile);
+                            noteCacheReparsedNotes = true;
                         }
                         nextCache.set(noteFile.path, { mtime, note });
                         if (note.questionList.length > 0) {
@@ -3110,7 +3585,21 @@ export default class SRPlugin extends Plugin {
             if (this.store) {
                 await this.store.save();
             }
-            if (settings.enableNoteCachePersistence) {
+            const noteCacheBaselineByPath =
+                persistedCacheByPath.size > 0 || previousCacheMetadataByPath.size === 0
+                    ? persistedCacheByPath
+                    : previousCacheMetadataByPath;
+            if (
+                settings.enableNoteCachePersistence &&
+                this.shouldPersistNoteCacheAfterSync({
+                    syncMode,
+                    signatureChanged: noteCacheSignatureChanged,
+                    cacheFileMissing: noteCacheFileMissing,
+                    reparsedNotes: noteCacheReparsedNotes,
+                    nextCache,
+                    baselineCacheByPath: noteCacheBaselineByPath,
+                })
+            ) {
                 await this.saveNoteCacheToDisk(currentSignature, nextCache);
             }
 
@@ -3247,6 +3736,7 @@ export default class SRPlugin extends Plugin {
             this.syncEvents.emit("sync-finished");
             progressTip?.hide(800);
             this.replayQueuedSyncRequest();
+            this.replayPendingRemoteDeltaSyncIfNeeded();
         }
     }
 
@@ -3925,6 +4415,7 @@ export default class SRPlugin extends Plugin {
             this.syroReadOnlyReason = startup.readOnlyReason;
         }
         if (!this.syroLayout) {
+            this.remoteDeltaFingerprint = "";
             this.applySyroReadOnlyState();
             return;
         }
@@ -3992,6 +4483,7 @@ export default class SRPlugin extends Plugin {
         this.linkRank = new LinkRank(this.data.settings, this.app.metadataCache);
         this.reviewDecks = this.noteReviewStore.buildReviewDecks(this.app.vault);
         this.updateAndSortDueNotes();
+        await this.updateRemoteDeltaFingerprint();
         setDebugParser(this.data.settings.showParserDebugMessages);
     }
 

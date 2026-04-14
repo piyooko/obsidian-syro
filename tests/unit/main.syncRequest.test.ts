@@ -46,7 +46,9 @@ describe("SRPlugin sync request orchestration", () => {
             syroSessionManager: {
                 flushActiveSession: jest.fn(async () => "2026-04-13T12-00-00__d84f__0001"),
             },
+            importPendingSyroSessions: jest.fn(async () => null),
             sync: jest.fn(async () => undefined),
+            updateRemoteDeltaFingerprint: jest.fn(async () => undefined),
         };
 
         const result = await (SRPlugin.prototype.requestSync as unknown as Function).call(plugin, {
@@ -66,6 +68,43 @@ describe("SRPlugin sync request orchestration", () => {
             trigger: "manual",
             force: false,
             status: "executed",
+        });
+    });
+
+    test("requestSync skips active session sealing during remote-poll and imports without sealing its own buffer", async () => {
+        const plugin: any = {
+            data: {
+                settings: {
+                    showSchedulingDebugMessages: false,
+                    showRuntimeDebugMessages: false,
+                },
+            },
+            shouldSkipDisabledAutomaticIncrementalSync: jest.fn(() => false),
+            shouldSkipAutomaticSync: jest.fn(() => false),
+            syncLock: false,
+            syroReadOnlyReason: null,
+            syroSessionManager: {
+                flushActiveSession: jest.fn(async () => "2026-04-13T12-00-00__d84f__0001"),
+            },
+            importPendingSyroSessions: jest.fn(async () => null),
+            sync: jest.fn(async () => undefined),
+            updateRemoteDeltaFingerprint: jest.fn(async () => undefined),
+        };
+
+        await (SRPlugin.prototype.requestSync as unknown as Function).call(plugin, {
+            reviewMode: FlashcardReviewMode.Review,
+            mode: "incremental",
+            trigger: "remote-poll",
+            force: true,
+        });
+
+        expect(plugin.syroSessionManager.flushActiveSession).not.toHaveBeenCalled();
+        expect(plugin.importPendingSyroSessions).toHaveBeenCalledWith({
+            sealOwnOpenSession: false,
+        });
+        expect(plugin.sync).toHaveBeenCalledWith(FlashcardReviewMode.Review, "incremental", {
+            trigger: "remote-poll",
+            force: true,
         });
     });
 

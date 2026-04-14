@@ -442,6 +442,64 @@ describe("SyroWorkspace", () => {
         );
     });
 
+    it("does not treat the 0.0.12 data shell as a legacy migration source", async () => {
+        const { adapter, files } = createMockAdapter();
+        files.set(
+            ".obsidian/plugins/syro/data.json",
+            JSON.stringify({
+                version: 2,
+                schemaVersion: "0.0.12",
+                migrations: {
+                    syro012: {
+                        completedAt: "2026-04-14T06:00:00.000Z",
+                        sourceVersion: "0.0.11",
+                    },
+                },
+            }),
+        );
+
+        const startup = await createWorkspace(adapter).initialize();
+
+        expect(startup.startupDecision).toBe("ready");
+        expect(
+            Array.from(files.keys()).some((path) => path.includes("/migration-backups/")),
+        ).toBe(false);
+    });
+
+    it("skips backing up the 0.0.12 data shell even when other legacy files still need migration", async () => {
+        const { adapter, files } = createMockAdapter();
+        files.set(
+            ".obsidian/plugins/syro/data.json",
+            JSON.stringify({
+                version: 2,
+                schemaVersion: "0.0.12",
+                migrations: {
+                    syro012: {
+                        completedAt: "2026-04-14T06:00:00.000Z",
+                        sourceVersion: "0.0.11",
+                    },
+                },
+            }),
+        );
+        files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[]}');
+        files.set(".obsidian/plugins/syro/review_notes.json", createValidNotesPayload());
+        files.set(".obsidian/plugins/syro/review_commits.json", '{"note.md":[{"id":"1"}]}');
+
+        await createWorkspace(adapter).initialize();
+
+        expect(
+            Array.from(files.keys()).some(
+                (path) =>
+                    path.includes("/migration-backups/") && path.endsWith("/tracked_files.json"),
+            ),
+        ).toBe(true);
+        expect(
+            Array.from(files.keys()).some(
+                (path) => path.includes("/migration-backups/") && path.endsWith("/data.json"),
+            ),
+        ).toBe(false);
+    });
+
     it("migrates compatibility local-state and legacy session roots into the new tree", async () => {
         const { adapter, files, directories } = createMockAdapter();
         files.set(".obsidian/plugins/syro/data.json", '{"settings":{"openRandomNote":true}}');

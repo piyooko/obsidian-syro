@@ -1612,8 +1612,12 @@ body.syro-desktop-review-square-corners
 
     /* 使用 padding 定义"安全区域"和卡片边距 */
     /* Keep only a small buffer above the safe area so the card can start higher on phones. */
-    padding-top: max(10px, calc(env(safe-area-inset-top) + 8px)) !important;
-    padding-bottom: calc(env(safe-area-inset-bottom) + 12px) !important;
+    padding-top: calc(
+        env(safe-area-inset-top) + var(--syro-mobile-review-screen-top-gap, 8px)
+    ) !important;
+    padding-bottom: calc(
+        env(safe-area-inset-bottom) + var(--syro-mobile-review-screen-bottom-gap, 12px)
+    ) !important;
     padding-left: calc(env(safe-area-inset-left) + 12px) !important;
     padding-right: calc(env(safe-area-inset-right) + 12px) !important;
 
@@ -1626,7 +1630,9 @@ body.syro-desktop-review-square-corners
 
 /* 此时卡片只需占满 wrapper 剩余空间 */
 .sr-linear-card-wrapper.sr-phone-layout.sr-overlay-mobile-navbar {
-    padding-bottom: max(10px, calc(env(safe-area-inset-bottom) + 4px)) !important;
+    padding-bottom: calc(
+        env(safe-area-inset-bottom) + var(--syro-mobile-review-screen-bottom-gap, 12px)
+    ) !important;
 }
 
 .sr-linear-card-wrapper.sr-phone-layout.sr-mobile-maximized {

@@ -1,7 +1,13 @@
 import { FlashcardReviewMode } from "./scheduling";
 
 export type SyncMode = "incremental" | "full";
-export type SyncTrigger = "manual" | "startup" | "review-entry" | "background" | "file-event";
+export type SyncTrigger =
+    | "manual"
+    | "startup"
+    | "review-entry"
+    | "background"
+    | "file-event"
+    | "remote-poll";
 
 export interface SyncRequestOptions {
     reviewMode?: FlashcardReviewMode;

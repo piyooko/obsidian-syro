@@ -1253,6 +1253,30 @@ settings:
     max: 56
     step: 1
   -
+    id: syro-mobile-review-screen-top-gap
+    title: Card top gap
+    title.zh: 卡片距顶部间距
+    description: Controls extra space between the phone review card and the top edge of the screen. Safe area is added automatically.
+    description.zh: 控制手机复习卡片与屏幕顶部之间的额外距离，系统安全区会自动叠加。
+    type: variable-number-slider
+    default: 8
+    format: px
+    min: 0
+    max: 36
+    step: 1
+  -
+    id: syro-mobile-review-screen-bottom-gap
+    title: Card bottom gap
+    title.zh: 卡片距底部间距
+    description: Controls extra space between the phone review card and the bottom edge of the screen. Safe area is added automatically.
+    description.zh: 控制手机复习卡片与屏幕底部之间的额外距离，系统安全区会自动叠加。
+    type: variable-number-slider
+    default: 12
+    format: px
+    min: 0
+    max: 36
+    step: 1
+  -
     id: syro-mobile-review-content-padding-x
     title: Content horizontal padding
     title.zh: 内容左右内边距

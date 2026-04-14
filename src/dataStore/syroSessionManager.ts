@@ -1,6 +1,13 @@
 import { App, DataAdapter } from "obsidian";
 import { gunzipSync, gzipSync, strFromU8, strToU8 } from "fflate";
 import type { DeckOptionsStoreFile } from "./deckOptionsStore";
+import {
+    classifySyroSessionRecordImpact,
+    createEmptySyroSessionReplaySummary,
+    mergeSyroSessionReplaySummary,
+    type SyroPendingSessionImpact,
+    type SyroSessionReplaySummary,
+} from "./syroSessionImpact";
 import type { SyroDeviceMetadata, SyroPersistenceLayout } from "./syroWorkspace";
 import { parseDeviceMetadata } from "./syroWorkspace";
 import {
@@ -100,6 +107,12 @@ export interface SyroSessionImportResult {
     importedSessionIds: string[];
     deletedSessionIds: string[];
     archivedSessionIds: string[];
+    replayImpact: SyroSessionReplaySummary;
+}
+
+export interface SyroPendingSessionScanResult {
+    pendingSessionIds: string[];
+    impact: SyroPendingSessionImpact | null;
 }
 
 interface ArchivedSessionPackEntry {
@@ -327,18 +340,29 @@ export class SyroSessionManager {
     }
 
     async importPendingSessions(
-        replaySession: (sessionId: string, records: SyroSessionRecord[]) => Promise<void>,
+        replaySession: (
+            sessionId: string,
+            records: SyroSessionRecord[],
+        ) => Promise<SyroSessionReplaySummary | void>,
+        options: {
+            sealOwnOpenSession?: boolean;
+        } = {},
     ): Promise<SyroSessionImportResult> {
         if (this.syncReadOnlyReason) {
             return {
                 importedSessionIds: [],
                 deletedSessionIds: [],
                 archivedSessionIds: [],
+                replayImpact: createEmptySyroSessionReplaySummary(),
             };
         }
 
+        const { sealOwnOpenSession = true } = options;
         const importedSessionIds: string[] = [];
-        await this.flushOwnOpenSessionBeforeImport();
+        let replayImpact = createEmptySyroSessionReplaySummary();
+        if (sealOwnOpenSession) {
+            await this.flushOwnOpenSessionBeforeImport();
+        }
         const sessionFiles = await this.listSessionFiles();
 
         for (const filePath of sessionFiles) {
@@ -354,7 +378,13 @@ export class SyroSessionManager {
             }
 
             if (parsed.validRecords.length > 0) {
-                await replaySession(sessionId, parsed.validRecords);
+                const sessionReplayImpact = await replaySession(sessionId, parsed.validRecords);
+                if (sessionReplayImpact) {
+                    replayImpact = mergeSyroSessionReplaySummary(
+                        replayImpact,
+                        sessionReplayImpact,
+                    );
+                }
             }
 
             await this.markCurrentDeviceImported(sessionId);
@@ -366,6 +396,52 @@ export class SyroSessionManager {
             importedSessionIds,
             deletedSessionIds: cleanup.deletedSessionIds,
             archivedSessionIds: cleanup.archivedSessionIds,
+            replayImpact,
+        };
+    }
+
+    async peekPendingSessions(): Promise<SyroPendingSessionScanResult> {
+        if (this.syncReadOnlyReason) {
+            return {
+                pendingSessionIds: [],
+                impact: null,
+            };
+        }
+
+        const pendingSessionIds: string[] = [];
+        let impact: SyroPendingSessionImpact | null = null;
+        const sessionFiles = await this.listSessionFiles();
+
+        for (const filePath of sessionFiles) {
+            const sessionId = getSessionIdFromPath(filePath);
+            if (this.layout.device.importedSessionIds.includes(sessionId)) {
+                continue;
+            }
+
+            pendingSessionIds.push(sessionId);
+            const parsed = await this.parseSessionFile(filePath);
+            if (parsed.validRecords.length === 0) {
+                impact ??= "runtime-only";
+                continue;
+            }
+
+            for (const record of parsed.validRecords) {
+                const nextImpact = classifySyroSessionRecordImpact(record);
+                if (nextImpact === "requires-global-sync") {
+                    impact = "requires-global-sync";
+                    break;
+                }
+                impact ??= "runtime-only";
+            }
+
+            if (impact === "requires-global-sync") {
+                break;
+            }
+        }
+
+        return {
+            pendingSessionIds,
+            impact,
         };
     }
 
@@ -795,47 +871,49 @@ export class SyroSessionManager {
         const retainedSessionIds = new Set(
             (await this.listSessionFiles()).map((filePath) => getSessionIdFromPath(filePath)),
         );
+        const currentEntry =
+            deviceEntries.find((entry) => entry.metadata.deviceId === this.layout.device.deviceId) ??
+            {
+                metaPath: this.layout.deviceMetaPath,
+                metadata: this.layout.device,
+            };
+        const now = Date.now();
+        const trimmed = currentEntry.metadata.importedSessionIds.filter((sessionId) => {
+            if (retainedSessionIds.has(sessionId)) {
+                return true;
+            }
 
-        await Promise.all(
-            deviceEntries.map(async (entry) => {
-                const now = Date.now();
-                const trimmed = entry.metadata.importedSessionIds.filter((sessionId) => {
-                    if (retainedSessionIds.has(sessionId)) {
-                        return true;
-                    }
+            const retentionUntil = currentEntry.metadata.importedSessionRetentionUntil[sessionId];
+            const parsedRetention = Date.parse(retentionUntil);
+            return Number.isFinite(parsedRetention) && parsedRetention > now;
+        });
+        const trimmedRetention = Object.fromEntries(
+            Object.entries(currentEntry.metadata.importedSessionRetentionUntil).filter(
+                ([sessionId, retentionUntil]) =>
+                    trimmed.includes(sessionId) &&
+                    Number.isFinite(Date.parse(retentionUntil)) &&
+                    Date.parse(retentionUntil) > now,
+            ),
+        );
+        if (
+            trimmed.length === currentEntry.metadata.importedSessionIds.length &&
+            Object.keys(trimmedRetention).length ===
+                Object.keys(currentEntry.metadata.importedSessionRetentionUntil).length
+        ) {
+            return;
+        }
 
-                    const retentionUntil = entry.metadata.importedSessionRetentionUntil[sessionId];
-                    const parsedRetention = Date.parse(retentionUntil);
-                    return Number.isFinite(parsedRetention) && parsedRetention > now;
-                });
-                const trimmedRetention = Object.fromEntries(
-                    Object.entries(entry.metadata.importedSessionRetentionUntil).filter(
-                        ([sessionId, retentionUntil]) =>
-                            trimmed.includes(sessionId) &&
-                            Number.isFinite(Date.parse(retentionUntil)) &&
-                            Date.parse(retentionUntil) > now,
-                    ),
-                );
-                if (
-                    trimmed.length === entry.metadata.importedSessionIds.length &&
-                    Object.keys(trimmedRetention).length ===
-                        Object.keys(entry.metadata.importedSessionRetentionUntil).length
-                ) {
-                    return;
-                }
+        currentEntry.metadata.importedSessionIds = trimmed;
+        currentEntry.metadata.importedSessionRetentionUntil = trimmedRetention;
+        currentEntry.metadata.updatedAt = new Date().toISOString();
+        this.layout.device.importedSessionIds = trimmed;
+        this.layout.device.importedSessionRetentionUntil =
+            currentEntry.metadata.importedSessionRetentionUntil;
+        this.layout.device.updatedAt = currentEntry.metadata.updatedAt;
 
-                entry.metadata.importedSessionIds = trimmed;
-                entry.metadata.importedSessionRetentionUntil = trimmedRetention;
-                entry.metadata.updatedAt = new Date().toISOString();
-                if (entry.metadata.deviceId === this.layout.device.deviceId) {
-                    this.layout.device.importedSessionIds = trimmed;
-                    this.layout.device.importedSessionRetentionUntil =
-                        entry.metadata.importedSessionRetentionUntil;
-                    this.layout.device.updatedAt = entry.metadata.updatedAt;
-                }
-
-                await this.adapter.write(entry.metaPath, JSON.stringify(entry.metadata, null, 2));
-            }),
+        await this.adapter.write(
+            currentEntry.metaPath,
+            JSON.stringify(currentEntry.metadata, null, 2),
         );
     }
 
@@ -895,37 +973,40 @@ export class SyroSessionManager {
         }
 
         const retentionUntil = new Date(Date.now() + IMPORTED_SESSION_RETENTION_WINDOW_MS).toISOString();
-        await Promise.all(
-            deviceEntries.map(async (entry) => {
-                let changed = false;
-                for (const sessionId of sessionIds) {
-                    if (!entry.metadata.importedSessionIds.includes(sessionId)) {
-                        continue;
-                    }
+        const currentEntry =
+            deviceEntries.find((entry) => entry.metadata.deviceId === this.layout.device.deviceId) ??
+            {
+                metaPath: this.layout.deviceMetaPath,
+                metadata: this.layout.device,
+            };
+        let changed = false;
+        for (const sessionId of sessionIds) {
+            if (!currentEntry.metadata.importedSessionIds.includes(sessionId)) {
+                continue;
+            }
 
-                    const current = entry.metadata.importedSessionRetentionUntil[sessionId];
-                    if (current && current >= retentionUntil) {
-                        continue;
-                    }
+            const current = currentEntry.metadata.importedSessionRetentionUntil[sessionId];
+            if (current && current >= retentionUntil) {
+                continue;
+            }
 
-                    entry.metadata.importedSessionRetentionUntil[sessionId] = retentionUntil;
-                    changed = true;
-                }
+            currentEntry.metadata.importedSessionRetentionUntil[sessionId] = retentionUntil;
+            changed = true;
+        }
 
-                if (!changed) {
-                    return;
-                }
+        if (!changed) {
+            return;
+        }
 
-                entry.metadata.updatedAt = new Date().toISOString();
-                if (entry.metadata.deviceId === this.layout.device.deviceId) {
-                    this.layout.device.importedSessionRetentionUntil = {
-                        ...entry.metadata.importedSessionRetentionUntil,
-                    };
-                    this.layout.device.updatedAt = entry.metadata.updatedAt;
-                }
+        currentEntry.metadata.updatedAt = new Date().toISOString();
+        this.layout.device.importedSessionRetentionUntil = {
+            ...currentEntry.metadata.importedSessionRetentionUntil,
+        };
+        this.layout.device.updatedAt = currentEntry.metadata.updatedAt;
 
-                await this.adapter.write(entry.metaPath, JSON.stringify(entry.metadata, null, 2));
-            }),
+        await this.adapter.write(
+            currentEntry.metaPath,
+            JSON.stringify(currentEntry.metadata, null, 2),
         );
     }
 }

@@ -403,6 +403,95 @@ describe("SyroSessionManager", () => {
         expect(result.importedSessionIds).toEqual(["2026-04-12T08-00-00__91ac__0001"]);
     });
 
+    test("peekPendingSessions classifies runtime-only review deltas without forcing a global sync", async () => {
+        const { app, files, layout } = await createWorkspaceContext();
+
+        files.set(
+            normalizePath(`${layout.closedSessionsRoot}/2026-04-12T08-00-00__91ac__0001.jsonl`),
+            [
+                JSON.stringify({
+                    version: 1,
+                    sessionId: "2026-04-12T08-00-00__91ac__0001",
+                    opId: "op-card-review",
+                    deviceId: "91ac1111-2222-3333-4444-555555555555",
+                    deviceName: "Mobile",
+                    domain: "cards",
+                    entityType: "card-item",
+                    opType: "review",
+                    targetUuid: "card-1",
+                    createdAt: "2026-04-12T08:00:00.000Z",
+                    updatedAt: "2026-04-12T08:00:00.000Z",
+                    payload: {
+                        item: {
+                            id: 1,
+                        },
+                    },
+                }),
+                JSON.stringify({
+                    version: 1,
+                    sessionId: "2026-04-12T08-00-00__91ac__0001",
+                    opId: "op-daily",
+                    deviceId: "91ac1111-2222-3333-4444-555555555555",
+                    deviceName: "Mobile",
+                    domain: "daily-state",
+                    entityType: "daily-state-op",
+                    opType: "deck-stats-delta",
+                    targetUuid: "daily-op:1",
+                    createdAt: "2026-04-12T08:00:01.000Z",
+                    updatedAt: "2026-04-12T08:00:01.000Z",
+                    payload: {
+                        date: "2026-04-12",
+                        deckName: "default",
+                        newDelta: 1,
+                        reviewDelta: 0,
+                    },
+                }),
+            ].join("\n"),
+        );
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+
+        await expect(manager.peekPendingSessions()).resolves.toEqual({
+            pendingSessionIds: ["2026-04-12T08-00-00__91ac__0001"],
+            impact: "runtime-only",
+        });
+    });
+
+    test("peekPendingSessions escalates when a structural remote change is pending", async () => {
+        const { app, files, layout } = await createWorkspaceContext();
+
+        files.set(
+            normalizePath(`${layout.closedSessionsRoot}/2026-04-12T08-00-00__91ac__0001.jsonl`),
+            JSON.stringify({
+                version: 1,
+                sessionId: "2026-04-12T08-00-00__91ac__0001",
+                opId: "op-settings",
+                deviceId: "91ac1111-2222-3333-4444-555555555555",
+                deviceName: "Mobile",
+                domain: "settings",
+                entityType: "shared-settings",
+                opType: "patch",
+                targetUuid: "settings:batch:1",
+                createdAt: "2026-04-12T08:00:00.000Z",
+                updatedAt: "2026-04-12T08:00:00.000Z",
+                payload: {
+                    changed: {
+                        openRandomNote: true,
+                    },
+                },
+            }),
+        );
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+
+        await expect(manager.peekPendingSessions()).resolves.toEqual({
+            pendingSessionIds: ["2026-04-12T08-00-00__91ac__0001"],
+            impact: "requires-global-sync",
+        });
+    });
+
     test("keeps importedSessionIds for the retention window after fully confirmed cleanup", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         const sessionId = "2026-04-12T08-00-00__91ac__0001";
@@ -457,6 +546,59 @@ describe("SyroSessionManager", () => {
         };
         expect(retainedCurrentMeta.importedSessionIds).toContain(sessionId);
         expect(retainedCurrentMeta.importedSessionRetentionUntil?.[sessionId]).toBeTruthy();
+    });
+
+    test("cleanup only rewrites the current device metadata and leaves foreign device.json untouched", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        const sessionId = "2026-04-12T08-00-00__91ac__0001";
+        const foreignMetaPath = normalizePath(
+            ".obsidian/plugins/syro/devices/Mobile--91ac/device.json",
+        );
+        await addSecondaryDevice(adapter, files, {
+            importedSessionIds: [sessionId],
+        });
+
+        const currentDeviceMeta = JSON.parse(
+            files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
+        ) as {
+            importedSessionIds?: string[];
+            importedSessionRetentionUntil?: Record<string, string>;
+        };
+        currentDeviceMeta.importedSessionIds = [sessionId];
+        currentDeviceMeta.importedSessionRetentionUntil = {};
+        files.set(normalizePath(layout.deviceMetaPath), JSON.stringify(currentDeviceMeta, null, 2));
+        layout.device.importedSessionIds = [sessionId];
+        layout.device.importedSessionRetentionUntil = {};
+
+        files.set(
+            normalizePath(`${layout.closedSessionsRoot}/${sessionId}.jsonl`),
+            JSON.stringify({
+                version: 1,
+                sessionId,
+                opId: "op-1",
+                deviceId: "91ac1111-2222-3333-4444-555555555555",
+                deviceName: "Mobile",
+                domain: "deck-options",
+                entityType: "deck-options",
+                opType: "replace",
+                targetUuid: "deck-options:global",
+                createdAt: "2026-04-12T08:00:00.000Z",
+                updatedAt: "2026-04-12T08:00:00.000Z",
+                payload: createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state,
+            }),
+        );
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+        adapter.write.mockClear();
+
+        await manager.importPendingSessions(async () => undefined);
+
+        const touchedMetaPaths = adapter.write.mock.calls
+            .map(([path]) => normalizePath(path))
+            .filter((path) => path.endsWith("/device.json"));
+        expect(touchedMetaPaths).toContain(normalizePath(layout.deviceMetaPath));
+        expect(touchedMetaPaths).not.toContain(foreignMetaPath);
     });
 
     test("archives stale unconfirmed sessions into a real gzip pack and keeps retention metadata", async () => {

@@ -190,7 +190,7 @@ describe("replaySyroSessionRecords", () => {
         };
         const deckOptionsState = createDeckOptionsStoreSnapshot(deckSettings).state;
 
-        await replaySyroSessionRecords(
+        const summary = await replaySyroSessionRecords(
             [
                 {
                     version: 1,
@@ -253,6 +253,13 @@ describe("replaySyroSessionRecords", () => {
             deps,
         );
 
+        expect(summary).toEqual({
+            cardsRuntimeChanged: false,
+            noteReviewChanged: true,
+            timelineChanged: true,
+            dailyStateChanged: false,
+            requiresGlobalSync: true,
+        });
         expect(deps.noteReviewStore.getEntry("notes/A.md")?.item.uuid).toBe("note-1");
         expect(deps.reviewCommitStore.getCommit("notes/A.md", "commit-1")).toEqual(
             expect.objectContaining({ id: "commit-1", message: "hello" }),
@@ -275,7 +282,7 @@ describe("replaySyroSessionRecords", () => {
         const settings = createSettings();
         const deps = createReplayDependencies(adapter, settings);
 
-        await replaySyroSessionRecords(
+        const summary = await replaySyroSessionRecords(
             [
                 {
                     version: 1,
@@ -362,6 +369,13 @@ describe("replaySyroSessionRecords", () => {
             deps,
         );
 
+        expect(summary).toEqual({
+            cardsRuntimeChanged: false,
+            noteReviewChanged: false,
+            timelineChanged: false,
+            dailyStateChanged: true,
+            requiresGlobalSync: true,
+        });
         expect(settings.openRandomNote).toBe(true);
         expect(settings.reviewButtonDelay).toBe(700);
         expect(deps.data.folderTrackingRules.Inbox).toEqual(
@@ -392,6 +406,65 @@ describe("replaySyroSessionRecords", () => {
         expect(files.get("syro/devices/Desktop--d84f/daily-state.json")).toContain(
             '"appliedOpIds"',
         );
+    });
+
+    test("returns a runtime-only replay summary for pure card review session deltas", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const sourceStore = createStoreWithAdapter(adapter);
+        sourceStore.trackFile("cards/runtime.md", RPITEMTYPE.CARD, false);
+        const trackedFile = sourceStore.getTrackedFile("cards/runtime.md");
+        const trackedItem = new TrackedItem(
+            "hash-runtime",
+            0,
+            "context",
+            CardType.SingleLineBasic,
+            {
+                startOffset: 0,
+                endOffset: 1,
+                blockStartOffset: 0,
+                blockEndOffset: 1,
+            },
+            "c1",
+        );
+        trackedFile.trackedItems.push(trackedItem);
+        sourceStore.updateCardItems(trackedFile, trackedItem, "#flashcards", false);
+        const cardSnapshot = sourceStore.getCardSnapshot(trackedItem.reviewId);
+        if (!cardSnapshot) {
+            throw new Error("Expected card snapshot");
+        }
+
+        const targetStore = createStoreWithAdapter(adapter);
+        const deps = createReplayDependencies(adapter, settings, targetStore);
+
+        const summary = await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-card-runtime",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "cards",
+                    entityType: "card-item",
+                    opType: "review",
+                    targetUuid: cardSnapshot.item.uuid,
+                    createdAt: "2026-04-13T12:00:00.000Z",
+                    updatedAt: "2026-04-13T12:00:00.000Z",
+                    payload: cardSnapshot,
+                    pathHint: "cards/runtime.md",
+                },
+            ],
+            deps,
+        );
+
+        expect(summary).toEqual({
+            cardsRuntimeChanged: true,
+            noteReviewChanged: false,
+            timelineChanged: false,
+            dailyStateChanged: false,
+            requiresGlobalSync: false,
+        });
     });
 
     test("keeps the renamed tracked file path when an older card upsert arrives later", async () => {

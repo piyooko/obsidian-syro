@@ -1,5 +1,6 @@
 import { App, DataAdapter, Platform } from "obsidian";
 import { createDeckOptionsStoreSnapshot } from "./deckOptionsStore";
+import { hasSyro012MigrationMarker } from "./syroPluginDataStore";
 import { getStorePath } from "src/dataStore/dataLocation";
 import type { SRSettings } from "src/settings";
 import {
@@ -1233,19 +1234,7 @@ export class SyroWorkspace {
     }
 
     private async prepareMigrationBackup(layout: SyroPersistenceLayout): Promise<void> {
-        const legacyFiles = this.getLegacySourceFiles();
-        const compatibilityFiles = this.getCompatibilitySourceFiles(layout);
-        const existingLegacyFiles = [];
-        for (const [name, path] of legacyFiles) {
-            if (await this.adapter.exists(path)) {
-                existingLegacyFiles.push([name, path] as const);
-            }
-        }
-        for (const [name, path] of compatibilityFiles) {
-            if (await this.adapter.exists(path)) {
-                existingLegacyFiles.push([name, path] as const);
-            }
-        }
+        const existingLegacyFiles = await this.listExistingLegacySourceFiles(layout);
 
         if (existingLegacyFiles.length === 0) {
             return;
@@ -1301,6 +1290,63 @@ export class SyroWorkspace {
             ["tracked_files.review_overlay.json", legacyOverlayPath],
             ["note_cache.json", legacyNoteCachePath],
         ];
+    }
+
+    private async isLegacyPluginDataFile(path: string): Promise<boolean> {
+        if (!(await this.adapter.exists(path))) {
+            return false;
+        }
+
+        try {
+            const parsed = parseJsonUnknown(await this.adapter.read(path));
+            if (!isRecord(parsed)) {
+                return true;
+            }
+
+            const version = getNumberProp(parsed, "version");
+            const schemaVersion = getStringProp(parsed, "schemaVersion")?.trim();
+            if (
+                version === 2 &&
+                (schemaVersion === "0.0.12" || hasSyro012MigrationMarker(parsed))
+            ) {
+                return false;
+            }
+
+            return true;
+        } catch {
+            return true;
+        }
+    }
+
+    private async listExistingLegacySourceFiles(
+        layout?: SyroPersistenceLayout,
+    ): Promise<Array<[string, string]>> {
+        const existingLegacyFiles: Array<[string, string]> = [];
+
+        for (const [name, path] of this.getLegacySourceFiles()) {
+            if (name === "data.json") {
+                if (await this.isLegacyPluginDataFile(path)) {
+                    existingLegacyFiles.push([name, path]);
+                }
+                continue;
+            }
+
+            if (await this.adapter.exists(path)) {
+                existingLegacyFiles.push([name, path]);
+            }
+        }
+
+        if (!layout) {
+            return existingLegacyFiles;
+        }
+
+        for (const [name, path] of this.getCompatibilitySourceFiles(layout)) {
+            if (await this.adapter.exists(path)) {
+                existingLegacyFiles.push([name, path]);
+            }
+        }
+
+        return existingLegacyFiles;
     }
 
     private getCompatibilitySourceFiles(layout: SyroPersistenceLayout): Array<[string, string]> {
@@ -1647,11 +1693,8 @@ export class SyroWorkspace {
     }
 
     private async hasLegacyInputs(): Promise<boolean> {
-        const legacyFiles = this.getLegacySourceFiles();
-        for (const [, path] of legacyFiles) {
-            if (await this.adapter.exists(path)) {
-                return true;
-            }
+        if ((await this.listExistingLegacySourceFiles()).length > 0) {
+            return true;
         }
 
         const roots = this.buildRootPaths();
