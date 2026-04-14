@@ -33,6 +33,13 @@ import { ReviewResponse, textInterval } from "src/scheduling";
 import { CardType } from "src/Question";
 import { CardFrontBackUtil, type CardReviewTarget } from "src/question-type";
 import type { QuestionContextBreadcrumb } from "src/SRFile";
+import {
+    applyReviewMobileHeaderCover,
+    applyReviewMobileNavbarCover,
+    clearReviewMobileHeaderCover,
+    clearReviewMobileNavbarCover,
+    detectBlockingMobileNavbar,
+} from "./reviewMobileChrome";
 
 // ==========================================
 // Types
@@ -99,21 +106,6 @@ const mobileSlideVariants: Variants = {
         transition: { duration: 0.1 },
     }),
 };
-
-const REVIEW_MOBILE_NAVBAR_COVER_CLASS = "syro-review-mobile-navbar-covered";
-const REVIEW_MOBILE_NAVBAR_OWNER_ATTR = "data-syro-review-mobile-navbar-owner";
-
-function detectBlockingMobileNavbar(): boolean {
-    if (!Platform.isMobile || typeof document === "undefined") {
-        return false;
-    }
-
-    if (document.body.classList.contains("is-floating-nav")) {
-        return true;
-    }
-
-    return Boolean(document.querySelector(".mobile-navbar.mod-raised, .mobile-navbar-actions"));
-}
 
 // ==========================================
 // Deck helpers
@@ -402,14 +394,6 @@ function resolveNavigationLeaf(
     return plugin.app.workspace.getLeaf("tab");
 }
 
-function getMobileNavbars(): HTMLElement[] {
-    if (typeof document === "undefined") {
-        return [];
-    }
-
-    return Array.from(document.querySelectorAll<HTMLElement>(".mobile-navbar"));
-}
-
 function getDeckPath(deck: Deck | null | undefined): string | null {
     if (!deck) {
         return null;
@@ -636,41 +620,20 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         };
     }, [plugin]);
 
-    const applyReviewMobileNavbarCover = useCallback(() => {
-        if (typeof document === "undefined") {
-            return;
-        }
+    const applyReviewMobileChromeCover = useCallback(() => {
+        applyReviewMobileNavbarCover(hostLeafId);
+        applyReviewMobileHeaderCover(hostLeafId, hostLeaf);
+    }, [hostLeaf, hostLeafId]);
 
-        document.body.classList.add(REVIEW_MOBILE_NAVBAR_COVER_CLASS);
-        document.body.setAttribute(REVIEW_MOBILE_NAVBAR_OWNER_ATTR, hostLeafId);
+    const clearReviewMobileChromeCover = useCallback(() => {
+        clearReviewMobileNavbarCover(hostLeafId);
+        clearReviewMobileHeaderCover(hostLeafId, hostLeaf);
+    }, [hostLeaf, hostLeafId]);
 
-        for (const navbar of getMobileNavbars()) {
-            navbar.classList.add(REVIEW_MOBILE_NAVBAR_COVER_CLASS);
-        }
-    }, [hostLeafId]);
-
-    const clearReviewMobileNavbarCover = useCallback(() => {
-        if (typeof document === "undefined") {
-            return;
-        }
-
-        const currentOwner = document.body.getAttribute(REVIEW_MOBILE_NAVBAR_OWNER_ATTR);
-        if (currentOwner && currentOwner !== hostLeafId) {
-            return;
-        }
-
-        document.body.classList.remove(REVIEW_MOBILE_NAVBAR_COVER_CLASS);
-        document.body.removeAttribute(REVIEW_MOBILE_NAVBAR_OWNER_ATTR);
-
-        for (const navbar of getMobileNavbars()) {
-            navbar.classList.remove(REVIEW_MOBILE_NAVBAR_COVER_CLASS);
-        }
-    }, [hostLeafId]);
-
-    const syncReviewMobileNavbarCover = useCallback(
+    const syncReviewMobileChromeCover = useCallback(
         (blockingMobileNavbar = hasBlockingMobileNavbar) => {
             if (!Platform.isMobile || typeof document === "undefined") {
-                clearReviewMobileNavbarCover();
+                clearReviewMobileChromeCover();
                 return;
             }
 
@@ -682,15 +645,15 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 hostLeaf.view.getViewType() === SR_TAB_VIEW;
 
             if (shouldCover) {
-                applyReviewMobileNavbarCover();
+                applyReviewMobileChromeCover();
                 return;
             }
 
-            clearReviewMobileNavbarCover();
+            clearReviewMobileChromeCover();
         },
         [
-            applyReviewMobileNavbarCover,
-            clearReviewMobileNavbarCover,
+            applyReviewMobileChromeCover,
+            clearReviewMobileChromeCover,
             hostLeaf,
             hasBlockingMobileNavbar,
             plugin.app.workspace,
@@ -712,7 +675,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             frameId = window.requestAnimationFrame(() => {
                 const nextValue = detectBlockingMobileNavbar();
                 setHasBlockingMobileNavbar((prev) => (prev === nextValue ? prev : nextValue));
-                syncReviewMobileNavbarCover(nextValue);
+                syncReviewMobileChromeCover(nextValue);
             });
         };
 
@@ -737,15 +700,15 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             observer.disconnect();
             window.cancelAnimationFrame(frameId);
         };
-    }, [syncReviewMobileNavbarCover]);
+    }, [syncReviewMobileChromeCover]);
 
     useEffect(() => {
-        syncReviewMobileNavbarCover();
+        syncReviewMobileChromeCover();
 
         return () => {
-            clearReviewMobileNavbarCover();
+            clearReviewMobileChromeCover();
         };
-    }, [clearReviewMobileNavbarCover, syncReviewMobileNavbarCover]);
+    }, [clearReviewMobileChromeCover, syncReviewMobileChromeCover]);
 
     useEffect(() => {
         if (!Platform.isMobile) {
@@ -758,7 +721,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         const syncAfterWorkspaceChange = () => {
             window.cancelAnimationFrame(frameId);
             frameId = window.requestAnimationFrame(() => {
-                syncReviewMobileNavbarCover();
+                syncReviewMobileChromeCover();
             });
         };
 
@@ -772,7 +735,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             workspace.offref(fileOpenRef);
             workspace.offref(layoutChangeRef);
         };
-    }, [plugin.app.workspace, syncReviewMobileNavbarCover]);
+    }, [plugin.app.workspace, syncReviewMobileChromeCover]);
     const contextValue = useMemo(
         () => ({
             app: plugin.app,
@@ -801,13 +764,13 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     // Return from card review to the deck list.
     const handleExitReview = useCallback(() => {
         void plugin.flushReviewPersistence(1200);
-        clearReviewMobileNavbarCover();
+        clearReviewMobileChromeCover();
         plugin.setSRViewInFocus(false);
         setDirection(-1);
         setView("deck-list");
         void plugin.savePluginData();
         forceUpdate(); // Refresh deck counts after leaving review.
-    }, [clearReviewMobileNavbarCover, plugin, forceUpdate]);
+    }, [clearReviewMobileChromeCover, plugin, forceUpdate]);
 
     // Submit a review response for the current card.
     const handleAnswer = useCallback(
@@ -1007,7 +970,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                             <CardReviewView
                                 sequencer={sequencer}
                                 plugin={plugin}
-                                clearReviewMobileNavbarCover={clearReviewMobileNavbarCover}
+                                clearReviewMobileChromeCover={clearReviewMobileChromeCover}
                                 markdownOwner={markdownOwner}
                                 onAnswer={(rating) => {
                                     void handleAnswer(rating);
@@ -1264,7 +1227,7 @@ const DeckListView: React.FC<DeckListViewProps> = ({
 interface CardReviewViewProps {
     sequencer: IFlashcardReviewSequencer;
     plugin: SRPlugin;
-    clearReviewMobileNavbarCover: () => void;
+    clearReviewMobileChromeCover: () => void;
     markdownOwner: Component;
     onAnswer: (rating: number) => void;
     onUndo: () => void;
@@ -1278,7 +1241,7 @@ interface CardReviewViewProps {
 const CardReviewView: React.FC<CardReviewViewProps> = ({
     sequencer,
     plugin,
-    clearReviewMobileNavbarCover,
+    clearReviewMobileChromeCover,
     markdownOwner,
     onAnswer,
     onUndo,
@@ -1397,7 +1360,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
         const noteFile = resolveNoteFile(question.note?.file);
         if (!noteFile) return;
 
-        clearReviewMobileNavbarCover();
+        clearReviewMobileChromeCover();
         const activeLeaf = resolveNavigationLeaf(plugin, noteFile, options);
         await activeLeaf.openFile(noteFile, buildOpenStateForLine(reviewTarget.startLine));
         plugin.app.workspace.revealLeaf?.(activeLeaf);
@@ -1412,7 +1375,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
         const noteFile = resolveNoteFile(question.note?.file);
         if (!noteFile) return;
 
-        clearReviewMobileNavbarCover();
+        clearReviewMobileChromeCover();
         const activeLeaf = resolveNavigationLeaf(plugin, noteFile, options);
         await activeLeaf.openFile(noteFile, buildOpenStateForLine(breadcrumb.line));
         plugin.app.workspace.revealLeaf?.(activeLeaf);

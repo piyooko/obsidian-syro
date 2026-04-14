@@ -1802,6 +1802,12 @@ body.syro-review-mobile-navbar-covered .mobile-navbar.mod-raised,
     pointer-events: none !important;
 }
 
+.view-header-left.syro-review-mobile-header-covered,
+.view-actions.syro-review-mobile-header-covered {
+    display: none !important;
+    pointer-events: none !important;
+}
+
 .sr-linear-card-wrapper.sr-phone-layout .sr-rating-buttons {
     gap: var(--syro-mobile-review-button-gap, 6px);
 }
