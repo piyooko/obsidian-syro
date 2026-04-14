@@ -337,14 +337,6 @@ export class SyroSessionManager {
             };
         }
 
-        if (!(await this.shouldPersistNewRecords())) {
-            return {
-                importedSessionIds: [],
-                deletedSessionIds: [],
-                archivedSessionIds: [],
-            };
-        }
-
         const importedSessionIds: string[] = [];
         await this.flushOwnOpenSessionBeforeImport();
         const sessionFiles = await this.listSessionFiles();
@@ -402,10 +394,6 @@ export class SyroSessionManager {
         },
     ): Promise<boolean> {
         if (this.syncReadOnlyReason) {
-            return false;
-        }
-
-        if (!this.activeSession && !(await this.shouldPersistNewRecords())) {
             return false;
         }
 
@@ -490,11 +478,6 @@ export class SyroSessionManager {
         return sessionId;
     }
 
-    private async shouldPersistNewRecords(): Promise<boolean> {
-        const devices = await this.listValidDevices();
-        return new Set(devices.map((device) => device.deviceId)).size >= 2;
-    }
-
     private async ensureActiveSession(): Promise<ActiveSyroSession> {
         if (this.activeSession) {
             return this.activeSession;
@@ -532,11 +515,6 @@ export class SyroSessionManager {
             }
         }
         return maxSeq + 1;
-    }
-
-    private async listValidDevices(): Promise<SyroDeviceMetadata[]> {
-        const entries = await this.listValidDeviceEntries();
-        return entries.map((entry) => entry.metadata);
     }
 
     private async listValidDeviceEntries(): Promise<SyroDeviceEntry[]> {

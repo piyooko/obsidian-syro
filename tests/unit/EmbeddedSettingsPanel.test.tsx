@@ -202,6 +202,7 @@ function createDeviceManagementState(): TestDeviceManagementState {
             createdAt: "2026-04-12T00:00:00.000Z",
             updatedAt: "2026-04-13T00:00:00.000Z",
             lastSeenAt: "2026-04-13T00:00:00.000Z",
+            ownerInstallIdHash: null,
             baselineFromDeviceId: null,
             baselineBuiltAt: null,
             importedSessionIds: [],
@@ -226,6 +227,7 @@ function createDeviceManagementState(): TestDeviceManagementState {
             createdAt: "2026-04-12T00:00:00.000Z",
             updatedAt: "2026-04-12T00:00:00.000Z",
             lastSeenAt: "2026-04-12T00:00:00.000Z",
+            ownerInstallIdHash: null,
             baselineFromDeviceId: null,
             baselineBuiltAt: null,
             importedSessionIds: [],
@@ -1050,9 +1052,9 @@ describe("EmbeddedSettingsPanel", () => {
             openTab(view.container, "Sync");
             await flushPromises();
 
-            const button = Array.from(view.container.querySelectorAll<HTMLButtonElement>("button")).find(
-                (entry) => entry.textContent?.includes("Set as current device"),
-            );
+            const button = Array.from(
+                view.container.querySelectorAll<HTMLButtonElement>("button"),
+            ).find((entry) => entry.textContent?.includes("Set as current device"));
             expect(button).toBeTruthy();
 
             await act(async () => {

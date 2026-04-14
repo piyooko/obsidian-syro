@@ -124,7 +124,11 @@ import {
     type SyroValidDeviceEntry,
     type SyroWorkspaceInitializeResult,
 } from "./dataStore/syroWorkspace";
-import { SyroSessionManager, type SyroSessionSealReason } from "./dataStore/syroSessionManager";
+import {
+    SyroSessionManager,
+    type SyroSessionImportResult,
+    type SyroSessionSealReason,
+} from "./dataStore/syroSessionManager";
 import Commands from "./commands";
 import { SrsAlgorithm } from "src/algorithms/algorithms";
 import { FsrsAlgorithm } from "src/algorithms/fsrs";
@@ -367,6 +371,7 @@ export default class SRPlugin extends Plugin {
     private syroSessionManager: SyroSessionManager | null = null;
     private pendingSyroRecoveryContext: SyroRecoveryModalContext | null = null;
     private pendingSyroDeviceSelectionContext: SyroDeviceSelectionModalContext | null = null;
+    private pendingSyroRecoveryFlow: Promise<SyroPersistenceLayout | null> | null = null;
 
     private static _instance: SRPlugin;
     static getInstance() {
@@ -1477,6 +1482,34 @@ export default class SRPlugin extends Plugin {
         });
     }
 
+    private async runPendingSyroRecoveryAction(): Promise<SyroPersistenceLayout | null> {
+        if (this.pendingSyroDeviceSelectionContext) {
+            return this.runSyroDeviceSelectionFlow(this.pendingSyroDeviceSelectionContext);
+        }
+
+        if (this.pendingSyroRecoveryContext) {
+            return this.runSyroRecoveryFlow(this.pendingSyroRecoveryContext);
+        }
+
+        return null;
+    }
+
+    private async runExclusivePendingSyroRecovery(): Promise<SyroPersistenceLayout | null> {
+        if (this.pendingSyroRecoveryFlow !== null) {
+            return this.pendingSyroRecoveryFlow;
+        }
+
+        const recoveryFlow = this.runPendingSyroRecoveryAction();
+        this.pendingSyroRecoveryFlow = recoveryFlow;
+        try {
+            return await recoveryFlow;
+        } finally {
+            if (this.pendingSyroRecoveryFlow === recoveryFlow) {
+                this.pendingSyroRecoveryFlow = null;
+            }
+        }
+    }
+
     private async resolveSyroWorkspaceInitialization(
         startup: SyroWorkspaceInitializeResult,
     ): Promise<SyroWorkspaceInitializeResult> {
@@ -1498,17 +1531,17 @@ export default class SRPlugin extends Plugin {
         }
 
         try {
-            const layout = deviceSelectionContext
-                ? await this.runSyroDeviceSelectionFlow(deviceSelectionContext)
-                : recoveryContext
-                  ? await this.runSyroRecoveryFlow(recoveryContext)
-                  : null;
+            const layout = await this.runExclusivePendingSyroRecovery();
             if (!layout) {
-                return {
-                    ...startup,
-                    startupDecision: "read-only",
-                    readOnlyReason: "[SR-Syro] Startup recovery was cancelled by the user.",
-                };
+                return startup.layout
+                    ? startup
+                    : {
+                          ...startup,
+                          startupDecision: "read-only",
+                          layout: null,
+                          readOnlyReason:
+                              "[SR-Syro] Startup recovery was cancelled by the user.",
+                      };
             }
 
             const inventory = await this.syroWorkspace.listDeviceInventory();
@@ -1524,7 +1557,7 @@ export default class SRPlugin extends Plugin {
         } catch (error) {
             return {
                 ...startup,
-                startupDecision: "read-only",
+                startupDecision: startup.layout ? startup.startupDecision : "read-only",
                 readOnlyReason: `[SR-Syro] Failed to complete startup recovery: ${String(error)}`,
             };
         }
@@ -1824,11 +1857,7 @@ export default class SRPlugin extends Plugin {
 
         await this.awaitWorkspaceLayoutReady();
         try {
-            const layout = this.pendingSyroDeviceSelectionContext
-                ? await this.runSyroDeviceSelectionFlow(this.pendingSyroDeviceSelectionContext)
-                : this.pendingSyroRecoveryContext
-                  ? await this.runSyroRecoveryFlow(this.pendingSyroRecoveryContext)
-                  : null;
+            const layout = await this.runExclusivePendingSyroRecovery();
             if (!layout) {
                 new Notice(t("NOTICE_SYRO_RECOVERY_CANCELLED"));
                 return;
@@ -1916,9 +1945,9 @@ export default class SRPlugin extends Plugin {
         new Notice(t("NOTICE_SYRO_INVALID_DEVICE_DELETED"));
     }
 
-    private async importPendingSyroSessions(): Promise<void> {
+    private async importPendingSyroSessions(): Promise<SyroSessionImportResult | null> {
         if (this.syroReadOnlyReason) {
-            return;
+            return null;
         }
 
         if (
@@ -1931,10 +1960,10 @@ export default class SRPlugin extends Plugin {
             !this.noteReviewStore ||
             !this.reviewCommitStore
         ) {
-            return;
+            return null;
         }
 
-        await this.syroSessionManager.importPendingSessions(async (_sessionId, records) => {
+        const result = await this.syroSessionManager.importPendingSessions(async (_sessionId, records) => {
             await replaySyroSessionRecords(records, {
                 settings: this.data.settings,
                 data: this.data,
@@ -1969,6 +1998,7 @@ export default class SRPlugin extends Plugin {
             this.dailyStateAppliedOpIds,
         );
         await this.pruneSyroInlineSyncMetadata();
+        return result;
     }
 
     private async appendSyroNoteSnapshot(
@@ -2896,7 +2926,16 @@ export default class SRPlugin extends Plugin {
             await this.syroSessionManager?.flushActiveSession(sealReason);
         }
 
-        await this.importPendingSyroSessions?.();
+        const sessionImportResult = await this.importPendingSyroSessions?.();
+        if (
+            sessionImportResult &&
+            this.data.settings.showRuntimeDebugMessages &&
+            (sessionImportResult.importedSessionIds.length > 0 ||
+                sessionImportResult.deletedSessionIds.length > 0 ||
+                sessionImportResult.archivedSessionIds.length > 0)
+        ) {
+            console.debug("[SR-Syro] Imported pending sessions before sync.", sessionImportResult);
+        }
 
         await this.sync(request.reviewMode, request.mode, {
             trigger: request.trigger,
@@ -3882,10 +3921,15 @@ export default class SRPlugin extends Plugin {
             await this.syroWorkspace.initialize(),
         );
         this.syroLayout = startup.layout;
-        this.initializeSplitStateStores();
         if (startup.readOnlyReason) {
             this.syroReadOnlyReason = startup.readOnlyReason;
         }
+        if (!this.syroLayout) {
+            this.applySyroReadOnlyState();
+            return;
+        }
+
+        this.initializeSplitStateStores();
 
         const migrationError =
             this.syroReadOnlyReason === null

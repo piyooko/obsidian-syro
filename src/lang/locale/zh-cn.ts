@@ -573,7 +573,7 @@ export default {
     SYRO_RECOVERY_SOURCE_DEVICE: "来源设备",
     SYRO_SELECT_CURRENT_DEVICE_TITLE: "请选择当前设备",
     SYRO_SELECT_CURRENT_DEVICE_DESC:
-        "当前安装没有可用的设备指针，但同步目录里已经有多个有效设备。请选择要在这台安装上继续使用的设备，或新建设备并从现有设备建立基线。",
+        "当前安装没有可自动确认的设备绑定。只有在这台安装原本就属于某个已有设备、但本地身份丢失时，才应选择“使用此设备”；否则请新建设备，并从现有设备建立基线。",
     SYRO_SELECT_CURRENT_DEVICE_USE: "使用此设备",
     SYRO_SELECT_CURRENT_DEVICE_CREATE_NEW: "新建设备",
     SYRO_SELECT_CURRENT_DEVICE_FOLDER: "设备目录",
@@ -582,8 +582,7 @@ export default {
     SYRO_DELETE_INVALID_DEVICE_DESC:
         "你将删除异常设备目录 `${folder}`。此操作可能导致该目录中的文件永久丢失，请确认你已经知晓风险。",
     SYRO_DELETE_INVALID_DEVICE_CONFIRM_LABEL: "确认删除",
-    SYRO_DELETE_INVALID_DEVICE_CONFIRM_DESC:
-        "请输入以下完整短语后才可删除：${phrase}",
+    SYRO_DELETE_INVALID_DEVICE_CONFIRM_DESC: "请输入以下完整短语后才可删除：${phrase}",
     SYRO_DELETE_INVALID_DEVICE_PHRASE: "我已知风险并决定删除",
     SYRO_DELETE_INVALID_DEVICE_BUTTON: "删除异常目录",
     NOTICE_SYRO_READ_ONLY: "当前同步数据异常，已进入只读保护。",
@@ -602,7 +601,8 @@ export default {
     SETTINGS_SYNC_OPEN_RECOVERY: "打开同步恢复",
     SETTINGS_SYNC_OPEN_RECOVERY_DESC: "重新打开待处理的 Syro 恢复或设备选择流程。",
     SETTINGS_SYNC_RENAME_CURRENT_DEVICE: "重命名当前设备",
-    SETTINGS_SYNC_RENAME_CURRENT_DEVICE_DESC: "仅修改当前设备的展示名称与目录名，`deviceId` 保持不变。",
+    SETTINGS_SYNC_RENAME_CURRENT_DEVICE_DESC:
+        "仅修改当前设备的展示名称与目录名，`deviceId` 保持不变。",
     SETTINGS_SYNC_SAVE_DEVICE_NAME: "保存设备名",
     SETTINGS_SYNC_SET_CURRENT_DEVICE: "设为当前设备",
     SETTINGS_SYNC_CURRENT_DEVICE_BADGE: "当前",

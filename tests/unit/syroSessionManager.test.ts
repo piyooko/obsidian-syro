@@ -1,4 +1,5 @@
 import { gunzipSync } from "zlib";
+import { createHash } from "crypto";
 import { DEFAULT_SETTINGS } from "src/settings";
 import { createDeckOptionsStoreSnapshot } from "src/dataStore/deckOptionsStore";
 import { SyroSessionManager } from "src/dataStore/syroSessionManager";
@@ -162,19 +163,33 @@ describe("SyroSessionManager", () => {
     beforeEach(() => {
         jest.useFakeTimers().setSystemTime(new Date("2026-04-13T12:34:56.000Z"));
         window.localStorage.clear();
-        if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
-            jest.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
-                "d84f1111-2222-3333-4444-555555555555",
-            );
-        } else {
-            Object.defineProperty(globalThis, "crypto", {
-                configurable: true,
-                value: {
-                    randomUUID: () => "d84f1111-2222-3333-4444-555555555555",
-                    getRandomValues: (buffer: Uint8Array) => buffer,
+        Object.defineProperty(globalThis, "crypto", {
+            configurable: true,
+            value: {
+                randomUUID: () => "d84f1111-2222-3333-4444-555555555555",
+                getRandomValues: originalCrypto?.getRandomValues ?? ((buffer: Uint8Array) => buffer),
+                subtle: originalCrypto?.subtle ?? {
+                    digest: async (algorithm: string, data: BufferSource): Promise<ArrayBuffer> => {
+                        if (algorithm !== "SHA-256") {
+                            throw new Error(`Unsupported digest: ${algorithm}`);
+                        }
+
+                        const hash = createHash("sha256");
+                        if (data instanceof ArrayBuffer) {
+                            hash.update(Buffer.from(data));
+                        } else {
+                            hash.update(Buffer.from(data.buffer, data.byteOffset, data.byteLength));
+                        }
+
+                        const digest = hash.digest();
+                        return digest.buffer.slice(
+                            digest.byteOffset,
+                            digest.byteOffset + digest.byteLength,
+                        );
+                    },
                 },
-            });
-        }
+            },
+        });
     });
 
     afterEach(() => {
@@ -197,7 +212,7 @@ describe("SyroSessionManager", () => {
         } as any;
 
         const startup = await new SyroWorkspace(app, manifestDir, DEFAULT_SETTINGS).initialize();
-        return { adapter, app, files, layout: startup.layout };
+        return { adapter, app, files, layout: startup.layout! };
     }
 
     async function addSecondaryDevice(
@@ -228,24 +243,19 @@ describe("SyroSessionManager", () => {
         );
     }
 
-    test("only appends new session records after a second valid device appears", async () => {
-        const { app, adapter, files, layout } = await createWorkspaceContext();
+    test("appends new session records even before a second valid device appears", async () => {
+        const { app, files, layout } = await createWorkspaceContext();
         const manager = new SyroSessionManager(app, layout);
         await manager.initialize();
 
         const deckOptionsState = createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state;
-        await expect(manager.appendDeckOptionsChange(deckOptionsState)).resolves.toBe(false);
-        expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(false);
-
-        await addSecondaryDevice(adapter, files);
-
         await expect(manager.appendDeckOptionsChange(deckOptionsState)).resolves.toBe(true);
         const bufferRaw = files.get(normalizePath(layout.activeSessionBufferPath)) ?? "";
         expect(bufferRaw).toContain('"domain":"deck-options"');
         expect(bufferRaw).toContain('"sessionSeq":1');
     });
 
-    test("ignores orphan device directories without device.json when deciding whether to persist sessions", async () => {
+    test("ignores orphan device directories without blocking local session persistence", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await adapter.mkdir(".obsidian/plugins/syro/devices/Desktop--ec3c");
         await adapter.write(
@@ -257,8 +267,8 @@ describe("SyroSessionManager", () => {
         await manager.initialize();
 
         const deckOptionsState = createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state;
-        await expect(manager.appendDeckOptionsChange(deckOptionsState)).resolves.toBe(false);
-        expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(false);
+        await expect(manager.appendDeckOptionsChange(deckOptionsState)).resolves.toBe(true);
+        expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(true);
     });
 
     test("flushes the active buffer into a formal session file and confirms it locally", async () => {
@@ -360,6 +370,37 @@ describe("SyroSessionManager", () => {
         expect(currentDeviceMeta.importedSessionIds).toContain(
             "2026-04-12T08-00-00__91ac__0001",
         );
+    });
+
+    test("imports pending sessions even when only the current device is registered locally", async () => {
+        const { app, files, layout } = await createWorkspaceContext();
+
+        files.set(
+            normalizePath(`${layout.closedSessionsRoot}/2026-04-12T08-00-00__91ac__0001.jsonl`),
+            JSON.stringify({
+                version: 1,
+                sessionId: "2026-04-12T08-00-00__91ac__0001",
+                opId: "op-1",
+                deviceId: "91ac1111-2222-3333-4444-555555555555",
+                deviceName: "Mobile",
+                domain: "deck-options",
+                entityType: "deck-options",
+                opType: "replace",
+                targetUuid: "deck-options:global",
+                createdAt: "2026-04-12T08:00:00.000Z",
+                updatedAt: "2026-04-12T08:00:00.000Z",
+                payload: createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state,
+            }),
+        );
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+
+        const replaySession = jest.fn(async () => undefined);
+        const result = await manager.importPendingSessions(replaySession);
+
+        expect(replaySession).toHaveBeenCalledTimes(1);
+        expect(result.importedSessionIds).toEqual(["2026-04-12T08-00-00__91ac__0001"]);
     });
 
     test("keeps importedSessionIds for the retention window after fully confirmed cleanup", async () => {

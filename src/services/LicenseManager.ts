@@ -2,12 +2,8 @@ import { Notice, Platform, Plugin, requestUrl } from "obsidian";
 import { t } from "src/lang/helpers";
 import type { LicensePlan, LicenseState, SRSettings } from "src/settings";
 import { hasSupporterLicenseState } from "src/settings";
-import {
-    getArrayProp,
-    getBooleanProp,
-    getStringProp,
-    isRecord,
-} from "src/util/typeGuards";
+import { getArrayProp, getBooleanProp, getStringProp, isRecord } from "src/util/typeGuards";
+import { sha256Hex } from "src/util/hash";
 
 type FileSystemAdapterLike = {
     basePath: string;
@@ -96,14 +92,6 @@ function createInstallationId(): string {
         hex.slice(16, 20),
         hex.slice(20, 32),
     ].join("-");
-}
-
-async function sha256Hex(value: string): Promise<string> {
-    const encoded = new TextEncoder().encode(value);
-    const digest = await crypto.subtle.digest("SHA-256", encoded);
-    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(
-        "",
-    );
 }
 
 function createLicenseState(

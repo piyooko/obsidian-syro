@@ -774,7 +774,7 @@ export default normalizeSentenceCaseLocale({
     SYRO_RECOVERY_SOURCE_DEVICE: "Source device",
     SYRO_SELECT_CURRENT_DEVICE_TITLE: "Choose the current device",
     SYRO_SELECT_CURRENT_DEVICE_DESC:
-        "This installation has no usable device pointer, but the sync directory already contains multiple valid devices. Choose which existing device to use on this installation, or create a new device from a baseline.",
+        "This installation has no device binding that can be confirmed automatically. Use an existing device only if this installation previously belonged to that device and the local identity was lost; otherwise create a new device from a baseline.",
     SYRO_SELECT_CURRENT_DEVICE_USE: "Use this device",
     SYRO_SELECT_CURRENT_DEVICE_CREATE_NEW: "Create new device",
     SYRO_SELECT_CURRENT_DEVICE_FOLDER: "Device folder",
@@ -802,8 +802,7 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_SYNC_DEVICE_LOAD_ERROR: "Unable to load device information.",
     SETTINGS_SYNC_NO_CURRENT_DEVICE: "There is no claimed current device.",
     SETTINGS_SYNC_OPEN_RECOVERY: "Open Sync Recovery",
-    SETTINGS_SYNC_OPEN_RECOVERY_DESC:
-        "Reopen the pending Syro recovery or device selection flow.",
+    SETTINGS_SYNC_OPEN_RECOVERY_DESC: "Reopen the pending Syro recovery or device selection flow.",
     SETTINGS_SYNC_RENAME_CURRENT_DEVICE: "Rename Current Device",
     SETTINGS_SYNC_RENAME_CURRENT_DEVICE_DESC:
         "Only updates the current device display name and folder name. The deviceId stays unchanged.",

@@ -1,6 +1,8 @@
+import { createHash } from "crypto";
 import { createDeckOptionsStoreSnapshot } from "src/dataStore/deckOptionsStore";
 import { DEFAULT_SETTINGS } from "src/settings";
 import { SyroWorkspace } from "src/dataStore/syroWorkspace";
+import { sha256Hex } from "src/util/hash";
 
 type MockAdapter = {
     basePath: string;
@@ -41,9 +43,7 @@ function createMockAdapter() {
         const normalizedFrom = normalizePath(fromPath);
         const normalizedTo = normalizePath(toPath);
         const directoryEntries = Array.from(directories)
-            .filter(
-                (entry) => entry === normalizedFrom || entry.startsWith(`${normalizedFrom}/`),
-            )
+            .filter((entry) => entry === normalizedFrom || entry.startsWith(`${normalizedFrom}/`))
             .sort((left, right) => left.length - right.length);
         for (const entry of directoryEntries) {
             directories.delete(entry);
@@ -127,8 +127,8 @@ function createMockAdapter() {
         rmdir: jest.fn(async (path: string, recursive: boolean) => {
             const normalized = normalizePath(path);
             if (recursive) {
-                const nestedFiles = Array.from(files.keys()).filter((key) =>
-                    key === normalized || key.startsWith(`${normalized}/`),
+                const nestedFiles = Array.from(files.keys()).filter(
+                    (key) => key === normalized || key.startsWith(`${normalized}/`),
                 );
                 for (const key of nestedFiles) {
                     files.delete(key);
@@ -182,6 +182,7 @@ function createValidDeviceMetadata(options: {
     createdAt?: string;
     updatedAt?: string;
     lastSeenAt?: string;
+    ownerInstallIdHash?: string | null;
     baselineFromDeviceId?: string | null;
     baselineBuiltAt?: string | null;
     importedSessionIds?: string[];
@@ -196,6 +197,7 @@ function createValidDeviceMetadata(options: {
             createdAt: options.createdAt ?? "2026-04-12T00:00:00.000Z",
             updatedAt: options.updatedAt ?? "2026-04-12T00:00:00.000Z",
             lastSeenAt: options.lastSeenAt ?? "2026-04-13T00:00:00.000Z",
+            ownerInstallIdHash: options.ownerInstallIdHash ?? null,
             baselineFromDeviceId: options.baselineFromDeviceId ?? null,
             baselineBuiltAt: options.baselineBuiltAt ?? null,
             importedSessionIds: options.importedSessionIds ?? [],
@@ -215,6 +217,7 @@ async function addSourceDevice(
         deviceName: string;
         shortDeviceId: string;
         lastSeenAt?: string;
+        ownerInstallIdHash?: string | null;
     },
 ): Promise<void> {
     const sourceRoot = `.obsidian/plugins/syro/devices/${options.folderName}`;
@@ -226,6 +229,7 @@ async function addSourceDevice(
             deviceName: options.deviceName,
             shortDeviceId: options.shortDeviceId,
             lastSeenAt: options.lastSeenAt,
+            ownerInstallIdHash: options.ownerInstallIdHash ?? null,
         }),
     );
     files.set(`${sourceRoot}/cards.json`, '{"items":[{"uuid":"card-1"}]}');
@@ -283,25 +287,48 @@ async function addSourceDevice(
     );
 }
 
+function getCurrentDeviceStorageKey(basePath: string, manifestDir: string): string {
+    return `syro:current-device:${basePath}:${manifestDir}`;
+}
+
+function getInstallInstanceStorageKey(basePath: string, manifestDir: string): string {
+    return `syro:install-instance:${basePath}:${manifestDir}`;
+}
+
 describe("SyroWorkspace", () => {
     const manifestDir = ".obsidian/plugins/syro";
     const originalCrypto = globalThis.crypto;
 
     beforeEach(() => {
         window.localStorage.clear();
-        if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
-            jest.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
-                "d84f1111-2222-3333-4444-555555555555",
-            );
-        } else {
-            Object.defineProperty(globalThis, "crypto", {
-                configurable: true,
-                value: {
-                    randomUUID: () => "d84f1111-2222-3333-4444-555555555555",
-                    getRandomValues: (buffer: Uint8Array) => buffer,
+        Object.defineProperty(globalThis, "crypto", {
+            configurable: true,
+            value: {
+                randomUUID: () => "d84f1111-2222-3333-4444-555555555555",
+                getRandomValues:
+                    originalCrypto?.getRandomValues ?? ((buffer: Uint8Array) => buffer),
+                subtle: originalCrypto?.subtle ?? {
+                    digest: async (algorithm: string, data: BufferSource): Promise<ArrayBuffer> => {
+                        if (algorithm !== "SHA-256") {
+                            throw new Error(`Unsupported digest: ${algorithm}`);
+                        }
+
+                        const hash = createHash("sha256");
+                        if (data instanceof ArrayBuffer) {
+                            hash.update(Buffer.from(data));
+                        } else {
+                            hash.update(Buffer.from(data.buffer, data.byteOffset, data.byteLength));
+                        }
+
+                        const digest = hash.digest();
+                        return digest.buffer.slice(
+                            digest.byteOffset,
+                            digest.byteOffset + digest.byteLength,
+                        );
+                    },
                 },
-            });
-        }
+            },
+        });
     });
 
     afterEach(() => {
@@ -330,7 +357,18 @@ describe("SyroWorkspace", () => {
         const { adapter, files, directories } = createMockAdapter();
 
         const startup = await createWorkspace(adapter).initialize();
-        const layout = startup.layout;
+        const layout = startup.layout!;
+        const installState = JSON.parse(
+            window.localStorage.getItem(
+                getInstallInstanceStorageKey(adapter.basePath, manifestDir),
+            ) ?? "{}",
+        );
+        const ownerInstallIdHash = await sha256Hex(installState.installInstanceId);
+        const currentDeviceState = JSON.parse(
+            window.localStorage.getItem(
+                getCurrentDeviceStorageKey(adapter.basePath, manifestDir),
+            ) ?? "{}",
+        );
 
         expect(startup.startupDecision).toBe("ready");
         expect(layout.device.deviceId).toBe("d84f1111-2222-3333-4444-555555555555");
@@ -353,8 +391,12 @@ describe("SyroWorkspace", () => {
             files.get(".obsidian/plugins/syro/devices/Desktop--d84f/device.json") ?? "{}",
         );
         expect(savedDeviceMeta.deviceName).toBe("Desktop");
+        expect(savedDeviceMeta.ownerInstallIdHash).toBe(ownerInstallIdHash);
         expect(savedDeviceMeta.importedSessionIds).toEqual([]);
         expect(savedDeviceMeta.importedSessionRetentionUntil).toEqual({});
+        expect(installState.installInstanceId).toBe("d84f1111-2222-3333-4444-555555555555");
+        expect(currentDeviceState.deviceId).toBe("d84f1111-2222-3333-4444-555555555555");
+        expect(currentDeviceState.deviceFolderName).toBe("Desktop--d84f");
 
         const repeated = await createWorkspace(adapter).initialize();
         expect(repeated.layout.deviceRoot).toBe(layout.deviceRoot);
@@ -374,7 +416,7 @@ describe("SyroWorkspace", () => {
         files.set(".obsidian/plugins/syro/note_cache.json", '{"items":[{"path":"note.md"}]}');
 
         const startup = await createWorkspace(adapter).initialize();
-        const layout = startup.layout;
+        const layout = startup.layout!;
 
         expect(startup.startupDecision).toBe("ready");
         expect(files.get(layout.cardsPath)).toBe('{"items":[]}');
@@ -386,9 +428,7 @@ describe("SyroWorkspace", () => {
             JSON.parse(createValidDeckOptionsPayload()),
         );
 
-        const backupMetaPath = Array.from(files.keys()).find((path) =>
-            path.endsWith("/meta.json"),
-        );
+        const backupMetaPath = Array.from(files.keys()).find((path) => path.endsWith("/meta.json"));
         expect(backupMetaPath).toBeDefined();
         expect(backupMetaPath).toContain(".obsidian/plugins/syro/migration-backups/");
         expect(files.get(backupMetaPath!)).toContain('"sourceVersion": "0.0.11"');
@@ -432,7 +472,7 @@ describe("SyroWorkspace", () => {
         directories.add(".obsidian/plugins/syro/sessions-archive");
 
         const startup = await createWorkspace(adapter).initialize();
-        const layout = startup.layout;
+        const layout = startup.layout!;
 
         expect(startup.startupDecision).toBe("ready");
         expect(files.get(layout.cardsOverlayPath)).toBe('{"items":[{"id":"compat-overlay"}]}');
@@ -460,8 +500,8 @@ describe("SyroWorkspace", () => {
         expect(startup.readOnlyReason).toContain("Invalid formal file schema");
     });
 
-    it("auto-adopts the only valid device when the current pointer is missing", async () => {
-        const { adapter, files } = createMockAdapter();
+    it("returns select-current-device when the only valid legacy device has no local binding", async () => {
+        const { adapter, files, directories } = createMockAdapter();
         await addSourceDevice(adapter, files, {
             folderName: "Mobile--91ac",
             deviceId: "91ac1111-2222-3333-4444-555555555555",
@@ -472,11 +512,39 @@ describe("SyroWorkspace", () => {
         const workspace = createWorkspace(adapter);
         const startup = await workspace.initialize();
 
-        expect(startup.startupDecision).toBe("ready");
-        expect(startup.layout.device.deviceId).toBe("91ac1111-2222-3333-4444-555555555555");
-        expect(startup.layout.deviceRoot).toBe(".obsidian/plugins/syro/devices/Mobile--91ac");
-        expect(startup.candidates).toHaveLength(0);
-        expect(startup.currentDevice?.deviceId).toBe("91ac1111-2222-3333-4444-555555555555");
+        expect(startup.startupDecision).toBe("select-current-device");
+        expect(startup.layout).toBeNull();
+        expect(startup.currentDevice).toBeNull();
+        expect(startup.validDevices).toHaveLength(1);
+        expect(directories.has(".obsidian/plugins/syro/devices/Desktop--d84f")).toBe(false);
+    });
+
+    it("returns select-current-device when a synced device belongs to a different installation", async () => {
+        const { adapter, files } = createMockAdapter();
+        window.localStorage.setItem(
+            getInstallInstanceStorageKey(adapter.basePath, manifestDir),
+            JSON.stringify({
+                version: 1,
+                installInstanceId: "mobile-install",
+            }),
+        );
+
+        await addSourceDevice(adapter, files, {
+            folderName: "Desktop--cd41",
+            deviceId: "cd411111-2222-3333-4444-555555555555",
+            deviceName: "Desktop",
+            shortDeviceId: "cd41",
+            ownerInstallIdHash: await sha256Hex("desktop-install"),
+        });
+
+        const startup = await createWorkspace(adapter).initialize();
+
+        expect(startup.startupDecision).toBe("select-current-device");
+        expect(startup.layout).toBeNull();
+        expect(startup.currentDevice).toBeNull();
+        expect(startup.validDevices.map((entry) => entry.deviceId)).toEqual([
+            "cd411111-2222-3333-4444-555555555555",
+        ]);
     });
 
     it("returns select-current-device when multiple valid devices exist and the current pointer is missing", async () => {
@@ -505,6 +573,7 @@ describe("SyroWorkspace", () => {
         const startup = await workspace.initialize();
 
         expect(startup.startupDecision).toBe("select-current-device");
+        expect(startup.layout).toBeNull();
         expect(startup.validDevices).toHaveLength(2);
         expect(startup.invalidDevices).toEqual([
             expect.objectContaining({
@@ -516,6 +585,129 @@ describe("SyroWorkspace", () => {
             "cd411111-2222-3333-4444-555555555555",
             "91ac1111-2222-3333-4444-555555555555",
         ]);
+        expect(directories.has(".obsidian/plugins/syro/devices/Desktop--d84f")).toBe(false);
+    });
+
+    it("prefers a unique owner-install hash match and repairs the local pointer", async () => {
+        const { adapter, files } = createMockAdapter();
+        window.localStorage.setItem(
+            getInstallInstanceStorageKey(adapter.basePath, manifestDir),
+            JSON.stringify({
+                version: 1,
+                installInstanceId: "tablet-install",
+            }),
+        );
+
+        const ownerInstallIdHash = await sha256Hex("tablet-install");
+        await addSourceDevice(adapter, files, {
+            folderName: "Tablet--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Tablet",
+            shortDeviceId: "91ac",
+            ownerInstallIdHash,
+        });
+        await addSourceDevice(adapter, files, {
+            folderName: "Desktop--cd41",
+            deviceId: "cd411111-2222-3333-4444-555555555555",
+            deviceName: "Desktop",
+            shortDeviceId: "cd41",
+            ownerInstallIdHash: await sha256Hex("desktop-install"),
+        });
+
+        const startup = await createWorkspace(adapter).initialize();
+        const currentDeviceState = JSON.parse(
+            window.localStorage.getItem(
+                getCurrentDeviceStorageKey(adapter.basePath, manifestDir),
+            ) ?? "{}",
+        );
+
+        expect(startup.startupDecision).toBe("ready");
+        expect(startup.currentDevice?.deviceId).toBe("91ac1111-2222-3333-4444-555555555555");
+        expect(currentDeviceState).toEqual({
+            version: 1,
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceFolderName: "Tablet--91ac",
+        });
+    });
+
+    it("migrates a legacy pointer by hydrating ownerInstallIdHash", async () => {
+        const { adapter, files } = createMockAdapter();
+        window.localStorage.setItem(
+            getInstallInstanceStorageKey(adapter.basePath, manifestDir),
+            JSON.stringify({
+                version: 1,
+                installInstanceId: "legacy-install",
+            }),
+        );
+        window.localStorage.setItem(
+            getCurrentDeviceStorageKey(adapter.basePath, manifestDir),
+            JSON.stringify({
+                version: 1,
+                deviceId: "91ac1111-2222-3333-4444-555555555555",
+                deviceFolderName: "Mobile--91ac",
+            }),
+        );
+
+        await addSourceDevice(adapter, files, {
+            folderName: "Mobile--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Mobile",
+            shortDeviceId: "91ac",
+        });
+
+        const startup = await createWorkspace(adapter).initialize();
+        const migratedMeta = JSON.parse(
+            files.get(".obsidian/plugins/syro/devices/Mobile--91ac/device.json") ?? "{}",
+        );
+
+        expect(startup.startupDecision).toBe("ready");
+        expect(startup.currentDevice?.deviceId).toBe("91ac1111-2222-3333-4444-555555555555");
+        expect(migratedMeta.ownerInstallIdHash).toBe(await sha256Hex("legacy-install"));
+    });
+
+    it("ignores a polluted pointer when another device uniquely matches the owner-install hash", async () => {
+        const { adapter, files } = createMockAdapter();
+        window.localStorage.setItem(
+            getInstallInstanceStorageKey(adapter.basePath, manifestDir),
+            JSON.stringify({
+                version: 1,
+                installInstanceId: "phone-install",
+            }),
+        );
+        window.localStorage.setItem(
+            getCurrentDeviceStorageKey(adapter.basePath, manifestDir),
+            JSON.stringify({
+                version: 1,
+                deviceId: "cd411111-2222-3333-4444-555555555555",
+                deviceFolderName: "Desktop--cd41",
+            }),
+        );
+
+        await addSourceDevice(adapter, files, {
+            folderName: "Desktop--cd41",
+            deviceId: "cd411111-2222-3333-4444-555555555555",
+            deviceName: "Desktop",
+            shortDeviceId: "cd41",
+            ownerInstallIdHash: await sha256Hex("desktop-install"),
+        });
+        await addSourceDevice(adapter, files, {
+            folderName: "Phone--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Phone",
+            shortDeviceId: "91ac",
+            ownerInstallIdHash: await sha256Hex("phone-install"),
+        });
+
+        const startup = await createWorkspace(adapter).initialize();
+        const currentDeviceState = JSON.parse(
+            window.localStorage.getItem(
+                getCurrentDeviceStorageKey(adapter.basePath, manifestDir),
+            ) ?? "{}",
+        );
+
+        expect(startup.startupDecision).toBe("ready");
+        expect(startup.currentDevice?.deviceId).toBe("91ac1111-2222-3333-4444-555555555555");
+        expect(currentDeviceState.deviceId).toBe("91ac1111-2222-3333-4444-555555555555");
     });
 
     it("can still create a new baseline device from an existing source", async () => {
@@ -536,12 +728,37 @@ describe("SyroWorkspace", () => {
         expect(layout.device.deviceName).toBe("Tablet");
         expect(layout.device.baselineFromDeviceId).toBe("91ac1111-2222-3333-4444-555555555555");
         expect(layout.device.baselineBuiltAt).toBeTruthy();
+        expect(layout.device.ownerInstallIdHash).toBe(
+            await sha256Hex("d84f1111-2222-3333-4444-555555555555"),
+        );
         expect(layout.device.importedSessionIds).toEqual([]);
         expect(layout.device.importedSessionRetentionUntil).toEqual({});
         expect(files.get(layout.cardsPath)).toBe('{"items":[{"uuid":"card-1"}]}');
         expect(JSON.parse(files.get(layout.deckOptionsPath) ?? "{}")).toEqual(
             JSON.parse(createValidDeckOptionsPayload()),
         );
+    });
+
+    it("cleans up the provisional device directory when baseline creation fails", async () => {
+        const { adapter, files, directories } = createMockAdapter();
+        await addSourceDevice(adapter, files, {
+            folderName: "Mobile--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Mobile",
+            shortDeviceId: "91ac",
+        });
+        files.delete(".obsidian/plugins/syro/devices/Mobile--91ac/daily-state.json");
+
+        const workspace = createWorkspace(adapter);
+
+        await expect(
+            workspace.completeBaselineJoin({
+                deviceName: "Tablet",
+                sourceDeviceId: "91ac1111-2222-3333-4444-555555555555",
+            }),
+        ).rejects.toThrow();
+        expect(directories.has(".obsidian/plugins/syro/devices/Tablet--d84f")).toBe(false);
+        expect(files.has(".obsidian/plugins/syro/devices/Tablet--d84f/device.json")).toBe(false);
     });
 
     it("requires rebuild when the current device is stale and a fresher peer exists", async () => {
@@ -558,6 +775,7 @@ describe("SyroWorkspace", () => {
                 createdAt: "2026-03-01T00:00:00.000Z",
                 updatedAt: "2026-03-01T00:00:00.000Z",
                 lastSeenAt: "2026-03-01T00:00:00.000Z",
+                ownerInstallIdHash: initial.layout.device.ownerInstallIdHash,
             }),
         );
 
@@ -574,6 +792,93 @@ describe("SyroWorkspace", () => {
         expect(rebuiltStartup.recommendedSourceDeviceId).toBe(
             "91ac1111-2222-3333-4444-555555555555",
         );
+    });
+
+    it("cleans up the provisional device directory when rebuild fails", async () => {
+        const { adapter, files, directories } = createMockAdapter();
+        await addSourceDevice(adapter, files, {
+            folderName: "Mobile--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Mobile",
+            shortDeviceId: "91ac",
+        });
+        files.delete(".obsidian/plugins/syro/devices/Mobile--91ac/cards.json");
+
+        const workspace = createWorkspace(adapter);
+
+        await expect(
+            workspace.rebuildFromBaseline({
+                deviceName: "Tablet",
+                sourceDeviceId: "91ac1111-2222-3333-4444-555555555555",
+            }),
+        ).rejects.toThrow();
+        expect(directories.has(".obsidian/plugins/syro/devices/Tablet--d84f")).toBe(false);
+        expect(files.has(".obsidian/plugins/syro/devices/Tablet--d84f/device.json")).toBe(false);
+    });
+
+    it("rebinds an existing device to the current installation and clears the previous binding", async () => {
+        const { adapter, files } = createMockAdapter();
+        const workspace = createWorkspace(adapter);
+        const initial = await workspace.initialize();
+
+        await addSourceDevice(adapter, files, {
+            folderName: "Tablet--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Tablet",
+            shortDeviceId: "91ac",
+        });
+
+        const adopted = await workspace.adoptExistingDevice("91ac1111-2222-3333-4444-555555555555");
+        const adoptedMeta = JSON.parse(files.get(normalizePath(adopted.deviceMetaPath)) ?? "{}");
+        const previousMeta = JSON.parse(
+            files.get(normalizePath(initial.layout.deviceMetaPath)) ?? "{}",
+        );
+        const currentDeviceState = JSON.parse(
+            window.localStorage.getItem(
+                getCurrentDeviceStorageKey(adapter.basePath, manifestDir),
+            ) ?? "{}",
+        );
+
+        expect(adopted.device.deviceId).toBe("91ac1111-2222-3333-4444-555555555555");
+        expect(adoptedMeta.ownerInstallIdHash).toBe(initial.layout.device.ownerInstallIdHash);
+        expect(previousMeta.ownerInstallIdHash).toBeNull();
+        expect(currentDeviceState.deviceId).toBe("91ac1111-2222-3333-4444-555555555555");
+
+        const repeated = await createWorkspace(adapter).initialize();
+        expect(repeated.currentDevice?.deviceId).toBe("91ac1111-2222-3333-4444-555555555555");
+    });
+
+    it("enters read-only when multiple devices claim the same installation binding", async () => {
+        const { adapter, files } = createMockAdapter();
+        window.localStorage.setItem(
+            getInstallInstanceStorageKey(adapter.basePath, manifestDir),
+            JSON.stringify({
+                version: 1,
+                installInstanceId: "desktop-install",
+            }),
+        );
+
+        const ownerInstallIdHash = await sha256Hex("desktop-install");
+        await addSourceDevice(adapter, files, {
+            folderName: "Desktop--cd41",
+            deviceId: "cd411111-2222-3333-4444-555555555555",
+            deviceName: "Desktop",
+            shortDeviceId: "cd41",
+            ownerInstallIdHash,
+        });
+        await addSourceDevice(adapter, files, {
+            folderName: "Desktop--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Desktop Clone",
+            shortDeviceId: "91ac",
+            ownerInstallIdHash,
+        });
+
+        const startup = await createWorkspace(adapter).initialize();
+
+        expect(startup.startupDecision).toBe("read-only");
+        expect(startup.readOnlyReason).toContain("Multiple devices are bound to this installation");
+        expect(startup.currentDevice).toBeNull();
     });
 
     it("renames the current device folder and its open session buffer", async () => {

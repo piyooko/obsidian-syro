@@ -28,9 +28,12 @@ export class SyroRecoveryModal extends Modal {
     private selectedSourceDeviceId: string;
     private deviceNameInput!: TextComponent;
     private sourceDropdown!: DropdownComponent;
+    private cancelButton!: ButtonComponent;
     private confirmButton!: ButtonComponent;
     private resolvePromise: ((value: SyroRecoveryModalResult | null) => void) | null = null;
     private submitted = false;
+    private isSubmitting = false;
+    private removeCloseGuards: (() => void) | null = null;
 
     constructor(
         app: App,
@@ -52,6 +55,7 @@ export class SyroRecoveryModal extends Modal {
     onOpen(): void {
         const { contentEl } = this;
         contentEl.empty();
+        this.installCloseGuards();
         contentEl.createEl("h2", {
             text:
                 this.context.mode === "baseline-required"
@@ -94,28 +98,36 @@ export class SyroRecoveryModal extends Modal {
             });
 
         const buttonRow = contentEl.createDiv("srs-flex-row sr-confirm-modal-actions");
-        new ButtonComponent(buttonRow).setButtonText(t("CANCEL")).onClick(() => {
+        this.cancelButton = new ButtonComponent(buttonRow).setButtonText(t("CANCEL")).onClick(() => {
+            if (this.isSubmitting) {
+                return;
+            }
+
             this.close();
         });
         this.confirmButton = new ButtonComponent(buttonRow)
             .setButtonText(t("CONFIRM"))
             .setCta()
             .onClick(() => {
-                if (!this.selectedSourceDeviceId) {
+                if (this.isSubmitting || !this.selectedSourceDeviceId) {
                     return;
                 }
 
+                this.setSubmitting(true);
                 this.submitted = true;
                 this.closeWithResult({
                     deviceName: this.deviceNameValue.trim() || this.context.defaultDeviceName,
                     sourceDeviceId: this.selectedSourceDeviceId,
                 });
+                this.close();
             });
 
         this.syncConfirmState();
     }
 
     onClose(): void {
+        this.removeCloseGuards?.();
+        this.removeCloseGuards = null;
         this.contentEl.empty();
         if (!this.submitted) {
             this.closeWithResult(null);
@@ -123,7 +135,44 @@ export class SyroRecoveryModal extends Modal {
     }
 
     private syncConfirmState(): void {
-        this.confirmButton?.setDisabled(!this.selectedSourceDeviceId);
+        this.confirmButton?.setDisabled(this.isSubmitting || !this.selectedSourceDeviceId);
+    }
+
+    private setSubmitting(isSubmitting: boolean): void {
+        this.isSubmitting = isSubmitting;
+        this.deviceNameInput?.setDisabled(isSubmitting);
+        this.sourceDropdown?.setDisabled(isSubmitting);
+        this.cancelButton?.setDisabled(isSubmitting);
+        this.syncConfirmState();
+    }
+
+    private installCloseGuards(): void {
+        const blockBackdropClose = (event: MouseEvent): void => {
+            const target = event.target;
+            if (!(target instanceof Node) || this.modalEl.contains(target)) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+        };
+        const blockEscapeClose = (event: KeyboardEvent): void => {
+            if (event.key !== "Escape") {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+        };
+
+        this.containerEl.addEventListener("mousedown", blockBackdropClose, true);
+        this.containerEl.addEventListener("click", blockBackdropClose, true);
+        window.addEventListener("keydown", blockEscapeClose, true);
+        this.removeCloseGuards = () => {
+            this.containerEl.removeEventListener("mousedown", blockBackdropClose, true);
+            this.containerEl.removeEventListener("click", blockBackdropClose, true);
+            window.removeEventListener("keydown", blockEscapeClose, true);
+        };
     }
 
     private closeWithResult(result: SyroRecoveryModalResult | null): void {
