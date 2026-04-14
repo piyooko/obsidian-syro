@@ -1803,6 +1803,7 @@ body.syro-review-mobile-navbar-covered .mobile-navbar.mod-raised,
 }
 
 .view-header-left.syro-review-mobile-header-covered,
+.view-header-title-container.syro-review-mobile-header-covered,
 .view-actions.syro-review-mobile-header-covered {
     display: none !important;
     pointer-events: none !important;

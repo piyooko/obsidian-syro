@@ -47,9 +47,13 @@ describe("reviewMobileChrome", () => {
         const { leaf } = createLeafWithHeader();
         const targets = getReviewMobileHeaderCoverTargets(leaf);
 
-        expect(targets).toHaveLength(2);
+        expect(targets).toHaveLength(3);
         expect(targets.every((target) => target.closest(".view-header") !== null)).toBe(true);
-        expect(targets.map((target) => target.className)).toEqual(["view-header-left", "view-actions"]);
+        expect(targets.map((target) => target.className)).toEqual([
+            "view-header-left",
+            "view-header-title-container",
+            "view-actions",
+        ]);
         expect(targets.some((target) => target.textContent === "outside-left")).toBe(false);
         expect(targets.some((target) => target.textContent === "outside-actions")).toBe(false);
     });

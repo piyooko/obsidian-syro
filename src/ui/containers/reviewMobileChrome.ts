@@ -48,6 +48,7 @@ export function getReviewMobileHeaderCoverTargets(
         (child): child is HTMLElement =>
             child instanceof HTMLElement &&
             (child.classList.contains("view-header-left") ||
+                child.classList.contains("view-header-title-container") ||
                 child.classList.contains("view-actions")),
     );
 }
