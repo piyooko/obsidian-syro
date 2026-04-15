@@ -1,4 +1,6 @@
+import { Card } from "src/Card";
 import { CardListType, Deck } from "src/Deck";
+import { CardOrder, DeckOrder, DeckTreeIterator } from "src/DeckTreeIterator";
 import { FlashcardReviewMode, FlashcardReviewSequencer } from "src/FlashcardReviewSequencer";
 import { TopicPath } from "src/TopicPath";
 import { createDefaultFsrsSettings, DEFAULT_SETTINGS, SRSettings } from "src/settings";
@@ -171,6 +173,10 @@ function createStore(settings: SRSettings): DataStore {
 
 function createTrackedCardState(settings: SRSettings, path = "cards/test.md") {
     const store = createStore(settings);
+    return trackCardInStore(store, path);
+}
+
+function trackCardInStore(store: DataStore, path = "cards/test.md") {
     store.trackFile(path, RPITEMTYPE.CARD, false);
 
     const trackedFile = store.getTrackedFile(path);
@@ -192,6 +198,23 @@ function createTrackedCardState(settings: SRSettings, path = "cards/test.md") {
 
     const item = store.getItembyID(trackedItem.reviewId);
     return { store, trackedFile, trackedItem, item };
+}
+
+function createRealCard(
+    topicPath: TopicPath,
+    item: RepetitionItem,
+    repetitionItemOverride?: RepetitionItem,
+): Card {
+    return new Card({
+        Id: item.ID,
+        scheduleInfo: null as any,
+        repetitionItem: repetitionItemOverride ?? item,
+        question: {
+            topicPathList: {
+                list: [topicPath],
+            },
+        } as any,
+    });
 }
 
 function installSequencerPlugin(
@@ -406,6 +429,54 @@ describe("FlashcardReviewSequencer", () => {
 
         expect(plugin.incrementDeviceReviewCount).toHaveBeenCalledTimes(1);
         expect(plugin.incrementDailyCounts).not.toHaveBeenCalled();
+    });
+
+    test("processReview rebinds stale card items before counting learning cards and picking next main card", async () => {
+        const settings = createSettings();
+        const store = createStore(settings);
+        const plugin = installSequencerPlugin(settings, store);
+        const topicPath = new TopicPath(["DeckA"]);
+        const root = new Deck("root", null);
+        const deck = root.getOrCreateDeck(topicPath);
+        const firstTracked = trackCardInStore(store, "cards/first.md");
+        const secondTracked = trackCardInStore(store, "cards/second.md");
+        const staleFirstItem = RepetitionItem.create(
+            JSON.parse(JSON.stringify(firstTracked.item)) as RepetitionItem,
+        );
+        const firstCard = createRealCard(topicPath, firstTracked.item, staleFirstItem);
+        const secondCard = createRealCard(topicPath, secondTracked.item);
+        const iterator = new DeckTreeIterator(
+            {
+                cardOrder: CardOrder.NewFirstSequential,
+                deckOrder: DeckOrder.PrevDeckComplete_Sequential,
+            },
+            root,
+        );
+        const sequencer = new FlashcardReviewSequencer(
+            FlashcardReviewMode.Review,
+            iterator,
+            settings,
+            createQuestionPostponementList(),
+        );
+
+        deck.newFlashcards.push(firstCard, secondCard);
+        (DataStore as any).instance = store;
+
+        sequencer.setDeckTree(root, root, root, "DeckA");
+
+        expect(sequencer.currentCard?.Id).toBe(firstCard.Id);
+
+        sequencer.processReview(ReviewResponse.Good);
+        await Promise.resolve();
+
+        expect(sequencer.currentCard?.Id).toBe(secondCard.Id);
+        expect(firstCard.repetitionItem).toBe(store.getItembyID(firstCard.Id!));
+        expect(firstCard.repetitionItem?.queue).toBe(CardQueue.Learn);
+
+        const stats = sequencer.getSessionDeckStats();
+        expect(stats.newCount).toBe(1);
+        expect(stats.learningCount).toBe(1);
+        expect(plugin.incrementDailyCounts).toHaveBeenCalledTimes(1);
     });
 
     test("undoReview emits syro cards undo session with restored snapshot", async () => {

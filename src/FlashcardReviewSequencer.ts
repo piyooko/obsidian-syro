@@ -312,10 +312,70 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         return previewItem;
     }
 
+    private getStoreItemForCard(card: Card | null | undefined): RepetitionItem | null {
+        if (!card || typeof card.Id !== "number" || card.Id < 0) {
+            return null;
+        }
+
+        try {
+            const store = DataStore.getInstance() as Partial<DataStore>;
+            if (typeof store.getItembyID !== "function") {
+                return null;
+            }
+
+            return store.getItembyID(card.Id) ?? null;
+        } catch {
+            return null;
+        }
+    }
+
+    private bindCardToItem(
+        card: Card | null | undefined,
+        item: RepetitionItem | null | undefined,
+        syncSchedule: boolean = false,
+    ): RepetitionItem | null {
+        if (!card || !item) {
+            return null;
+        }
+
+        if (card.repetitionItem !== item) {
+            card.repetitionItem = item;
+        }
+
+        if (syncSchedule) {
+            card.scheduleInfo = NoteCardScheduleParser.createInfo_algo(item.getSched() ?? null);
+        }
+
+        return item;
+    }
+
+    private syncCardRuntimeState(
+        card: Card | null | undefined,
+        syncSchedule: boolean = false,
+    ): RepetitionItem | null {
+        return this.bindCardToItem(card, this.getStoreItemForCard(card), syncSchedule);
+    }
+
+    private syncDeckCardRuntimeState(
+        deck: Deck | null | undefined,
+        includeSubdeckCounts: boolean,
+        syncSchedule: boolean = false,
+    ): void {
+        if (!deck) {
+            return;
+        }
+
+        const cards = deck.getFlattenedCardArray(CardListType.All, includeSubdeckCounts);
+        const distinctCards = new Set(cards);
+        distinctCards.forEach((card) => this.syncCardRuntimeState(card, syncSchedule));
+    }
+
     private createDeckStats(deck: Deck | null | undefined): DeckStats {
         if (!deck) {
             return new DeckStats(0, 0, 0, 0);
         }
+
+        this.syncDeckCardRuntimeState(deck, true);
 
         const newCount = deck.getDistinctCardCount(CardListType.NewCard, true);
         const dueCount = deck.getDistinctCardCount(CardListType.DueCard, true);
@@ -411,6 +471,8 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         this._isLearning = false;
         this._nextWaitTime = null;
 
+        this.syncDeckCardRuntimeState(this.currentDeck, true);
+
         const now = Date.now();
         const learnAheadTime = this.getLearnAheadMillis();
 
@@ -437,12 +499,14 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         }
 
         if (this.cardSequencer.hasCurrentCard) {
+            this.syncCardRuntimeState(this.cardSequencer.currentCard);
             this._currentCard = this.cardSequencer.currentCard;
             return;
         }
 
         const nextResult = this.cardSequencer.nextCard();
         if (nextResult) {
+            this.syncCardRuntimeState(this.cardSequencer.currentCard);
             this.logRuntimeDebug(
                 `[SR-Debug] advanceToNextCard: Next is Main Queue Card, ID=${this.cardSequencer.currentCard.Id}, isDue=${String(this.cardSequencer.currentCard.isDue)}, isNew=${String(this.cardSequencer.currentCard.isNew)}`,
             );
@@ -484,6 +548,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         const item = store.getItembyID(card.Id);
         const pluginStoreItemBefore = SRPlugin.getInstance()?.store?.getItembyID(card.Id) ?? null;
         const sessionStatsBefore = this.getSessionDeckStats();
+        const itemBeforeSnapshot = this.createDebugItemSnapshot(item ?? pluginStoreItemBefore);
         this.logRuntimeDebug(
             `[SR-Debug] processReview: ID=${card.Id}, isLearning=${String(this._isLearning)}, response=${ReviewResponse[response]}, currentStep=${item?.learningStep}`,
         );
@@ -498,7 +563,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             dataStoreItemExists: Boolean(item),
             sharedStoreItemRef:
                 pluginStoreItemBefore && item ? pluginStoreItemBefore === item : null,
-            itemBefore: this.createDebugItemSnapshot(item ?? pluginStoreItemBefore),
+            itemBefore: itemBeforeSnapshot,
             sessionStatsBefore: this.createDebugDeckStatsSnapshot(sessionStatsBefore),
         });
         const counterDeckPath =
@@ -552,7 +617,6 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         const itemAfter = store.getItembyID(card.Id);
         const pluginStoreItemAfter = SRPlugin.getInstance()?.store?.getItembyID(card.Id) ?? null;
         const sessionStatsAfter = this.getSessionDeckStats();
-        const itemBeforeSnapshot = this.createDebugItemSnapshot(item ?? pluginStoreItemBefore);
         const itemAfterSnapshot = this.createDebugItemSnapshot(itemAfter ?? pluginStoreItemAfter);
         this.logRuntimeDebug("[SR-Debug] processReview: after", {
             reviewMode: FlashcardReviewMode[this.reviewMode],
@@ -621,7 +685,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             return;
         }
 
-        card.scheduleInfo = NoteCardScheduleParser.createInfo_algo(resolvedItem.getSched() ?? null);
+        this.bindCardToItem(card, resolvedItem, true);
 
         if (!this._isLearning) {
             this.cardSequencer.deleteCurrentCardFromAllDecks();
