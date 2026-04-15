@@ -294,12 +294,12 @@
 }
 
 .sr-device-flat-item > .setting-item-control {
-    align-self: flex-start;
-    padding-top: 2px;
+    align-self: center;
+    padding-top: 0;
 }
 
 .sr-device-flat-item {
-    align-items: flex-start !important;
+    align-items: center !important;
 }
 
 .sr-device-flat-title {
