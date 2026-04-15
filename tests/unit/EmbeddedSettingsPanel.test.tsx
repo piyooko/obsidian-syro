@@ -1050,7 +1050,10 @@ describe("EmbeddedSettingsPanel", () => {
             openTab(view.container, "Sync");
             await flushPromises();
 
-            const button = findDeviceActionButton(view.container, "Sync into current device");
+            const button = findDeviceActionButton(
+                view.container,
+                "Pull this device data (overwrites current review progress)",
+            );
             expect(button).toBeTruthy();
 
             await act(async () => {

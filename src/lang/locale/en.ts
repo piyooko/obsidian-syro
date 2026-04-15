@@ -797,7 +797,7 @@ export default normalizeSentenceCaseLocale({
     NOTICE_SYRO_INVALID_DEVICE_DELETED: "The invalid device directory has been deleted.",
     NOTICE_SYRO_VALID_DEVICE_DELETED: "The device snapshot and its session history have been deleted.",
     SYRO_PULL_TO_CURRENT_CONFIRM:
-        "Overwrite the current device `${current}` with the snapshot from `${source}`? Local unsynced data on this device will be replaced.",
+        "Use the snapshot from `${source}` to **overwrite the current device** `${current}`? Local unsynced data on this device will be replaced.",
     SYRO_DELETE_VALID_DEVICE_CONFIRM:
         "Delete the device `${device}` together with its stored session history? This only removes that device copy and cannot be undone.",
     SETTINGS_SYNC_DEVICE_MANAGEMENT: "Device Management",
@@ -834,7 +834,7 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_SYNC_DEVICE_STATUS_UP_TO_DATE: "Up to date",
     SETTINGS_SYNC_INLINE_RENAME: "Rename device",
     SETTINGS_SYNC_CANCEL_RENAME: "Cancel rename",
-    SETTINGS_SYNC_PULL_TO_CURRENT: "Sync into current device",
+    SETTINGS_SYNC_PULL_TO_CURRENT: "Pull this device data (overwrites current review progress)",
     SETTINGS_SYNC_DELETE_DEVICE: "Delete device",
     SETTINGS_SYNC_INVALID_DEVICE_BADGE: "Invalid",
     SETTINGS_SYNC_INVALID_DEVICE_REASON: "Reason",

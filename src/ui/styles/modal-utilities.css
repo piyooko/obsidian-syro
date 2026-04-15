@@ -6,6 +6,24 @@
     margin-top: var(--size-4-4);
 }
 
+.sr-confirm-modal.is-destructive strong {
+    color: var(--color-red);
+    font-weight: var(--font-bold);
+}
+
+.sr-confirm-modal.is-destructive .sr-confirm-modal-actions .mod-cta {
+    background-color: var(--color-red);
+    border-color: var(--color-red);
+    color: var(--text-on-accent);
+}
+
+.sr-confirm-modal.is-destructive .sr-confirm-modal-actions .mod-cta:hover,
+.sr-confirm-modal.is-destructive .sr-confirm-modal-actions .mod-cta:focus-visible {
+    background-color: color-mix(in srgb, var(--color-red) 86%, black);
+    border-color: color-mix(in srgb, var(--color-red) 86%, black);
+    color: var(--text-on-accent);
+}
+
 .sr-info-modal-top-actions {
     position: sticky;
     top: 0;

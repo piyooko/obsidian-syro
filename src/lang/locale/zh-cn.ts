@@ -594,7 +594,7 @@ export default {
     NOTICE_SYRO_INVALID_DEVICE_DELETED: "已删除异常设备目录。",
     NOTICE_SYRO_VALID_DEVICE_DELETED: "已删除该设备快照及其会话历史。",
     SYRO_PULL_TO_CURRENT_CONFIRM:
-        "确定要用 `${source}` 的快照覆盖当前设备 `${current}` 吗？当前设备尚未同步的本地数据会被替换。",
+        "确定要用 `${source}` 的快照 **覆盖当前设备** `${current}` 吗？当前设备尚未同步的本地数据会被替换。",
     SYRO_DELETE_VALID_DEVICE_CONFIRM:
         "确定要删除设备 `${device}` 及其保存的会话历史吗？这只会移除该设备副本，且无法撤销。",
     SETTINGS_SYNC_DEVICE_MANAGEMENT: "设备管理",
@@ -631,7 +631,7 @@ export default {
     SETTINGS_SYNC_DEVICE_STATUS_UP_TO_DATE: "已同步",
     SETTINGS_SYNC_INLINE_RENAME: "重命名设备",
     SETTINGS_SYNC_CANCEL_RENAME: "取消重命名",
-    SETTINGS_SYNC_PULL_TO_CURRENT: "同步到当前设备",
+    SETTINGS_SYNC_PULL_TO_CURRENT: "拉取此设备数据（将覆盖当前设备的复习进度）",
     SETTINGS_SYNC_DELETE_DEVICE: "删除设备",
     SETTINGS_SYNC_INVALID_DEVICE_BADGE: "异常",
     SETTINGS_SYNC_INVALID_DEVICE_REASON: "异常原因",

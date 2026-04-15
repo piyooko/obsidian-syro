@@ -2383,8 +2383,11 @@ export default class SRPlugin extends Plugin {
         await this.syroSessionManager?.flushActiveSession("manual");
     }
 
-    private async confirmSyroAction(message: string): Promise<boolean> {
-        return new ConfirmModal(this, message, () => undefined)
+    private async confirmSyroAction(
+        message: string,
+        options: { destructive?: boolean } = {},
+    ): Promise<boolean> {
+        return new ConfirmModal(this, message, () => undefined, options)
             .openAndWait()
             .catch(() => false);
     }
@@ -2625,6 +2628,7 @@ export default class SRPlugin extends Plugin {
                 source: sourceDevice.deviceName,
                 current: this.syroLayout.device.deviceName,
             }),
+            { destructive: true },
         );
         if (!confirmed) {
             return false;
