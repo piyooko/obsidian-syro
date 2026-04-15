@@ -222,6 +222,8 @@ function createDeviceManagementState(
     const invalidDevice: SyroInvalidDeviceCardState = {
         deviceFolderName: "Desktop--ec3c",
         footprintBytes: 512,
+        reviewCount: 13,
+        lastSeenAt: "2026-04-11T00:00:00.000Z",
         invalidReason: "missing-device-json",
         files: ["settings.json", "device-state.json"],
         folders: [],
@@ -1060,6 +1062,16 @@ describe("EmbeddedSettingsPanel", () => {
                 ["Storage:", "Device reviews:", "Last seen:"],
                 ["Storage:", "Device reviews:", "Last seen:"],
             ]);
+            const invalidCard = Array.from(
+                view.container.querySelectorAll<HTMLElement>(".sr-device-flat-item"),
+            ).find((item) => item.textContent?.includes("Desktop--ec3c"));
+            const invalidMetricLabels = Array.from(
+                invalidCard?.querySelectorAll<HTMLElement>(
+                    ".sr-device-inline-secondary .sr-device-inline-metric-label",
+                ) ?? [],
+            ).map((label) => label.textContent?.trim());
+
+            expect(invalidMetricLabels).toEqual(["Storage:", "Device reviews:", "Last seen:"]);
             expect(view.container.textContent).not.toContain("Device management");
             expect(view.container.textContent).not.toContain("Device ID");
             expect(view.container.textContent).not.toContain("Short ID");

@@ -2548,6 +2548,11 @@ export default class SRPlugin extends Plugin {
                     entry.deviceRoot,
                     this.syroWorkspace.getSessionDirectoryPath(entry.deviceFolderName),
                 ),
+                reviewCount: entry.deviceReviewCount,
+                lastSeenAt:
+                    entry.lastSeenAt ??
+                    sessionSummaries.get(entry.deviceFolderName)?.latestSessionAt ??
+                    null,
                 invalidReason: entry.reason,
                 files: entry.files,
                 folders: entry.folders,

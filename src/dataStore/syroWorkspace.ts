@@ -100,6 +100,8 @@ export interface SyroInvalidDeviceEntry {
     deviceFolderName: string;
     deviceRoot: string;
     reason: SyroInvalidDeviceReason;
+    deviceReviewCount: number;
+    lastSeenAt: string | null;
     files: string[];
     folders: string[];
 }
@@ -1207,12 +1209,16 @@ export class SyroWorkspace {
                 deviceRoot.slice(deviceRoot.lastIndexOf("/") + 1) || deviceRoot;
             const deviceMetaPath = joinPath(deviceRoot, "device.json");
             const summary = await this.getDeviceDirectorySummary(deviceRoot);
+            const deviceReviewCount = await this.readDeviceReviewCount(deviceRoot);
+            const lastSeenAt = await this.readInvalidDeviceLastSeenAt(deviceMetaPath);
 
             if (!(await this.adapter.exists(deviceMetaPath))) {
                 invalidDevices.push({
                     deviceFolderName,
                     deviceRoot,
                     reason: "missing-device-json",
+                    deviceReviewCount,
+                    lastSeenAt,
                     files: summary.files,
                     folders: summary.folders,
                 });
@@ -1231,6 +1237,8 @@ export class SyroWorkspace {
                     deviceFolderName,
                     deviceRoot,
                     reason: "invalid-device-json",
+                    deviceReviewCount,
+                    lastSeenAt,
                     files: summary.files,
                     folders: summary.folders,
                 });
@@ -1239,6 +1247,8 @@ export class SyroWorkspace {
                     deviceFolderName,
                     deviceRoot,
                     reason: "unreadable-device-json",
+                    deviceReviewCount,
+                    lastSeenAt,
                     files: summary.files,
                     folders: summary.folders,
                 });
@@ -1283,6 +1293,23 @@ export class SyroWorkspace {
             return normalizeDeviceReviewCount(parsed?.deviceReviewCount);
         } catch {
             return 0;
+        }
+    }
+
+    private async readInvalidDeviceLastSeenAt(deviceMetaPath: string): Promise<string | null> {
+        if (!(await this.adapter.exists(deviceMetaPath))) {
+            return null;
+        }
+
+        try {
+            const parsed = parseJsonUnknown(await this.adapter.read(deviceMetaPath));
+            if (!isRecord(parsed)) {
+                return null;
+            }
+            const lastSeenAt = getStringProp(parsed, "lastSeenAt")?.trim() ?? null;
+            return lastSeenAt && Number.isFinite(Date.parse(lastSeenAt)) ? lastSeenAt : null;
+        } catch {
+            return null;
         }
     }
 

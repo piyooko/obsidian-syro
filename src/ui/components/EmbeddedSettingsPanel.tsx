@@ -774,8 +774,15 @@ const InvalidDeviceCard: React.FC<{
                 />
                 <MetricDivider />
                 <InlineMetric
-                    label={t("SETTINGS_SYNC_INVALID_DEVICE_FILES")}
-                    value={[...device.files, ...device.folders.map((name) => `${name}/`)].join(", ") || "-"}
+                    label={t("SETTINGS_SYNC_DEVICE_REVIEW_COUNT")}
+                    value={formatReviewCount(device.reviewCount)}
+                    title={formatReviewCount(device.reviewCount)}
+                />
+                <MetricDivider />
+                <InlineMetric
+                    label={t("SETTINGS_SYNC_DEVICE_LAST_SEEN")}
+                    value={formatRelativeTimestamp(device.lastSeenAt)}
+                    title={formatAbsoluteTimestamp(device.lastSeenAt)}
                 />
             </div>
         </div>

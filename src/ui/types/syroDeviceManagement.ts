@@ -29,6 +29,8 @@ export interface SyroDeviceCardState {
 export interface SyroInvalidDeviceCardState {
     deviceFolderName: string;
     footprintBytes: number;
+    reviewCount: number;
+    lastSeenAt: string | null;
     invalidReason: SyroInvalidDeviceReason;
     files: string[];
     folders: string[];

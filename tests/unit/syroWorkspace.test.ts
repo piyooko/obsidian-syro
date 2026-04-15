@@ -652,6 +652,20 @@ describe("SyroWorkspace", () => {
             ".obsidian/plugins/syro/devices/Desktop--ec3c/settings.json",
             JSON.stringify({ version: 1, settings: {} }),
         );
+        files.set(
+            ".obsidian/plugins/syro/devices/Desktop--ec3c/daily-state.json",
+            JSON.stringify({
+                version: 1,
+                buryDate: "2026-04-13",
+                buryList: [],
+                dailyDeckStats: {
+                    date: "2026-04-13",
+                    counts: {},
+                },
+                deviceReviewCount: 9,
+                appliedOpIds: {},
+            }),
+        );
 
         const workspace = createWorkspace(adapter);
         const startup = await workspace.initialize();
@@ -663,6 +677,8 @@ describe("SyroWorkspace", () => {
             expect.objectContaining({
                 deviceFolderName: "Desktop--ec3c",
                 reason: "missing-device-json",
+                deviceReviewCount: 9,
+                lastSeenAt: null,
             }),
         ]);
         expect(startup.candidates.map((entry) => entry.deviceId)).toEqual([
