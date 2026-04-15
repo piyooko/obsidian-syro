@@ -1,6 +1,10 @@
 import { App, DataAdapter, Platform } from "obsidian";
 import { createDeckOptionsStoreSnapshot } from "./deckOptionsStore";
-import { hasSyro012MigrationMarker } from "./syroPluginDataStore";
+import {
+    hasSyro012MigrationMarker,
+    normalizeDeviceReviewCount,
+    parseDailyState,
+} from "./syroPluginDataStore";
 import { getStorePath } from "src/dataStore/dataLocation";
 import type { SRSettings } from "src/settings";
 import {
@@ -83,6 +87,7 @@ export interface SyroBaselineCandidate {
 export interface SyroValidDeviceEntry extends SyroBaselineCandidate {
     deviceRoot: string;
     deviceMetaPath: string;
+    deviceReviewCount: number;
     metadata: SyroDeviceMetadata;
 }
 
@@ -1164,6 +1169,7 @@ export class SyroWorkspace {
                     continue;
                 }
 
+                const deviceReviewCount = await this.readDeviceReviewCount(deviceRoot);
                 validDevices.push({
                     deviceId: metadata.deviceId,
                     deviceName: metadata.deviceName,
@@ -1174,6 +1180,7 @@ export class SyroWorkspace {
                     baselineBuiltAt: metadata.baselineBuiltAt,
                     deviceRoot,
                     deviceMetaPath,
+                    deviceReviewCount,
                     metadata,
                 });
             } catch {
@@ -1265,6 +1272,20 @@ export class SyroWorkspace {
         }
     }
 
+    private async readDeviceReviewCount(deviceRoot: string): Promise<number> {
+        const dailyStatePath = joinPath(deviceRoot, "daily-state.json");
+        if (!(await this.adapter.exists(dailyStatePath))) {
+            return 0;
+        }
+
+        try {
+            const parsed = parseDailyState(parseJsonUnknown(await this.adapter.read(dailyStatePath)));
+            return normalizeDeviceReviewCount(parsed?.deviceReviewCount);
+        } catch {
+            return 0;
+        }
+    }
+
     private toValidDeviceEntry(layout: SyroPersistenceLayout): SyroValidDeviceEntry {
         const deviceFolderName = this.getDeviceFolderNameFromLayout(layout);
         return {
@@ -1277,6 +1298,7 @@ export class SyroWorkspace {
             baselineBuiltAt: layout.device.baselineBuiltAt,
             deviceRoot: layout.deviceRoot,
             deviceMetaPath: layout.deviceMetaPath,
+            deviceReviewCount: 0,
             metadata: layout.device,
         };
     }

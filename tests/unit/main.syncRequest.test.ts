@@ -362,12 +362,14 @@ describe("SRPlugin sync request orchestration", () => {
                         Deck: { new: 0, review: 0 },
                     },
                 },
+                deviceReviewCount: 3,
                 appliedOpIds: {},
             },
             sharedSettingsUpdatedAtByField: {},
             trackingRulesUpdatedAtByFolderPath: {},
             trackingRulesTombstones: {},
             dailyStateAppliedOpIds: {},
+            currentDeviceReviewCount: 4,
             saveData: jest.fn(async () => undefined),
             data: {
                 settings: {
@@ -391,6 +393,11 @@ describe("SRPlugin sync request orchestration", () => {
         });
 
         expect(plugin.dailyStateStore.save).toHaveBeenCalledTimes(1);
+        expect(plugin.dailyStateStore.save).toHaveBeenCalledWith(
+            expect.objectContaining({
+                deviceReviewCount: 4,
+            }),
+        );
         expect(plugin.sharedSettingsStore.save).not.toHaveBeenCalled();
         expect(plugin.trackingRulesStore.save).not.toHaveBeenCalled();
         expect(plugin.deviceStateStore.save).not.toHaveBeenCalled();
@@ -453,11 +460,13 @@ describe("SRPlugin sync request orchestration", () => {
             },
             getRolloverDate: jest.fn(() => "2026-04-15"),
             loadDailyDeckStats: SRPlugin.prototype.loadDailyDeckStats,
+            currentDeviceReviewCount: 0,
             requestPluginDataSave: jest.fn(),
         };
 
         (SRPlugin.prototype.incrementDailyCounts as unknown as Function).call(plugin, "A/B", false);
 
+        expect(plugin.currentDeviceReviewCount).toBe(1);
         expect(plugin.requestPluginDataSave).toHaveBeenCalledWith({
             domains: ["daily-state"],
         });

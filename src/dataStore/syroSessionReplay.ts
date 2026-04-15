@@ -55,6 +55,7 @@ type ReplayDependencies = {
     trackingRulesUpdatedAtByFolderPath: Record<string, string>;
     trackingRulesTombstones: Record<string, PersistedTrackingRulesTombstone>;
     dailyStateAppliedOpIds: Record<string, string>;
+    currentDeviceReviewCount: number;
 };
 
 function cloneUnknown<T>(value: T): T {
@@ -766,6 +767,7 @@ export async function replaySyroSessionRecords(
                     buryDate: deps.data.buryDate,
                     buryList: deps.data.buryList,
                     dailyDeckStats: deps.data.dailyDeckStats,
+                    deviceReviewCount: deps.currentDeviceReviewCount,
                 },
                 deps.dailyStateAppliedOpIds,
             ),

@@ -15,6 +15,7 @@ export interface SyroDeviceCardState {
     deviceName: string;
     isCurrent: boolean;
     footprintBytes: number;
+    reviewCount: number;
     lastSeenAt: string | null;
     latestSessionAt: string | null;
     lastPulledIntoCurrentAt: string | null;

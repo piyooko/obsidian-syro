@@ -359,15 +359,18 @@
 .sr-device-inline-metric {
     display: inline-flex;
     align-items: center;
+    column-gap: 0.25em;
     min-width: 0;
 }
 
 .sr-device-inline-metric-label {
     color: inherit;
+    white-space: nowrap;
 }
 
 .sr-device-inline-metric-value {
     min-width: 0;
+    white-space: nowrap;
     overflow-wrap: anywhere;
 }
 

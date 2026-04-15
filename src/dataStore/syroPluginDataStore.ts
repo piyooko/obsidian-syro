@@ -57,6 +57,7 @@ export interface PersistedDailyState {
     buryDate: string;
     buryList: string[];
     dailyDeckStats: DailyDeckStats;
+    deviceReviewCount?: number;
     appliedOpIds: Record<string, string>;
 }
 
@@ -258,6 +259,14 @@ export const DEVICE_STATE_FIELDS = [
     "sidebarTimelineSelectedPath",
     "previousRelease",
 ] as const satisfies readonly (keyof SRSettings)[];
+
+export function normalizeDeviceReviewCount(value: unknown): number {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+        return 0;
+    }
+
+    return Math.max(0, Math.trunc(value));
+}
 
 function normalizePath(path: string): string {
     return path.replace(/\\/g, "/").replace(/\/+/g, "/");
@@ -600,12 +609,14 @@ export function extractDailyState(input: {
     buryDate: string;
     buryList: string[];
     dailyDeckStats: DailyDeckStats;
+    deviceReviewCount?: number;
 }): PersistedDailyState {
     return {
         version: SYRO_DAILY_STATE_VERSION,
         buryDate: input.buryDate ?? "",
         buryList: sanitizeStringArray(input.buryList),
         dailyDeckStats: cloneUnknown(parseDailyDeckStats(input.dailyDeckStats)),
+        deviceReviewCount: normalizeDeviceReviewCount(input.deviceReviewCount),
         appliedOpIds: {},
     };
 }
@@ -615,6 +626,7 @@ export function extractDailyStateWithMetadata(
         buryDate: string;
         buryList: string[];
         dailyDeckStats: DailyDeckStats;
+        deviceReviewCount?: number;
     },
     appliedOpIds: Record<string, string>,
 ): PersistedDailyState {
@@ -623,6 +635,7 @@ export function extractDailyStateWithMetadata(
         buryDate: input.buryDate ?? "",
         buryList: sanitizeStringArray(input.buryList),
         dailyDeckStats: cloneUnknown(parseDailyDeckStats(input.dailyDeckStats)),
+        deviceReviewCount: normalizeDeviceReviewCount(input.deviceReviewCount),
         appliedOpIds: parseTimestampMap(appliedOpIds),
     };
 }
@@ -636,6 +649,7 @@ export function createDefaultDailyState(): PersistedDailyState {
             date: "",
             counts: {},
         },
+        deviceReviewCount: 0,
         appliedOpIds: {},
     };
 }
@@ -650,6 +664,7 @@ export function parseDailyState(value: unknown): PersistedDailyState | null {
         buryDate: getStringProp(value, "buryDate")?.trim() ?? "",
         buryList: sanitizeStringArray(value["buryList"]),
         dailyDeckStats: parseDailyDeckStats(value["dailyDeckStats"]),
+        deviceReviewCount: normalizeDeviceReviewCount(value["deviceReviewCount"]),
         appliedOpIds: parseTimestampMap(value["appliedOpIds"]),
     };
 }

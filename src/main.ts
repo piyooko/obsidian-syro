@@ -97,6 +97,7 @@ import {
     extractSharedSettingsWithMetadata,
     extractTrackingRules,
     hasSyro012MigrationMarker,
+    normalizeDeviceReviewCount,
     parseDailyState,
     parseDeviceState,
     parseLegacyPluginData,
@@ -258,6 +259,11 @@ function normalizeSyroPath(path: string): string {
     return path.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/g, "");
 }
 
+function bumpCurrentDeviceReviewCount(target: object): void {
+    const state = target as { currentDeviceReviewCount?: unknown };
+    state.currentDeviceReviewCount = normalizeDeviceReviewCount(state.currentDeviceReviewCount) + 1;
+}
+
 export interface LearningQueueItem {
     card: Card;
     dueTime: number;
@@ -401,6 +407,7 @@ export default class SRPlugin extends Plugin {
     private trackingRulesUpdatedAtByFolderPath: Record<string, string> = {};
     private trackingRulesTombstones: Record<string, PersistedTrackingRulesTombstone> = {};
     private dailyStateAppliedOpIds: Record<string, string> = {};
+    private currentDeviceReviewCount = 0;
     private dataShell: LegacyPluginData | null = null;
     private syroSessionManager: SyroSessionManager | null = null;
     private pendingSyroRecoveryContext: SyroRecoveryModalContext | null = null;
@@ -433,6 +440,29 @@ export default class SRPlugin extends Plugin {
             clearTimeout(this.pendingPluginDataSaveTimer);
             this.pendingPluginDataSaveTimer = null;
         }
+    }
+
+    private buildDailyStateSnapshot(): PersistedDailyState {
+        return extractDailyState({
+            buryDate: this.data.buryDate,
+            buryList: this.data.buryList,
+            dailyDeckStats: this.data.dailyDeckStats,
+            deviceReviewCount: this.currentDeviceReviewCount,
+        });
+    }
+
+    private buildDailyStateSnapshotWithMetadata(
+        appliedOpIds: Record<string, string> = this.dailyStateAppliedOpIds,
+    ): PersistedDailyState {
+        return extractDailyStateWithMetadata(
+            {
+                buryDate: this.data.buryDate,
+                buryList: this.data.buryList,
+                dailyDeckStats: this.data.dailyDeckStats,
+                deviceReviewCount: this.currentDeviceReviewCount,
+            },
+            appliedOpIds,
+        );
     }
 
     private normalizeRequestedPluginDataDomains(
@@ -1039,6 +1069,7 @@ export default class SRPlugin extends Plugin {
             }
         }
 
+        bumpCurrentDeviceReviewCount(this);
         this.requestPluginDataSave({ domains: ["daily-state"] });
     }
 
@@ -2134,16 +2165,7 @@ export default class SRPlugin extends Plugin {
             );
         }
         if (dailyStateChanged && this.dailyStateStore) {
-            await this.dailyStateStore.save(
-                extractDailyStateWithMetadata(
-                    {
-                        buryDate: this.data.buryDate,
-                        buryList: this.data.buryList,
-                        dailyDeckStats: this.data.dailyDeckStats,
-                    },
-                    this.dailyStateAppliedOpIds,
-                ),
-            );
+            await this.dailyStateStore.save(this.buildDailyStateSnapshotWithMetadata());
         }
     }
 
@@ -2327,16 +2349,7 @@ export default class SRPlugin extends Plugin {
             );
         }
         if (dailyStateChanged) {
-            await this.dailyStateStore.save(
-                extractDailyStateWithMetadata(
-                    {
-                        buryDate: this.data.buryDate,
-                        buryList: this.data.buryList,
-                        dailyDeckStats: this.data.dailyDeckStats,
-                    },
-                    this.dailyStateAppliedOpIds,
-                ),
-            );
+            await this.dailyStateStore.save(this.buildDailyStateSnapshotWithMetadata());
         }
 
         await adapter.remove(legacyMergeStatePath);
@@ -2474,6 +2487,9 @@ export default class SRPlugin extends Plugin {
             deviceName: device.deviceName,
             isCurrent,
             footprintBytes,
+            reviewCount: isCurrent
+                ? normalizeDeviceReviewCount(this.currentDeviceReviewCount)
+                : device.deviceReviewCount,
             lastSeenAt: device.lastSeenAt ?? null,
             latestSessionAt: sessionSummary?.latestSessionAt ?? null,
             lastPulledIntoCurrentAt: isCurrent
@@ -2735,6 +2751,7 @@ export default class SRPlugin extends Plugin {
                     trackingRulesUpdatedAtByFolderPath: this.trackingRulesUpdatedAtByFolderPath,
                     trackingRulesTombstones: this.trackingRulesTombstones,
                     dailyStateAppliedOpIds: this.dailyStateAppliedOpIds,
+                    currentDeviceReviewCount: this.currentDeviceReviewCount,
                 });
             },
             options,
@@ -2748,14 +2765,7 @@ export default class SRPlugin extends Plugin {
             this.trackingRulesUpdatedAtByFolderPath,
             this.trackingRulesTombstones,
         );
-        this.persistedDailyState = extractDailyStateWithMetadata(
-            {
-                buryDate: this.data.buryDate,
-                buryList: this.data.buryList,
-                dailyDeckStats: this.data.dailyDeckStats,
-            },
-            this.dailyStateAppliedOpIds,
-        );
+        this.persistedDailyState = this.buildDailyStateSnapshotWithMetadata();
         await this.pruneSyroInlineSyncMetadata();
         return result;
     }
@@ -4235,8 +4245,11 @@ export default class SRPlugin extends Plugin {
             item.nextReview,
         );
 
+        bumpCurrentDeviceReviewCount(this);
         if (settings.burySiblingCardsByNoteReview) {
             await this.savePluginData({ domains: ["daily-state"] });
+        } else {
+            this.requestPluginDataSave({ domains: ["daily-state"] });
         }
 
         await this.noteReviewStore.save();
@@ -4573,7 +4586,7 @@ export default class SRPlugin extends Plugin {
 
         const sharedSettingsState = extractSharedSettings(this.data.settings);
         const trackingRulesState = extractTrackingRules(this.data.folderTrackingRules, {}, {});
-        const dailyState = extractDailyState(this.data);
+        const dailyState = this.buildDailyStateSnapshot();
         const deviceState = extractDeviceState({
             settings: this.data.settings,
             historyDeck: this.data.historyDeck,
@@ -4650,16 +4663,16 @@ export default class SRPlugin extends Plugin {
         const dailyState = await this.dailyStateStore.load();
         if (dailyState) {
             applyDailyState(this.data, dailyState);
+            this.currentDeviceReviewCount = normalizeDeviceReviewCount(
+                dailyState.deviceReviewCount,
+            );
             this.persistedDailyState = dailyState;
             this.dailyStateAppliedOpIds = { ...dailyState.appliedOpIds };
         } else if (this.dailyStateStore.lastLoadError) {
             return this.dailyStateStore.lastLoadError;
         } else {
-            const nextState = extractDailyState({
-                buryDate: this.data.buryDate,
-                buryList: this.data.buryList,
-                dailyDeckStats: this.data.dailyDeckStats,
-            });
+            this.currentDeviceReviewCount = 0;
+            const nextState = this.buildDailyStateSnapshot();
             this.persistedDailyState = nextState;
             this.dailyStateAppliedOpIds = {};
             if (!this.syroReadOnlyReason) {
@@ -4848,14 +4861,7 @@ export default class SRPlugin extends Plugin {
             ? (this.persistedDailyState ?? createDefaultDailyState())
             : null;
         const dailyState = persistDailyState
-            ? extractDailyStateWithMetadata(
-                  {
-                      buryDate: this.data.buryDate,
-                      buryList: this.data.buryList,
-                      dailyDeckStats: this.data.dailyDeckStats,
-                  },
-                  this.dailyStateAppliedOpIds,
-              )
+            ? this.buildDailyStateSnapshotWithMetadata()
             : null;
 
         if (this.syroReadOnlyReason) {
@@ -5014,14 +5020,7 @@ export default class SRPlugin extends Plugin {
         }
 
         if (persistDailyState) {
-            const finalDailyState = extractDailyStateWithMetadata(
-                {
-                    buryDate: this.data.buryDate,
-                    buryList: this.data.buryList,
-                    dailyDeckStats: this.data.dailyDeckStats,
-                },
-                this.dailyStateAppliedOpIds,
-            );
+            const finalDailyState = this.buildDailyStateSnapshotWithMetadata();
             await this.dailyStateStore.save(finalDailyState);
             this.persistedDailyState = finalDailyState;
         }

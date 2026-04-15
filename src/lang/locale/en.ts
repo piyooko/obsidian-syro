@@ -824,6 +824,7 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_SYNC_DEVICE_FOLDER: "Device folder",
     SETTINGS_SYNC_DEVICE_SIZE: "Storage",
     SETTINGS_SYNC_DEVICE_LAST_SEEN: "Last seen",
+    SETTINGS_SYNC_DEVICE_REVIEW_COUNT: "Device reviews",
     SETTINGS_SYNC_DEVICE_LATEST_SESSION: "Latest session",
     SETTINGS_SYNC_DEVICE_LAST_PULL: "Last pulled",
     SETTINGS_SYNC_DEVICE_INACTIVE_DAYS: "Idle time",

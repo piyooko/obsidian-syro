@@ -149,6 +149,8 @@ describe("SRPlugin syro note and timeline session hooks", () => {
             },
             reviewCommitStore: {},
             app: {},
+            currentDeviceReviewCount: 0,
+            requestPluginDataSave: jest.fn(),
             appendSyroNoteUpsert: jest.fn(async () => true),
             appendSyroTimelineAdd: jest.fn(async () => true),
             postponeResponse: jest.fn(),
@@ -164,6 +166,10 @@ describe("SRPlugin syro note and timeline session hooks", () => {
         );
 
         expect(plugin.noteReviewStore.save).toHaveBeenCalled();
+        expect(plugin.currentDeviceReviewCount).toBe(1);
+        expect(plugin.requestPluginDataSave).toHaveBeenCalledWith({
+            domains: ["daily-state"],
+        });
         expect(plugin.appendSyroNoteUpsert).toHaveBeenCalledWith(noteSnapshot, "review");
         expect(autoCommitReviewResponseToTimeline).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -228,6 +234,8 @@ describe("SRPlugin syro note and timeline session hooks", () => {
             },
             reviewCommitStore: {},
             app: {},
+            currentDeviceReviewCount: 0,
+            requestPluginDataSave: jest.fn(),
             savePluginData: jest.fn(async () => undefined),
             appendSyroNoteUpsert: jest.fn(async () => true),
             appendSyroTimelineAdd: jest.fn(async () => true),
@@ -243,9 +251,11 @@ describe("SRPlugin syro note and timeline session hooks", () => {
             ReviewResponse.Good,
         );
 
+        expect(plugin.currentDeviceReviewCount).toBe(1);
         expect(plugin.savePluginData).toHaveBeenCalledWith({
             domains: ["daily-state"],
         });
+        expect(plugin.requestPluginDataSave).not.toHaveBeenCalled();
         expect(plugin.appendSyroNoteUpsert).toHaveBeenCalledWith(noteSnapshot, "review");
     });
 });

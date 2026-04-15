@@ -1,6 +1,9 @@
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import { EmbeddedSettingsPanel } from "src/ui/components/EmbeddedSettingsPanel";
+import {
+    EmbeddedSettingsPanel,
+    normalizeRelativeTimestampSpacing,
+} from "src/ui/components/EmbeddedSettingsPanel";
 import type {
     SyroDeviceCardState,
     SyroDeviceManagementViewState,
@@ -191,6 +194,7 @@ function createDeviceManagementState(
         deviceName: "Desktop",
         isCurrent: true,
         footprintBytes: 2048,
+        reviewCount: 18,
         lastSeenAt: "2026-04-13T00:00:00.000Z",
         latestSessionAt: "2026-04-14T00:00:00.000Z",
         lastPulledIntoCurrentAt: null,
@@ -205,6 +209,7 @@ function createDeviceManagementState(
         deviceName: "Mobile",
         isCurrent: false,
         footprintBytes: 4096,
+        reviewCount: 42,
         lastSeenAt: "2026-04-12T00:00:00.000Z",
         latestSessionAt: "2026-04-14T06:00:00.000Z",
         lastPulledIntoCurrentAt: "2026-04-13T12:00:00.000Z",
@@ -295,6 +300,12 @@ describe("EmbeddedSettingsPanel", () => {
         document.body.classList.remove("is-mobile");
         platformMock.isMobile = false;
         document.body.innerHTML = "";
+    });
+
+    it("adds spaces between digits and Chinese relative time units", () => {
+        expect(normalizeRelativeTimestampSpacing("24小时前")).toBe("24 小时前");
+        expect(normalizeRelativeTimestampSpacing("7秒钟前")).toBe("7 秒钟前");
+        expect(normalizeRelativeTimestampSpacing("yesterday")).toBe("yesterday");
     });
 
     it("keeps the progress bar settings as style-only controls on the UI tab", () => {
@@ -1020,6 +1031,17 @@ describe("EmbeddedSettingsPanel", () => {
             openTab(view.container, "Sync");
             await flushPromises();
 
+            const primaryMetricRows = Array.from(
+                view.container.querySelectorAll<HTMLElement>(
+                    ".sr-device-flat-item .sr-device-inline-metrics:not(.sr-device-inline-secondary)",
+                ),
+            ).slice(0, 2);
+            const metricLabels = primaryMetricRows.map((row) =>
+                Array.from(row.querySelectorAll<HTMLElement>(".sr-device-inline-metric-label")).map(
+                    (label) => label.textContent?.trim(),
+                ),
+            );
+
             expect(view.container.textContent).toContain("Current device");
             expect(view.container.textContent).toContain("Other devices");
             expect(view.container.textContent).toContain("Invalid devices");
@@ -1028,6 +1050,16 @@ describe("EmbeddedSettingsPanel", () => {
             expect(view.container.textContent).toContain("Desktop--ec3c");
             expect(view.container.textContent).toContain("Missing device.JSON");
             expect(view.container.textContent).toContain("Needs sync");
+            expect(view.container.textContent).toContain("Device reviews");
+            expect(view.container.textContent).toContain("Last seen");
+            expect(view.container.textContent).toContain("Storage");
+            expect(view.container.textContent).not.toContain("Latest session");
+            expect(view.container.textContent).not.toContain("Last pulled");
+            expect(view.container.textContent).not.toContain("Idle time");
+            expect(metricLabels).toEqual([
+                ["Storage:", "Device reviews:", "Last seen:"],
+                ["Storage:", "Device reviews:", "Last seen:"],
+            ]);
             expect(view.container.textContent).not.toContain("Device management");
             expect(view.container.textContent).not.toContain("Device ID");
             expect(view.container.textContent).not.toContain("Short ID");

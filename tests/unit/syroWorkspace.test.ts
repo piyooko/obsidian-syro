@@ -218,6 +218,7 @@ async function addSourceDevice(
         shortDeviceId: string;
         lastSeenAt?: string;
         ownerInstallIdHash?: string | null;
+        deviceReviewCount?: number;
     },
 ): Promise<void> {
     const sourceRoot = `.obsidian/plugins/syro/devices/${options.folderName}`;
@@ -276,6 +277,7 @@ async function addSourceDevice(
                     },
                 },
             },
+            deviceReviewCount: options.deviceReviewCount ?? 0,
         }),
     );
     files.set(
@@ -598,6 +600,35 @@ describe("SyroWorkspace", () => {
         expect(startup.validDevices.map((entry) => entry.deviceId)).toEqual([
             "cd411111-2222-3333-4444-555555555555",
         ]);
+    });
+
+    it("reads device review counts from daily-state and falls back to zero when missing", async () => {
+        const { adapter, files } = createMockAdapter();
+        await addSourceDevice(adapter, files, {
+            folderName: "Desktop--cd41",
+            deviceId: "cd411111-2222-3333-4444-555555555555",
+            deviceName: "Desktop",
+            shortDeviceId: "cd41",
+            deviceReviewCount: 27,
+        });
+        await addSourceDevice(adapter, files, {
+            folderName: "Mobile--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Mobile",
+            shortDeviceId: "91ac",
+        });
+        files.delete(".obsidian/plugins/syro/devices/Mobile--91ac/daily-state.json");
+
+        const startup = await createWorkspace(adapter).initialize();
+        const desktop = startup.validDevices.find(
+            (entry) => entry.deviceId === "cd411111-2222-3333-4444-555555555555",
+        );
+        const mobile = startup.validDevices.find(
+            (entry) => entry.deviceId === "91ac1111-2222-3333-4444-555555555555",
+        );
+
+        expect(desktop?.deviceReviewCount).toBe(27);
+        expect(mobile?.deviceReviewCount).toBe(0);
     });
 
     it("returns select-current-device when multiple valid devices exist and the current pointer is missing", async () => {

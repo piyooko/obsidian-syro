@@ -338,6 +338,10 @@ const absoluteTimeFormatter = new Intl.DateTimeFormat(undefined, {
     timeStyle: "short",
 });
 
+export function normalizeRelativeTimestampSpacing(value: string): string {
+    return value.replace(/(\d)\s*([\u3400-\u9fff])/g, "$1 $2");
+}
+
 function formatRelativeTimestamp(isoTime: string | null): string {
     if (!isoTime) {
         return t("SETTINGS_SYNC_DEVICE_NEVER");
@@ -352,16 +356,22 @@ function formatRelativeTimestamp(isoTime: string | null): string {
     const absSeconds = Math.abs(diffSeconds);
 
     if (absSeconds < 60) {
-        return relativeTimeFormatter.format(diffSeconds, "second");
+        return normalizeRelativeTimestampSpacing(relativeTimeFormatter.format(diffSeconds, "second"));
     }
     if (absSeconds < 3600) {
-        return relativeTimeFormatter.format(Math.round(diffSeconds / 60), "minute");
+        return normalizeRelativeTimestampSpacing(
+            relativeTimeFormatter.format(Math.round(diffSeconds / 60), "minute"),
+        );
     }
     if (absSeconds < 86400) {
-        return relativeTimeFormatter.format(Math.round(diffSeconds / 3600), "hour");
+        return normalizeRelativeTimestampSpacing(
+            relativeTimeFormatter.format(Math.round(diffSeconds / 3600), "hour"),
+        );
     }
 
-    return relativeTimeFormatter.format(Math.round(diffSeconds / 86400), "day");
+    return normalizeRelativeTimestampSpacing(
+        relativeTimeFormatter.format(Math.round(diffSeconds / 86400), "day"),
+    );
 }
 
 function formatAbsoluteTimestamp(isoTime: string | null): string {
@@ -395,30 +405,29 @@ function formatBytes(bytes: number): string {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-function formatInactiveDays(days: number | null): string {
-    if (days === null) {
-        return t("SETTINGS_SYNC_DEVICE_NEVER");
-    }
-
-    return t("SETTINGS_SYNC_DEVICE_INACTIVE_DAYS_VALUE", {
-        days: String(days),
-    });
+function formatReviewCount(count: number): string {
+    return String(Math.max(0, Math.trunc(count)));
 }
 
-function getDeviceStatusLabel(status: SyroDeviceCardStatus): string {
-    switch (status) {
-        case "current":
-            return t("SETTINGS_SYNC_CURRENT_DEVICE_BADGE");
-        case "needs-sync":
-            return t("SETTINGS_SYNC_DEVICE_STATUS_NEEDS_SYNC");
-        case "idle":
-            return t("SETTINGS_SYNC_DEVICE_STATUS_IDLE");
-        case "no-session":
-            return t("SETTINGS_SYNC_DEVICE_STATUS_NO_SESSION");
-        case "up-to-date":
-        default:
-            return t("SETTINGS_SYNC_DEVICE_STATUS_UP_TO_DATE");
+function getVisibleDeviceBadge(
+    status: SyroDeviceCardStatus,
+    isCurrent: boolean,
+): { label: string; className: string } | null {
+    if (isCurrent) {
+        return {
+            label: t("SETTINGS_SYNC_CURRENT_DEVICE_BADGE"),
+            className: "is-current",
+        };
     }
+
+    if (status === "idle") {
+        return {
+            label: t("SETTINGS_SYNC_DEVICE_STATUS_IDLE"),
+            className: "is-idle",
+        };
+    }
+
+    return null;
 }
 
 const InlineMetric: React.FC<{
@@ -427,10 +436,8 @@ const InlineMetric: React.FC<{
     title?: string;
 }> = ({ label, value, title }) => (
     <span className="sr-device-inline-metric" title={title}>
-        <span className="sr-device-inline-metric-label">{label}: </span>
-        <span className="sr-device-inline-metric-value">
-            {value}
-        </span>
+        <span className="sr-device-inline-metric-label">{label}:</span>
+        <span className="sr-device-inline-metric-value">{value}</span>
     </span>
 );
 
@@ -631,124 +638,113 @@ const DeviceCard: React.FC<{
     onConfirmRename,
     onPullToCurrent,
     onDeleteDevice,
-}) => (
-    <div className="setting-item sr-device-flat-item">
-        <div className="setting-item-info">
-            <div className="setting-item-name sr-device-flat-title">
-                {device.isCurrent && isEditingName ? (
-                    <input
-                        className="sr-input-compact sr-device-inline-rename-input"
-                        value={renameValue}
-                        onChange={(event) => onRenameValueChange(event.target.value)}
-                        aria-label={t("SETTINGS_SYNC_INLINE_RENAME")}
-                        disabled={isReadOnly || isBusy}
-                        autoFocus
-                        onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                                event.preventDefault();
-                                onConfirmRename();
-                            } else if (event.key === "Escape") {
-                                event.preventDefault();
-                                onCancelRename();
-                            }
-                        }}
-                    />
-                ) : (
-                    <span>{device.deviceName}</span>
-                )}
-                <span
-                    className={[
-                        "sr-supporter-badge",
-                        "sr-device-inline-badge",
-                        device.isCurrent ? "is-current" : `is-${device.status}`,
-                    ].join(" ")}
-                >
-                    {device.isCurrent
-                        ? t("SETTINGS_SYNC_CURRENT_DEVICE_BADGE")
-                        : getDeviceStatusLabel(device.status)}
-                </span>
-            </div>
-            <div className="setting-item-description sr-device-inline-metrics">
-                <InlineMetric
-                    label={t("SETTINGS_SYNC_DEVICE_SIZE")}
-                    value={formatBytes(device.footprintBytes)}
-                    title={`${device.footprintBytes} B`}
-                />
-                <MetricDivider />
-                <InlineMetric
-                    label={t("SETTINGS_SYNC_DEVICE_LAST_SEEN")}
-                    value={formatRelativeTimestamp(device.lastSeenAt)}
-                    title={formatAbsoluteTimestamp(device.lastSeenAt)}
-                />
-                <MetricDivider />
-                <InlineMetric
-                    label={t("SETTINGS_SYNC_DEVICE_LATEST_SESSION")}
-                    value={formatRelativeTimestamp(device.latestSessionAt)}
-                    title={formatAbsoluteTimestamp(device.latestSessionAt)}
-                />
-                {!device.isCurrent ? (
-                    <>
-                        <MetricDivider />
-                        <InlineMetric
-                            label={t("SETTINGS_SYNC_DEVICE_LAST_PULL")}
-                            value={formatRelativeTimestamp(device.lastPulledIntoCurrentAt)}
-                            title={formatAbsoluteTimestamp(device.lastPulledIntoCurrentAt)}
+}) => {
+    const badge = getVisibleDeviceBadge(device.status, device.isCurrent);
+
+    return (
+        <div className="setting-item sr-device-flat-item">
+            <div className="setting-item-info">
+                <div className="setting-item-name sr-device-flat-title">
+                    {device.isCurrent && isEditingName ? (
+                        <input
+                            className="sr-input-compact sr-device-inline-rename-input"
+                            value={renameValue}
+                            onChange={(event) => onRenameValueChange(event.target.value)}
+                            aria-label={t("SETTINGS_SYNC_INLINE_RENAME")}
+                            disabled={isReadOnly || isBusy}
+                            autoFocus
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    onConfirmRename();
+                                } else if (event.key === "Escape") {
+                                    event.preventDefault();
+                                    onCancelRename();
+                                }
+                            }}
                         />
-                    </>
+                    ) : (
+                        <span>{device.deviceName}</span>
+                    )}
+                    {badge ? (
+                        <span
+                            className={[
+                                "sr-supporter-badge",
+                                "sr-device-inline-badge",
+                                badge.className,
+                            ].join(" ")}
+                        >
+                            {badge.label}
+                        </span>
+                    ) : null}
+                </div>
+                <div className="setting-item-description sr-device-inline-metrics">
+                    <InlineMetric
+                        label={t("SETTINGS_SYNC_DEVICE_SIZE")}
+                        value={formatBytes(device.footprintBytes)}
+                        title={`${device.footprintBytes} B`}
+                    />
+                    <MetricDivider />
+                    <InlineMetric
+                        label={t("SETTINGS_SYNC_DEVICE_REVIEW_COUNT")}
+                        value={formatReviewCount(device.reviewCount)}
+                        title={formatReviewCount(device.reviewCount)}
+                    />
+                    <MetricDivider />
+                    <InlineMetric
+                        label={t("SETTINGS_SYNC_DEVICE_LAST_SEEN")}
+                        value={formatRelativeTimestamp(device.lastSeenAt)}
+                        title={formatAbsoluteTimestamp(device.lastSeenAt)}
+                    />
+                </div>
+            </div>
+            <div className="setting-item-control">
+                {device.canRename ? (
+                    isEditingName ? (
+                        <>
+                            <IconActionButton
+                                icon={Check}
+                                label={t("SETTINGS_SYNC_SAVE_DEVICE_NAME")}
+                                onClick={onConfirmRename}
+                                disabled={isReadOnly || isBusy || renameConfirmDisabled}
+                            />
+                            <IconActionButton
+                                icon={X}
+                                label={t("SETTINGS_SYNC_CANCEL_RENAME")}
+                                onClick={onCancelRename}
+                                disabled={isBusy}
+                            />
+                        </>
+                    ) : (
+                        <IconActionButton
+                            icon={Pencil}
+                            label={t("SETTINGS_SYNC_INLINE_RENAME")}
+                            onClick={onStartRename}
+                            disabled={isReadOnly || isBusy}
+                        />
+                    )
                 ) : null}
-                <MetricDivider />
-                <InlineMetric
-                    label={t("SETTINGS_SYNC_DEVICE_INACTIVE_DAYS")}
-                    value={formatInactiveDays(device.inactiveDays)}
-                />
-            </div>
-        </div>
-        <div className="setting-item-control">
-            {device.canRename ? (
-                isEditingName ? (
-                    <>
-                        <IconActionButton
-                            icon={Check}
-                            label={t("SETTINGS_SYNC_SAVE_DEVICE_NAME")}
-                            onClick={onConfirmRename}
-                            disabled={isReadOnly || isBusy || renameConfirmDisabled}
-                        />
-                        <IconActionButton
-                            icon={X}
-                            label={t("SETTINGS_SYNC_CANCEL_RENAME")}
-                            onClick={onCancelRename}
-                            disabled={isBusy}
-                        />
-                    </>
-                ) : (
+                {device.canPullToCurrent ? (
                     <IconActionButton
-                        icon={Pencil}
-                        label={t("SETTINGS_SYNC_INLINE_RENAME")}
-                        onClick={onStartRename}
+                        icon={ArrowDownToLine}
+                        label={t("SETTINGS_SYNC_PULL_TO_CURRENT")}
+                        onClick={onPullToCurrent}
                         disabled={isReadOnly || isBusy}
                     />
-                )
-            ) : null}
-            {device.canPullToCurrent ? (
-                <IconActionButton
-                    icon={ArrowDownToLine}
-                    label={t("SETTINGS_SYNC_PULL_TO_CURRENT")}
-                    onClick={onPullToCurrent}
-                    disabled={isReadOnly || isBusy}
-                />
-            ) : null}
-            {device.canDelete ? (
-                <IconActionButton
-                    icon={Trash2}
-                    label={t("SETTINGS_SYNC_DELETE_DEVICE")}
-                    onClick={onDeleteDevice}
-                    disabled={isReadOnly || isBusy}
-                    destructive
-                />
-            ) : null}
+                ) : null}
+                {device.canDelete ? (
+                    <IconActionButton
+                        icon={Trash2}
+                        label={t("SETTINGS_SYNC_DELETE_DEVICE")}
+                        onClick={onDeleteDevice}
+                        disabled={isReadOnly || isBusy}
+                        destructive
+                    />
+                ) : null}
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 const InvalidDeviceCard: React.FC<{
     device: SyroInvalidDeviceCardState;

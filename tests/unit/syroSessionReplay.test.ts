@@ -150,6 +150,7 @@ function createReplayDependencies(
         trackingRulesUpdatedAtByFolderPath: {} as Record<string, string>,
         trackingRulesTombstones: createDefaultTrackingRulesState().tombstones,
         dailyStateAppliedOpIds: {} as Record<string, string>,
+        currentDeviceReviewCount: 7,
     };
 }
 
@@ -405,6 +406,9 @@ describe("replaySyroSessionRecords", () => {
         expect(files.get("syro/devices/Desktop--d84f/daily-state.json")).toContain('"note-a"');
         expect(files.get("syro/devices/Desktop--d84f/daily-state.json")).toContain(
             '"appliedOpIds"',
+        );
+        expect(files.get("syro/devices/Desktop--d84f/daily-state.json")).toContain(
+            '"deviceReviewCount": 7',
         );
     });
 
