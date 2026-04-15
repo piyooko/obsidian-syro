@@ -1399,9 +1399,9 @@ body.is-mobile
     {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    align-items: start !important;
+    align-items: center !important;
     column-gap: 12px;
-    row-gap: 8px;
+    row-gap: 0;
 }
 
 body.is-mobile
@@ -1410,7 +1410,9 @@ body.is-mobile
     .setting-items
     > .setting-item.sr-device-flat-item
     > .sr-device-flat-info {
-    display: contents;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
 }
 
 body.is-mobile
@@ -1419,7 +1421,7 @@ body.is-mobile
     .setting-items
     > .setting-item.sr-device-flat-item
     .sr-device-flat-title {
-    grid-column: 1 / -1;
+    grid-column: auto;
 }
 
 body.is-mobile
@@ -1428,8 +1430,9 @@ body.is-mobile
     .setting-items
     > .setting-item.sr-device-flat-item
     .sr-device-inline-metrics {
-    grid-column: 1;
+    grid-column: auto;
     margin-top: 0;
+    min-width: 0;
 }
 
 body.is-mobile
@@ -1440,7 +1443,7 @@ body.is-mobile
     > .sr-device-flat-control {
     display: inline-flex;
     grid-column: 2;
-    grid-row: 2;
+    grid-row: 1;
     width: auto;
     max-width: 100%;
     margin-left: 0;
