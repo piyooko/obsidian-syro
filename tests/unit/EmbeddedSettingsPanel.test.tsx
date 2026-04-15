@@ -1,7 +1,11 @@
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import type { SyroInvalidDeviceEntry, SyroValidDeviceEntry } from "src/dataStore/syroWorkspace";
 import { EmbeddedSettingsPanel } from "src/ui/components/EmbeddedSettingsPanel";
+import type {
+    SyroDeviceCardState,
+    SyroDeviceManagementViewState,
+    SyroInvalidDeviceCardState,
+} from "src/ui/types/syroDeviceManagement";
 import type { UISettingsState } from "src/ui/types/settingsTypes";
 
 jest.mock("obsidian", () => {
@@ -129,7 +133,8 @@ function renderPanel(
         mobile?: boolean;
         loadSyroDeviceManagement?: () => Promise<any>;
         onSyroRenameCurrentDevice?: (deviceName: string) => Promise<void>;
-        onSyroSetCurrentDevice?: (deviceId: string) => Promise<void>;
+        onSyroPullToCurrentDevice?: (deviceId: string) => Promise<void>;
+        onSyroDeleteValidDevice?: (deviceId: string) => Promise<void>;
         onSyroOpenRecovery?: () => Promise<void>;
         onSyroDeleteInvalidDevice?: (deviceFolderName: string) => Promise<void>;
     } = {},
@@ -149,7 +154,8 @@ function renderPanel(
                 onSettingsChange: jest.fn(),
                 loadSyroDeviceManagement: options.loadSyroDeviceManagement,
                 onSyroRenameCurrentDevice: options.onSyroRenameCurrentDevice,
-                onSyroSetCurrentDevice: options.onSyroSetCurrentDevice,
+                onSyroPullToCurrentDevice: options.onSyroPullToCurrentDevice,
+                onSyroDeleteValidDevice: options.onSyroDeleteValidDevice,
                 onSyroOpenRecovery: options.onSyroOpenRecovery,
                 onSyroDeleteInvalidDevice: options.onSyroDeleteInvalidDevice,
                 version: "0.0.7",
@@ -175,76 +181,47 @@ async function flushPromises() {
     });
 }
 
-type TestDeviceManagementState = {
-    currentDevice: SyroValidDeviceEntry | null;
-    validDevices: SyroValidDeviceEntry[];
-    invalidDevices: SyroInvalidDeviceEntry[];
-    hasPendingAction: boolean;
-    readOnlyReason: string | null;
-};
-
-function createDeviceManagementState(): TestDeviceManagementState {
-    const currentDevice: SyroValidDeviceEntry = {
+function createDeviceManagementState(): SyroDeviceManagementViewState {
+    const currentDevice: SyroDeviceCardState = {
         deviceId: "cd411111-2222-3333-4444-555555555555",
         deviceName: "Desktop",
-        shortDeviceId: "cd41",
-        deviceFolderName: "Desktop--cd41",
+        isCurrent: true,
+        footprintBytes: 2048,
         lastSeenAt: "2026-04-13T00:00:00.000Z",
-        baselineFromDeviceId: null,
-        baselineBuiltAt: null,
-        deviceRoot: ".obsidian/plugins/syro/devices/Desktop--cd41",
-        deviceMetaPath: ".obsidian/plugins/syro/devices/Desktop--cd41/device.json",
-        metadata: {
-            version: 1,
-            deviceId: "cd411111-2222-3333-4444-555555555555",
-            deviceName: "Desktop",
-            shortDeviceId: "cd41",
-            createdAt: "2026-04-12T00:00:00.000Z",
-            updatedAt: "2026-04-13T00:00:00.000Z",
-            lastSeenAt: "2026-04-13T00:00:00.000Z",
-            ownerInstallIdHash: null,
-            baselineFromDeviceId: null,
-            baselineBuiltAt: null,
-            importedSessionIds: [],
-            importedSessionRetentionUntil: {},
-        },
+        latestSessionAt: "2026-04-14T00:00:00.000Z",
+        lastPulledIntoCurrentAt: null,
+        inactiveDays: 2,
+        status: "current",
+        canRename: true,
+        canPullToCurrent: false,
+        canDelete: false,
     };
-    const peerDevice: SyroValidDeviceEntry = {
+    const peerDevice: SyroDeviceCardState = {
         deviceId: "91ac1111-2222-3333-4444-555555555555",
         deviceName: "Mobile",
-        shortDeviceId: "91ac",
-        deviceFolderName: "Mobile--91ac",
+        isCurrent: false,
+        footprintBytes: 4096,
         lastSeenAt: "2026-04-12T00:00:00.000Z",
-        baselineFromDeviceId: null,
-        baselineBuiltAt: null,
-        deviceRoot: ".obsidian/plugins/syro/devices/Mobile--91ac",
-        deviceMetaPath: ".obsidian/plugins/syro/devices/Mobile--91ac/device.json",
-        metadata: {
-            version: 1,
-            deviceId: "91ac1111-2222-3333-4444-555555555555",
-            deviceName: "Mobile",
-            shortDeviceId: "91ac",
-            createdAt: "2026-04-12T00:00:00.000Z",
-            updatedAt: "2026-04-12T00:00:00.000Z",
-            lastSeenAt: "2026-04-12T00:00:00.000Z",
-            ownerInstallIdHash: null,
-            baselineFromDeviceId: null,
-            baselineBuiltAt: null,
-            importedSessionIds: [],
-            importedSessionRetentionUntil: {},
-        },
+        latestSessionAt: "2026-04-14T06:00:00.000Z",
+        lastPulledIntoCurrentAt: "2026-04-13T12:00:00.000Z",
+        inactiveDays: 3,
+        status: "needs-sync",
+        canRename: false,
+        canPullToCurrent: true,
+        canDelete: true,
     };
-    const invalidDevice: SyroInvalidDeviceEntry = {
+    const invalidDevice: SyroInvalidDeviceCardState = {
         deviceFolderName: "Desktop--ec3c",
-        deviceRoot: ".obsidian/plugins/syro/devices/Desktop--ec3c",
-        reason: "missing-device-json",
+        footprintBytes: 512,
+        invalidReason: "missing-device-json",
         files: ["settings.json", "device-state.json"],
         folders: [],
+        canDelete: true,
     };
 
     return {
         currentDevice,
-        validDevices: [currentDevice, peerDevice],
+        devices: [peerDevice],
         invalidDevices: [invalidDevice],
         hasPendingAction: true,
         readOnlyReason: null,
@@ -1031,39 +1008,124 @@ describe("EmbeddedSettingsPanel", () => {
             await flushPromises();
 
             expect(view.container.textContent).toContain("Device management");
-            expect(view.container.textContent).toContain("Desktop--cd41");
-            expect(view.container.textContent).toContain("Mobile--91ac");
+            expect(view.container.textContent).toContain("Desktop");
+            expect(view.container.textContent).toContain("Mobile");
             expect(view.container.textContent).toContain("Desktop--ec3c");
             expect(view.container.textContent).toContain("Missing device.JSON");
+            expect(view.container.textContent).toContain("Needs sync");
+            expect(view.container.textContent).not.toContain("Device ID");
+            expect(view.container.textContent).not.toContain("Short ID");
+            expect(view.container.textContent).not.toContain("Set as current device");
+            expect(view.container.textContent).not.toContain("cd411111-2222-3333");
         } finally {
             view.cleanup();
         }
     });
 
-    it("invokes the set-current-device callback from the Sync tab", async () => {
-        const onSyroSetCurrentDevice = jest.fn(async () => {});
+    it("invokes the pull-to-current callback from the Sync tab", async () => {
+        const onSyroPullToCurrentDevice = jest.fn(async () => {});
         const deviceManagement = createDeviceManagementState();
         const view = renderPanel(createSettings(), {
             loadSyroDeviceManagement: async () => deviceManagement,
-            onSyroSetCurrentDevice,
+            onSyroPullToCurrentDevice,
         });
 
         try {
             openTab(view.container, "Sync");
             await flushPromises();
 
-            const button = Array.from(
-                view.container.querySelectorAll<HTMLButtonElement>("button"),
-            ).find((entry) => entry.textContent?.includes("Set as current device"));
+            const button = view.container.querySelector(
+                'button[aria-label="Sync into current device"]',
+            ) as HTMLButtonElement | null;
             expect(button).toBeTruthy();
 
             await act(async () => {
                 button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
             });
 
-            expect(onSyroSetCurrentDevice).toHaveBeenCalledWith(
+            expect(onSyroPullToCurrentDevice).toHaveBeenCalledWith(
                 "91ac1111-2222-3333-4444-555555555555",
             );
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("uses inline rename and delete icon callbacks on the Sync tab", async () => {
+        const onSyroRenameCurrentDevice = jest.fn(async () => {});
+        const onSyroDeleteValidDevice = jest.fn(async () => {});
+        const onSyroDeleteInvalidDevice = jest.fn(async () => {});
+        const view = renderPanel(createSettings(), {
+            loadSyroDeviceManagement: async () => createDeviceManagementState(),
+            onSyroRenameCurrentDevice,
+            onSyroDeleteValidDevice,
+            onSyroDeleteInvalidDevice,
+        });
+
+        try {
+            openTab(view.container, "Sync");
+            await flushPromises();
+
+            const renameButton = view.container.querySelector(
+                'button[aria-label="Rename device"]',
+            ) as HTMLButtonElement | null;
+            expect(renameButton).not.toBeNull();
+
+            await act(async () => {
+                renameButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            const renameInput = view.container.querySelector(
+                'input[aria-label="Rename device"]',
+            ) as HTMLInputElement | null;
+            expect(renameInput).not.toBeNull();
+
+            await act(async () => {
+                if (renameInput) {
+                    const valueSetter = Object.getOwnPropertyDescriptor(
+                        HTMLInputElement.prototype,
+                        "value",
+                    )?.set;
+                    valueSetter?.call(renameInput, "Desktop Prime");
+                    renameInput.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+            });
+
+            const saveRenameButton = view.container.querySelector(
+                'button[aria-label="Save device name"]',
+            ) as HTMLButtonElement | null;
+            expect(saveRenameButton).not.toBeNull();
+            expect(saveRenameButton?.disabled).toBe(false);
+
+            await act(async () => {
+                saveRenameButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            expect(onSyroRenameCurrentDevice).toHaveBeenCalledWith("Desktop Prime");
+
+            const deleteButtons = Array.from(
+                view.container.querySelectorAll<HTMLButtonElement>('button[aria-label="Delete device"]'),
+            );
+            expect(deleteButtons).toHaveLength(1);
+
+            await act(async () => {
+                deleteButtons[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            expect(onSyroDeleteValidDevice).toHaveBeenCalledWith(
+                "91ac1111-2222-3333-4444-555555555555",
+            );
+
+            const deleteInvalidButton = view.container.querySelector(
+                'button[aria-label="Delete invalid directory"]',
+            ) as HTMLButtonElement | null;
+            expect(deleteInvalidButton).not.toBeNull();
+
+            await act(async () => {
+                deleteInvalidButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            expect(onSyroDeleteInvalidDevice).toHaveBeenCalledWith("Desktop--ec3c");
         } finally {
             view.cleanup();
         }

@@ -358,6 +358,119 @@ describe("SyroSessionManager", () => {
         ]);
     });
 
+    test("summarizes pending remote changes, synced cursors, and devices without session history", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        await addSecondaryDevice(adapter, files);
+        await adapter.mkdir(".obsidian/plugins/syro/devices/Tablet--7f3a");
+        files.set(
+            ".obsidian/plugins/syro/devices/Tablet--7f3a/device.json",
+            createValidDeviceMetadata({
+                deviceId: "7f3a1111-2222-3333-4444-555555555555",
+                deviceName: "Tablet",
+                shortDeviceId: "7f3a",
+            }),
+        );
+
+        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        const remoteRaw = `${createSessionEventLine(createRemoteRecord())}\n`;
+        files.set(normalizePath(remoteSessionPath), remoteRaw);
+        files.set(
+            normalizePath(layout.currentDeviceSessionFilePath),
+            `${createCursorSnapshotLine({
+                "Mobile--91ac/2026-04-13.session.jsonl": {
+                    offset: 0,
+                    lastOpId: null,
+                    updatedAt: "2026-04-13T12:10:00.000Z",
+                },
+            })}\n`,
+        );
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+
+        const summaries = await manager.summarizeDeviceSessions();
+        const mobileSummary = summaries.find((entry) => entry.deviceFolderName === "Mobile--91ac");
+        const tabletSummary = summaries.find((entry) => entry.deviceFolderName === "Tablet--7f3a");
+
+        expect(mobileSummary).toEqual(
+            expect.objectContaining({
+                deviceFolderName: "Mobile--91ac",
+                latestSessionAt: "2026-04-13T12:00:00.000Z",
+                lastPulledIntoCurrentAt: "2026-04-13T12:10:00.000Z",
+                hasPendingRemoteChanges: true,
+            }),
+        );
+        expect(tabletSummary).toEqual(
+            expect.objectContaining({
+                deviceFolderName: "Tablet--7f3a",
+                latestSessionAt: null,
+                lastPulledIntoCurrentAt: null,
+                hasPendingRemoteChanges: false,
+            }),
+        );
+    });
+
+    test("marks remote sessions at EOF after overwrite so old history is not imported again", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        await addSecondaryDevice(adapter, files);
+        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        const remoteRaw = `${createSessionEventLine(createRemoteRecord())}\n`;
+        files.set(normalizePath(remoteSessionPath), remoteRaw);
+        files.set(
+            normalizePath(layout.currentDeviceSessionFilePath),
+            `${createSessionEventLine(
+                createRemoteRecord({
+                    sessionId: "Desktop--d84f/2026-04-13",
+                    deviceId: layout.device.deviceId,
+                    deviceName: layout.device.deviceName,
+                    opId: "local-op-1",
+                }),
+            )}\n`,
+        );
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+
+        await manager.resetCurrentDeviceSessionsToRemoteEof();
+
+        const replaySession = jest.fn(async () => undefined);
+        await manager.importPendingSessions(replaySession);
+
+        const localSessionRaw = files.get(normalizePath(layout.currentDeviceSessionFilePath)) ?? "";
+        expect(localSessionRaw).toContain('"lineType":"cursor-snapshot"');
+        expect(localSessionRaw).not.toContain('"opId":"local-op-1"');
+        expect(replaySession).not.toHaveBeenCalled();
+    });
+
+    test("prunes cursor entries for a deleted device", async () => {
+        const { app, files, layout } = await createWorkspaceContext();
+        files.set(
+            normalizePath(layout.currentDeviceSessionFilePath),
+            `${createCursorSnapshotLine({
+                "Mobile--91ac/2026-04-13.session.jsonl": {
+                    offset: 42,
+                    lastOpId: "remote-op-1",
+                    updatedAt: "2026-04-13T12:10:00.000Z",
+                },
+                "Tablet--7f3a/2026-04-13.session.jsonl": {
+                    offset: 15,
+                    lastOpId: "tablet-op-1",
+                    updatedAt: "2026-04-13T12:11:00.000Z",
+                },
+            })}\n`,
+        );
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+
+        await manager.pruneRemoteDeviceCursorState("Mobile--91ac");
+
+        const localSessionRaw = files.get(normalizePath(layout.currentDeviceSessionFilePath)) ?? "";
+        const latestSnapshotLine = localSessionRaw.trim().split("\n").at(-1) ?? "";
+        expect(latestSnapshotLine).toContain("Tablet--7f3a/2026-04-13.session.jsonl");
+        expect(latestSnapshotLine).not.toContain("Mobile--91ac/2026-04-13.session.jsonl");
+    });
+
     test("deletes historical session files after all devices have confirmed EOF", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);

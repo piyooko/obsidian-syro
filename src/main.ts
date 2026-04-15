@@ -127,6 +127,7 @@ import {
 } from "./dataStore/syroWorkspace";
 import {
     SyroSessionManager,
+    type SyroDeviceSessionSummary,
     type SyroSessionImportResult,
     type SyroSessionSealReason,
 } from "./dataStore/syroSessionManager";
@@ -158,6 +159,7 @@ import TabViewManager from "src/ui/views/TabViewManager";
 import { TabView } from "src/ui/views/TabView";
 import { DeckStatsService } from "./dataStore/deckStatsService";
 import { SRSettingTab } from "src/ui/settings/settings-react";
+import ConfirmModal from "src/ui/modals/confirm";
 import {
     SyroDeviceSelectionModal,
     type SyroDeviceSelectionModalContext,
@@ -219,6 +221,12 @@ import {
     type SyncRequestResult,
     type SyncTrigger,
 } from "src/syncRequest";
+import {
+    type SyroDeviceCardState,
+    type SyroDeviceCardStatus,
+    type SyroDeviceManagementViewState,
+    type SyroInvalidDeviceCardState,
+} from "src/ui/types/syroDeviceManagement";
 import { getFirstRunTutorial } from "src/firstRunTutorial";
 import { InlineTitleReviewButtonManager } from "src/ui/components/InlineTitleReviewButtonManager";
 
@@ -286,14 +294,6 @@ interface PluginDataPersistRequest {
 
 interface PluginDataPersistOptions {
     domains?: PluginDataPersistDomain[];
-}
-
-export interface SyroDeviceManagementState {
-    currentDevice: SyroValidDeviceEntry | null;
-    validDevices: SyroValidDeviceEntry[];
-    invalidDevices: SyroInvalidDeviceEntry[];
-    hasPendingAction: boolean;
-    readOnlyReason: string | null;
 }
 
 const AUTO_SYNC_COOLDOWN_MS = 15_000;
@@ -2382,11 +2382,112 @@ export default class SRPlugin extends Plugin {
         await this.syroSessionManager?.flushActiveSession("manual");
     }
 
-    public async getSyroDeviceManagementState(): Promise<SyroDeviceManagementState> {
+    private async confirmSyroAction(message: string): Promise<boolean> {
+        return new ConfirmModal(this, message, () => undefined)
+            .openAndWait()
+            .catch(() => false);
+    }
+
+    private async getSyroPathFootprintBytes(rootPath: string): Promise<number> {
+        const normalizedRoot = normalizeSyroPath(rootPath);
+        const exists = await this.app.vault.adapter.exists(normalizedRoot).catch(() => false);
+        if (!exists) {
+            return 0;
+        }
+
+        const listing = await this.safeVaultList(normalizedRoot);
+        if (listing.files.length === 0 && listing.folders.length === 0) {
+            const raw = await this.app.vault.adapter.read(normalizedRoot).catch(() => "");
+            return new TextEncoder().encode(raw).length;
+        }
+
+        let totalBytes = 0;
+        for (const filePath of listing.files) {
+            const raw = await this.app.vault.adapter.read(normalizeSyroPath(filePath)).catch(() => "");
+            totalBytes += new TextEncoder().encode(raw).length;
+        }
+        for (const folderPath of listing.folders) {
+            totalBytes += await this.getSyroPathFootprintBytes(folderPath);
+        }
+        return totalBytes;
+    }
+
+    private async getSyroDeviceFootprintBytes(
+        deviceRoot: string,
+        sessionRoot: string,
+    ): Promise<number> {
+        const [deviceBytes, sessionBytes] = await Promise.all([
+            this.getSyroPathFootprintBytes(deviceRoot),
+            this.getSyroPathFootprintBytes(sessionRoot),
+        ]);
+        return deviceBytes + sessionBytes;
+    }
+
+    private getSyroDeviceStatus(input: {
+        isCurrent: boolean;
+        inactiveDays: number | null;
+        latestSessionAt: string | null;
+        hasPendingRemoteChanges: boolean;
+    }): SyroDeviceCardStatus {
+        if (input.isCurrent) {
+            return "current";
+        }
+        if (input.hasPendingRemoteChanges) {
+            return "needs-sync";
+        }
+        if (!input.latestSessionAt) {
+            return "no-session";
+        }
+        if (input.inactiveDays !== null && input.inactiveDays >= 14) {
+            return "idle";
+        }
+        return "up-to-date";
+    }
+
+    private buildSyroDeviceCardState(
+        device: SyroValidDeviceEntry,
+        sessionSummary: SyroDeviceSessionSummary | null,
+        footprintBytes: number,
+        currentDeviceId: string | null,
+    ): SyroDeviceCardState {
+        const isCurrent = currentDeviceId === device.deviceId;
+        const inactiveDays =
+            Number.isFinite(Date.parse(device.lastSeenAt))
+                ? Math.max(
+                      0,
+                      Math.floor((Date.now() - Date.parse(device.lastSeenAt)) / (24 * 60 * 60 * 1000)),
+                  )
+                : null;
+        const status = this.getSyroDeviceStatus({
+            isCurrent,
+            inactiveDays,
+            latestSessionAt: sessionSummary?.latestSessionAt ?? null,
+            hasPendingRemoteChanges: sessionSummary?.hasPendingRemoteChanges === true,
+        });
+
+        return {
+            deviceId: device.deviceId,
+            deviceName: device.deviceName,
+            isCurrent,
+            footprintBytes,
+            lastSeenAt: device.lastSeenAt ?? null,
+            latestSessionAt: sessionSummary?.latestSessionAt ?? null,
+            lastPulledIntoCurrentAt: isCurrent
+                ? null
+                : (sessionSummary?.lastPulledIntoCurrentAt ?? null),
+            inactiveDays,
+            status,
+            canRename: isCurrent,
+            canPullToCurrent: !isCurrent && currentDeviceId !== null,
+            canDelete: !isCurrent,
+        };
+    }
+
+    public async getSyroDeviceManagementState(): Promise<SyroDeviceManagementViewState> {
         if (!this.syroWorkspace) {
             return {
                 currentDevice: null,
-                validDevices: [],
+                devices: [],
                 invalidDevices: [],
                 hasPendingAction: false,
                 readOnlyReason: this.syroReadOnlyReason,
@@ -2400,11 +2501,77 @@ export default class SRPlugin extends Plugin {
                       (entry) => entry.deviceId === this.syroLayout?.device.deviceId,
                   ) ?? null
                 : null;
+        const currentDevice = inventory.currentDevice ?? fallbackCurrentDevice;
+        const sessionSummaryEntries = await this.syroSessionManager?.summarizeDeviceSessions();
+        const sessionSummaries = new Map(
+            (sessionSummaryEntries ?? []).map((entry) => [entry.deviceFolderName, entry]),
+        );
+        const currentDeviceId = currentDevice?.deviceId ?? null;
+
+        const validDeviceCards = await Promise.all(
+            inventory.validDevices.map(async (entry) =>
+                this.buildSyroDeviceCardState(
+                    entry,
+                    sessionSummaries.get(entry.deviceFolderName) ?? null,
+                    await this.getSyroDeviceFootprintBytes(
+                        entry.deviceRoot,
+                        this.syroWorkspace.getSessionDirectoryPath(entry.deviceFolderName),
+                    ),
+                    currentDeviceId,
+                ),
+            ),
+        );
+        const invalidDeviceCards: SyroInvalidDeviceCardState[] = await Promise.all(
+            inventory.invalidDevices.map(async (entry) => ({
+                deviceFolderName: entry.deviceFolderName,
+                footprintBytes: await this.getSyroDeviceFootprintBytes(
+                    entry.deviceRoot,
+                    this.syroWorkspace.getSessionDirectoryPath(entry.deviceFolderName),
+                ),
+                invalidReason: entry.reason,
+                files: entry.files,
+                folders: entry.folders,
+                canDelete: true,
+            })),
+        );
+        const sortedDevices = validDeviceCards
+            .filter((entry) => !entry.isCurrent)
+            .sort((left, right) => {
+                const pendingDelta =
+                    Number(right.status === "needs-sync") - Number(left.status === "needs-sync");
+                if (pendingDelta !== 0) {
+                    return pendingDelta;
+                }
+
+                const latestSessionDelta = compareIsoTime(
+                    right.latestSessionAt ?? "",
+                    left.latestSessionAt ?? "",
+                );
+                if (latestSessionDelta !== 0) {
+                    return latestSessionDelta;
+                }
+
+                return compareIsoTime(right.lastSeenAt ?? "", left.lastSeenAt ?? "");
+            });
 
         return {
-            currentDevice: inventory.currentDevice ?? fallbackCurrentDevice,
-            validDevices: inventory.validDevices,
-            invalidDevices: inventory.invalidDevices,
+            currentDevice:
+                validDeviceCards.find((entry) => entry.isCurrent) ??
+                (currentDevice
+                    ? this.buildSyroDeviceCardState(
+                          currentDevice,
+                          sessionSummaries.get(currentDevice.deviceFolderName) ?? null,
+                          await this.getSyroDeviceFootprintBytes(
+                              currentDevice.deviceRoot,
+                              this.syroWorkspace.getSessionDirectoryPath(currentDevice.deviceFolderName),
+                          ),
+                          currentDeviceId,
+                      )
+                    : null),
+            devices: sortedDevices,
+            invalidDevices: invalidDeviceCards.sort((left, right) =>
+                left.deviceFolderName.localeCompare(right.deviceFolderName),
+            ),
             hasPendingAction:
                 this.pendingSyroRecoveryContext !== null ||
                 this.pendingSyroDeviceSelectionContext !== null,
@@ -2432,6 +2599,75 @@ export default class SRPlugin extends Plugin {
         this.syroLayout = await this.syroWorkspace.renameCurrentDevice(this.syroLayout, nextDeviceName);
         await this.reloadAfterSyroDeviceChange();
         new Notice(t("NOTICE_SYRO_DEVICE_RENAMED"));
+    }
+
+    public async pullSyroDeviceToCurrent(deviceId: string): Promise<void> {
+        if (!this.syroWorkspace || !this.syroLayout || !this.syroSessionManager) {
+            throw new Error("[SR-Syro] Current device is unavailable.");
+        }
+        if (this.syroReadOnlyReason) {
+            throw new Error(this.syroReadOnlyReason);
+        }
+
+        const inventory = await this.syroWorkspace.listDeviceInventory();
+        const sourceDevice = inventory.validDevices.find((entry) => entry.deviceId === deviceId);
+        if (!sourceDevice) {
+            throw new Error("[SR-Syro] Source device not found.");
+        }
+        if (inventory.currentDevice?.deviceId === deviceId) {
+            throw new Error("[SR-Syro] The current device cannot sync from itself.");
+        }
+
+        const confirmed = await this.confirmSyroAction(
+            t("SYRO_PULL_TO_CURRENT_CONFIRM", {
+                source: sourceDevice.deviceName,
+                current: this.syroLayout.device.deviceName,
+            }),
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        await this.flushBeforeSyroDeviceMutation();
+        this.syroLayout = await this.syroWorkspace.overwriteCurrentDeviceFromSource(
+            this.syroLayout,
+            deviceId,
+        );
+        await this.syroSessionManager.resetCurrentDeviceSessionsToRemoteEof();
+        await this.reloadAfterSyroDeviceChange();
+        new Notice(t("NOTICE_SYRO_DEVICE_PULLED"));
+    }
+
+    public async deleteValidSyroDevice(deviceId: string): Promise<void> {
+        if (!this.syroWorkspace || !this.syroSessionManager) {
+            throw new Error("[SR-Syro] Workspace is unavailable.");
+        }
+        if (this.syroReadOnlyReason) {
+            throw new Error(this.syroReadOnlyReason);
+        }
+
+        const inventory = await this.syroWorkspace.listDeviceInventory();
+        const targetDevice = inventory.validDevices.find((entry) => entry.deviceId === deviceId);
+        if (!targetDevice) {
+            throw new Error("[SR-Syro] Device not found.");
+        }
+        if (inventory.currentDevice?.deviceId === deviceId) {
+            throw new Error("[SR-Syro] The current device cannot be deleted.");
+        }
+
+        const confirmed = await this.confirmSyroAction(
+            t("SYRO_DELETE_VALID_DEVICE_CONFIRM", {
+                device: targetDevice.deviceName,
+            }),
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        await this.flushBeforeSyroDeviceMutation();
+        await this.syroWorkspace.deleteValidDevice(deviceId);
+        await this.syroSessionManager.pruneRemoteDeviceCursorState(targetDevice.deviceFolderName);
+        new Notice(t("NOTICE_SYRO_VALID_DEVICE_DELETED"));
     }
 
     public async deleteInvalidSyroDeviceDirectory(deviceFolderName: string): Promise<void> {

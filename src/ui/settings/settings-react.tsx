@@ -64,12 +64,21 @@ export class SRSettingTab extends PluginSettingTab {
                         new Notice(getDeviceManagementErrorMessage(error));
                     }
                 },
-                onSyroSetCurrentDevice: async (deviceId) => {
+                onSyroPullToCurrentDevice: async (deviceId) => {
                     try {
-                        await this.plugin.setCurrentSyroDevice(deviceId);
+                        await this.plugin.pullSyroDeviceToCurrent(deviceId);
                         this.display();
                     } catch (error) {
-                        console.error("[SR-Settings] Failed to switch current Syro device", error);
+                        console.error("[SR-Settings] Failed to sync a Syro device into current", error);
+                        new Notice(getDeviceManagementErrorMessage(error));
+                    }
+                },
+                onSyroDeleteValidDevice: async (deviceId) => {
+                    try {
+                        await this.plugin.deleteValidSyroDevice(deviceId);
+                        this.display();
+                    } catch (error) {
+                        console.error("[SR-Settings] Failed to delete Syro device", error);
                         new Notice(getDeviceManagementErrorMessage(error));
                     }
                 },

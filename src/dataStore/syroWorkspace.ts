@@ -452,6 +452,27 @@ async function copyFile(
     await adapter.write(targetPath, data);
 }
 
+async function replaceFileFromSource(
+    adapter: FileBackedAdapter,
+    sourcePath: string,
+    targetPath: string,
+): Promise<void> {
+    if (sourcePath === targetPath) {
+        return;
+    }
+
+    if (!(await adapter.exists(sourcePath))) {
+        if (await adapter.exists(targetPath)) {
+            await adapter.remove(targetPath);
+        }
+        return;
+    }
+
+    const data = await adapter.read(sourcePath);
+    await ensureDirectory(adapter, dirname(targetPath));
+    await adapter.write(targetPath, data);
+}
+
 function isObjectLike(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
 }
@@ -733,6 +754,10 @@ export class SyroWorkspace {
         };
     }
 
+    getSessionDirectoryPath(deviceFolderName: string): string {
+        return joinPath(this.buildRootPaths().sessionsRoot, deviceFolderName);
+    }
+
     async adoptExistingDevice(deviceId: string): Promise<SyroPersistenceLayout> {
         const roots = this.buildRootPaths();
         const validDevices = await this.listValidDeviceEntries();
@@ -802,6 +827,69 @@ export class SyroWorkspace {
             deviceFolderName: nextFolderName,
         });
         return nextLayout;
+    }
+
+    async overwriteCurrentDeviceFromSource(
+        layout: SyroPersistenceLayout,
+        sourceDeviceId: string,
+    ): Promise<SyroPersistenceLayout> {
+        const validDevices = await this.listValidDeviceEntries();
+        const source = validDevices.find((candidate) => candidate.deviceId === sourceDeviceId);
+        if (!source) {
+            throw new Error("[SR-Syro] Source device not found.");
+        }
+        if (source.deviceId === layout.device.deviceId) {
+            throw new Error("[SR-Syro] The current device cannot sync from itself.");
+        }
+
+        const roots = this.buildRootPaths();
+        const sourceLayout = this.buildLayout(roots, source.deviceFolderName, source.metadata);
+        const sourceValidation = await this.validateGeneratedFiles(sourceLayout, true);
+        if (!sourceValidation.ok) {
+            throw new Error(sourceValidation.reason ?? "[SR-Syro] Source device is invalid.");
+        }
+
+        const now = new Date().toISOString();
+        const nextLayout = this.buildLayout(roots, this.getDeviceFolderNameFromLayout(layout), {
+            ...layout.device,
+            baselineFromDeviceId: source.deviceId,
+            baselineBuiltAt: now,
+            updatedAt: now,
+            lastSeenAt: now,
+        });
+
+        await this.replaceCurrentDeviceDomainFiles(source, nextLayout);
+        await this.writeJson(nextLayout.deviceMetaPath, nextLayout.device);
+
+        const validation = await this.validateGeneratedFiles(nextLayout, true);
+        if (!validation.ok) {
+            throw new Error(
+                validation.reason ?? "[SR-Syro] Failed to validate the overwritten device state.",
+            );
+        }
+
+        this.persistCurrentDeviceState({
+            version: SYRO_CURRENT_DEVICE_STATE_VERSION,
+            deviceId: nextLayout.device.deviceId,
+            deviceFolderName: this.getDeviceFolderNameFromLayout(nextLayout),
+        });
+
+        return nextLayout;
+    }
+
+    async deleteValidDevice(deviceId: string): Promise<void> {
+        const inventory = await this.listDeviceInventory();
+        if (inventory.currentDevice?.deviceId === deviceId) {
+            throw new Error("[SR-Syro] The current device cannot be deleted.");
+        }
+
+        const validEntry = inventory.validDevices.find((entry) => entry.deviceId === deviceId);
+        if (!validEntry) {
+            throw new Error("[SR-Syro] Valid device not found.");
+        }
+
+        await this.removeDirectoryRecursive(validEntry.deviceRoot);
+        await this.removeDirectoryRecursive(this.getSessionDirectoryPath(validEntry.deviceFolderName));
     }
 
     async deleteInvalidDeviceDirectory(deviceFolderName: string): Promise<void> {
@@ -1682,6 +1770,54 @@ export class SyroWorkspace {
             targetLayout.dailyStatePath,
         );
         await copyFile(
+            this.adapter,
+            joinPath(sourceRoot, "note-cache.json"),
+            targetLayout.noteCachePath,
+        );
+    }
+
+    private async replaceCurrentDeviceDomainFiles(
+        source: SyroValidDeviceEntry,
+        targetLayout: SyroPersistenceLayout,
+    ): Promise<void> {
+        const sourceRoot = joinPath(this.buildRootPaths().devicesRoot, source.deviceFolderName);
+        await ensureDirectory(this.adapter, targetLayout.deviceRoot);
+        await replaceFileFromSource(
+            this.adapter,
+            joinPath(sourceRoot, "cards.json"),
+            targetLayout.cardsPath,
+        );
+        await replaceFileFromSource(
+            this.adapter,
+            joinPath(sourceRoot, "notes.json"),
+            targetLayout.notesPath,
+        );
+        await replaceFileFromSource(
+            this.adapter,
+            joinPath(sourceRoot, "timeline.json"),
+            targetLayout.timelinePath,
+        );
+        await replaceFileFromSource(
+            this.adapter,
+            joinPath(sourceRoot, "deck-options.json"),
+            targetLayout.deckOptionsPath,
+        );
+        await replaceFileFromSource(
+            this.adapter,
+            joinPath(sourceRoot, "settings.json"),
+            targetLayout.settingsPath,
+        );
+        await replaceFileFromSource(
+            this.adapter,
+            joinPath(sourceRoot, "tracking-rules.json"),
+            targetLayout.trackingRulesPath,
+        );
+        await replaceFileFromSource(
+            this.adapter,
+            joinPath(sourceRoot, "daily-state.json"),
+            targetLayout.dailyStatePath,
+        );
+        await replaceFileFromSource(
             this.adapter,
             joinPath(sourceRoot, "note-cache.json"),
             targetLayout.noteCachePath,

@@ -15,6 +15,7 @@ type ConfirmCallback = (confirmed: boolean) => void;
 export default class ConfirmModal {
     private plugin: SRPlugin;
     private readonly markdownOwner: Component;
+    private settled = false;
     message: string;
     callback: ConfirmCallback;
     modal: Modal;
@@ -33,7 +34,17 @@ export default class ConfirmModal {
      * 打开确认框
      */
     open() {
+        this.settled = false;
         const { contentEl } = this.modal;
+        contentEl.empty();
+        this.modal.onClose = () => {
+            contentEl.empty();
+            this.markdownOwner.unload();
+            if (!this.settled) {
+                this.settled = true;
+                this.callback(false);
+            }
+        };
 
         // 使用 MarkdownRenderer 渲染消息内容，这样可以在确认框里显示加粗、链接等格式
         void MarkdownRenderer.render(
@@ -49,7 +60,7 @@ export default class ConfirmModal {
 
         // --- Cancel 按钮 ---
         new ButtonComponent(buttonDiv).setButtonText(t("CANCEL")).onClick(() => {
-            this.callback(false); // 回调 false
+            this.emitResult(false);
             this.close();
         });
 
@@ -57,7 +68,7 @@ export default class ConfirmModal {
         new ButtonComponent(buttonDiv)
             .setButtonText(t("CONFIRM"))
             .onClick(() => {
-                this.callback(true); // 回调 true
+                this.emitResult(true);
                 this.close();
             })
             .setCta(); // 设置为 Call To Action 样式 (通常是高亮色)
@@ -66,11 +77,30 @@ export default class ConfirmModal {
         this.modal.open();
     }
 
+    openAndWait(): Promise<boolean> {
+        return new Promise((resolve) => {
+            const previousCallback = this.callback;
+            this.callback = (confirmed) => {
+                previousCallback(confirmed);
+                resolve(confirmed);
+            };
+            this.open();
+        });
+    }
+
     /**
      * 关闭确认框
      */
     close() {
         this.modal.close();
-        this.markdownOwner.unload();
+    }
+
+    private emitResult(confirmed: boolean): void {
+        if (this.settled) {
+            return;
+        }
+
+        this.settled = true;
+        this.callback(confirmed);
     }
 }

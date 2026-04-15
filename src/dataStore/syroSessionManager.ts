@@ -27,7 +27,9 @@ const STALE_SESSION_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 type SessionAdapter = Pick<
     DataAdapter,
     "append" | "exists" | "list" | "mkdir" | "read" | "remove" | "write"
->;
+> & {
+    rmdir?: (path: string, recursive: boolean) => Promise<void>;
+};
 
 export type SyroSessionDomain =
     | "cards"
@@ -116,6 +118,13 @@ export interface SyroSessionImportResult {
 export interface SyroPendingSessionScanResult {
     pendingSessionIds: string[];
     impact: SyroPendingSessionImpact | null;
+}
+
+export interface SyroDeviceSessionSummary {
+    deviceFolderName: string;
+    latestSessionAt: string | null;
+    lastPulledIntoCurrentAt: string | null;
+    hasPendingRemoteChanges: boolean;
 }
 
 function normalizePath(path: string): string {
@@ -224,6 +233,16 @@ function isIsoTimeNewer(candidate: string, baseline: string | null): boolean {
     }
 
     return candidateMs > baselineMs;
+}
+
+function pickLatestIsoTime(left: string | null, right: string | null): string | null {
+    if (!left) {
+        return right;
+    }
+    if (!right) {
+        return left;
+    }
+    return isIsoTimeNewer(left, right) ? left : right;
 }
 
 function parseSessionRecord(value: unknown): SyroSessionRecord | null {
@@ -416,6 +435,115 @@ export class SyroSessionManager {
 
     setReadOnly(reason: string | null): void {
         this.syncReadOnlyReason = reason;
+    }
+
+    async summarizeDeviceSessions(): Promise<SyroDeviceSessionSummary[]> {
+        const validDevices = await this.listValidDeviceEntries();
+        const summaries = new Map<string, SyroDeviceSessionSummary>(
+            validDevices.map((entry) => [
+                entry.deviceFolderName,
+                {
+                    deviceFolderName: entry.deviceFolderName,
+                    latestSessionAt: null,
+                    lastPulledIntoCurrentAt: null,
+                    hasPendingRemoteChanges: false,
+                },
+            ]),
+        );
+        const currentDeviceFolderName = this.getCurrentDeviceFolderName();
+        const latestCurrentSnapshot = await this.loadLatestCursorSnapshot(currentDeviceFolderName);
+        const currentCursors = latestCurrentSnapshot?.cursors ?? {};
+        const sessionFiles = await this.listAllSessionFiles();
+
+        for (const fileInfo of sessionFiles) {
+            const summary =
+                summaries.get(fileInfo.sourceDeviceFolderName) ??
+                {
+                    deviceFolderName: fileInfo.sourceDeviceFolderName,
+                    latestSessionAt: null,
+                    lastPulledIntoCurrentAt: null,
+                    hasPendingRemoteChanges: false,
+                };
+            const meta = await this.inspectSessionFile(fileInfo.filePath);
+            summary.latestSessionAt = pickLatestIsoTime(summary.latestSessionAt, meta.latestUpdatedAt);
+
+            if (fileInfo.sourceDeviceFolderName !== currentDeviceFolderName) {
+                const cursor = currentCursors[fileInfo.sessionPath];
+                if (!cursor || cursor.offset < meta.completeLength) {
+                    summary.hasPendingRemoteChanges = true;
+                }
+            }
+
+            summaries.set(fileInfo.sourceDeviceFolderName, summary);
+        }
+
+        for (const [sessionPath, cursor] of Object.entries(currentCursors)) {
+            const sourceDeviceFolderName = getSourceDeviceFolderName(sessionPath);
+            if (!sourceDeviceFolderName || sourceDeviceFolderName === currentDeviceFolderName) {
+                continue;
+            }
+
+            const summary =
+                summaries.get(sourceDeviceFolderName) ??
+                {
+                    deviceFolderName: sourceDeviceFolderName,
+                    latestSessionAt: null,
+                    lastPulledIntoCurrentAt: null,
+                    hasPendingRemoteChanges: false,
+                };
+            summary.lastPulledIntoCurrentAt = pickLatestIsoTime(
+                summary.lastPulledIntoCurrentAt,
+                cursor.updatedAt,
+            );
+            summaries.set(sourceDeviceFolderName, summary);
+        }
+
+        return Array.from(summaries.values()).sort((left, right) =>
+            left.deviceFolderName.localeCompare(right.deviceFolderName),
+        );
+    }
+
+    async resetCurrentDeviceSessionsToRemoteEof(): Promise<void> {
+        if (this.syncReadOnlyReason) {
+            return;
+        }
+
+        await this.clearCurrentDeviceSessionFiles();
+        this.sessionCursors.clear();
+
+        const remoteSessionFiles = await this.listRemoteSessionFiles();
+        const updatedAt = new Date().toISOString();
+
+        for (const fileInfo of remoteSessionFiles) {
+            const meta = await this.inspectSessionFile(fileInfo.filePath);
+            this.sessionCursors.set(fileInfo.sessionPath, {
+                offset: meta.completeLength,
+                lastOpId: meta.lastOpId,
+                updatedAt,
+            });
+        }
+
+        await this.appendCurrentCursorSnapshot();
+    }
+
+    async pruneRemoteDeviceCursorState(deviceFolderName: string): Promise<void> {
+        if (this.syncReadOnlyReason) {
+            return;
+        }
+
+        let changed = false;
+        for (const sessionPath of Array.from(this.sessionCursors.keys())) {
+            if (getSourceDeviceFolderName(sessionPath) !== deviceFolderName) {
+                continue;
+            }
+
+            this.sessionCursors.delete(sessionPath);
+            changed = true;
+        }
+
+        if (changed) {
+            await this.appendCurrentCursorSnapshot();
+        }
     }
 
     async appendDeckOptionsChange(
@@ -616,6 +744,76 @@ export class SyroSessionManager {
         for (const [sessionPath, cursor] of Object.entries(latestSnapshot.cursors)) {
             this.sessionCursors.set(sessionPath, cursor);
         }
+    }
+
+    private async clearCurrentDeviceSessionFiles(): Promise<void> {
+        const listing = await this.safeList(this.layout.currentDeviceSessionsRoot);
+        for (const filePath of listing.files) {
+            await this.adapter.remove(normalizePath(filePath));
+        }
+
+        for (const folderPath of listing.folders) {
+            await this.clearSessionDirectoryRecursive(normalizePath(folderPath));
+        }
+    }
+
+    private async clearSessionDirectoryRecursive(path: string): Promise<void> {
+        const listing = await this.safeList(path);
+        for (const filePath of listing.files) {
+            await this.adapter.remove(normalizePath(filePath));
+        }
+        for (const folderPath of listing.folders) {
+            await this.clearSessionDirectoryRecursive(normalizePath(folderPath));
+        }
+        await this.adapter.rmdir?.(path, false);
+    }
+
+    private async inspectSessionFile(filePath: string): Promise<{
+        completeLength: number;
+        lastOpId: string | null;
+        latestUpdatedAt: string | null;
+    }> {
+        const raw = await this.adapter.read(filePath);
+        const completeLength = getLastCompleteOffset(raw);
+        if (completeLength <= 0) {
+            return {
+                completeLength: 0,
+                lastOpId: null,
+                latestUpdatedAt: null,
+            };
+        }
+
+        let lastOpId: string | null = null;
+        let latestUpdatedAt: string | null = null;
+        const completeText = raw.slice(0, completeLength);
+
+        for (const { rawLine } of this.iterateCompleteLines(completeText, 0)) {
+            if (rawLine.trim().length === 0) {
+                continue;
+            }
+
+            const parsedLine = parseSessionLine(rawLine);
+            if (!parsedLine) {
+                continue;
+            }
+
+            if (parsedLine.lineType === "event") {
+                lastOpId = parsedLine.record.opId;
+                latestUpdatedAt = pickLatestIsoTime(
+                    latestUpdatedAt,
+                    parsedLine.record.updatedAt,
+                );
+                continue;
+            }
+
+            latestUpdatedAt = pickLatestIsoTime(latestUpdatedAt, parsedLine.updatedAt);
+        }
+
+        return {
+            completeLength,
+            lastOpId,
+            latestUpdatedAt,
+        };
     }
 
     private async scanPendingSessionFiles(): Promise<SessionFileDelta[]> {

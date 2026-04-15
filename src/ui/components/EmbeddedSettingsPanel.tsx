@@ -18,13 +18,29 @@
 /** @jsxImportSource react */
 import { Notice } from "obsidian";
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { FileText, Layout, Shield, Cpu } from "lucide-react";
-import type { SyroInvalidDeviceEntry, SyroValidDeviceEntry } from "src/dataStore/syroWorkspace";
+import {
+    ArrowDownToLine,
+    Check,
+    Cpu,
+    FileText,
+    Layout,
+    Pencil,
+    Shield,
+    Trash2,
+    X,
+} from "lucide-react";
 import { t } from "src/lang/helpers";
 import {
     MAX_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
     MIN_CLOZE_CONTEXT_SOFT_LIMIT_LINES,
 } from "src/settings/clozeContext";
+import type {
+    SyroDeviceCardState,
+    SyroDeviceCardStatus,
+    SyroDeviceManagementViewState,
+    SyroInvalidDeviceCardState,
+    SyroInvalidDeviceReason,
+} from "src/ui/types/syroDeviceManagement";
 import { UISettingsState } from "../types/settingsTypes";
 import {
     Section,
@@ -261,9 +277,10 @@ function isMobileSettingsLayout(): boolean {
 interface EmbeddedSettingsPanelProps {
     settings: UISettingsState;
     onSettingsChange: (newSettings: UISettingsState) => void;
-    loadSyroDeviceManagement?: () => Promise<EmbeddedSyroDeviceManagementState>;
+    loadSyroDeviceManagement?: () => Promise<SyroDeviceManagementViewState>;
     onSyroRenameCurrentDevice?: (deviceName: string) => Promise<void>;
-    onSyroSetCurrentDevice?: (deviceId: string) => Promise<void>;
+    onSyroPullToCurrentDevice?: (deviceId: string) => Promise<void>;
+    onSyroDeleteValidDevice?: (deviceId: string) => Promise<void>;
     onSyroOpenRecovery?: () => Promise<void>;
     onSyroDeleteInvalidDevice?: (deviceFolderName: string) => Promise<void>;
     version?: string;
@@ -274,20 +291,13 @@ interface TabProps {
     onChange: <K extends keyof UISettingsState>(key: K, value: UISettingsState[K]) => void;
 }
 
-interface EmbeddedSyroDeviceManagementState {
-    currentDevice: SyroValidDeviceEntry | null;
-    validDevices: SyroValidDeviceEntry[];
-    invalidDevices: SyroInvalidDeviceEntry[];
-    hasPendingAction: boolean;
-    readOnlyReason: string | null;
-}
-
 interface SyncTabProps extends TabProps {
-    deviceManagement: EmbeddedSyroDeviceManagementState | null;
+    deviceManagement: SyroDeviceManagementViewState | null;
     deviceManagementLoading: boolean;
     deviceManagementError: string | null;
     onRenameCurrentDevice?: (deviceName: string) => Promise<void>;
-    onSetCurrentDevice?: (deviceId: string) => Promise<void>;
+    onPullToCurrentDevice?: (deviceId: string) => Promise<void>;
+    onDeleteValidDevice?: (deviceId: string) => Promise<void>;
     onOpenRecovery?: () => Promise<void>;
     onDeleteInvalidDevice?: (deviceFolderName: string) => Promise<void>;
 }
@@ -306,7 +316,7 @@ const getClozeContextModeDesc = (mode: string) => {
     }
 };
 
-const getInvalidDeviceReasonLabel = (reason: SyroInvalidDeviceEntry["reason"]): string => {
+const getInvalidDeviceReasonLabel = (reason: SyroInvalidDeviceReason): string => {
     switch (reason) {
         case "missing-device-json":
             return t("SETTINGS_SYNC_INVALID_REASON_MISSING_DEVICE_JSON");
@@ -318,30 +328,322 @@ const getInvalidDeviceReasonLabel = (reason: SyroInvalidDeviceEntry["reason"]): 
     }
 };
 
-const DeviceInfoCard: React.FC<{
-    device: SyroValidDeviceEntry;
-    badge?: string;
-}> = ({ device, badge }) => (
-    <div className="setting-item sr-device-management-card">
+const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, {
+    numeric: "auto",
+});
+const absoluteTimeFormatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+});
+
+function formatRelativeTimestamp(isoTime: string | null): string {
+    if (!isoTime) {
+        return t("SETTINGS_SYNC_DEVICE_NEVER");
+    }
+
+    const parsed = Date.parse(isoTime);
+    if (!Number.isFinite(parsed)) {
+        return t("SETTINGS_SYNC_DEVICE_NEVER");
+    }
+
+    const diffSeconds = Math.round((parsed - Date.now()) / 1000);
+    const absSeconds = Math.abs(diffSeconds);
+
+    if (absSeconds < 60) {
+        return relativeTimeFormatter.format(diffSeconds, "second");
+    }
+    if (absSeconds < 3600) {
+        return relativeTimeFormatter.format(Math.round(diffSeconds / 60), "minute");
+    }
+    if (absSeconds < 86400) {
+        return relativeTimeFormatter.format(Math.round(diffSeconds / 3600), "hour");
+    }
+
+    return relativeTimeFormatter.format(Math.round(diffSeconds / 86400), "day");
+}
+
+function formatAbsoluteTimestamp(isoTime: string | null): string {
+    if (!isoTime) {
+        return t("SETTINGS_SYNC_DEVICE_NEVER");
+    }
+
+    const parsed = Date.parse(isoTime);
+    if (!Number.isFinite(parsed)) {
+        return t("SETTINGS_SYNC_DEVICE_NEVER");
+    }
+
+    return absoluteTimeFormatter.format(parsed);
+}
+
+function formatBytes(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+        return "0 B";
+    }
+
+    if (bytes < 1024) {
+        return `${Math.round(bytes)} B`;
+    }
+    if (bytes < 1024 * 1024) {
+        return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+        return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+    }
+
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function formatInactiveDays(days: number | null): string {
+    if (days === null) {
+        return t("SETTINGS_SYNC_DEVICE_NEVER");
+    }
+
+    return t("SETTINGS_SYNC_DEVICE_INACTIVE_DAYS_VALUE", {
+        days: String(days),
+    });
+}
+
+function getDeviceStatusLabel(status: SyroDeviceCardStatus): string {
+    switch (status) {
+        case "current":
+            return t("SETTINGS_SYNC_CURRENT_DEVICE_BADGE");
+        case "needs-sync":
+            return t("SETTINGS_SYNC_DEVICE_STATUS_NEEDS_SYNC");
+        case "idle":
+            return t("SETTINGS_SYNC_DEVICE_STATUS_IDLE");
+        case "no-session":
+            return t("SETTINGS_SYNC_DEVICE_STATUS_NO_SESSION");
+        case "up-to-date":
+        default:
+            return t("SETTINGS_SYNC_DEVICE_STATUS_UP_TO_DATE");
+    }
+}
+
+const InlineMetric: React.FC<{
+    label: string;
+    value: string;
+    title?: string;
+}> = ({ label, value, title }) => (
+    <span className="sr-device-inline-metric" title={title}>
+        <span className="sr-device-inline-metric-label">{label}: </span>
+        <span className="sr-device-inline-metric-value">
+            {value}
+        </span>
+    </span>
+);
+
+const MetricDivider = () => <span className="sr-device-inline-metric-divider">•</span>;
+
+const IconActionButton: React.FC<{
+    icon: React.ElementType;
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+    destructive?: boolean;
+}> = ({ icon: Icon, label, onClick, disabled, destructive }) => (
+    <button
+        type="button"
+        className={[
+            "sr-device-action-button",
+            destructive ? "is-destructive" : "",
+        ]
+            .filter(Boolean)
+            .join(" ")}
+        aria-label={label}
+        title={label}
+        onClick={onClick}
+        disabled={disabled}
+    >
+        <Icon size={15} />
+    </button>
+);
+
+const DeviceCard: React.FC<{
+    device: SyroDeviceCardState;
+    isReadOnly: boolean;
+    isBusy: boolean;
+    isEditingName: boolean;
+    renameValue: string;
+    renameConfirmDisabled: boolean;
+    onRenameValueChange: (value: string) => void;
+    onStartRename: () => void;
+    onCancelRename: () => void;
+    onConfirmRename: () => void;
+    onPullToCurrent: () => void;
+    onDeleteDevice: () => void;
+}> = ({
+    device,
+    isReadOnly,
+    isBusy,
+    isEditingName,
+    renameValue,
+    renameConfirmDisabled,
+    onRenameValueChange,
+    onStartRename,
+    onCancelRename,
+    onConfirmRename,
+    onPullToCurrent,
+    onDeleteDevice,
+}) => (
+    <div className="setting-item sr-device-flat-item">
         <div className="setting-item-info">
-            <div className="setting-item-name">{device.deviceName}</div>
-            <div className="setting-item-description sr-device-management-meta">
-                <div>
-                    {t("SETTINGS_SYNC_DEVICE_ID")}: {device.deviceId}
-                </div>
-                <div>
-                    {t("SETTINGS_SYNC_SHORT_DEVICE_ID")}: {device.shortDeviceId}
-                </div>
-                <div>
-                    {t("SETTINGS_SYNC_DEVICE_FOLDER")}: {device.deviceFolderName}
-                </div>
-                <div>
-                    {t("SETTINGS_SYNC_DEVICE_LAST_SEEN")}: {device.lastSeenAt}
-                </div>
+            <div className="setting-item-name sr-device-flat-title">
+                {device.isCurrent && isEditingName ? (
+                    <input
+                        className="sr-input-compact sr-device-inline-rename-input"
+                        value={renameValue}
+                        onChange={(event) => onRenameValueChange(event.target.value)}
+                        aria-label={t("SETTINGS_SYNC_INLINE_RENAME")}
+                        disabled={isReadOnly || isBusy}
+                        autoFocus
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                                event.preventDefault();
+                                onConfirmRename();
+                            } else if (event.key === "Escape") {
+                                event.preventDefault();
+                                onCancelRename();
+                            }
+                        }}
+                    />
+                ) : (
+                    <span>{device.deviceName}</span>
+                )}
+                <span
+                    className={[
+                        "sr-supporter-badge",
+                        "sr-device-inline-badge",
+                        device.isCurrent ? "is-current" : `is-${device.status}`,
+                    ].join(" ")}
+                >
+                    {device.isCurrent
+                        ? t("SETTINGS_SYNC_CURRENT_DEVICE_BADGE")
+                        : getDeviceStatusLabel(device.status)}
+                </span>
+            </div>
+            <div className="setting-item-description sr-device-inline-metrics">
+                <InlineMetric
+                    label={t("SETTINGS_SYNC_DEVICE_SIZE")}
+                    value={formatBytes(device.footprintBytes)}
+                    title={`${device.footprintBytes} B`}
+                />
+                <MetricDivider />
+                <InlineMetric
+                    label={t("SETTINGS_SYNC_DEVICE_LAST_SEEN")}
+                    value={formatRelativeTimestamp(device.lastSeenAt)}
+                    title={formatAbsoluteTimestamp(device.lastSeenAt)}
+                />
+                <MetricDivider />
+                <InlineMetric
+                    label={t("SETTINGS_SYNC_DEVICE_LATEST_SESSION")}
+                    value={formatRelativeTimestamp(device.latestSessionAt)}
+                    title={formatAbsoluteTimestamp(device.latestSessionAt)}
+                />
+                {!device.isCurrent ? (
+                    <>
+                        <MetricDivider />
+                        <InlineMetric
+                            label={t("SETTINGS_SYNC_DEVICE_LAST_PULL")}
+                            value={formatRelativeTimestamp(device.lastPulledIntoCurrentAt)}
+                            title={formatAbsoluteTimestamp(device.lastPulledIntoCurrentAt)}
+                        />
+                    </>
+                ) : null}
+                <MetricDivider />
+                <InlineMetric
+                    label={t("SETTINGS_SYNC_DEVICE_INACTIVE_DAYS")}
+                    value={formatInactiveDays(device.inactiveDays)}
+                />
             </div>
         </div>
         <div className="setting-item-control">
-            {badge ? <span className="sr-device-management-badge">{badge}</span> : null}
+            {device.canRename ? (
+                isEditingName ? (
+                    <>
+                        <IconActionButton
+                            icon={Check}
+                            label={t("SETTINGS_SYNC_SAVE_DEVICE_NAME")}
+                            onClick={onConfirmRename}
+                            disabled={isReadOnly || isBusy || renameConfirmDisabled}
+                        />
+                        <IconActionButton
+                            icon={X}
+                            label={t("SETTINGS_SYNC_CANCEL_RENAME")}
+                            onClick={onCancelRename}
+                            disabled={isBusy}
+                        />
+                    </>
+                ) : (
+                    <IconActionButton
+                        icon={Pencil}
+                        label={t("SETTINGS_SYNC_INLINE_RENAME")}
+                        onClick={onStartRename}
+                        disabled={isReadOnly || isBusy}
+                    />
+                )
+            ) : null}
+            {device.canPullToCurrent ? (
+                <IconActionButton
+                    icon={ArrowDownToLine}
+                    label={t("SETTINGS_SYNC_PULL_TO_CURRENT")}
+                    onClick={onPullToCurrent}
+                    disabled={isReadOnly || isBusy}
+                />
+            ) : null}
+            {device.canDelete ? (
+                <IconActionButton
+                    icon={Trash2}
+                    label={t("SETTINGS_SYNC_DELETE_DEVICE")}
+                    onClick={onDeleteDevice}
+                    disabled={isReadOnly || isBusy}
+                    destructive
+                />
+            ) : null}
+        </div>
+    </div>
+);
+
+const InvalidDeviceCard: React.FC<{
+    device: SyroInvalidDeviceCardState;
+    isReadOnly: boolean;
+    isBusy: boolean;
+    onDelete: () => void;
+}> = ({ device, isReadOnly, isBusy, onDelete }) => (
+    <div className="setting-item sr-device-flat-item">
+        <div className="setting-item-info">
+            <div className="setting-item-name sr-device-flat-title">
+                <span>{device.deviceFolderName}</span>
+                <span className="sr-supporter-badge sr-device-inline-badge is-invalid">
+                    {t("SETTINGS_SYNC_INVALID_DEVICE_BADGE")}
+                </span>
+            </div>
+            <div className="setting-item-description sr-device-inline-metrics">
+                <span className="sr-device-inline-alert">
+                    {t("SETTINGS_SYNC_INVALID_DEVICE_REASON")}:{" "}
+                    {getInvalidDeviceReasonLabel(device.invalidReason)}
+                </span>
+            </div>
+            <div className="setting-item-description sr-device-inline-metrics sr-device-inline-secondary">
+                <InlineMetric
+                    label={t("SETTINGS_SYNC_DEVICE_SIZE")}
+                    value={formatBytes(device.footprintBytes)}
+                    title={`${device.footprintBytes} B`}
+                />
+                <MetricDivider />
+                <InlineMetric
+                    label={t("SETTINGS_SYNC_INVALID_DEVICE_FILES")}
+                    value={[...device.files, ...device.folders.map((name) => `${name}/`)].join(", ") || "-"}
+                />
+            </div>
+        </div>
+        <div className="setting-item-control">
+            <IconActionButton
+                icon={Trash2}
+                label={t("SETTINGS_SYNC_DELETE_INVALID_DEVICE")}
+                onClick={onDelete}
+                disabled={isReadOnly || isBusy}
+                destructive
+            />
         </div>
     </div>
 );
@@ -1431,29 +1733,33 @@ const SyncTab: React.FC<SyncTabProps> = ({
     deviceManagementLoading,
     deviceManagementError,
     onRenameCurrentDevice,
-    onSetCurrentDevice,
+    onPullToCurrentDevice,
+    onDeleteValidDevice,
     onOpenRecovery,
     onDeleteInvalidDevice,
 }) => {
     const [renameValue, setRenameValue] = useState("");
+    const [isRenamingCurrent, setIsRenamingCurrent] = useState(false);
     const [actionKey, setActionKey] = useState<string | null>(null);
 
     useEffect(() => {
         setRenameValue(deviceManagement?.currentDevice?.deviceName ?? "");
+        setIsRenamingCurrent(false);
     }, [deviceManagement?.currentDevice?.deviceId, deviceManagement?.currentDevice?.deviceName]);
 
     const runAction = useCallback(
         async (
             nextActionKey: string,
             task: (() => Promise<void> | void) | undefined,
-        ) => {
+        ): Promise<boolean> => {
             if (!task) {
-                return;
+                return false;
             }
 
             setActionKey(nextActionKey);
             try {
                 await task();
+                return true;
             } catch (error) {
                 console.error("[SR-Settings] Syro device management action failed", error);
                 new Notice(
@@ -1461,6 +1767,7 @@ const SyncTab: React.FC<SyncTabProps> = ({
                         ? error.message
                         : t("SETTINGS_SYNC_DEVICE_LOAD_ERROR"),
                 );
+                return false;
             } finally {
                 setActionKey(null);
             }
@@ -1469,10 +1776,12 @@ const SyncTab: React.FC<SyncTabProps> = ({
     );
 
     const currentDevice = deviceManagement?.currentDevice ?? null;
-    const otherValidDevices =
-        deviceManagement?.validDevices.filter(
-            (entry) => entry.deviceId !== deviceManagement.currentDevice?.deviceId,
-        ) ?? [];
+    const otherDevices = deviceManagement?.devices ?? [];
+    const invalidDevices = deviceManagement?.invalidDevices ?? [];
+    const isReadOnly = Boolean(deviceManagement?.readOnlyReason);
+    const showRecoveryRow = Boolean(
+        deviceManagement?.hasPendingAction || deviceManagement?.readOnlyReason,
+    );
 
     return (
         <div className="sr-settings-sections">
@@ -1511,25 +1820,27 @@ const SyncTab: React.FC<SyncTabProps> = ({
             </Section>
 
             <Section title={t("SETTINGS_SYNC_DEVICE_MANAGEMENT")}>
-                <ActionRow
-                    label={t("SETTINGS_SYNC_OPEN_RECOVERY")}
-                    desc={
-                        deviceManagement?.hasPendingAction
-                            ? t("SETTINGS_SYNC_OPEN_RECOVERY_DESC")
-                            : deviceManagement?.readOnlyReason
-                              ? deviceManagement.readOnlyReason
-                              : t("SETTINGS_SYNC_OPEN_RECOVERY_DESC")
-                    }
-                >
-                    <button
-                        disabled={actionKey === "open-recovery"}
-                        onClick={() =>
-                            void runAction("open-recovery", () => onOpenRecovery?.())
+                {showRecoveryRow ? (
+                    <ActionRow
+                        label={t("SETTINGS_SYNC_OPEN_RECOVERY")}
+                        desc={
+                            deviceManagement?.hasPendingAction
+                                ? t("SETTINGS_SYNC_OPEN_RECOVERY_DESC")
+                                : deviceManagement?.readOnlyReason
+                                  ? deviceManagement.readOnlyReason
+                                  : t("SETTINGS_SYNC_OPEN_RECOVERY_DESC")
                         }
                     >
-                        {t("OPEN")}
-                    </button>
-                </ActionRow>
+                        <button
+                            disabled={actionKey === "open-recovery"}
+                            onClick={() =>
+                                void runAction("open-recovery", () => onOpenRecovery?.())
+                            }
+                        >
+                            {t("OPEN")}
+                        </button>
+                    </ActionRow>
+                ) : null}
                 {deviceManagementLoading ? (
                     <div className="setting-item">
                         <div className="setting-item-info">
@@ -1548,124 +1859,124 @@ const SyncTab: React.FC<SyncTabProps> = ({
                         </div>
                     </div>
                 ) : null}
-            </Section>
-
-            <Section title={t("SETTINGS_SYNC_CURRENT_DEVICE")}>
-                {currentDevice ? (
-                    <>
-                        <DeviceInfoCard
+                <div className="setting-item setting-item-heading sr-device-group-heading">
+                    <div className="setting-item-info">
+                        <div className="setting-item-name">{t("SETTINGS_SYNC_THIS_DEVICE")}</div>
+                    </div>
+                </div>
+                <div className="setting-items sr-device-management-list">
+                    {currentDevice ? (
+                        <DeviceCard
                             device={currentDevice}
-                            badge={t("SETTINGS_SYNC_CURRENT_DEVICE_BADGE")}
-                        />
-                        <InputRow
-                            label={t("SETTINGS_SYNC_RENAME_CURRENT_DEVICE")}
-                            desc={t("SETTINGS_SYNC_RENAME_CURRENT_DEVICE_DESC")}
-                            value={renameValue}
-                            onChange={setRenameValue}
-                            disabled={actionKey === "rename-device"}
-                        />
-                        <ActionRow label={t("SETTINGS_SYNC_SAVE_DEVICE_NAME")}>
-                            <button
-                                disabled={
-                                    actionKey === "rename-device" ||
-                                    renameValue.trim().length === 0 ||
-                                    renameValue.trim() === currentDevice.deviceName
+                            isReadOnly={isReadOnly}
+                            isBusy={actionKey !== null}
+                            isEditingName={isRenamingCurrent}
+                            renameValue={renameValue}
+                            renameConfirmDisabled={
+                                renameValue.trim().length === 0 ||
+                                renameValue.trim() === currentDevice.deviceName
+                            }
+                            onRenameValueChange={setRenameValue}
+                            onStartRename={() => setIsRenamingCurrent(true)}
+                            onCancelRename={() => {
+                                setRenameValue(currentDevice.deviceName);
+                                setIsRenamingCurrent(false);
+                            }}
+                            onConfirmRename={() => {
+                                const nextDeviceName = renameValue.trim();
+                                if (!nextDeviceName) {
+                                    return;
                                 }
-                                onClick={() =>
-                                    void runAction("rename-device", () =>
-                                        onRenameCurrentDevice?.(renameValue),
+
+                                void runAction("rename-device", () =>
+                                    onRenameCurrentDevice?.(nextDeviceName),
+                                ).then((completed) => {
+                                    if (completed) {
+                                        setIsRenamingCurrent(false);
+                                    }
+                                });
+                            }}
+                            onPullToCurrent={() => undefined}
+                            onDeleteDevice={() => undefined}
+                        />
+                    ) : (
+                        <div className="setting-item">
+                            <div className="setting-item-info">
+                                <div className="setting-item-description">
+                                    {t("SETTINGS_SYNC_NO_CURRENT_DEVICE")}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+                <div className="setting-item setting-item-heading sr-device-group-heading">
+                    <div className="setting-item-info">
+                        <div className="setting-item-name">{t("SETTINGS_SYNC_OTHER_DEVICES")}</div>
+                    </div>
+                </div>
+                <div className="setting-items sr-device-management-list">
+                    {otherDevices.length > 0 ? (
+                        otherDevices.map((device) => (
+                            <DeviceCard
+                                key={device.deviceId}
+                                device={device}
+                                isReadOnly={isReadOnly}
+                                isBusy={actionKey !== null}
+                                isEditingName={false}
+                                renameValue=""
+                                renameConfirmDisabled
+                                onRenameValueChange={() => undefined}
+                                onStartRename={() => undefined}
+                                onCancelRename={() => undefined}
+                                onConfirmRename={() => undefined}
+                                onPullToCurrent={() =>
+                                    void runAction(`pull:${device.deviceId}`, () =>
+                                        onPullToCurrentDevice?.(device.deviceId),
                                     )
                                 }
-                            >
-                                {t("SAVE")}
-                            </button>
-                        </ActionRow>
+                                onDeleteDevice={() =>
+                                    void runAction(`delete-valid:${device.deviceId}`, () =>
+                                        onDeleteValidDevice?.(device.deviceId),
+                                    )
+                                }
+                            />
+                        ))
+                    ) : (
+                        <div className="setting-item">
+                            <div className="setting-item-info">
+                                <div className="setting-item-description">
+                                    {t("SETTINGS_SYNC_VALID_DEVICE_EMPTY")}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+                {invalidDevices.length ? (
+                    <>
+                        <div className="setting-item setting-item-heading sr-device-group-heading">
+                            <div className="setting-item-info">
+                                <div className="setting-item-name">
+                                    {t("SETTINGS_SYNC_INVALID_DEVICES")}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="setting-items sr-device-management-list">
+                            {invalidDevices.map((entry) => (
+                                <InvalidDeviceCard
+                                    key={entry.deviceFolderName}
+                                    device={entry}
+                                    isReadOnly={isReadOnly}
+                                    isBusy={actionKey !== null}
+                                    onDelete={() =>
+                                        void runAction(
+                                            `delete-invalid:${entry.deviceFolderName}`,
+                                            () => onDeleteInvalidDevice?.(entry.deviceFolderName),
+                                        )
+                                    }
+                                />
+                            ))}
+                        </div>
                     </>
-                ) : (
-                    <div className="setting-item">
-                        <div className="setting-item-info">
-                            <div className="setting-item-description">
-                                {t("SETTINGS_SYNC_NO_CURRENT_DEVICE")}
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </Section>
-
-            <Section title={t("SETTINGS_SYNC_DEVICE_LIST")}>
-                {otherValidDevices.length > 0 ? (
-                    otherValidDevices.map((device) => (
-                        <ActionRow
-                            key={device.deviceId}
-                            label={`${device.deviceName} (${device.shortDeviceId})`}
-                            desc={
-                                <>
-                                    <div>
-                                        {t("SETTINGS_SYNC_DEVICE_FOLDER")}: {device.deviceFolderName}
-                                    </div>
-                                    <div>
-                                        {t("SETTINGS_SYNC_DEVICE_LAST_SEEN")}: {device.lastSeenAt}
-                                    </div>
-                                </>
-                            }
-                        >
-                            <button
-                                disabled={actionKey === `set-current:${device.deviceId}`}
-                                onClick={() =>
-                                    void runAction(`set-current:${device.deviceId}`, () =>
-                                        onSetCurrentDevice?.(device.deviceId),
-                                    )
-                                }
-                            >
-                                {t("SETTINGS_SYNC_SET_CURRENT_DEVICE")}
-                            </button>
-                        </ActionRow>
-                    ))
-                ) : (
-                    <div className="setting-item">
-                        <div className="setting-item-info">
-                            <div className="setting-item-description">
-                                {t("SETTINGS_SYNC_VALID_DEVICE_EMPTY")}
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </Section>
-
-            <Section title={t("SETTINGS_SYNC_INVALID_DEVICE_DIRS")}>
-                {deviceManagement?.invalidDevices.length ? (
-                    deviceManagement.invalidDevices.map((entry) => (
-                        <ActionRow
-                            key={entry.deviceFolderName}
-                            label={entry.deviceFolderName}
-                            desc={
-                                <>
-                                    <div>
-                                        {t("SETTINGS_SYNC_INVALID_DEVICE_REASON")}:{" "}
-                                        {getInvalidDeviceReasonLabel(entry.reason)}
-                                    </div>
-                                    <div>
-                                        {t("SETTINGS_SYNC_INVALID_DEVICE_FILES")}:{" "}
-                                        {[...entry.files, ...entry.folders.map((name) => `${name}/`)]
-                                            .join(", ") || "-"}
-                                    </div>
-                                </>
-                            }
-                        >
-                            <button
-                                disabled={actionKey === `delete-invalid:${entry.deviceFolderName}`}
-                                onClick={() =>
-                                    void runAction(
-                                        `delete-invalid:${entry.deviceFolderName}`,
-                                        () =>
-                                            onDeleteInvalidDevice?.(entry.deviceFolderName),
-                                    )
-                                }
-                            >
-                                {t("SETTINGS_SYNC_DELETE_INVALID_DEVICE")}
-                            </button>
-                        </ActionRow>
-                    ))
                 ) : (
                     <div className="setting-item">
                         <div className="setting-item-info">
@@ -1929,7 +2240,8 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
     onSettingsChange,
     loadSyroDeviceManagement,
     onSyroRenameCurrentDevice,
-    onSyroSetCurrentDevice,
+    onSyroPullToCurrentDevice,
+    onSyroDeleteValidDevice,
     onSyroOpenRecovery,
     onSyroDeleteInvalidDevice,
     version: _version = "0.0.1",
@@ -1938,8 +2250,9 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
     const [activeTab, setActiveTab] = useState<TabId>("flashcards");
     const [headerActiveTab, setHeaderActiveTab] = useState<TabId>("flashcards");
     const [settings, setSettings] = useState<UISettingsState>(initialSettings);
-    const [deviceManagement, setDeviceManagement] =
-        useState<EmbeddedSyroDeviceManagementState | null>(null);
+    const [deviceManagement, setDeviceManagement] = useState<SyroDeviceManagementViewState | null>(
+        null,
+    );
     const [deviceManagementLoading, setDeviceManagementLoading] = useState(false);
     const [deviceManagementError, setDeviceManagementError] = useState<string | null>(null);
     const [isSwipeAnimating, setIsSwipeAnimating] = useState(false);
@@ -2060,7 +2373,8 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
                             deviceManagementLoading={deviceManagementLoading}
                             deviceManagementError={deviceManagementError}
                             onRenameCurrentDevice={onSyroRenameCurrentDevice}
-                            onSetCurrentDevice={onSyroSetCurrentDevice}
+                            onPullToCurrentDevice={onSyroPullToCurrentDevice}
+                            onDeleteValidDevice={onSyroDeleteValidDevice}
                             onOpenRecovery={onSyroOpenRecovery}
                             onDeleteInvalidDevice={onSyroDeleteInvalidDevice}
                         />
@@ -2077,10 +2391,10 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
             deviceManagementLoading,
             handleChange,
             onSyroDeleteInvalidDevice,
+            onSyroDeleteValidDevice,
             onSyroOpenRecovery,
+            onSyroPullToCurrentDevice,
             onSyroRenameCurrentDevice,
-            onSyroSetCurrentDevice,
-            reloadDeviceManagement,
             settings,
         ],
     );

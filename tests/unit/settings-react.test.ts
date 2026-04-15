@@ -158,4 +158,50 @@ describe("SRSettingTab", () => {
         expect(plugin.clearPendingReviewSessionReloadAfterNextFullSync).not.toHaveBeenCalled();
         expect(noticeMock).toHaveBeenCalledTimes(1);
     });
+
+    it("wires device management callbacks to plugin actions and redraws after completion", async () => {
+        const plugin = {
+            data: { settings: {} },
+            manifest: { version: "0.0.8" },
+            getSyroDeviceManagementState: jest.fn(async () => ({
+                currentDevice: null,
+                devices: [],
+                invalidDevices: [],
+                hasPendingAction: false,
+                readOnlyReason: null,
+            })),
+            renameCurrentSyroDevice: jest.fn(async () => undefined),
+            pullSyroDeviceToCurrent: jest.fn(async () => undefined),
+            deleteValidSyroDevice: jest.fn(async () => undefined),
+            openPendingSyroRecovery: jest.fn(async () => undefined),
+            deleteInvalidSyroDeviceDirectory: jest.fn(async () => undefined),
+        };
+
+        const tab = new SRSettingTab({} as never, plugin as never);
+        tab.display();
+
+        const root = createRootMock.mock.results[0]?.value as { render: jest.Mock };
+        const renderedElement = root.render.mock.calls[0]?.[0] as {
+            props: {
+                loadSyroDeviceManagement: () => Promise<unknown>;
+                onSyroRenameCurrentDevice: (deviceName: string) => Promise<void>;
+                onSyroPullToCurrentDevice: (deviceId: string) => Promise<void>;
+                onSyroDeleteValidDevice: (deviceId: string) => Promise<void>;
+                onSyroDeleteInvalidDevice: (deviceFolderName: string) => Promise<void>;
+            };
+        };
+
+        await renderedElement.props.loadSyroDeviceManagement();
+        await renderedElement.props.onSyroRenameCurrentDevice("Desktop Prime");
+        await renderedElement.props.onSyroPullToCurrentDevice("device-2");
+        await renderedElement.props.onSyroDeleteValidDevice("device-3");
+        await renderedElement.props.onSyroDeleteInvalidDevice("orphan-folder");
+
+        expect(plugin.getSyroDeviceManagementState).toHaveBeenCalledTimes(1);
+        expect(plugin.renameCurrentSyroDevice).toHaveBeenCalledWith("Desktop Prime");
+        expect(plugin.pullSyroDeviceToCurrent).toHaveBeenCalledWith("device-2");
+        expect(plugin.deleteValidSyroDevice).toHaveBeenCalledWith("device-3");
+        expect(plugin.deleteInvalidSyroDeviceDirectory).toHaveBeenCalledWith("orphan-folder");
+        expect(createRootMock).toHaveBeenCalledTimes(5);
+    });
 });

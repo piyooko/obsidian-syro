@@ -954,6 +954,75 @@ describe("SyroWorkspace", () => {
         ).toBe("Primary Desktop");
     });
 
+    it("overwrites the current device snapshot from another device while keeping the current identity", async () => {
+        const { adapter, files } = createMockAdapter();
+        const workspace = createWorkspace(adapter);
+        const startup = await workspace.initialize();
+
+        files.set(normalizePath(startup.layout.cardsPath), '{"items":[{"uuid":"local-card"}]}');
+        files.set(
+            normalizePath(startup.layout.settingsPath),
+            JSON.stringify({ version: 1, settings: { openRandomNote: false } }),
+        );
+        await addSourceDevice(adapter, files, {
+            folderName: "Tablet--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Tablet",
+            shortDeviceId: "91ac",
+        });
+
+        const overwritten = await workspace.overwriteCurrentDeviceFromSource(
+            startup.layout,
+            "91ac1111-2222-3333-4444-555555555555",
+        );
+        const overwrittenMeta = JSON.parse(files.get(normalizePath(overwritten.deviceMetaPath)) ?? "{}");
+
+        expect(overwritten.device.deviceId).toBe(startup.layout.device.deviceId);
+        expect(overwritten.device.deviceName).toBe(startup.layout.device.deviceName);
+        expect(overwritten.deviceRoot).toBe(startup.layout.deviceRoot);
+        expect(overwritten.device.baselineFromDeviceId).toBe(
+            "91ac1111-2222-3333-4444-555555555555",
+        );
+        expect(overwritten.device.baselineBuiltAt).toBeTruthy();
+        expect(files.get(normalizePath(overwritten.cardsPath))).toBe('{"items":[{"uuid":"card-1"}]}');
+        expect(files.get(normalizePath(overwritten.timelinePath))).toBe('{"note.md":[{"id":"1"}]}');
+        expect(files.get(normalizePath(overwritten.noteCachePath))).toContain('"path":"note.md"');
+        expect(overwrittenMeta.deviceId).toBe(startup.layout.device.deviceId);
+        expect(overwrittenMeta.baselineFromDeviceId).toBe(
+            "91ac1111-2222-3333-4444-555555555555",
+        );
+    });
+
+    it("deletes a non-current valid device together with its session directory", async () => {
+        const { adapter, files, directories } = createMockAdapter();
+        const workspace = createWorkspace(adapter);
+        const startup = await workspace.initialize();
+
+        await addSourceDevice(adapter, files, {
+            folderName: "Tablet--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Tablet",
+            shortDeviceId: "91ac",
+        });
+        await adapter.mkdir(".obsidian/plugins/syro/sessions/Tablet--91ac");
+        files.set(
+            ".obsidian/plugins/syro/sessions/Tablet--91ac/2026-04-13.session.jsonl",
+            '{"version":1}\n',
+        );
+
+        await workspace.deleteValidDevice("91ac1111-2222-3333-4444-555555555555");
+
+        expect(directories.has(".obsidian/plugins/syro/devices/Tablet--91ac")).toBe(false);
+        expect(directories.has(".obsidian/plugins/syro/sessions/Tablet--91ac")).toBe(false);
+        expect(files.has(".obsidian/plugins/syro/devices/Tablet--91ac/device.json")).toBe(false);
+        expect(
+            files.has(".obsidian/plugins/syro/sessions/Tablet--91ac/2026-04-13.session.jsonl"),
+        ).toBe(false);
+        await expect(workspace.deleteValidDevice(startup.layout.device.deviceId)).rejects.toThrow(
+            "cannot be deleted",
+        );
+    });
+
     it("deletes only invalid device directories", async () => {
         const { adapter, files, directories } = createMockAdapter();
         await addSourceDevice(adapter, files, {
