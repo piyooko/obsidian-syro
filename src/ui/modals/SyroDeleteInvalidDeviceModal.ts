@@ -63,6 +63,7 @@ export class SyroDeleteInvalidDeviceModal extends Modal {
                 }
 
                 this.submitted = true;
+                this.close();
                 this.closeWithResult(true);
             });
 

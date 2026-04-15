@@ -72,6 +72,11 @@ jest.mock("obsidian", () => {
             return this;
         }
 
+        setWarning() {
+            this.buttonEl.classList.add("mod-warning");
+            return this;
+        }
+
         onClick(callback: () => void) {
             this.buttonEl.addEventListener("click", callback);
             return this;
@@ -95,6 +100,10 @@ jest.mock("obsidian", () => {
         setValue(value: string) {
             this.inputEl.value = value;
             return this;
+        }
+
+        getValue() {
+            return this.inputEl.value;
         }
 
         onChange(callback: (value: string) => void) {
@@ -199,6 +208,7 @@ jest.mock("obsidian", () => {
 });
 
 import { App } from "obsidian";
+import { SyroDeleteInvalidDeviceModal } from "src/ui/modals/SyroDeleteInvalidDeviceModal";
 import { SyroDeviceSelectionModal } from "src/ui/modals/SyroDeviceSelectionModal";
 import { SyroRecoveryModal } from "src/ui/modals/SyroRecoveryModal";
 
@@ -297,6 +307,7 @@ describe("Syro recovery modals", () => {
                     deviceName: "Desktop",
                     shortDeviceId: "91ac",
                     deviceFolderName: "Desktop--91ac",
+                    deviceReviewCount: 12,
                     lastSeenAt: "2026-04-13T00:00:00.000Z",
                     baselineFromDeviceId: null,
                     baselineBuiltAt: null,
@@ -347,6 +358,7 @@ describe("Syro recovery modals", () => {
                     deviceName: "Desktop",
                     shortDeviceId: "91ac",
                     deviceFolderName: "Desktop--91ac",
+                    deviceReviewCount: 12,
                     lastSeenAt: "2026-04-13T00:00:00.000Z",
                     baselineFromDeviceId: null,
                     baselineBuiltAt: null,
@@ -377,6 +389,30 @@ describe("Syro recovery modals", () => {
         createButton.click();
 
         await expect(resultPromise).resolves.toEqual({ action: "create-new" });
+        expect(modal.containerEl.isConnected).toBe(false);
+    });
+
+    it("submits the invalid device delete modal only once and closes immediately", async () => {
+        const modal = new SyroDeleteInvalidDeviceModal(new App(), "Desktop--91ac");
+
+        const resultPromise = modal.openAndWait();
+        const confirmInput = document.querySelector("input");
+        expect(confirmInput).not.toBeNull();
+
+        if (!(confirmInput instanceof HTMLInputElement)) {
+            throw new Error("Unable to find invalid device confirmation input.");
+        }
+
+        confirmInput.value = "I understand the risks and want to delete";
+        confirmInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+        const deleteButton = findButton("Delete invalid directory");
+        expect(deleteButton.disabled).toBe(false);
+
+        deleteButton.click();
+        deleteButton.click();
+
+        await expect(resultPromise).resolves.toBe(true);
         expect(modal.containerEl.isConnected).toBe(false);
     });
 });
