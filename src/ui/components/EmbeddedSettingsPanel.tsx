@@ -761,16 +761,16 @@ const DeviceCard: React.FC<{
                     isEditingName ? (
                         <>
                             <IconActionButton
-                                icon={Check}
-                                label={t("SETTINGS_SYNC_SAVE_DEVICE_NAME")}
-                                onClick={onConfirmRename}
-                                disabled={isReadOnly || isBusy || renameConfirmDisabled}
-                            />
-                            <IconActionButton
                                 icon={X}
                                 label={t("SETTINGS_SYNC_CANCEL_RENAME")}
                                 onClick={onCancelRename}
                                 disabled={isBusy}
+                            />
+                            <IconActionButton
+                                icon={Check}
+                                label={t("SETTINGS_SYNC_SAVE_DEVICE_NAME")}
+                                onClick={onConfirmRename}
+                                disabled={isReadOnly || isBusy || renameConfirmDisabled}
                             />
                         </>
                     ) : (

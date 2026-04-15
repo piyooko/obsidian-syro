@@ -1195,6 +1195,19 @@ describe("EmbeddedSettingsPanel", () => {
                 'input[aria-label="Rename device"]',
             ) as HTMLInputElement | null;
             expect(renameInput).not.toBeNull();
+            const renameControls = Array.from(
+                view.container.querySelectorAll<HTMLButtonElement>(
+                    ".setting-item-control button.sr-device-action-button",
+                ),
+            ).filter(
+                (button) =>
+                    button.textContent?.includes("Cancel rename") ||
+                    button.textContent?.includes("Save device name"),
+            );
+            expect(renameControls.map((button) => button.textContent?.trim())).toEqual([
+                "Cancel rename",
+                "Save device name",
+            ]);
 
             await act(async () => {
                 if (renameInput) {
