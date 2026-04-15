@@ -181,7 +181,9 @@ async function flushPromises() {
     });
 }
 
-function createDeviceManagementState(): SyroDeviceManagementViewState {
+function createDeviceManagementState(
+    overrides: Partial<SyroDeviceManagementViewState> = {},
+): SyroDeviceManagementViewState {
     const currentDevice: SyroDeviceCardState = {
         deviceId: "cd411111-2222-3333-4444-555555555555",
         deviceName: "Desktop",
@@ -225,6 +227,7 @@ function createDeviceManagementState(): SyroDeviceManagementViewState {
         invalidDevices: [invalidDevice],
         hasPendingAction: true,
         readOnlyReason: null,
+        ...overrides,
     };
 }
 
@@ -244,6 +247,14 @@ function openTab(container: HTMLElement, label: string) {
 
 function getActiveTabText(container: HTMLElement): string {
     return container.querySelector<HTMLElement>(".sr-style-tab-active")?.textContent ?? "";
+}
+
+function findDeviceActionButton(container: HTMLElement, label: string): HTMLButtonElement | null {
+    return (
+        Array.from(
+            container.querySelectorAll<HTMLButtonElement>("button.sr-device-action-button"),
+        ).find((button) => button.textContent?.includes(label)) ?? null
+    );
 }
 
 function dispatchTouchEvent(
@@ -1034,9 +1045,7 @@ describe("EmbeddedSettingsPanel", () => {
             openTab(view.container, "Sync");
             await flushPromises();
 
-            const button = view.container.querySelector(
-                'button[aria-label="Sync into current device"]',
-            ) as HTMLButtonElement | null;
+            const button = findDeviceActionButton(view.container, "Sync into current device");
             expect(button).toBeTruthy();
 
             await act(async () => {
@@ -1066,10 +1075,9 @@ describe("EmbeddedSettingsPanel", () => {
             openTab(view.container, "Sync");
             await flushPromises();
 
-            const renameButton = view.container.querySelector(
-                'button[aria-label="Rename device"]',
-            ) as HTMLButtonElement | null;
+            const renameButton = findDeviceActionButton(view.container, "Rename device");
             expect(renameButton).not.toBeNull();
+            expect(renameButton?.getAttribute("title")).toBeNull();
 
             await act(async () => {
                 renameButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1091,9 +1099,7 @@ describe("EmbeddedSettingsPanel", () => {
                 }
             });
 
-            const saveRenameButton = view.container.querySelector(
-                'button[aria-label="Save device name"]',
-            ) as HTMLButtonElement | null;
+            const saveRenameButton = findDeviceActionButton(view.container, "Save device name");
             expect(saveRenameButton).not.toBeNull();
             expect(saveRenameButton?.disabled).toBe(false);
 
@@ -1104,8 +1110,8 @@ describe("EmbeddedSettingsPanel", () => {
             expect(onSyroRenameCurrentDevice).toHaveBeenCalledWith("Desktop Prime");
 
             const deleteButtons = Array.from(
-                view.container.querySelectorAll<HTMLButtonElement>('button[aria-label="Delete device"]'),
-            );
+                view.container.querySelectorAll<HTMLButtonElement>("button.sr-device-action-button"),
+            ).filter((button) => button.textContent?.includes("Delete device"));
             expect(deleteButtons).toHaveLength(1);
 
             await act(async () => {
@@ -1116,9 +1122,10 @@ describe("EmbeddedSettingsPanel", () => {
                 "91ac1111-2222-3333-4444-555555555555",
             );
 
-            const deleteInvalidButton = view.container.querySelector(
-                'button[aria-label="Delete invalid directory"]',
-            ) as HTMLButtonElement | null;
+            const deleteInvalidButton = findDeviceActionButton(
+                view.container,
+                "Delete invalid directory",
+            );
             expect(deleteInvalidButton).not.toBeNull();
 
             await act(async () => {
@@ -1126,6 +1133,77 @@ describe("EmbeddedSettingsPanel", () => {
             });
 
             expect(onSyroDeleteInvalidDevice).toHaveBeenCalledWith("Desktop--ec3c");
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("shows a custom device action tooltip without relying on button title attributes", async () => {
+        const view = renderPanel(createSettings(), {
+            loadSyroDeviceManagement: async () => createDeviceManagementState(),
+        });
+
+        try {
+            openTab(view.container, "Sync");
+            await flushPromises();
+
+            const renameButton = findDeviceActionButton(view.container, "Rename device");
+            expect(renameButton).not.toBeNull();
+            expect(renameButton?.getAttribute("title")).toBeNull();
+
+            await act(async () => {
+                renameButton?.focus();
+            });
+
+            const tooltip = document.body.querySelector(".sr-device-action-tooltip");
+            expect(tooltip).not.toBeNull();
+            expect(tooltip?.textContent).toContain("Rename device");
+
+            await act(async () => {
+                renameButton?.blur();
+            });
+
+            expect(document.body.querySelector(".sr-device-action-tooltip")).toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("renders device management groups as sibling setting blocks and hides the invalid group when empty", async () => {
+        const view = renderPanel(createSettings(), {
+            loadSyroDeviceManagement: async () =>
+                createDeviceManagementState({
+                    invalidDevices: [],
+                }),
+        });
+
+        try {
+            openTab(view.container, "Sync");
+            await flushPromises();
+
+            const deviceManagementSection = Array.from(
+                view.container.querySelectorAll<HTMLElement>(".setting-group.sr-setting-section"),
+            ).find((group) =>
+                group.querySelector(".setting-item.setting-item-heading > .setting-item-name")
+                    ?.textContent === "Device management",
+            );
+
+            expect(deviceManagementSection).toBeTruthy();
+
+            const directGroupHeadings = Array.from(deviceManagementSection?.children ?? []).filter(
+                (child): child is HTMLElement =>
+                    child instanceof HTMLElement && child.classList.contains("sr-device-group-heading"),
+            );
+            expect(directGroupHeadings).toHaveLength(2);
+            expect(directGroupHeadings.map((heading) => heading.textContent?.trim())).toEqual([
+                "This device",
+                "Other devices",
+            ]);
+
+            expect(view.container.textContent).not.toContain("Invalid directories");
+            expect(view.container.textContent).not.toContain(
+                "There are no invalid device directories.",
+            );
         } finally {
             view.cleanup();
         }

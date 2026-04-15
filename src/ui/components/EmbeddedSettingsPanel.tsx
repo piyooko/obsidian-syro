@@ -18,6 +18,7 @@
 /** @jsxImportSource react */
 import { Notice } from "obsidian";
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
     ArrowDownToLine,
     Check,
@@ -434,29 +435,174 @@ const InlineMetric: React.FC<{
 
 const MetricDivider = () => <span className="sr-device-inline-metric-divider">•</span>;
 
+interface DeviceActionTooltipPosition {
+    top: number;
+    left: number;
+    arrowCenterX: number;
+    placement: "above" | "below";
+}
+
+const DEVICE_ACTION_TOOLTIP_VIEWPORT_PADDING = 8;
+const DEVICE_ACTION_TOOLTIP_GAP = 10;
+const DEVICE_ACTION_TOOLTIP_ARROW_SIZE = 8;
+const DEVICE_ACTION_TOOLTIP_ARROW_PADDING = 10;
+
+const DeviceActionTooltip: React.FC<{
+    anchorEl: HTMLButtonElement | null;
+    label: string;
+    visible: boolean;
+}> = ({ anchorEl, label, visible }) => {
+    const tooltipRef = useRef<HTMLDivElement>(null);
+    const [position, setPosition] = useState<DeviceActionTooltipPosition | null>(null);
+
+    const updatePosition = useCallback(() => {
+        if (!anchorEl || !tooltipRef.current) {
+            return;
+        }
+
+        const rect = anchorEl.getBoundingClientRect();
+        const tooltipEl = tooltipRef.current;
+        const tooltipWidth = tooltipEl.offsetWidth || 0;
+        const tooltipHeight = tooltipEl.offsetHeight || 0;
+        const unclampedLeft = rect.left + rect.width / 2 - tooltipWidth / 2;
+        const left = Math.min(
+            Math.max(unclampedLeft, DEVICE_ACTION_TOOLTIP_VIEWPORT_PADDING),
+            Math.max(
+                DEVICE_ACTION_TOOLTIP_VIEWPORT_PADDING,
+                window.innerWidth - DEVICE_ACTION_TOOLTIP_VIEWPORT_PADDING - tooltipWidth,
+            ),
+        );
+        const anchorCenterX = rect.left + rect.width / 2;
+        const minArrowCenterX =
+            DEVICE_ACTION_TOOLTIP_ARROW_PADDING + DEVICE_ACTION_TOOLTIP_ARROW_SIZE / 2;
+        const maxArrowCenterX = Math.max(
+            minArrowCenterX,
+            tooltipWidth -
+                DEVICE_ACTION_TOOLTIP_ARROW_PADDING -
+                DEVICE_ACTION_TOOLTIP_ARROW_SIZE / 2,
+        );
+        const arrowCenterX = Math.min(
+            Math.max(anchorCenterX - left, minArrowCenterX),
+            maxArrowCenterX,
+        );
+        const aboveTop = rect.top - tooltipHeight - DEVICE_ACTION_TOOLTIP_GAP;
+        const belowTop = rect.bottom + DEVICE_ACTION_TOOLTIP_GAP;
+        const placeAbove =
+            aboveTop >= DEVICE_ACTION_TOOLTIP_VIEWPORT_PADDING ||
+            belowTop + tooltipHeight >
+                window.innerHeight - DEVICE_ACTION_TOOLTIP_VIEWPORT_PADDING;
+        const top = placeAbove
+            ? Math.max(DEVICE_ACTION_TOOLTIP_VIEWPORT_PADDING, aboveTop)
+            : Math.min(
+                  window.innerHeight -
+                      DEVICE_ACTION_TOOLTIP_VIEWPORT_PADDING -
+                      tooltipHeight,
+                  belowTop,
+              );
+
+        setPosition({
+            top,
+            left,
+            arrowCenterX,
+            placement: placeAbove ? "above" : "below",
+        });
+    }, [anchorEl]);
+
+    useLayoutEffect(() => {
+        if (!visible || !anchorEl) {
+            setPosition(null);
+            return;
+        }
+
+        const syncPosition = () => {
+            window.requestAnimationFrame(updatePosition);
+        };
+
+        syncPosition();
+        window.addEventListener("resize", syncPosition);
+        window.addEventListener("scroll", syncPosition, true);
+
+        return () => {
+            window.removeEventListener("resize", syncPosition);
+            window.removeEventListener("scroll", syncPosition, true);
+        };
+    }, [anchorEl, updatePosition, visible]);
+
+    if (!visible || !anchorEl) {
+        return null;
+    }
+
+    return createPortal(
+        <div
+            ref={tooltipRef}
+            className={`sr-device-action-tooltip ${position?.placement === "below" ? "is-below" : "is-above"}`}
+            role="tooltip"
+            style={{
+                position: "fixed",
+                top: position ? `${position.top}px` : "0px",
+                left: position ? `${position.left}px` : "0px",
+                opacity: position ? 1 : 0,
+                ["--sr-device-action-tooltip-arrow-center-x" as string]: position
+                    ? `${position.arrowCenterX}px`
+                    : undefined,
+            }}
+        >
+            {label}
+            <div className="sr-device-action-tooltip-arrow" />
+        </div>,
+        document.body,
+    );
+};
+
 const IconActionButton: React.FC<{
     icon: React.ElementType;
     label: string;
     onClick: () => void;
     disabled?: boolean;
     destructive?: boolean;
-}> = ({ icon: Icon, label, onClick, disabled, destructive }) => (
-    <button
-        type="button"
-        className={[
-            "sr-device-action-button",
-            destructive ? "is-destructive" : "",
-        ]
-            .filter(Boolean)
-            .join(" ")}
-        aria-label={label}
-        title={label}
-        onClick={onClick}
-        disabled={disabled}
-    >
-        <Icon size={15} />
-    </button>
-);
+}> = ({ icon: Icon, label, onClick, disabled, destructive }) => {
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const [isTooltipVisible, setIsTooltipVisible] = useState(false);
+
+    const showTooltip = useCallback(() => {
+        if (!disabled) {
+            setIsTooltipVisible(true);
+        }
+    }, [disabled]);
+
+    const hideTooltip = useCallback(() => {
+        setIsTooltipVisible(false);
+    }, []);
+
+    return (
+        <>
+            <button
+                ref={buttonRef}
+                type="button"
+                className={[
+                    "sr-device-action-button",
+                    destructive ? "is-destructive" : "",
+                ]
+                    .filter(Boolean)
+                    .join(" ")}
+                onClick={onClick}
+                onMouseEnter={showTooltip}
+                onMouseLeave={hideTooltip}
+                onFocus={showTooltip}
+                onBlur={hideTooltip}
+                disabled={disabled}
+            >
+                <Icon size={15} aria-hidden="true" />
+                <span className="sr-screen-reader-only">{label}</span>
+            </button>
+            <DeviceActionTooltip
+                anchorEl={buttonRef.current}
+                label={label}
+                visible={isTooltipVisible}
+            />
+        </>
+    );
+};
 
 const DeviceCard: React.FC<{
     device: SyroDeviceCardState;
@@ -1782,6 +1928,9 @@ const SyncTab: React.FC<SyncTabProps> = ({
     const showRecoveryRow = Boolean(
         deviceManagement?.hasPendingAction || deviceManagement?.readOnlyReason,
     );
+    const hasDeviceManagementMeta = Boolean(
+        showRecoveryRow || deviceManagementLoading || deviceManagementError,
+    );
 
     return (
         <div className="sr-settings-sections">
@@ -1819,44 +1968,52 @@ const SyncTab: React.FC<SyncTabProps> = ({
                 />
             </Section>
 
-            <Section title={t("SETTINGS_SYNC_DEVICE_MANAGEMENT")}>
-                {showRecoveryRow ? (
-                    <ActionRow
-                        label={t("SETTINGS_SYNC_OPEN_RECOVERY")}
-                        desc={
-                            deviceManagement?.hasPendingAction
-                                ? t("SETTINGS_SYNC_OPEN_RECOVERY_DESC")
-                                : deviceManagement?.readOnlyReason
-                                  ? deviceManagement.readOnlyReason
-                                  : t("SETTINGS_SYNC_OPEN_RECOVERY_DESC")
-                        }
-                    >
-                        <button
-                            disabled={actionKey === "open-recovery"}
-                            onClick={() =>
-                                void runAction("open-recovery", () => onOpenRecovery?.())
-                            }
-                        >
-                            {t("OPEN")}
-                        </button>
-                    </ActionRow>
-                ) : null}
-                {deviceManagementLoading ? (
-                    <div className="setting-item">
-                        <div className="setting-item-info">
-                            <div className="setting-item-description">
-                                {t("SETTINGS_SYNC_DEVICE_LOADING")}
+            <Section
+                title={t("SETTINGS_SYNC_DEVICE_MANAGEMENT")}
+                className="sr-device-management-section"
+                wrapChildren={false}
+            >
+                {hasDeviceManagementMeta ? (
+                    <div className="setting-items sr-device-management-list">
+                        {showRecoveryRow ? (
+                            <ActionRow
+                                label={t("SETTINGS_SYNC_OPEN_RECOVERY")}
+                                desc={
+                                    deviceManagement?.hasPendingAction
+                                        ? t("SETTINGS_SYNC_OPEN_RECOVERY_DESC")
+                                        : deviceManagement?.readOnlyReason
+                                          ? deviceManagement.readOnlyReason
+                                          : t("SETTINGS_SYNC_OPEN_RECOVERY_DESC")
+                                }
+                            >
+                                <button
+                                    disabled={actionKey === "open-recovery"}
+                                    onClick={() =>
+                                        void runAction("open-recovery", () => onOpenRecovery?.())
+                                    }
+                                >
+                                    {t("OPEN")}
+                                </button>
+                            </ActionRow>
+                        ) : null}
+                        {deviceManagementLoading ? (
+                            <div className="setting-item">
+                                <div className="setting-item-info">
+                                    <div className="setting-item-description">
+                                        {t("SETTINGS_SYNC_DEVICE_LOADING")}
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                ) : null}
-                {deviceManagementError ? (
-                    <div className="setting-item">
-                        <div className="setting-item-info">
-                            <div className="setting-item-description">
-                                {deviceManagementError}
+                        ) : null}
+                        {deviceManagementError ? (
+                            <div className="setting-item">
+                                <div className="setting-item-info">
+                                    <div className="setting-item-description">
+                                        {deviceManagementError}
+                                    </div>
+                                </div>
                             </div>
-                        </div>
+                        ) : null}
                     </div>
                 ) : null}
                 <div className="setting-item setting-item-heading sr-device-group-heading">
@@ -1977,15 +2134,7 @@ const SyncTab: React.FC<SyncTabProps> = ({
                             ))}
                         </div>
                     </>
-                ) : (
-                    <div className="setting-item">
-                        <div className="setting-item-info">
-                            <div className="setting-item-description">
-                                {t("SETTINGS_SYNC_INVALID_DEVICE_EMPTY")}
-                            </div>
-                        </div>
-                    </div>
-                )}
+                ) : null}
             </Section>
         </div>
     );

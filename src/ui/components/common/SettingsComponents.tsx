@@ -39,18 +39,33 @@ export const BaseComponent: React.FC<BaseComponentProps> = ({
 interface SectionProps {
     title?: string;
     children: React.ReactNode;
+    className?: string;
+    contentClassName?: string;
+    wrapChildren?: boolean;
 }
 
 // Keep layout styling in CSS so sections stay aligned with the Obsidian theme.
-export const Section: React.FC<SectionProps> = ({ title, children }) => (
-    <div className="setting-group sr-setting-section">
+export const Section: React.FC<SectionProps> = ({
+    title,
+    children,
+    className = "",
+    contentClassName = "",
+    wrapChildren = true,
+}) => (
+    <div className={["setting-group", "sr-setting-section", className].filter(Boolean).join(" ")}>
         {title && (
             <div className="setting-item setting-item-heading">
                 <div className="setting-item-name">{title}</div>
                 <div className="setting-item-control" />
             </div>
         )}
-        <div className="setting-items">{children}</div>
+        {wrapChildren ? (
+            <div className={["setting-items", contentClassName].filter(Boolean).join(" ")}>
+                {children}
+            </div>
+        ) : (
+            children
+        )}
     </div>
 );
 
