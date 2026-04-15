@@ -1968,11 +1968,7 @@ const SyncTab: React.FC<SyncTabProps> = ({
                 />
             </Section>
 
-            <Section
-                title={t("SETTINGS_SYNC_DEVICE_MANAGEMENT")}
-                className="sr-device-management-section"
-                wrapChildren={false}
-            >
+            <Section className="sr-device-management-section" wrapChildren={false}>
                 {hasDeviceManagementMeta ? (
                     <div className="setting-items sr-device-management-list">
                         {showRecoveryRow ? (

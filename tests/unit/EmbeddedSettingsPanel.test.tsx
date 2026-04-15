@@ -1018,12 +1018,15 @@ describe("EmbeddedSettingsPanel", () => {
             openTab(view.container, "Sync");
             await flushPromises();
 
-            expect(view.container.textContent).toContain("Device management");
+            expect(view.container.textContent).toContain("Current device");
+            expect(view.container.textContent).toContain("Other devices");
+            expect(view.container.textContent).toContain("Invalid devices");
             expect(view.container.textContent).toContain("Desktop");
             expect(view.container.textContent).toContain("Mobile");
             expect(view.container.textContent).toContain("Desktop--ec3c");
             expect(view.container.textContent).toContain("Missing device.JSON");
             expect(view.container.textContent).toContain("Needs sync");
+            expect(view.container.textContent).not.toContain("Device management");
             expect(view.container.textContent).not.toContain("Device ID");
             expect(view.container.textContent).not.toContain("Short ID");
             expect(view.container.textContent).not.toContain("Set as current device");
@@ -1181,14 +1184,16 @@ describe("EmbeddedSettingsPanel", () => {
             openTab(view.container, "Sync");
             await flushPromises();
 
-            const deviceManagementSection = Array.from(
-                view.container.querySelectorAll<HTMLElement>(".setting-group.sr-setting-section"),
-            ).find((group) =>
-                group.querySelector(".setting-item.setting-item-heading > .setting-item-name")
-                    ?.textContent === "Device management",
+            const deviceManagementSection = view.container.querySelector<HTMLElement>(
+                ".setting-group.sr-setting-section.sr-device-management-section",
             );
 
             expect(deviceManagementSection).toBeTruthy();
+            expect(
+                deviceManagementSection?.querySelector(
+                    '.setting-item.setting-item-heading > .setting-item-name',
+                ),
+            ).toBeNull();
 
             const directGroupHeadings = Array.from(deviceManagementSection?.children ?? []).filter(
                 (child): child is HTMLElement =>
@@ -1196,11 +1201,11 @@ describe("EmbeddedSettingsPanel", () => {
             );
             expect(directGroupHeadings).toHaveLength(2);
             expect(directGroupHeadings.map((heading) => heading.textContent?.trim())).toEqual([
-                "This device",
+                "Current device",
                 "Other devices",
             ]);
 
-            expect(view.container.textContent).not.toContain("Invalid directories");
+            expect(view.container.textContent).not.toContain("Invalid devices");
             expect(view.container.textContent).not.toContain(
                 "There are no invalid device directories.",
             );
