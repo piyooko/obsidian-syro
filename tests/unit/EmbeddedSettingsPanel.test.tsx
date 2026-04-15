@@ -1141,6 +1141,46 @@ describe("EmbeddedSettingsPanel", () => {
         }
     });
 
+    it("reloads device management in place after Sync actions and stays on the Sync tab", async () => {
+        let deviceManagement = createDeviceManagementState();
+        const loadSyroDeviceManagement = jest.fn(async () => deviceManagement);
+        const onSyroDeleteValidDevice = jest.fn(async () => {
+            deviceManagement = createDeviceManagementState({
+                devices: [],
+            });
+        });
+        const view = renderPanel(createSettings(), {
+            loadSyroDeviceManagement,
+            onSyroDeleteValidDevice,
+        });
+
+        try {
+            openTab(view.container, "Sync");
+            await flushPromises();
+
+            const deleteDeviceButton = findDeviceActionButton(view.container, "Delete device");
+            expect(deleteDeviceButton).not.toBeNull();
+            expect(loadSyroDeviceManagement).toHaveBeenCalledTimes(1);
+            expect(view.container.textContent).toContain("Other devices");
+            expect(view.container.textContent).toContain("Mobile");
+
+            await act(async () => {
+                deleteDeviceButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+            await flushPromises();
+
+            expect(onSyroDeleteValidDevice).toHaveBeenCalledWith(
+                "91ac1111-2222-3333-4444-555555555555",
+            );
+            expect(loadSyroDeviceManagement).toHaveBeenCalledTimes(2);
+            expect(view.container.textContent).toContain("Other devices");
+            expect(view.container.textContent).not.toContain("Mobile");
+            expect(getActiveTabText(view.container)).toContain("Sync");
+        } finally {
+            view.cleanup();
+        }
+    });
+
     it("shows a custom device action tooltip without relying on button title attributes", async () => {
         const view = renderPanel(createSettings(), {
             loadSyroDeviceManagement: async () => createDeviceManagementState(),

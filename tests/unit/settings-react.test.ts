@@ -159,7 +159,7 @@ describe("SRSettingTab", () => {
         expect(noticeMock).toHaveBeenCalledTimes(1);
     });
 
-    it("wires device management callbacks to plugin actions and redraws after completion", async () => {
+    it("wires device management callbacks to plugin actions without remounting the settings panel", async () => {
         const plugin = {
             data: { settings: {} },
             manifest: { version: "0.0.8" },
@@ -202,6 +202,6 @@ describe("SRSettingTab", () => {
         expect(plugin.pullSyroDeviceToCurrent).toHaveBeenCalledWith("device-2");
         expect(plugin.deleteValidSyroDevice).toHaveBeenCalledWith("device-3");
         expect(plugin.deleteInvalidSyroDeviceDirectory).toHaveBeenCalledWith("orphan-folder");
-        expect(createRootMock).toHaveBeenCalledTimes(5);
+        expect(createRootMock).toHaveBeenCalledTimes(1);
     });
 });

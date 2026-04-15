@@ -296,6 +296,7 @@ interface SyncTabProps extends TabProps {
     deviceManagement: SyroDeviceManagementViewState | null;
     deviceManagementLoading: boolean;
     deviceManagementError: string | null;
+    reloadDeviceManagement?: () => Promise<void>;
     onRenameCurrentDevice?: (deviceName: string) => Promise<void>;
     onPullToCurrentDevice?: (deviceId: string) => Promise<void>;
     onDeleteValidDevice?: (deviceId: string) => Promise<void>;
@@ -1878,6 +1879,7 @@ const SyncTab: React.FC<SyncTabProps> = ({
     deviceManagement,
     deviceManagementLoading,
     deviceManagementError,
+    reloadDeviceManagement,
     onRenameCurrentDevice,
     onPullToCurrentDevice,
     onDeleteValidDevice,
@@ -1919,6 +1921,23 @@ const SyncTab: React.FC<SyncTabProps> = ({
             }
         },
         [],
+    );
+
+    const runDeviceManagementAction = useCallback(
+        async (
+            nextActionKey: string,
+            task: (() => Promise<void> | void) | undefined,
+        ): Promise<boolean> => {
+            if (!task) {
+                return false;
+            }
+
+            return runAction(nextActionKey, async () => {
+                await task();
+                await reloadDeviceManagement?.();
+            });
+        },
+        [reloadDeviceManagement, runAction],
     );
 
     const currentDevice = deviceManagement?.currentDevice ?? null;
@@ -1985,7 +2004,9 @@ const SyncTab: React.FC<SyncTabProps> = ({
                                 <button
                                     disabled={actionKey === "open-recovery"}
                                     onClick={() =>
-                                        void runAction("open-recovery", () => onOpenRecovery?.())
+                                        void runDeviceManagementAction("open-recovery", () =>
+                                            onOpenRecovery?.()
+                                        )
                                     }
                                 >
                                     {t("OPEN")}
@@ -2041,7 +2062,7 @@ const SyncTab: React.FC<SyncTabProps> = ({
                                     return;
                                 }
 
-                                void runAction("rename-device", () =>
+                                void runDeviceManagementAction("rename-device", () =>
                                     onRenameCurrentDevice?.(nextDeviceName),
                                 ).then((completed) => {
                                     if (completed) {
@@ -2083,13 +2104,14 @@ const SyncTab: React.FC<SyncTabProps> = ({
                                 onCancelRename={() => undefined}
                                 onConfirmRename={() => undefined}
                                 onPullToCurrent={() =>
-                                    void runAction(`pull:${device.deviceId}`, () =>
+                                    void runDeviceManagementAction(`pull:${device.deviceId}`, () =>
                                         onPullToCurrentDevice?.(device.deviceId),
                                     )
                                 }
                                 onDeleteDevice={() =>
-                                    void runAction(`delete-valid:${device.deviceId}`, () =>
-                                        onDeleteValidDevice?.(device.deviceId),
+                                    void runDeviceManagementAction(
+                                        `delete-valid:${device.deviceId}`,
+                                        () => onDeleteValidDevice?.(device.deviceId),
                                     )
                                 }
                             />
@@ -2121,7 +2143,7 @@ const SyncTab: React.FC<SyncTabProps> = ({
                                     isReadOnly={isReadOnly}
                                     isBusy={actionKey !== null}
                                     onDelete={() =>
-                                        void runAction(
+                                        void runDeviceManagementAction(
                                             `delete-invalid:${entry.deviceFolderName}`,
                                             () => onDeleteInvalidDevice?.(entry.deviceFolderName),
                                         )
@@ -2517,6 +2539,7 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
                             deviceManagement={deviceManagement}
                             deviceManagementLoading={deviceManagementLoading}
                             deviceManagementError={deviceManagementError}
+                            reloadDeviceManagement={reloadDeviceManagement}
                             onRenameCurrentDevice={onSyroRenameCurrentDevice}
                             onPullToCurrentDevice={onSyroPullToCurrentDevice}
                             onDeleteValidDevice={onSyroDeleteValidDevice}
@@ -2535,6 +2558,7 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
             deviceManagementError,
             deviceManagementLoading,
             handleChange,
+            reloadDeviceManagement,
             onSyroDeleteInvalidDevice,
             onSyroDeleteValidDevice,
             onSyroOpenRecovery,

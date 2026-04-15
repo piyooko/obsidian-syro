@@ -58,7 +58,6 @@ export class SRSettingTab extends PluginSettingTab {
                 onSyroRenameCurrentDevice: async (deviceName) => {
                     try {
                         await this.plugin.renameCurrentSyroDevice(deviceName);
-                        this.display();
                     } catch (error) {
                         console.error("[SR-Settings] Failed to rename current Syro device", error);
                         new Notice(getDeviceManagementErrorMessage(error));
@@ -67,7 +66,6 @@ export class SRSettingTab extends PluginSettingTab {
                 onSyroPullToCurrentDevice: async (deviceId) => {
                     try {
                         await this.plugin.pullSyroDeviceToCurrent(deviceId);
-                        this.display();
                     } catch (error) {
                         console.error("[SR-Settings] Failed to sync a Syro device into current", error);
                         new Notice(getDeviceManagementErrorMessage(error));
@@ -76,7 +74,6 @@ export class SRSettingTab extends PluginSettingTab {
                 onSyroDeleteValidDevice: async (deviceId) => {
                     try {
                         await this.plugin.deleteValidSyroDevice(deviceId);
-                        this.display();
                     } catch (error) {
                         console.error("[SR-Settings] Failed to delete Syro device", error);
                         new Notice(getDeviceManagementErrorMessage(error));
@@ -85,7 +82,6 @@ export class SRSettingTab extends PluginSettingTab {
                 onSyroOpenRecovery: async () => {
                     try {
                         await this.plugin.openPendingSyroRecovery();
-                        this.display();
                     } catch (error) {
                         console.error("[SR-Settings] Failed to open Syro recovery", error);
                         new Notice(getDeviceManagementErrorMessage(error));
@@ -94,7 +90,6 @@ export class SRSettingTab extends PluginSettingTab {
                 onSyroDeleteInvalidDevice: async (deviceFolderName) => {
                     try {
                         await this.plugin.deleteInvalidSyroDeviceDirectory(deviceFolderName);
-                        this.display();
                     } catch (error) {
                         console.error(
                             "[SR-Settings] Failed to delete invalid Syro device directory",
