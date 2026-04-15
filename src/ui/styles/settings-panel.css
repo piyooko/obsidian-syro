@@ -417,16 +417,19 @@ button.sr-device-action-button:disabled {
 
 .sr-device-action-tooltip {
     z-index: var(--layer-tooltip, 70);
-    display: inline-flex;
-    align-items: center;
+    display: block;
     pointer-events: none;
+    box-sizing: border-box;
+    max-width: min(320px, calc(100vw - 16px));
     padding: 6px 10px;
     border-radius: var(--radius-s, 4px);
     background: var(--background-modifier-message, rgba(0, 0, 0, 0.9));
     color: var(--text-on-accent, #fff);
     font-size: var(--font-ui-small, 13px);
     line-height: 1.35;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
     box-shadow: var(--shadow-s);
     transform: none !important;
     margin: 0 !important;
@@ -952,10 +955,18 @@ body:not(.is-mobile) .sr-settings-panel .setting-items input[type="color"]::-moz
 }
 
 .sr-supporter-label-wrap {
+    display: inline;
+}
+
+.sr-supporter-label-text {
+    display: inline;
+}
+
+.sr-supporter-label-affix {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+    vertical-align: baseline;
+    margin-inline-start: 8px;
 }
 
 .sr-supporter-badge {
@@ -1355,11 +1366,46 @@ body.is-mobile
     .sr-settings-container
     .sr-settings-sections
     .setting-items
-    > .setting-item:not(.mod-toggle):not(.setting-item--color):not(.setting-item--action)
+    > .setting-item:not(.mod-toggle):not(.setting-item--color):not(.setting-item--action):not(.sr-device-flat-item)
     .setting-item-control {
     width: 100%;
     margin-left: 0;
     justify-content: flex-start;
+}
+
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.sr-device-flat-item
+    > .sr-device-flat-control {
+    display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+    margin-left: auto;
+    justify-content: flex-end;
+    align-self: flex-end !important;
+    padding-top: 0;
+}
+
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.sr-device-flat-item
+    > .sr-device-flat-control
+    > .sr-device-action-button {
+    width: 32px;
+    min-width: 32px;
+    max-width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+}
+
+.is-mobile button.sr-device-action-button.is-destructive {
+    color: var(--color-red);
+    border-color: color-mix(in srgb, var(--color-red) 32%, var(--background-modifier-border));
+    background-color: color-mix(in srgb, var(--color-red) 8%, transparent);
 }
 
 body.is-mobile

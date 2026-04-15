@@ -76,16 +76,28 @@ const LabelWithBadge = ({
     label,
     badgeText,
     badgeAriaLabel,
+    badgeTooltipLabel,
 }: {
     label: string;
     badgeText: string;
     badgeAriaLabel: string;
+    badgeTooltipLabel?: string;
 }) => (
     <span className="sr-supporter-label-wrap">
-        <span>{label}</span>
-        <span className="sr-supporter-badge" aria-label={badgeAriaLabel}>
-            <SupporterDiamond />
-            <span>{badgeText}</span>
+        <span className="sr-supporter-label-text">{label}</span>
+        <span className="sr-supporter-label-affix">
+            {badgeTooltipLabel ? (
+                <TooltipBadge
+                    badgeText={badgeText}
+                    badgeAriaLabel={badgeAriaLabel}
+                    tooltipLabel={badgeTooltipLabel}
+                />
+            ) : (
+                <span className="sr-supporter-badge" aria-label={badgeAriaLabel}>
+                    <SupporterDiamond />
+                    <span>{badgeText}</span>
+                </span>
+            )}
         </span>
     </span>
 );
@@ -106,6 +118,7 @@ const LabelWithLab = ({ label }: { label: string }) => (
         label={label}
         badgeText={t("SETTINGS_LAB_BADGE").toUpperCase()}
         badgeAriaLabel={t("SETTINGS_LAB_BADGE_ARIA")}
+        badgeTooltipLabel={t("SETTINGS_LAB_BADGE_ARIA")}
     />
 );
 
@@ -458,6 +471,30 @@ const DEVICE_ACTION_TOOLTIP_GAP = 10;
 const DEVICE_ACTION_TOOLTIP_ARROW_SIZE = 8;
 const DEVICE_ACTION_TOOLTIP_ARROW_PADDING = 10;
 
+function hasFineHoverPointer(): boolean {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+        return true;
+    }
+
+    return window.matchMedia("(any-hover: hover) and (any-pointer: fine)").matches;
+}
+
+function isMobileSettingsSurface(): boolean {
+    if (typeof document === "undefined") {
+        return false;
+    }
+
+    return document.body.classList.contains("is-mobile");
+}
+
+function shouldEnableActionButtonTooltips(): boolean {
+    return !isMobileSettingsSurface() || hasFineHoverPointer();
+}
+
+function shouldUseTapTooltips(): boolean {
+    return isMobileSettingsSurface() && !hasFineHoverPointer();
+}
+
 const DeviceActionTooltip: React.FC<{
     anchorEl: HTMLElement | null;
     label: string;
@@ -574,9 +611,10 @@ const IconActionButton: React.FC<{
 }> = ({ icon: Icon, label, onClick, disabled, destructive }) => {
     const buttonRef = useRef<HTMLButtonElement>(null);
     const [isTooltipVisible, setIsTooltipVisible] = useState(false);
+    const lastPointerTypeRef = useRef<string | null>(null);
 
     const showTooltip = useCallback(() => {
-        if (!disabled) {
+        if (!disabled && shouldEnableActionButtonTooltips()) {
             setIsTooltipVisible(true);
         }
     }, [disabled]);
@@ -584,6 +622,26 @@ const IconActionButton: React.FC<{
     const hideTooltip = useCallback(() => {
         setIsTooltipVisible(false);
     }, []);
+
+    const handlePointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+        lastPointerTypeRef.current = event.pointerType;
+        if (!shouldEnableActionButtonTooltips()) {
+            setIsTooltipVisible(false);
+        }
+    }, []);
+
+    const handleFocus = useCallback(() => {
+        if (lastPointerTypeRef.current && lastPointerTypeRef.current !== "mouse") {
+            return;
+        }
+
+        showTooltip();
+    }, [showTooltip]);
+
+    const handleClick = useCallback(() => {
+        hideTooltip();
+        onClick();
+    }, [hideTooltip, onClick]);
 
     return (
         <>
@@ -596,10 +654,11 @@ const IconActionButton: React.FC<{
                 ]
                     .filter(Boolean)
                     .join(" ")}
-                onClick={onClick}
+                onClick={handleClick}
+                onPointerDown={handlePointerDown}
                 onMouseEnter={showTooltip}
                 onMouseLeave={hideTooltip}
-                onFocus={showTooltip}
+                onFocus={handleFocus}
                 onBlur={hideTooltip}
                 disabled={disabled}
             >
@@ -618,6 +677,7 @@ const IconActionButton: React.FC<{
 const InfoTooltipIcon: React.FC<{ label: string }> = ({ label }) => {
     const iconRef = useRef<HTMLSpanElement>(null);
     const [isTooltipVisible, setIsTooltipVisible] = useState(false);
+    const lastPointerTypeRef = useRef<string | null>(null);
 
     const showTooltip = useCallback(() => {
         setIsTooltipVisible(true);
@@ -627,6 +687,26 @@ const InfoTooltipIcon: React.FC<{ label: string }> = ({ label }) => {
         setIsTooltipVisible(false);
     }, []);
 
+    const handlePointerDown = useCallback((event: React.PointerEvent<HTMLSpanElement>) => {
+        lastPointerTypeRef.current = event.pointerType;
+    }, []);
+
+    const handleFocus = useCallback(() => {
+        if (lastPointerTypeRef.current && lastPointerTypeRef.current !== "mouse" && shouldUseTapTooltips()) {
+            return;
+        }
+
+        showTooltip();
+    }, [showTooltip]);
+
+    const handleClick = useCallback(() => {
+        if (!shouldUseTapTooltips()) {
+            return;
+        }
+
+        setIsTooltipVisible((visible) => !visible);
+    }, []);
+
     return (
         <>
             <span
@@ -634,10 +714,12 @@ const InfoTooltipIcon: React.FC<{ label: string }> = ({ label }) => {
                 tabIndex={0}
                 className="sr-sync-info-tooltip-icon"
                 data-tooltip-label={label}
+                onPointerDown={handlePointerDown}
                 onMouseEnter={showTooltip}
                 onMouseLeave={hideTooltip}
-                onFocus={showTooltip}
+                onFocus={handleFocus}
                 onBlur={hideTooltip}
+                onClick={handleClick}
                 style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -657,6 +739,74 @@ const InfoTooltipIcon: React.FC<{ label: string }> = ({ label }) => {
     );
 };
 
+function TooltipBadge({
+    badgeText,
+    badgeAriaLabel,
+    tooltipLabel,
+}: {
+    badgeText: string;
+    badgeAriaLabel: string;
+    tooltipLabel: string;
+}) {
+    const badgeRef = useRef<HTMLSpanElement>(null);
+    const [isTooltipVisible, setIsTooltipVisible] = useState(false);
+    const lastPointerTypeRef = useRef<string | null>(null);
+
+    const showTooltip = useCallback(() => {
+        setIsTooltipVisible(true);
+    }, []);
+
+    const hideTooltip = useCallback(() => {
+        setIsTooltipVisible(false);
+    }, []);
+
+    const handlePointerDown = useCallback((event: React.PointerEvent<HTMLSpanElement>) => {
+        lastPointerTypeRef.current = event.pointerType;
+    }, []);
+
+    const handleFocus = useCallback(() => {
+        if (lastPointerTypeRef.current && lastPointerTypeRef.current !== "mouse" && shouldUseTapTooltips()) {
+            return;
+        }
+
+        showTooltip();
+    }, [showTooltip]);
+
+    const handleClick = useCallback(() => {
+        if (!shouldUseTapTooltips()) {
+            return;
+        }
+
+        setIsTooltipVisible((visible) => !visible);
+    }, []);
+
+    return (
+        <>
+            <span
+                ref={badgeRef}
+                tabIndex={0}
+                role="button"
+                className="sr-supporter-badge sr-supporter-badge--tooltip"
+                aria-label={badgeAriaLabel}
+                onPointerDown={handlePointerDown}
+                onMouseEnter={showTooltip}
+                onMouseLeave={hideTooltip}
+                onFocus={handleFocus}
+                onBlur={hideTooltip}
+                onClick={handleClick}
+            >
+                <SupporterDiamond />
+                <span>{badgeText}</span>
+            </span>
+            <DeviceActionTooltip
+                anchorEl={badgeRef.current}
+                label={tooltipLabel}
+                visible={isTooltipVisible}
+            />
+        </>
+    );
+}
+
 const LabelWithInfoTooltip = ({
     label,
     tooltip,
@@ -665,8 +815,10 @@ const LabelWithInfoTooltip = ({
     tooltip: string;
 }) => (
     <span className="sr-supporter-label-wrap">
-        <span>{label}</span>
-        <InfoTooltipIcon label={tooltip} />
+        <span className="sr-supporter-label-text">{label}</span>
+        <span className="sr-supporter-label-affix">
+            <InfoTooltipIcon label={tooltip} />
+        </span>
     </span>
 );
 
@@ -756,7 +908,7 @@ const DeviceCard: React.FC<{
                     />
                 </div>
             </div>
-            <div className="setting-item-control">
+            <div className="setting-item-control sr-device-flat-control">
                 {device.canRename ? (
                     isEditingName ? (
                         <>
@@ -844,7 +996,7 @@ const InvalidDeviceCard: React.FC<{
                 />
             </div>
         </div>
-        <div className="setting-item-control">
+        <div className="setting-item-control sr-device-flat-control">
             <IconActionButton
                 icon={Trash2}
                 label={t("SETTINGS_SYNC_DELETE_INVALID_DEVICE")}
