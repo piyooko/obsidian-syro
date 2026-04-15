@@ -132,11 +132,13 @@ function renderPanel(
     options: {
         mobile?: boolean;
         loadSyroDeviceManagement?: () => Promise<any>;
-        onSyroRenameCurrentDevice?: (deviceName: string) => Promise<void>;
-        onSyroPullToCurrentDevice?: (deviceId: string) => Promise<void>;
-        onSyroDeleteValidDevice?: (deviceId: string) => Promise<void>;
-        onSyroOpenRecovery?: () => Promise<void>;
-        onSyroDeleteInvalidDevice?: (deviceFolderName: string) => Promise<void>;
+        onSyroRenameCurrentDevice?: (deviceName: string) => Promise<boolean | void>;
+        onSyroPullToCurrentDevice?: (deviceId: string) => Promise<boolean | void>;
+        onSyroDeleteValidDevice?: (deviceId: string) => Promise<boolean | void>;
+        onSyroOpenRecovery?: () => Promise<boolean | void>;
+        onSyroDeleteInvalidDevice?: (
+            deviceFolderName: string,
+        ) => Promise<boolean | void>;
     } = {},
 ) {
     const container = document.createElement("div");
@@ -1148,6 +1150,7 @@ describe("EmbeddedSettingsPanel", () => {
             deviceManagement = createDeviceManagementState({
                 devices: [],
             });
+            return true;
         });
         const view = renderPanel(createSettings(), {
             loadSyroDeviceManagement,
@@ -1175,6 +1178,38 @@ describe("EmbeddedSettingsPanel", () => {
             expect(loadSyroDeviceManagement).toHaveBeenCalledTimes(2);
             expect(view.container.textContent).toContain("Other devices");
             expect(view.container.textContent).not.toContain("Mobile");
+            expect(getActiveTabText(view.container)).toContain("Sync");
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("does not reload device management when a Sync confirmation flow is cancelled", async () => {
+        const loadSyroDeviceManagement = jest.fn(async () => createDeviceManagementState());
+        const onSyroDeleteValidDevice = jest.fn(async () => false);
+        const view = renderPanel(createSettings(), {
+            loadSyroDeviceManagement,
+            onSyroDeleteValidDevice,
+        });
+
+        try {
+            openTab(view.container, "Sync");
+            await flushPromises();
+
+            const deleteDeviceButton = findDeviceActionButton(view.container, "Delete device");
+            expect(deleteDeviceButton).not.toBeNull();
+            expect(loadSyroDeviceManagement).toHaveBeenCalledTimes(1);
+
+            await act(async () => {
+                deleteDeviceButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+            await flushPromises();
+
+            expect(onSyroDeleteValidDevice).toHaveBeenCalledWith(
+                "91ac1111-2222-3333-4444-555555555555",
+            );
+            expect(loadSyroDeviceManagement).toHaveBeenCalledTimes(1);
+            expect(view.container.textContent).toContain("Mobile");
             expect(getActiveTabText(view.container)).toContain("Sync");
         } finally {
             view.cleanup();

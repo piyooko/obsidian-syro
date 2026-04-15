@@ -279,11 +279,11 @@ interface EmbeddedSettingsPanelProps {
     settings: UISettingsState;
     onSettingsChange: (newSettings: UISettingsState) => void;
     loadSyroDeviceManagement?: () => Promise<SyroDeviceManagementViewState>;
-    onSyroRenameCurrentDevice?: (deviceName: string) => Promise<void>;
-    onSyroPullToCurrentDevice?: (deviceId: string) => Promise<void>;
-    onSyroDeleteValidDevice?: (deviceId: string) => Promise<void>;
-    onSyroOpenRecovery?: () => Promise<void>;
-    onSyroDeleteInvalidDevice?: (deviceFolderName: string) => Promise<void>;
+    onSyroRenameCurrentDevice?: (deviceName: string) => Promise<boolean | void>;
+    onSyroPullToCurrentDevice?: (deviceId: string) => Promise<boolean | void>;
+    onSyroDeleteValidDevice?: (deviceId: string) => Promise<boolean | void>;
+    onSyroOpenRecovery?: () => Promise<boolean | void>;
+    onSyroDeleteInvalidDevice?: (deviceFolderName: string) => Promise<boolean | void>;
     version?: string;
 }
 
@@ -297,11 +297,11 @@ interface SyncTabProps extends TabProps {
     deviceManagementLoading: boolean;
     deviceManagementError: string | null;
     reloadDeviceManagement?: () => Promise<void>;
-    onRenameCurrentDevice?: (deviceName: string) => Promise<void>;
-    onPullToCurrentDevice?: (deviceId: string) => Promise<void>;
-    onDeleteValidDevice?: (deviceId: string) => Promise<void>;
-    onOpenRecovery?: () => Promise<void>;
-    onDeleteInvalidDevice?: (deviceFolderName: string) => Promise<void>;
+    onRenameCurrentDevice?: (deviceName: string) => Promise<boolean | void>;
+    onPullToCurrentDevice?: (deviceId: string) => Promise<boolean | void>;
+    onDeleteValidDevice?: (deviceId: string) => Promise<boolean | void>;
+    onOpenRecovery?: () => Promise<boolean | void>;
+    onDeleteInvalidDevice?: (deviceFolderName: string) => Promise<boolean | void>;
 }
 
 const getClozeContextModeDesc = (mode: string) => {
@@ -1926,15 +1926,17 @@ const SyncTab: React.FC<SyncTabProps> = ({
     const runDeviceManagementAction = useCallback(
         async (
             nextActionKey: string,
-            task: (() => Promise<void> | void) | undefined,
+            task: (() => Promise<boolean | void> | boolean | void) | undefined,
         ): Promise<boolean> => {
             if (!task) {
                 return false;
             }
 
             return runAction(nextActionKey, async () => {
-                await task();
-                await reloadDeviceManagement?.();
+                const shouldReload = await task();
+                if (shouldReload !== false) {
+                    await reloadDeviceManagement?.();
+                }
             });
         },
         [reloadDeviceManagement, runAction],

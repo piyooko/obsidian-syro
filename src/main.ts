@@ -2353,13 +2353,13 @@ export default class SRPlugin extends Plugin {
         this.syncEvents.emit("sync-complete");
     }
 
-    public async openPendingSyroRecovery(): Promise<void> {
+    public async openPendingSyroRecovery(): Promise<boolean> {
         if (
             (!this.pendingSyroRecoveryContext && !this.pendingSyroDeviceSelectionContext) ||
             !this.syroWorkspace
         ) {
             new Notice(t("NOTICE_SYRO_RECOVERY_NOT_NEEDED"));
-            return;
+            return false;
         }
 
         await this.awaitWorkspaceLayoutReady();
@@ -2367,14 +2367,15 @@ export default class SRPlugin extends Plugin {
             const layout = await this.runExclusivePendingSyroRecovery();
             if (!layout) {
                 new Notice(t("NOTICE_SYRO_RECOVERY_CANCELLED"));
-                return;
+                return false;
             }
         } catch (error) {
             this.enableSyroReadOnly(`[SR-Syro] Failed to complete recovery: ${String(error)}`);
-            return;
+            return false;
         }
 
         await this.reloadAfterSyroDeviceChange();
+        return true;
     }
 
     private async flushBeforeSyroDeviceMutation(): Promise<void> {
@@ -2590,7 +2591,7 @@ export default class SRPlugin extends Plugin {
         new Notice(t("NOTICE_SYRO_DEVICE_SELECTED"));
     }
 
-    public async renameCurrentSyroDevice(nextDeviceName: string): Promise<void> {
+    public async renameCurrentSyroDevice(nextDeviceName: string): Promise<boolean> {
         if (!this.syroWorkspace || !this.syroLayout) {
             throw new Error("[SR-Syro] Current device is unavailable.");
         }
@@ -2599,9 +2600,10 @@ export default class SRPlugin extends Plugin {
         this.syroLayout = await this.syroWorkspace.renameCurrentDevice(this.syroLayout, nextDeviceName);
         await this.reloadAfterSyroDeviceChange();
         new Notice(t("NOTICE_SYRO_DEVICE_RENAMED"));
+        return true;
     }
 
-    public async pullSyroDeviceToCurrent(deviceId: string): Promise<void> {
+    public async pullSyroDeviceToCurrent(deviceId: string): Promise<boolean> {
         if (!this.syroWorkspace || !this.syroLayout || !this.syroSessionManager) {
             throw new Error("[SR-Syro] Current device is unavailable.");
         }
@@ -2625,7 +2627,7 @@ export default class SRPlugin extends Plugin {
             }),
         );
         if (!confirmed) {
-            return;
+            return false;
         }
 
         await this.flushBeforeSyroDeviceMutation();
@@ -2636,9 +2638,10 @@ export default class SRPlugin extends Plugin {
         await this.syroSessionManager.resetCurrentDeviceSessionsToRemoteEof();
         await this.reloadAfterSyroDeviceChange();
         new Notice(t("NOTICE_SYRO_DEVICE_PULLED"));
+        return true;
     }
 
-    public async deleteValidSyroDevice(deviceId: string): Promise<void> {
+    public async deleteValidSyroDevice(deviceId: string): Promise<boolean> {
         if (!this.syroWorkspace || !this.syroSessionManager) {
             throw new Error("[SR-Syro] Workspace is unavailable.");
         }
@@ -2661,16 +2664,17 @@ export default class SRPlugin extends Plugin {
             }),
         );
         if (!confirmed) {
-            return;
+            return false;
         }
 
         await this.flushBeforeSyroDeviceMutation();
         await this.syroWorkspace.deleteValidDevice(deviceId);
         await this.syroSessionManager.pruneRemoteDeviceCursorState(targetDevice.deviceFolderName);
         new Notice(t("NOTICE_SYRO_VALID_DEVICE_DELETED"));
+        return true;
     }
 
-    public async deleteInvalidSyroDeviceDirectory(deviceFolderName: string): Promise<void> {
+    public async deleteInvalidSyroDeviceDirectory(deviceFolderName: string): Promise<boolean> {
         if (!this.syroWorkspace) {
             throw new Error("[SR-Syro] Workspace is unavailable.");
         }
@@ -2681,11 +2685,12 @@ export default class SRPlugin extends Plugin {
             deviceFolderName,
         ).openAndWait();
         if (!confirmed) {
-            return;
+            return false;
         }
 
         await this.syroWorkspace.deleteInvalidDeviceDirectory(deviceFolderName);
         new Notice(t("NOTICE_SYRO_INVALID_DEVICE_DELETED"));
+        return true;
     }
 
     private async importPendingSyroSessions(

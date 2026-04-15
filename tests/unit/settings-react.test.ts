@@ -184,10 +184,12 @@ describe("SRSettingTab", () => {
         const renderedElement = root.render.mock.calls[0]?.[0] as {
             props: {
                 loadSyroDeviceManagement: () => Promise<unknown>;
-                onSyroRenameCurrentDevice: (deviceName: string) => Promise<void>;
-                onSyroPullToCurrentDevice: (deviceId: string) => Promise<void>;
-                onSyroDeleteValidDevice: (deviceId: string) => Promise<void>;
-                onSyroDeleteInvalidDevice: (deviceFolderName: string) => Promise<void>;
+                onSyroRenameCurrentDevice: (deviceName: string) => Promise<boolean | void>;
+                onSyroPullToCurrentDevice: (deviceId: string) => Promise<boolean | void>;
+                onSyroDeleteValidDevice: (deviceId: string) => Promise<boolean | void>;
+                onSyroDeleteInvalidDevice: (
+                    deviceFolderName: string,
+                ) => Promise<boolean | void>;
             };
         };
 
