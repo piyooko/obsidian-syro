@@ -622,7 +622,7 @@ export default {
     SETTINGS_SYNC_CURRENT_DEVICE_BADGE: "当前",
     SETTINGS_SYNC_THIS_DEVICE: "当前设备",
     SETTINGS_SYNC_THIS_DEVICE_TOOLTIP:
-        "当前安装所绑定的独立设备身份，多端同步依赖此身份隔离不同设备的数据写入。",
+        "当前设备的独立身份，多端同步依赖此身份隔离不同设备的数据写入。",
     SETTINGS_SYNC_OTHER_DEVICES: "其他设备",
     SETTINGS_SYNC_OTHER_DEVICES_TOOLTIP:
         "参与同步的其他有效设备，可作为当前设备建立基线或拉取覆盖的数据来源。",
