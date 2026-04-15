@@ -266,6 +266,14 @@ function findDeviceActionButton(container: HTMLElement, label: string): HTMLButt
     );
 }
 
+function findSyncInfoTooltipIcon(container: HTMLElement, label: string): HTMLElement | null {
+    return (
+        Array.from(container.querySelectorAll<HTMLElement>(".sr-sync-info-tooltip-icon")).find(
+            (element) => element.getAttribute("data-tooltip-label") === label,
+        ) ?? null
+    );
+}
+
 function dispatchTouchEvent(
     target: HTMLElement,
     type: "touchstart" | "touchmove" | "touchend",
@@ -1082,7 +1090,17 @@ describe("EmbeddedSettingsPanel", () => {
                     (label) => label.textContent?.trim(),
                 ),
             );
+            const syncSummaryGroup =
+                Array.from(view.container.querySelectorAll<HTMLElement>(".setting-group")).find(
+                    (group) =>
+                        group.textContent?.includes("Multi-device incremental sync") === true,
+                ) ?? null;
 
+            expect(syncSummaryGroup?.textContent).toContain("Multi-device incremental sync");
+            expect(syncSummaryGroup?.textContent).toContain("LAB");
+            expect(syncSummaryGroup?.textContent).toContain(
+                'By isolating device identities, this mechanism prevents plugin data conflicts during multi-device sync and uses recorded sessions to incrementally sync data changes across devices. Before running "pull overwrite", "rebuild", or "delete", Manually back up the plugin files.',
+            );
             expect(view.container.textContent).toContain("Current device");
             expect(view.container.textContent).toContain("Other devices");
             expect(view.container.textContent).toContain("Invalid devices");
@@ -1228,6 +1246,50 @@ describe("EmbeddedSettingsPanel", () => {
         }
     });
 
+    it("shows sync info tooltips without relying on title attributes", async () => {
+        const view = renderPanel(createSettings(), {
+            loadSyroDeviceManagement: async () => createDeviceManagementState(),
+        });
+
+        try {
+            openTab(view.container, "Sync");
+            await flushPromises();
+
+            const tooltipLabels = [
+                "Manually reopen the guided flow for device recovery, baseline setup, or rebuild after an abnormal state.",
+                "The independent device identity bound to this installation. Multi-device sync uses it to isolate writes from different devices.",
+                "Other valid devices participating in sync. They can be used as a source for baseline setup or pull-to-overwrite.",
+                "Device directories with missing or damaged metadata. The system will not treat them as normal sync sources.",
+            ];
+
+            for (const tooltipLabel of tooltipLabels) {
+                const icon = findSyncInfoTooltipIcon(view.container, tooltipLabel);
+                expect(icon).not.toBeNull();
+                expect(icon?.getAttribute("title")).toBeNull();
+                expect(icon?.getAttribute("aria-label")).toBeNull();
+            }
+
+            const recoveryInfoIcon = findSyncInfoTooltipIcon(view.container, tooltipLabels[0]);
+            expect(recoveryInfoIcon).not.toBeNull();
+
+            await act(async () => {
+                recoveryInfoIcon?.focus();
+            });
+
+            const tooltip = document.body.querySelector(".sr-device-action-tooltip");
+            expect(tooltip).not.toBeNull();
+            expect(tooltip?.textContent).toContain(tooltipLabels[0]);
+
+            await act(async () => {
+                recoveryInfoIcon?.blur();
+            });
+
+            expect(document.body.querySelector(".sr-device-action-tooltip")).toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
     it("reloads device management in place after Sync actions and stays on the Sync tab", async () => {
         let deviceManagement = createDeviceManagementState();
         const loadSyroDeviceManagement = jest.fn(async () => deviceManagement);
@@ -1360,10 +1422,14 @@ describe("EmbeddedSettingsPanel", () => {
                     child instanceof HTMLElement && child.classList.contains("sr-device-group-heading"),
             );
             expect(directGroupHeadings).toHaveLength(2);
-            expect(directGroupHeadings.map((heading) => heading.textContent?.trim())).toEqual([
-                "Current device",
-                "Other devices",
-            ]);
+            expect(
+                directGroupHeadings.map(
+                    (heading) =>
+                        heading
+                            .querySelector<HTMLElement>(".sr-supporter-label-wrap > span")
+                            ?.textContent?.trim() ?? null,
+                ),
+            ).toEqual(["Current device", "Other devices"]);
 
             expect(view.container.textContent).not.toContain("Invalid devices");
             expect(view.container.textContent).not.toContain(

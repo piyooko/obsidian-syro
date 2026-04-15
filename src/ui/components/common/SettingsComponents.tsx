@@ -37,7 +37,7 @@ export const BaseComponent: React.FC<BaseComponentProps> = ({
 // Section Interface (Native Obsidian Grouping)
 // ==========================================
 interface SectionProps {
-    title?: string;
+    title?: React.ReactNode;
     children: React.ReactNode;
     className?: string;
     contentClassName?: string;

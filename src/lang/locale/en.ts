@@ -808,9 +808,16 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_SYNC_INVALID_DEVICE_DIRS: "Invalid Directories",
     SETTINGS_SYNC_DEVICE_LOADING: "Loading device information...",
     SETTINGS_SYNC_DEVICE_LOAD_ERROR: "Unable to load device information.",
+    SETTINGS_SYNC_MULTI_DEVICE_TITLE: "Multi-device incremental sync",
+    SETTINGS_SYNC_MULTI_DEVICE_DESC:
+        'By isolating device identities, this mechanism prevents plugin data conflicts during multi-device sync and uses recorded sessions to incrementally sync data changes across devices. Before running "pull overwrite", "rebuild", or "delete", ',
+    SETTINGS_SYNC_MULTI_DEVICE_BACKUP_EMPHASIS: "manually back up the plugin files",
+    SETTINGS_SYNC_MULTI_DEVICE_BACKUP_SUFFIX: ".",
     SETTINGS_SYNC_NO_CURRENT_DEVICE: "There is no claimed current device.",
     SETTINGS_SYNC_OPEN_RECOVERY: "Open Sync Recovery",
     SETTINGS_SYNC_OPEN_RECOVERY_DESC: "Reopen the pending Syro recovery or device selection flow.",
+    SETTINGS_SYNC_OPEN_RECOVERY_TOOLTIP:
+        "Manually reopen the guided flow for device recovery, baseline setup, or rebuild after an abnormal state.",
     SETTINGS_SYNC_RENAME_CURRENT_DEVICE: "Rename Current Device",
     SETTINGS_SYNC_RENAME_CURRENT_DEVICE_DESC:
         "Only updates the current device display name and folder name. The deviceId stays unchanged.",
@@ -818,8 +825,14 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_SYNC_SET_CURRENT_DEVICE: "Set as current device",
     SETTINGS_SYNC_CURRENT_DEVICE_BADGE: "Current",
     SETTINGS_SYNC_THIS_DEVICE: "Current device",
+    SETTINGS_SYNC_THIS_DEVICE_TOOLTIP:
+        "The independent device identity bound to this installation. Multi-device sync uses it to isolate writes from different devices.",
     SETTINGS_SYNC_OTHER_DEVICES: "Other devices",
+    SETTINGS_SYNC_OTHER_DEVICES_TOOLTIP:
+        "Other valid devices participating in sync. They can be used as a source for baseline setup or pull-to-overwrite.",
     SETTINGS_SYNC_INVALID_DEVICES: "Invalid devices",
+    SETTINGS_SYNC_INVALID_DEVICES_TOOLTIP:
+        "Device directories with missing or damaged metadata. The system will not treat them as normal sync sources.",
     SETTINGS_SYNC_DEVICE_NEVER: "Never",
     SETTINGS_SYNC_DEVICE_ID: "Device ID",
     SETTINGS_SYNC_SHORT_DEVICE_ID: "Short ID",

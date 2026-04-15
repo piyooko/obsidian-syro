@@ -605,9 +605,15 @@ export default {
     SETTINGS_SYNC_INVALID_DEVICE_DIRS: "异常目录",
     SETTINGS_SYNC_DEVICE_LOADING: "正在加载设备信息...",
     SETTINGS_SYNC_DEVICE_LOAD_ERROR: "无法读取设备信息。",
+    SETTINGS_SYNC_MULTI_DEVICE_TITLE: "多设备增量同步",
+    SETTINGS_SYNC_MULTI_DEVICE_DESC:
+        "通过隔离设备身份防止多端数据同步时插件的数据冲突，并通过记录会话实现多设备数据变化的增量同步。在执行“拉取覆盖”、“重建”或“删除”操作前，",
+    SETTINGS_SYNC_MULTI_DEVICE_BACKUP_EMPHASIS: "请务必先手动备份插件文件",
+    SETTINGS_SYNC_MULTI_DEVICE_BACKUP_SUFFIX: "。",
     SETTINGS_SYNC_NO_CURRENT_DEVICE: "当前没有已认领的设备。",
     SETTINGS_SYNC_OPEN_RECOVERY: "打开同步恢复",
     SETTINGS_SYNC_OPEN_RECOVERY_DESC: "重新打开待处理的 Syro 恢复或设备选择流程。",
+    SETTINGS_SYNC_OPEN_RECOVERY_TOOLTIP: "手动重新唤起设备恢复、建立基线或异常重建的引导流程。",
     SETTINGS_SYNC_RENAME_CURRENT_DEVICE: "重命名当前设备",
     SETTINGS_SYNC_RENAME_CURRENT_DEVICE_DESC:
         "仅修改当前设备的展示名称与目录名，`deviceId` 保持不变。",
@@ -615,8 +621,14 @@ export default {
     SETTINGS_SYNC_SET_CURRENT_DEVICE: "设为当前设备",
     SETTINGS_SYNC_CURRENT_DEVICE_BADGE: "当前",
     SETTINGS_SYNC_THIS_DEVICE: "当前设备",
+    SETTINGS_SYNC_THIS_DEVICE_TOOLTIP:
+        "当前安装所绑定的独立设备身份，多端同步依赖此身份隔离不同设备的数据写入。",
     SETTINGS_SYNC_OTHER_DEVICES: "其他设备",
+    SETTINGS_SYNC_OTHER_DEVICES_TOOLTIP:
+        "参与同步的其他有效设备，可作为当前设备建立基线或拉取覆盖的数据来源。",
     SETTINGS_SYNC_INVALID_DEVICES: "异常设备",
+    SETTINGS_SYNC_INVALID_DEVICES_TOOLTIP:
+        "元数据缺失或损坏的设备目录，系统不会将其作为正常同步来源。",
     SETTINGS_SYNC_DEVICE_NEVER: "从未",
     SETTINGS_SYNC_DEVICE_ID: "设备 ID",
     SETTINGS_SYNC_SHORT_DEVICE_ID: "短 ID",

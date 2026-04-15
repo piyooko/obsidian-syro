@@ -24,6 +24,7 @@ import {
     Check,
     Cpu,
     FileText,
+    Info,
     Layout,
     Pencil,
     Save,
@@ -458,7 +459,7 @@ const DEVICE_ACTION_TOOLTIP_ARROW_SIZE = 8;
 const DEVICE_ACTION_TOOLTIP_ARROW_PADDING = 10;
 
 const DeviceActionTooltip: React.FC<{
-    anchorEl: HTMLButtonElement | null;
+    anchorEl: HTMLElement | null;
     label: string;
     visible: boolean;
 }> = ({ anchorEl, label, visible }) => {
@@ -613,6 +614,61 @@ const IconActionButton: React.FC<{
         </>
     );
 };
+
+const InfoTooltipIcon: React.FC<{ label: string }> = ({ label }) => {
+    const iconRef = useRef<HTMLSpanElement>(null);
+    const [isTooltipVisible, setIsTooltipVisible] = useState(false);
+
+    const showTooltip = useCallback(() => {
+        setIsTooltipVisible(true);
+    }, []);
+
+    const hideTooltip = useCallback(() => {
+        setIsTooltipVisible(false);
+    }, []);
+
+    return (
+        <>
+            <span
+                ref={iconRef}
+                tabIndex={0}
+                className="sr-sync-info-tooltip-icon"
+                data-tooltip-label={label}
+                onMouseEnter={showTooltip}
+                onMouseLeave={hideTooltip}
+                onFocus={showTooltip}
+                onBlur={hideTooltip}
+                style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    color: "var(--text-muted)",
+                    cursor: "help",
+                }}
+            >
+                <Info size={14} aria-hidden="true" />
+                <span className="sr-screen-reader-only">{label}</span>
+            </span>
+            <DeviceActionTooltip
+                anchorEl={iconRef.current}
+                label={label}
+                visible={isTooltipVisible}
+            />
+        </>
+    );
+};
+
+const LabelWithInfoTooltip = ({
+    label,
+    tooltip,
+}: {
+    label: React.ReactNode;
+    tooltip: string;
+}) => (
+    <span className="sr-supporter-label-wrap">
+        <span>{label}</span>
+        <InfoTooltipIcon label={tooltip} />
+    </span>
+);
 
 const DeviceCard: React.FC<{
     device: SyroDeviceCardState;
@@ -1151,7 +1207,7 @@ const AlgoTab: React.FC<TabProps> = ({ settings, onChange }) => {
         <div className="sr-settings-sections">
             {/* 1. 定位算法部分 (保持不变) */}
             <Section title={t("ALGO_LOCATOR_TITLE")}>
-                <div style={{ padding: "12px 20px" }}>
+                <div>
                     <p
                         style={{
                             margin: 0,
@@ -1996,12 +2052,35 @@ const SyncTab: React.FC<SyncTabProps> = ({
 
     return (
         <div className="sr-settings-sections">
+            <Section title={<LabelWithLab label={t("SETTINGS_SYNC_MULTI_DEVICE_TITLE")} />}>
+                <div>
+                    <p
+                        style={{
+                            margin: 0,
+                            color: "var(--text-muted)",
+                            lineHeight: "1.6",
+                            fontSize: "0.9em",
+                        }}
+                    >
+                        {t("SETTINGS_SYNC_MULTI_DEVICE_DESC")}
+                        <strong style={{ color: "var(--text-normal)" }}>
+                            {t("SETTINGS_SYNC_MULTI_DEVICE_BACKUP_EMPHASIS")}
+                        </strong>
+                        {t("SETTINGS_SYNC_MULTI_DEVICE_BACKUP_SUFFIX")}
+                    </p>
+                </div>
+            </Section>
             <Section className="sr-device-management-section" wrapChildren={false}>
                 {hasDeviceManagementMeta ? (
                     <div className="setting-items sr-device-management-list">
                         {showRecoveryRow ? (
                             <ActionRow
-                                label={t("SETTINGS_SYNC_OPEN_RECOVERY")}
+                                label={
+                                    <LabelWithInfoTooltip
+                                        label={t("SETTINGS_SYNC_OPEN_RECOVERY")}
+                                        tooltip={t("SETTINGS_SYNC_OPEN_RECOVERY_TOOLTIP")}
+                                    />
+                                }
                                 desc={
                                     deviceManagement?.hasPendingAction
                                         ? t("SETTINGS_SYNC_OPEN_RECOVERY_DESC")
@@ -2044,7 +2123,12 @@ const SyncTab: React.FC<SyncTabProps> = ({
                 ) : null}
                 <div className="setting-item setting-item-heading sr-device-group-heading">
                     <div className="setting-item-info">
-                        <div className="setting-item-name">{t("SETTINGS_SYNC_THIS_DEVICE")}</div>
+                        <div className="setting-item-name">
+                            <LabelWithInfoTooltip
+                                label={t("SETTINGS_SYNC_THIS_DEVICE")}
+                                tooltip={t("SETTINGS_SYNC_THIS_DEVICE_TOOLTIP")}
+                            />
+                        </div>
                     </div>
                 </div>
                 <div className="setting-items sr-device-management-list">
@@ -2094,7 +2178,12 @@ const SyncTab: React.FC<SyncTabProps> = ({
                 </div>
                 <div className="setting-item setting-item-heading sr-device-group-heading">
                     <div className="setting-item-info">
-                        <div className="setting-item-name">{t("SETTINGS_SYNC_OTHER_DEVICES")}</div>
+                        <div className="setting-item-name">
+                            <LabelWithInfoTooltip
+                                label={t("SETTINGS_SYNC_OTHER_DEVICES")}
+                                tooltip={t("SETTINGS_SYNC_OTHER_DEVICES_TOOLTIP")}
+                            />
+                        </div>
                     </div>
                 </div>
                 <div className="setting-items sr-device-management-list">
@@ -2140,7 +2229,10 @@ const SyncTab: React.FC<SyncTabProps> = ({
                         <div className="setting-item setting-item-heading sr-device-group-heading">
                             <div className="setting-item-info">
                                 <div className="setting-item-name">
-                                    {t("SETTINGS_SYNC_INVALID_DEVICES")}
+                                    <LabelWithInfoTooltip
+                                        label={t("SETTINGS_SYNC_INVALID_DEVICES")}
+                                        tooltip={t("SETTINGS_SYNC_INVALID_DEVICES_TOOLTIP")}
+                                    />
                                 </div>
                             </div>
                         </div>
