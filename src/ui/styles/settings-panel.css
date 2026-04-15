@@ -399,6 +399,24 @@ button.sr-device-action-button {
     transition: all 0.15s ease;
 }
 
+button.sr-device-action-button > svg,
+button.sr-device-action-button > .lucide {
+    display: block;
+    width: 15px;
+    min-width: 15px;
+    max-width: 15px;
+    height: 15px;
+    min-height: 15px;
+    max-height: 15px;
+    flex: 0 0 15px;
+    color: inherit;
+    stroke: currentColor;
+    fill: none;
+    opacity: 1;
+    overflow: visible;
+    pointer-events: none;
+}
+
 button.sr-device-action-button:hover:not(:disabled) {
     background-color: var(--background-modifier-hover);
     color: var(--text-normal);
