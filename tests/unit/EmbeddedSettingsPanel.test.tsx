@@ -327,6 +327,45 @@ describe("EmbeddedSettingsPanel", () => {
         }
     });
 
+    it("shows parsing update controls on the Parsing tab and keeps them off the Sync tab", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            openTab(view.container, "Parsing");
+
+            const currentPane = view.container.querySelector<HTMLElement>(
+                '.sr-style-setting-content-pane[data-pane-role="current"]',
+            );
+            const parsingSection = currentPane
+                ? findFirstSettingGroup(currentPane)
+                : null;
+            expect(currentPane?.textContent).toContain("Data updates");
+            expect(parsingSection?.textContent).toContain("Data updates");
+            expect(
+                findSettingItemByName(view.container, ["Automatic incremental parsing"]),
+            ).not.toBeNull();
+            expect(findSettingItemByName(view.container, ["Persist parse cache"])).not.toBeNull();
+            expect(findSettingItemByName(view.container, ["Update progress tip"])).not.toBeNull();
+
+            openTab(view.container, "Sync");
+            const syncCurrentPane = view.container.querySelector<HTMLElement>(
+                '.sr-style-setting-content-pane[data-pane-role="current"]',
+            );
+
+            expect(
+                findSettingItemByName(syncCurrentPane ?? view.container, [
+                    "Automatic incremental parsing",
+                ]),
+            ).toBeNull();
+            expect(findSettingItemByName(syncCurrentPane ?? view.container, ["Persist parse cache"]))
+                .toBeNull();
+            expect(findSettingItemByName(syncCurrentPane ?? view.container, ["Update progress tip"]))
+                .toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
     it("shows the sidebar progress controls on the Incremental Reading tab", () => {
         const view = renderPanel(createSettings());
 
@@ -1051,7 +1090,6 @@ describe("EmbeddedSettingsPanel", () => {
             expect(view.container.textContent).toContain("Mobile");
             expect(view.container.textContent).toContain("Desktop--ec3c");
             expect(view.container.textContent).toContain("Missing device.JSON");
-            expect(view.container.textContent).toContain("Needs sync");
             expect(view.container.textContent).toContain("Device reviews");
             expect(view.container.textContent).toContain("Last seen");
             expect(view.container.textContent).toContain("Storage");

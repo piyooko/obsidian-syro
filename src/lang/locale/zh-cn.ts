@@ -542,16 +542,18 @@ export default {
     SETTINGS_TAB_NOTES: "增量阅读",
     SETTINGS_TAB_ALGORITHM: "算法",
     SETTINGS_TAB_INTERFACE: "界面",
+    SETTINGS_TAB_PARSING: "解析",
     SETTINGS_TAB_SYNC: "同步",
     SETTINGS_TAB_LICENSE: "授权",
     SETTINGS_SECTION_BEHAVIOR: "行为",
     SETTINGS_CARD_ORDER: "卡片排序",
     SETTINGS_CARD_ORDER_DESC: "复习时卡片的排序方式",
+    SETTINGS_SECTION_DATA_UPDATE: "数据更新",
     SETTINGS_NOTE_CACHE_PERSISTENCE: "持久化解析缓存",
     SETTINGS_NOTE_CACHE_PERSISTENCE_DESC:
         "将解析后的笔记保存到 note_cache.json，重启后可复用未变化文件的缓存。",
-    SETTINGS_SYNC_PROGRESS_DISPLAY: "同步进度提示",
-    SETTINGS_SYNC_PROGRESS_DISPLAY_DESC: "控制右上角同步进度提示在库同步时何时显示。",
+    SETTINGS_SYNC_PROGRESS_DISPLAY: "更新进度提示",
+    SETTINGS_SYNC_PROGRESS_DISPLAY_DESC: "控制右上角更新进度提示在数据刷新时何时显示。",
     SETTINGS_SYNC_PROGRESS_DISPLAY_ALWAYS: "始终显示",
     SETTINGS_SYNC_PROGRESS_DISPLAY_FULL_ONLY: "仅全量重建时显示",
     SETTINGS_SYNC_PROGRESS_DISPLAY_NEVER: "不显示",
@@ -560,9 +562,9 @@ export default {
     SETTINGS_CARD_CAPTURE_REBUILD_QUEUED:
         "当前已有同步正在进行，已为你排队“重建全部卡片”。当前同步结束后会自动开始。",
     SETTINGS_SECTION_SYNC: "同步",
-    SETTINGS_AUTO_INCREMENTAL_SYNC: "自动增量同步",
+    SETTINGS_AUTO_INCREMENTAL_SYNC: "自动增量解析",
     SETTINGS_AUTO_INCREMENTAL_SYNC_DESC:
-        "关闭后，文件变更、进入复习和后台轮询不会自动执行增量同步。你仍可手动执行增量同步，启动时需要的初始化或自动重建会保留。",
+        "关闭后，文件变更、进入复习和后台轮询不会自动执行增量解析。你仍可手动更新数据，启动时需要的初始化或自动重建会保留。",
     SYRO_RECOVERY_BASELINE_TITLE: "Syro 需要先建立基线",
     SYRO_RECOVERY_BASELINE_DESC:
         "当前设备还没有加入现有同步体系。请选择一个来源设备，并为当前设备命名，然后建立基线快照。",

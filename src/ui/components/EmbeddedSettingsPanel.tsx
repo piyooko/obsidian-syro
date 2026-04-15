@@ -26,6 +26,7 @@ import {
     FileText,
     Layout,
     Pencil,
+    Save,
     Shield,
     Trash2,
     X,
@@ -222,6 +223,7 @@ const TABS = [
     { id: "notes", label: t("SETTINGS_TAB_NOTES"), icon: <FileText size={16} /> },
     { id: "algo", label: t("SETTINGS_TAB_ALGORITHM"), icon: <Cpu size={16} /> },
     { id: "ui", label: t("SETTINGS_TAB_INTERFACE"), icon: <Layout size={16} /> },
+    { id: "parsing", label: t("SETTINGS_TAB_PARSING"), icon: <Save size={16} /> },
     { id: "sync", label: t("SETTINGS_TAB_SYNC"), icon: <SyncTabIcon size={16} /> },
     { id: "license", label: t("SETTINGS_TAB_LICENSE"), icon: <Shield size={16} /> },
 ];
@@ -1876,9 +1878,45 @@ const NotesTab: React.FC<TabProps> = ({ settings, onChange }) => {
     );
 };
 
+const ParsingTab: React.FC<TabProps> = ({ settings, onChange }) => (
+    <div className="sr-settings-sections">
+        <Section title={t("SETTINGS_SECTION_DATA_UPDATE")}>
+            <ToggleRow
+                label={t("SETTINGS_AUTO_INCREMENTAL_SYNC")}
+                desc={t("SETTINGS_AUTO_INCREMENTAL_SYNC_DESC")}
+                value={settings.autoIncrementalSync}
+                onChange={(v) => onChange("autoIncrementalSync", v)}
+            />
+            <ToggleRow
+                label={t("SETTINGS_NOTE_CACHE_PERSISTENCE")}
+                desc={t("SETTINGS_NOTE_CACHE_PERSISTENCE_DESC")}
+                value={settings.enableNoteCachePersistence}
+                onChange={(v) => onChange("enableNoteCachePersistence", v)}
+            />
+            <SelectRow
+                label={t("SETTINGS_SYNC_PROGRESS_DISPLAY")}
+                desc={t("SETTINGS_SYNC_PROGRESS_DISPLAY_DESC")}
+                value={settings.syncProgressDisplayMode}
+                options={[
+                    { label: t("SETTINGS_SYNC_PROGRESS_DISPLAY_ALWAYS"), value: "always" },
+                    {
+                        label: t("SETTINGS_SYNC_PROGRESS_DISPLAY_FULL_ONLY"),
+                        value: "full-only",
+                    },
+                    { label: t("SETTINGS_SYNC_PROGRESS_DISPLAY_NEVER"), value: "never" },
+                ]}
+                onChange={(v) =>
+                    onChange(
+                        "syncProgressDisplayMode",
+                        v as UISettingsState["syncProgressDisplayMode"],
+                    )
+                }
+            />
+        </Section>
+    </div>
+);
+
 const SyncTab: React.FC<SyncTabProps> = ({
-    settings,
-    onChange,
     deviceManagement,
     deviceManagementLoading,
     deviceManagementError,
@@ -1958,40 +1996,6 @@ const SyncTab: React.FC<SyncTabProps> = ({
 
     return (
         <div className="sr-settings-sections">
-            <Section title={t("SETTINGS_SECTION_SYNC")}>
-                <ToggleRow
-                    label={t("SETTINGS_AUTO_INCREMENTAL_SYNC")}
-                    desc={t("SETTINGS_AUTO_INCREMENTAL_SYNC_DESC")}
-                    value={settings.autoIncrementalSync}
-                    onChange={(v) => onChange("autoIncrementalSync", v)}
-                />
-                <ToggleRow
-                    label={t("SETTINGS_NOTE_CACHE_PERSISTENCE")}
-                    desc={t("SETTINGS_NOTE_CACHE_PERSISTENCE_DESC")}
-                    value={settings.enableNoteCachePersistence}
-                    onChange={(v) => onChange("enableNoteCachePersistence", v)}
-                />
-                <SelectRow
-                    label={t("SETTINGS_SYNC_PROGRESS_DISPLAY")}
-                    desc={t("SETTINGS_SYNC_PROGRESS_DISPLAY_DESC")}
-                    value={settings.syncProgressDisplayMode}
-                    options={[
-                        { label: t("SETTINGS_SYNC_PROGRESS_DISPLAY_ALWAYS"), value: "always" },
-                        {
-                            label: t("SETTINGS_SYNC_PROGRESS_DISPLAY_FULL_ONLY"),
-                            value: "full-only",
-                        },
-                        { label: t("SETTINGS_SYNC_PROGRESS_DISPLAY_NEVER"), value: "never" },
-                    ]}
-                    onChange={(v) =>
-                        onChange(
-                            "syncProgressDisplayMode",
-                            v as UISettingsState["syncProgressDisplayMode"],
-                        )
-                    }
-                />
-            </Section>
-
             <Section className="sr-device-management-section" wrapChildren={false}>
                 {hasDeviceManagementMeta ? (
                     <div className="setting-items sr-device-management-list">
@@ -2536,6 +2540,8 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
                     return <AlgoTab settings={settings} onChange={handleChange} />;
                 case "ui":
                     return <UITab settings={settings} onChange={handleChange} />;
+                case "parsing":
+                    return <ParsingTab settings={settings} onChange={handleChange} />;
                 case "sync":
                     return (
                         <SyncTab

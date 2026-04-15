@@ -742,17 +742,19 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_TAB_NOTES: "Incremental Reading",
     SETTINGS_TAB_ALGORITHM: "Algorithm",
     SETTINGS_TAB_INTERFACE: "Interface",
+    SETTINGS_TAB_PARSING: "Parsing",
     SETTINGS_TAB_SYNC: "Sync",
     SETTINGS_TAB_LICENSE: "License",
     SETTINGS_SECTION_BEHAVIOR: "Behavior",
     SETTINGS_CARD_ORDER: "Card Order",
     SETTINGS_CARD_ORDER_DESC: "Sort order within a deck during review.",
+    SETTINGS_SECTION_DATA_UPDATE: "Data Updates",
     SETTINGS_NOTE_CACHE_PERSISTENCE: "Persist Parse Cache",
     SETTINGS_NOTE_CACHE_PERSISTENCE_DESC:
         "Store parsed notes in note_cache.json so unchanged files can be reused after restart.",
-    SETTINGS_SYNC_PROGRESS_DISPLAY: "Sync Progress Tip",
+    SETTINGS_SYNC_PROGRESS_DISPLAY: "Update Progress Tip",
     SETTINGS_SYNC_PROGRESS_DISPLAY_DESC:
-        "Control when the top-right sync progress tip is shown during vault sync.",
+        "Control when the top-right update progress tip is shown while refreshing vault data.",
     SETTINGS_SYNC_PROGRESS_DISPLAY_ALWAYS: "Always",
     SETTINGS_SYNC_PROGRESS_DISPLAY_FULL_ONLY: "Only on Full Rebuild",
     SETTINGS_SYNC_PROGRESS_DISPLAY_NEVER: "Never",
@@ -761,9 +763,9 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_CARD_CAPTURE_REBUILD_QUEUED:
         "A sync is already running. Full rebuild has been queued and will start automatically when the current sync finishes.",
     SETTINGS_SECTION_SYNC: "Sync",
-    SETTINGS_AUTO_INCREMENTAL_SYNC: "Automatic Incremental Sync",
+    SETTINGS_AUTO_INCREMENTAL_SYNC: "Automatic Incremental Parsing",
     SETTINGS_AUTO_INCREMENTAL_SYNC_DESC:
-        "When disabled, file changes, review entry, and background polling will not run incremental sync automatically. Manual incremental sync still works, and startup initialization or rebuilds stay enabled.",
+        "When disabled, file changes, review entry, and background polling will not automatically reparse changed content. Manual updates still work, and startup initialization or rebuilds stay enabled.",
     SYRO_RECOVERY_BASELINE_TITLE: "Syro needs a baseline before syncing",
     SYRO_RECOVERY_BASELINE_DESC:
         "This device has not joined the current sync set yet. Choose a source device and name this device to build a baseline snapshot.",

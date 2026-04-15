@@ -258,8 +258,8 @@
 }
 
 .sr-device-group-heading {
-    margin-top: 0;
-    padding: 8px 4px !important;
+    margin: 0 !important;
+    padding: 0 4px 8px !important;
     border: none !important;
     background: transparent !important;
 }
@@ -277,11 +277,10 @@
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.04em;
-    text-transform: uppercase;
 }
 
 .sr-device-management-section > .setting-items + .sr-device-group-heading {
-    margin-top: 22px;
+    margin-top: 24px !important;
 }
 
 .sr-device-management-list > .setting-item {
