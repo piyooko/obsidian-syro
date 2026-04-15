@@ -1073,6 +1073,11 @@ export default class SRPlugin extends Plugin {
         this.requestPluginDataSave({ domains: ["daily-state"] });
     }
 
+    public incrementDeviceReviewCount(): void {
+        bumpCurrentDeviceReviewCount(this);
+        this.requestPluginDataSave({ domains: ["daily-state"] });
+    }
+
     public decrementDailyCounts(deckName: string, isNew: boolean): void {
         this.loadDailyDeckStats();
 

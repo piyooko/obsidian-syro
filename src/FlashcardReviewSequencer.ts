@@ -535,9 +535,13 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         }
         this.history.push(historyItem);
 
-        if (this.reviewMode === FlashcardReviewMode.Review && !this._isLearning) {
+        if (this.reviewMode === FlashcardReviewMode.Review) {
             const plugin = SRPlugin.getInstance();
-            plugin.incrementDailyCounts(historyItem.counterDeckPath, historyItem.wasNew);
+            if (this._isLearning) {
+                plugin.incrementDeviceReviewCount();
+            } else {
+                plugin.incrementDailyCounts(historyItem.counterDeckPath, historyItem.wasNew);
+            }
         }
 
         if (this.reviewMode === FlashcardReviewMode.Review) {

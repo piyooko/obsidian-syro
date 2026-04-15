@@ -208,6 +208,7 @@ function installSequencerPlugin(
         getAlgorithmForItem: () => cardAlgorithm,
         store,
         incrementDailyCounts: jest.fn(),
+        incrementDeviceReviewCount: jest.fn(),
         decrementDailyCounts: jest.fn(),
         updateStatusBar: jest.fn(),
         appendSyroCardUpsert: jest.fn(async () => true),
@@ -378,6 +379,33 @@ describe("FlashcardReviewSequencer", () => {
             }),
         );
         expect(snapshot.item.timesReviewed).toBeGreaterThan(0);
+    });
+
+    test("processReview counts learning queue answers toward device review count", async () => {
+        const settings = createSettings();
+        const sequencer = createSequencer(settings);
+        const topicPath = new TopicPath(["DeckA"]);
+        const root = new Deck("root", null);
+        const deck = root.getOrCreateDeck(topicPath);
+        const { store, item } = createTrackedCardState(settings);
+        const plugin = installSequencerPlugin(settings, store);
+        const card = createCardForDeck(topicPath, item.ID);
+        const learningStart = plugin.cardAlgorithm.onSelection(item, "Again", false, false);
+
+        item.reviewUpdate(learningStart);
+        card.isNew = false;
+        card.cardListType = CardListType.LearningCard;
+        deck.learningFlashcards.push(card);
+        sequencer.setDeckTree(root, root, root, "DeckA");
+        (DataStore as any).instance = store;
+        (sequencer as any)._currentCard = card;
+        (sequencer as any)._isLearning = true;
+
+        sequencer.processReview(ReviewResponse.Good);
+        await Promise.resolve();
+
+        expect(plugin.incrementDeviceReviewCount).toHaveBeenCalledTimes(1);
+        expect(plugin.incrementDailyCounts).not.toHaveBeenCalled();
     });
 
     test("undoReview emits syro cards undo session with restored snapshot", async () => {

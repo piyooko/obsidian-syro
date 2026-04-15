@@ -471,4 +471,18 @@ describe("SRPlugin sync request orchestration", () => {
             domains: ["daily-state"],
         });
     });
+
+    test("incrementDeviceReviewCount only requests daily-state persistence", () => {
+        const plugin = {
+            currentDeviceReviewCount: 0,
+            requestPluginDataSave: jest.fn(),
+        };
+
+        (SRPlugin.prototype.incrementDeviceReviewCount as unknown as Function).call(plugin);
+
+        expect(plugin.currentDeviceReviewCount).toBe(1);
+        expect(plugin.requestPluginDataSave).toHaveBeenCalledWith({
+            domains: ["daily-state"],
+        });
+    });
 });
