@@ -1354,7 +1354,7 @@ body.is-mobile
     .sr-settings-container
     .sr-settings-sections
     .setting-items
-    > .setting-item:not(.mod-toggle):not(.setting-item--color):not(.setting-item--action)
+    > .setting-item:not(.mod-toggle):not(.setting-item--color):not(.setting-item--action):not(.sr-device-flat-item)
     .setting-item-info {
     width: 100%;
     min-width: 0;
@@ -1378,13 +1378,57 @@ body.is-mobile
     .sr-settings-sections
     .setting-items
     > .setting-item.sr-device-flat-item
+    {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start !important;
+    column-gap: 12px;
+    row-gap: 8px;
+}
+
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.sr-device-flat-item
+    > .sr-device-flat-info {
+    display: contents;
+}
+
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.sr-device-flat-item
+    .sr-device-flat-title {
+    grid-column: 1 / -1;
+}
+
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.sr-device-flat-item
+    .sr-device-inline-metrics {
+    grid-column: 1;
+    margin-top: 0;
+}
+
+body.is-mobile
+    .sr-settings-container
+    .sr-settings-sections
+    .setting-items
+    > .setting-item.sr-device-flat-item
     > .sr-device-flat-control {
     display: inline-flex;
-    width: fit-content;
+    grid-column: 2;
+    grid-row: 2;
+    width: auto;
     max-width: 100%;
-    margin-left: auto;
+    margin-left: 0;
     justify-content: flex-end;
-    align-self: flex-end !important;
+    justify-self: end;
+    align-self: center !important;
     padding-top: 0;
 }
 

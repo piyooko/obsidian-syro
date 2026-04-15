@@ -853,7 +853,7 @@ const DeviceCard: React.FC<{
 
     return (
         <div className="setting-item sr-device-flat-item">
-            <div className="setting-item-info">
+            <div className="setting-item-info sr-device-flat-info">
                 <div className="setting-item-name sr-device-flat-title">
                     {device.isCurrent && isEditingName ? (
                         <input
@@ -963,7 +963,7 @@ const InvalidDeviceCard: React.FC<{
     onDelete: () => void;
 }> = ({ device, isReadOnly, isBusy, onDelete }) => (
     <div className="setting-item sr-device-flat-item">
-        <div className="setting-item-info">
+        <div className="setting-item-info sr-device-flat-info">
             <div className="setting-item-name sr-device-flat-title">
                 <span>{device.deviceFolderName}</span>
                 <span className="sr-supporter-badge sr-device-inline-badge is-invalid">
