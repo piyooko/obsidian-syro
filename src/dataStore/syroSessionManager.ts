@@ -1,5 +1,4 @@
 import { App, DataAdapter } from "obsidian";
-import { gunzipSync, gzipSync, strFromU8, strToU8 } from "fflate";
 import type { DeckOptionsStoreFile } from "./deckOptionsStore";
 import {
     classifySyroSessionRecordImpact,
@@ -9,7 +8,11 @@ import {
     type SyroSessionReplaySummary,
 } from "./syroSessionImpact";
 import type { SyroDeviceMetadata, SyroPersistenceLayout } from "./syroWorkspace";
-import { parseDeviceMetadata } from "./syroWorkspace";
+import {
+    buildCurrentDeviceSessionFilePath,
+    formatLocalSessionDateKey,
+    parseDeviceMetadata,
+} from "./syroWorkspace";
 import {
     getNumberProp,
     getStringProp,
@@ -18,25 +21,12 @@ import {
 } from "src/util/typeGuards";
 
 const SYRO_SESSION_RECORD_VERSION = 1;
-const SYRO_BUFFER_LINE_VERSION = 1;
-const SYRO_ARCHIVE_ENTRY_VERSION = 1;
-const ACTIVE_DEVICE_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
-const STALE_SESSION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
-const IMPORTED_SESSION_RETENTION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
-const SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
-const SESSION_RECORD_LIMIT = 100;
+const SYRO_SESSION_LINE_VERSION = 1;
+const STALE_SESSION_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 type SessionAdapter = Pick<
     DataAdapter,
-    | "append"
-    | "exists"
-    | "list"
-    | "read"
-    | "readBinary"
-    | "remove"
-    | "rename"
-    | "write"
-    | "writeBinary"
+    "append" | "exists" | "list" | "mkdir" | "read" | "remove" | "write"
 >;
 
 export type SyroSessionDomain =
@@ -64,18 +54,28 @@ export interface SyroSessionRecord {
     pathHint?: string;
 }
 
-interface SyroBufferedSessionLine {
+export interface SyroSessionEventLine {
     version: number;
-    sessionSeq: number;
-    openedAt: string;
+    lineType: "event";
     record: SyroSessionRecord;
 }
 
-interface ActiveSyroSession {
-    sessionSeq: number;
-    openedAt: string;
-    records: SyroSessionRecord[];
+export interface SyroSessionCursorState {
+    offset: number;
+    lastOpId: string | null;
+    updatedAt: string;
 }
+
+export interface SyroSessionCursorSnapshotLine {
+    version: number;
+    lineType: "cursor-snapshot";
+    deviceId: string;
+    deviceName: string;
+    updatedAt: string;
+    cursors: Record<string, SyroSessionCursorState>;
+}
+
+export type SyroSessionLine = SyroSessionEventLine | SyroSessionCursorSnapshotLine;
 
 export type SyroSessionSealReason =
     | "manual"
@@ -85,20 +85,23 @@ export type SyroSessionSealReason =
     | "idle-timeout"
     | "record-limit";
 
-type BufferedSessionLineParseResult = {
-    raw: string;
-    value: SyroBufferedSessionLine;
+type SessionFileInfo = {
+    sessionId: string;
+    sessionPath: string;
+    filePath: string;
+    dateKey: string;
+    sourceDeviceFolderName: string;
 };
 
-type SessionFileParseResult = {
-    sessionId: string;
-    filePath: string;
-    validRecords: SyroSessionRecord[];
-    validLines: string[];
-    badLines: string[];
+type SessionFileDelta = SessionFileInfo & {
+    records: SyroSessionRecord[];
+    impact: SyroPendingSessionImpact | null;
+    nextCursor: SyroSessionCursorState;
+    cursorAdvanced: boolean;
 };
 
 type SyroDeviceEntry = {
+    deviceFolderName: string;
     metaPath: string;
     metadata: SyroDeviceMetadata;
 };
@@ -113,13 +116,6 @@ export interface SyroSessionImportResult {
 export interface SyroPendingSessionScanResult {
     pendingSessionIds: string[];
     impact: SyroPendingSessionImpact | null;
-}
-
-interface ArchivedSessionPackEntry {
-    version: number;
-    sessionId: string;
-    archivedAt: string;
-    content: string;
 }
 
 function normalizePath(path: string): string {
@@ -149,6 +145,29 @@ function joinPath(...segments: string[]): string {
     return normalizedSegments.join("/");
 }
 
+function dirname(path: string): string {
+    const normalized = trimTrailingSlash(path);
+    const slashIndex = normalized.lastIndexOf("/");
+    return slashIndex >= 0 ? normalized.substring(0, slashIndex) : "";
+}
+
+async function ensureDirectory(adapter: SessionAdapter, targetDir: string): Promise<void> {
+    const normalizedDir = trimTrailingSlash(targetDir);
+    if (!normalizedDir || normalizedDir === ".") {
+        return;
+    }
+
+    const parts = normalizedDir.split("/").filter((part) => part.length > 0);
+    let current = normalizedDir.startsWith("/") ? "/" : "";
+    for (const part of parts) {
+        current = current === "/" ? `${current}${part}` : current ? `${current}/${part}` : part;
+        if (await adapter.exists(current)) {
+            continue;
+        }
+        await adapter.mkdir(current);
+    }
+}
+
 function createUniqueId(): string {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
         return crypto.randomUUID();
@@ -157,56 +176,54 @@ function createUniqueId(): string {
     return `syro-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function formatSessionClosedAt(date: Date): string {
-    return date.toISOString().slice(0, 19).replace(/:/g, "-");
+function isSessionFilePath(path: string): boolean {
+    return normalizePath(path).toLowerCase().endsWith(".session.jsonl");
 }
 
-function createPendingSessionId(shortDeviceId: string, sessionSeq: number): string {
-    return `pending:${shortDeviceId}:${String(sessionSeq).padStart(4, "0")}`;
+function getRelativeSessionPath(sessionsRoot: string, filePath: string): string {
+    const normalizedRoot = trimTrailingSlash(sessionsRoot);
+    const normalizedFile = normalizePath(filePath);
+    const prefix = normalizedRoot ? `${normalizedRoot}/` : "";
+    if (normalizedFile.startsWith(prefix)) {
+        return normalizedFile.slice(prefix.length);
+    }
+    return normalizedFile;
 }
 
-function getSessionIdFromPath(filePath: string): string {
-    const normalized = normalizePath(filePath);
+function getSessionIdFromRelativePath(sessionPath: string): string {
+    return normalizePath(sessionPath).replace(/\.session\.jsonl$/i, "");
+}
+
+function getSessionDateKey(sessionPath: string): string {
+    const normalized = normalizePath(sessionPath);
     const fileName = normalized.slice(normalized.lastIndexOf("/") + 1);
-    return fileName.replace(/\.jsonl$/i, "");
+    return fileName.replace(/\.session\.jsonl$/i, "");
 }
 
-function parseClosedAtMs(sessionId: string): number | null {
-    const [stamp] = sessionId.split("__");
-    if (!stamp || !stamp.includes("T")) {
-        return null;
+function getSourceDeviceFolderName(sessionPath: string): string {
+    return normalizePath(sessionPath).split("/")[0] ?? "";
+}
+
+function getLastCompleteOffset(raw: string): number {
+    const lastNewlineIndex = raw.lastIndexOf("\n");
+    return lastNewlineIndex >= 0 ? lastNewlineIndex + 1 : 0;
+}
+
+function isIsoTimeNewer(candidate: string, baseline: string | null): boolean {
+    if (!baseline) {
+        return true;
     }
 
-    const [datePart, timePart] = stamp.split("T");
-    if (!datePart || !timePart) {
-        return null;
+    const candidateMs = Date.parse(candidate);
+    const baselineMs = Date.parse(baseline);
+    if (!Number.isFinite(candidateMs)) {
+        return false;
+    }
+    if (!Number.isFinite(baselineMs)) {
+        return true;
     }
 
-    const parsed = Date.parse(`${datePart}T${timePart.replace(/-/g, ":")}Z`);
-    return Number.isFinite(parsed) ? parsed : null;
-}
-
-function gzipText(content: string): ArrayBuffer {
-    const compressed = gzipSync(strToU8(content));
-    return compressed.buffer.slice(
-        compressed.byteOffset,
-        compressed.byteOffset + compressed.byteLength,
-    );
-}
-
-function gunzipText(content: ArrayBuffer): string {
-    return strFromU8(gunzipSync(new Uint8Array(content)));
-}
-
-function getArchivePackName(sessionId: string): string | null {
-    const [, shortDeviceId] = sessionId.split("__");
-    const closedAtMs = parseClosedAtMs(sessionId);
-    if (!shortDeviceId || closedAtMs === null) {
-        return null;
-    }
-
-    const closedAt = new Date(closedAtMs).toISOString();
-    return `${shortDeviceId}__${closedAt.slice(0, 7)}.sessionpack.gz`;
+    return candidateMs > baselineMs;
 }
 
 function parseSessionRecord(value: unknown): SyroSessionRecord | null {
@@ -260,62 +277,130 @@ function parseSessionRecord(value: unknown): SyroSessionRecord | null {
     };
 }
 
-function parseBufferedSessionLine(rawLine: string): BufferedSessionLineParseResult | null {
+function parseCursorStateMap(value: unknown): Record<string, SyroSessionCursorState> | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+
+    const result: Record<string, SyroSessionCursorState> = {};
+    for (const [sessionPath, rawEntry] of Object.entries(value)) {
+        if (!sessionPath || !isRecord(rawEntry)) {
+            continue;
+        }
+
+        const offset = getNumberProp(rawEntry, "offset");
+        const lastOpId = getStringProp(rawEntry, "lastOpId");
+        const updatedAt = getStringProp(rawEntry, "updatedAt")?.trim();
+        if (
+            typeof offset !== "number" ||
+            !Number.isFinite(offset) ||
+            offset < 0 ||
+            !updatedAt
+        ) {
+            continue;
+        }
+
+        result[normalizePath(sessionPath)] = {
+            offset: Math.trunc(offset),
+            lastOpId: lastOpId?.trim() || null,
+            updatedAt,
+        };
+    }
+
+    return result;
+}
+
+function parseSessionLine(rawLine: string): SyroSessionLine | null {
     let parsed: unknown;
     try {
         parsed = parseJsonUnknown(rawLine);
     } catch {
         return null;
     }
+
+    const legacyRecord = parseSessionRecord(parsed);
+    if (legacyRecord) {
+        return {
+            version: SYRO_SESSION_LINE_VERSION,
+            lineType: "event",
+            record: legacyRecord,
+        };
+    }
+
     if (!isRecord(parsed)) {
         return null;
     }
 
     const version = getNumberProp(parsed, "version");
-    const sessionSeq = getNumberProp(parsed, "sessionSeq");
-    const openedAt = getStringProp(parsed, "openedAt")?.trim();
-    const record = parseSessionRecord(parsed["record"]);
-
-    if (
-        version !== SYRO_BUFFER_LINE_VERSION ||
-        typeof sessionSeq !== "number" ||
-        !Number.isFinite(sessionSeq) ||
-        sessionSeq < 1 ||
-        !openedAt ||
-        !record
-    ) {
+    const lineType = getStringProp(parsed, "lineType")?.trim();
+    if (version !== SYRO_SESSION_LINE_VERSION || !lineType) {
         return null;
     }
 
-    return {
-        raw: rawLine,
-        value: {
+    if (lineType === "event") {
+        const record = parseSessionRecord(parsed["record"]);
+        return record
+            ? {
+                  version,
+                  lineType: "event",
+                  record,
+              }
+            : null;
+    }
+
+    if (lineType === "cursor-snapshot") {
+        const deviceId = getStringProp(parsed, "deviceId")?.trim();
+        const deviceName = getStringProp(parsed, "deviceName")?.trim();
+        const updatedAt = getStringProp(parsed, "updatedAt")?.trim();
+        const cursors = parseCursorStateMap(parsed["cursors"]);
+        if (!deviceId || !deviceName || !updatedAt || !cursors) {
+            return null;
+        }
+
+        return {
             version,
-            sessionSeq: Math.trunc(sessionSeq),
-            openedAt,
-            record,
-        },
+            lineType: "cursor-snapshot",
+            deviceId,
+            deviceName,
+            updatedAt,
+            cursors,
+        };
+    }
+
+    return null;
+}
+
+function buildEventLine(record: SyroSessionRecord): SyroSessionEventLine {
+    return {
+        version: SYRO_SESSION_LINE_VERSION,
+        lineType: "event",
+        record,
     };
 }
 
-function serializeBufferedSessionLine(
-    sessionSeq: number,
-    openedAt: string,
-    record: SyroSessionRecord,
-): string {
-    return JSON.stringify({
-        version: SYRO_BUFFER_LINE_VERSION,
-        sessionSeq,
-        openedAt,
-        record,
-    });
+function buildCursorSnapshotLine(
+    layout: SyroPersistenceLayout,
+    cursors: Map<string, SyroSessionCursorState>,
+): SyroSessionCursorSnapshotLine {
+    const sortedEntries = Array.from(cursors.entries()).sort(([left], [right]) =>
+        left.localeCompare(right),
+    );
+    return {
+        version: SYRO_SESSION_LINE_VERSION,
+        lineType: "cursor-snapshot",
+        deviceId: layout.device.deviceId,
+        deviceName: layout.device.deviceName,
+        updatedAt: new Date().toISOString(),
+        cursors: Object.fromEntries(
+            sortedEntries.map(([sessionPath, cursor]) => [sessionPath, { ...cursor }]),
+        ),
+    };
 }
 
 export class SyroSessionManager {
     private readonly adapter: SessionAdapter;
-    private activeSession: ActiveSyroSession | null = null;
     private syncReadOnlyReason: string | null = null;
-    private idleSealTimer: ReturnType<typeof setTimeout> | null = null;
+    private readonly sessionCursors = new Map<string, SyroSessionCursorState>();
 
     constructor(
         private readonly app: App,
@@ -325,124 +410,12 @@ export class SyroSessionManager {
     }
 
     async initialize(): Promise<void> {
-        await this.restoreActiveSessionBuffer();
-        this.scheduleIdleSealTimer();
+        await ensureDirectory(this.adapter, this.layout.currentDeviceSessionsRoot);
+        await this.restoreCurrentDeviceCursorSnapshot();
     }
 
     setReadOnly(reason: string | null): void {
         this.syncReadOnlyReason = reason;
-        if (reason) {
-            this.clearIdleSealTimer();
-            return;
-        }
-
-        this.scheduleIdleSealTimer();
-    }
-
-    async importPendingSessions(
-        replaySession: (
-            sessionId: string,
-            records: SyroSessionRecord[],
-        ) => Promise<SyroSessionReplaySummary | void>,
-        options: {
-            sealOwnOpenSession?: boolean;
-        } = {},
-    ): Promise<SyroSessionImportResult> {
-        if (this.syncReadOnlyReason) {
-            return {
-                importedSessionIds: [],
-                deletedSessionIds: [],
-                archivedSessionIds: [],
-                replayImpact: createEmptySyroSessionReplaySummary(),
-            };
-        }
-
-        const { sealOwnOpenSession = true } = options;
-        const importedSessionIds: string[] = [];
-        let replayImpact = createEmptySyroSessionReplaySummary();
-        if (sealOwnOpenSession) {
-            await this.flushOwnOpenSessionBeforeImport();
-        }
-        const sessionFiles = await this.listSessionFiles();
-
-        for (const filePath of sessionFiles) {
-            const sessionId = getSessionIdFromPath(filePath);
-            if (this.layout.device.importedSessionIds.includes(sessionId)) {
-                continue;
-            }
-
-            const parsed = await this.parseSessionFile(filePath);
-            if (parsed.badLines.length > 0) {
-                await this.writeBadSessionLines(filePath, parsed.badLines);
-                await this.writeCleanSessionFile(filePath, parsed.validLines);
-            }
-
-            if (parsed.validRecords.length > 0) {
-                const sessionReplayImpact = await replaySession(sessionId, parsed.validRecords);
-                if (sessionReplayImpact) {
-                    replayImpact = mergeSyroSessionReplaySummary(
-                        replayImpact,
-                        sessionReplayImpact,
-                    );
-                }
-            }
-
-            await this.markCurrentDeviceImported(sessionId);
-            importedSessionIds.push(sessionId);
-        }
-
-        const cleanup = await this.cleanupSessions();
-        return {
-            importedSessionIds,
-            deletedSessionIds: cleanup.deletedSessionIds,
-            archivedSessionIds: cleanup.archivedSessionIds,
-            replayImpact,
-        };
-    }
-
-    async peekPendingSessions(): Promise<SyroPendingSessionScanResult> {
-        if (this.syncReadOnlyReason) {
-            return {
-                pendingSessionIds: [],
-                impact: null,
-            };
-        }
-
-        const pendingSessionIds: string[] = [];
-        let impact: SyroPendingSessionImpact | null = null;
-        const sessionFiles = await this.listSessionFiles();
-
-        for (const filePath of sessionFiles) {
-            const sessionId = getSessionIdFromPath(filePath);
-            if (this.layout.device.importedSessionIds.includes(sessionId)) {
-                continue;
-            }
-
-            pendingSessionIds.push(sessionId);
-            const parsed = await this.parseSessionFile(filePath);
-            if (parsed.validRecords.length === 0) {
-                impact ??= "runtime-only";
-                continue;
-            }
-
-            for (const record of parsed.validRecords) {
-                const nextImpact = classifySyroSessionRecordImpact(record);
-                if (nextImpact === "requires-global-sync") {
-                    impact = "requires-global-sync";
-                    break;
-                }
-                impact ??= "runtime-only";
-            }
-
-            if (impact === "requires-global-sync") {
-                break;
-            }
-        }
-
-        return {
-            pendingSessionIds,
-            impact,
-        };
     }
 
     async appendDeckOptionsChange(
@@ -473,14 +446,12 @@ export class SyroSessionManager {
             return false;
         }
 
-        const activeSession = await this.ensureActiveSession();
+        const sessionFilePath = await this.ensureCurrentSessionFilePath();
+        const sessionPath = getRelativeSessionPath(this.layout.sessionsRoot, sessionFilePath);
         const now = new Date().toISOString();
         const record: SyroSessionRecord = {
             version: SYRO_SESSION_RECORD_VERSION,
-            sessionId: createPendingSessionId(
-                this.layout.device.shortDeviceId,
-                activeSession.sessionSeq,
-            ),
+            sessionId: getSessionIdFromRelativePath(sessionPath),
             opId: createUniqueId(),
             deviceId: this.layout.device.deviceId,
             deviceName: this.layout.device.deviceName,
@@ -494,137 +465,320 @@ export class SyroSessionManager {
             ...(input.pathHint ? { pathHint: input.pathHint } : {}),
         };
 
-        activeSession.records.push(record);
-        await this.adapter.append(
-            this.layout.activeSessionBufferPath,
-            `${serializeBufferedSessionLine(activeSession.sessionSeq, activeSession.openedAt, record)}\n`,
-        );
-        this.scheduleIdleSealTimer();
-        if (activeSession.records.length >= SESSION_RECORD_LIMIT) {
-            await this.sealActiveSession("record-limit");
-        }
+        await this.appendText(sessionFilePath, `${JSON.stringify(buildEventLine(record))}\n`);
         return true;
     }
 
-    async flushActiveSession(reason: SyroSessionSealReason = "manual"): Promise<string | null> {
-        return this.sealActiveSession(reason);
-    }
-
-    async sealActiveSession(reason: SyroSessionSealReason): Promise<string | null> {
+    async flushActiveSession(_reason: SyroSessionSealReason = "manual"): Promise<string | null> {
         if (this.syncReadOnlyReason) {
             return null;
         }
 
-        this.clearIdleSealTimer();
-        if (!this.activeSession || this.activeSession.records.length === 0) {
-            await this.clearActiveSessionBuffer();
-            this.activeSession = null;
+        const sessionFilePath = await this.ensureCurrentSessionFilePath();
+        if (!(await this.adapter.exists(sessionFilePath))) {
             return null;
         }
 
-        const sessionId = this.createClosedSessionId(this.activeSession.sessionSeq);
-        const sessionFileName = `${sessionId}.jsonl`;
-        const finalPath = joinPath(this.layout.closedSessionsRoot, sessionFileName);
-
-        if (!(await this.adapter.exists(finalPath))) {
-            const tempPath = `${finalPath}.tmp`;
-            const serialized = `${this.activeSession.records
-                .map((record) =>
-                    JSON.stringify({
-                        ...record,
-                        sessionId,
-                    }),
-                )
-                .join("\n")}\n`;
-
-            await this.adapter.write(tempPath, serialized);
-            const verified = await this.adapter.read(tempPath);
-            if (verified !== serialized) {
-                throw new Error("[SyroSession] Session temp file verification failed.");
-            }
-            await this.adapter.rename(tempPath, finalPath);
-        }
-
-        await this.markCurrentDeviceImported(sessionId);
-        await this.clearActiveSessionBuffer();
-        this.activeSession = null;
-        if (reason !== "unload") {
-            this.scheduleIdleSealTimer();
-        }
-        return sessionId;
-    }
-
-    private async ensureActiveSession(): Promise<ActiveSyroSession> {
-        if (this.activeSession) {
-            return this.activeSession;
-        }
-
-        this.activeSession = {
-            sessionSeq: await this.getNextSessionSeq(),
-            openedAt: new Date().toISOString(),
-            records: [],
-        };
-        return this.activeSession;
-    }
-
-    private createClosedSessionId(sessionSeq: number): string {
-        return `${formatSessionClosedAt(new Date())}__${this.layout.device.shortDeviceId}__${String(
-            sessionSeq,
-        ).padStart(4, "0")}`;
-    }
-
-    private async getNextSessionSeq(): Promise<number> {
-        const listing = await this.safeList(this.layout.closedSessionsRoot);
-        const pattern = new RegExp(
-            `__${this.layout.device.shortDeviceId}__(\\d+)\\.jsonl$`,
-            "i",
+        return getSessionIdFromRelativePath(
+            getRelativeSessionPath(this.layout.sessionsRoot, sessionFilePath),
         );
-        let maxSeq = 0;
-        for (const filePath of listing.files) {
-            const match = normalizePath(filePath).match(pattern);
-            if (!match) {
-                continue;
-            }
-            const seq = Number.parseInt(match[1], 10);
-            if (Number.isFinite(seq)) {
-                maxSeq = Math.max(maxSeq, seq);
-            }
-        }
-        return maxSeq + 1;
     }
 
-    private async listValidDeviceEntries(): Promise<SyroDeviceEntry[]> {
-        const listing = await this.safeList(this.layout.devicesRoot);
-        const devices: SyroDeviceEntry[] = [];
+    async importPendingSessions(
+        replaySession: (
+            sessionId: string,
+            records: SyroSessionRecord[],
+        ) => Promise<SyroSessionReplaySummary | void>,
+        _options: {
+            sealOwnOpenSession?: boolean;
+        } = {},
+    ): Promise<SyroSessionImportResult> {
+        if (this.syncReadOnlyReason) {
+            return {
+                importedSessionIds: [],
+                deletedSessionIds: [],
+                archivedSessionIds: [],
+                replayImpact: createEmptySyroSessionReplaySummary(),
+            };
+        }
 
-        for (const deviceFolderPath of listing.folders) {
-            const metaPath = joinPath(deviceFolderPath, "device.json");
-            if (!(await this.adapter.exists(metaPath))) {
+        const deltas = await this.scanPendingSessionFiles();
+        const importedSessionIds: string[] = [];
+        let replayImpact = createEmptySyroSessionReplaySummary();
+        let cursorSnapshotChanged = false;
+
+        for (const delta of deltas) {
+            if (!delta.cursorAdvanced) {
                 continue;
             }
 
-            try {
-                const raw = await this.adapter.read(metaPath);
-                const parsed = parseDeviceMetadata(parseJsonUnknown(raw));
-                if (parsed) {
-                    devices.push({
-                        metaPath,
-                        metadata: parsed,
-                    });
+            this.sessionCursors.set(delta.sessionPath, delta.nextCursor);
+            importedSessionIds.push(delta.sessionId);
+            cursorSnapshotChanged = true;
+
+            if (delta.records.length === 0) {
+                continue;
+            }
+
+            const sessionReplayImpact = await replaySession(delta.sessionId, delta.records);
+            if (sessionReplayImpact) {
+                replayImpact = mergeSyroSessionReplaySummary(replayImpact, sessionReplayImpact);
+            }
+        }
+
+        if (cursorSnapshotChanged) {
+            await this.appendCurrentCursorSnapshot();
+        }
+
+        const cleanup = await this.cleanupSessions();
+        return {
+            importedSessionIds,
+            deletedSessionIds: cleanup.deletedSessionIds,
+            archivedSessionIds: [],
+            replayImpact,
+        };
+    }
+
+    async peekPendingSessions(): Promise<SyroPendingSessionScanResult> {
+        if (this.syncReadOnlyReason) {
+            return {
+                pendingSessionIds: [],
+                impact: null,
+            };
+        }
+
+        const deltas = await this.scanPendingSessionFiles();
+        const pendingSessionIds: string[] = [];
+        let impact: SyroPendingSessionImpact | null = null;
+
+        for (const delta of deltas) {
+            if (!delta.cursorAdvanced) {
+                continue;
+            }
+
+            pendingSessionIds.push(delta.sessionId);
+            if (delta.impact === "requires-global-sync") {
+                impact = "requires-global-sync";
+                break;
+            }
+
+            if (delta.records.length > 0) {
+                impact ??= "runtime-only";
+            }
+        }
+
+        return {
+            pendingSessionIds,
+            impact,
+        };
+    }
+
+    private async ensureCurrentSessionFilePath(date: Date = new Date()): Promise<string> {
+        const currentDeviceFolderName = this.getCurrentDeviceFolderName();
+        const sessionFilePath = buildCurrentDeviceSessionFilePath(
+            this.layout.sessionsRoot,
+            currentDeviceFolderName,
+            date,
+        );
+        this.layout.currentDeviceSessionFilePath = sessionFilePath;
+        await ensureDirectory(this.adapter, dirname(sessionFilePath));
+        return sessionFilePath;
+    }
+
+    private getCurrentDeviceFolderName(): string {
+        const normalized = trimTrailingSlash(this.layout.currentDeviceSessionsRoot);
+        return normalized.slice(normalized.lastIndexOf("/") + 1) || normalized;
+    }
+
+    private async appendText(path: string, value: string): Promise<void> {
+        await ensureDirectory(this.adapter, dirname(path));
+        if (await this.adapter.exists(path)) {
+            await this.adapter.append(path, value);
+            return;
+        }
+
+        await this.adapter.write(path, value);
+    }
+
+    private async appendCurrentCursorSnapshot(): Promise<void> {
+        const sessionFilePath = await this.ensureCurrentSessionFilePath();
+        const line = buildCursorSnapshotLine(this.layout, this.sessionCursors);
+        await this.appendText(sessionFilePath, `${JSON.stringify(line)}\n`);
+    }
+
+    private async restoreCurrentDeviceCursorSnapshot(): Promise<void> {
+        this.sessionCursors.clear();
+        const latestSnapshot = await this.loadLatestCursorSnapshot(this.getCurrentDeviceFolderName());
+        if (!latestSnapshot) {
+            return;
+        }
+
+        for (const [sessionPath, cursor] of Object.entries(latestSnapshot.cursors)) {
+            this.sessionCursors.set(sessionPath, cursor);
+        }
+    }
+
+    private async scanPendingSessionFiles(): Promise<SessionFileDelta[]> {
+        const sessionFiles = await this.listRemoteSessionFiles();
+        const deltas: SessionFileDelta[] = [];
+
+        for (const fileInfo of sessionFiles) {
+            const delta = await this.scanSessionFile(fileInfo);
+            if (delta) {
+                deltas.push(delta);
+            }
+        }
+
+        return deltas;
+    }
+
+    private async scanSessionFile(fileInfo: SessionFileInfo): Promise<SessionFileDelta | null> {
+        const raw = await this.adapter.read(fileInfo.filePath);
+        const completeOffset = getLastCompleteOffset(raw);
+        if (completeOffset <= 0) {
+            return null;
+        }
+
+        const completeText = raw.slice(0, completeOffset);
+        const currentCursor = this.sessionCursors.get(fileInfo.sessionPath) ?? null;
+        const resumeOffset = this.resolveResumeOffset(completeText, currentCursor);
+        if (resumeOffset >= completeText.length) {
+            return null;
+        }
+
+        const records: SyroSessionRecord[] = [];
+        let impact: SyroPendingSessionImpact | null = null;
+        let lastProcessedOffset = resumeOffset;
+        let lastOpId = currentCursor?.lastOpId ?? null;
+
+        for (const { rawLine, endOffset } of this.iterateCompleteLines(completeText, resumeOffset)) {
+            lastProcessedOffset = endOffset;
+            if (rawLine.trim().length === 0) {
+                continue;
+            }
+
+            const parsedLine = parseSessionLine(rawLine);
+            if (!parsedLine) {
+                console.warn("[SR-Syro] Ignored malformed session line.", {
+                    sessionPath: fileInfo.sessionPath,
+                });
+                continue;
+            }
+
+            if (parsedLine.lineType === "cursor-snapshot") {
+                continue;
+            }
+
+            records.push(parsedLine.record);
+            lastOpId = parsedLine.record.opId;
+            const nextImpact = classifySyroSessionRecordImpact(parsedLine.record);
+            if (nextImpact === "requires-global-sync") {
+                impact = "requires-global-sync";
+            } else {
+                impact ??= "runtime-only";
+            }
+        }
+
+        const cursorAdvanced =
+            !currentCursor ||
+            currentCursor.offset !== lastProcessedOffset ||
+            currentCursor.lastOpId !== lastOpId;
+        if (!cursorAdvanced) {
+            return null;
+        }
+
+        return {
+            ...fileInfo,
+            records,
+            impact,
+            nextCursor: {
+                offset: lastProcessedOffset,
+                lastOpId,
+                updatedAt: new Date().toISOString(),
+            },
+            cursorAdvanced,
+        };
+    }
+
+    private resolveResumeOffset(
+        completeText: string,
+        currentCursor: SyroSessionCursorState | null,
+    ): number {
+        if (!currentCursor) {
+            return 0;
+        }
+
+        if (currentCursor.offset >= 0 && currentCursor.offset <= completeText.length) {
+            return currentCursor.offset;
+        }
+
+        if (!currentCursor.lastOpId) {
+            return 0;
+        }
+
+        let lastMatchedOffset = 0;
+        for (const { rawLine, endOffset } of this.iterateCompleteLines(completeText, 0)) {
+            const parsedLine = parseSessionLine(rawLine);
+            if (parsedLine?.lineType === "event" && parsedLine.record.opId === currentCursor.lastOpId) {
+                lastMatchedOffset = endOffset;
+            }
+        }
+
+        return lastMatchedOffset;
+    }
+
+    private *iterateCompleteLines(
+        completeText: string,
+        startOffset = 0,
+    ): Generator<{ rawLine: string; endOffset: number }, void, undefined> {
+        let cursor = Math.max(0, startOffset);
+        while (cursor < completeText.length) {
+            const newlineIndex = completeText.indexOf("\n", cursor);
+            if (newlineIndex < 0) {
+                return;
+            }
+
+            const rawLine = completeText.slice(cursor, newlineIndex).replace(/\r$/u, "");
+            cursor = newlineIndex + 1;
+            yield {
+                rawLine,
+                endOffset: cursor,
+            };
+        }
+    }
+
+    private async listRemoteSessionFiles(): Promise<SessionFileInfo[]> {
+        const currentDeviceFolderName = this.getCurrentDeviceFolderName();
+        const allSessionFiles = await this.listAllSessionFiles();
+        return allSessionFiles.filter(
+            (entry) => entry.sourceDeviceFolderName !== currentDeviceFolderName,
+        );
+    }
+
+    private async listAllSessionFiles(): Promise<SessionFileInfo[]> {
+        const listing = await this.safeList(this.layout.sessionsRoot);
+        const sessionFiles: SessionFileInfo[] = [];
+
+        for (const folderPath of listing.folders.sort((left, right) => left.localeCompare(right))) {
+            const folderListing = await this.safeList(folderPath);
+            for (const filePath of folderListing.files) {
+                const normalizedPath = normalizePath(filePath);
+                if (!isSessionFilePath(normalizedPath)) {
+                    continue;
                 }
-            } catch {
-                continue;
+
+                const sessionPath = getRelativeSessionPath(this.layout.sessionsRoot, normalizedPath);
+                sessionFiles.push({
+                    sessionId: getSessionIdFromRelativePath(sessionPath),
+                    sessionPath,
+                    filePath: normalizedPath,
+                    dateKey: getSessionDateKey(sessionPath),
+                    sourceDeviceFolderName: getSourceDeviceFolderName(sessionPath),
+                });
             }
         }
 
-        if (!devices.some((device) => device.metadata.deviceId === this.layout.device.deviceId)) {
-            devices.push({
-                metaPath: this.layout.deviceMetaPath,
-                metadata: this.layout.device,
-            });
-        }
-
-        return devices;
+        return sessionFiles.sort((left, right) => left.sessionPath.localeCompare(right.sessionPath));
     }
 
     private async safeList(root: string): Promise<{ files: string[]; folders: string[] }> {
@@ -635,378 +789,195 @@ export class SyroSessionManager {
                 folders: listing?.folders ?? [],
             };
         } catch {
-            return { files: [], folders: [] };
+            return {
+                files: [],
+                folders: [],
+            };
         }
     }
 
-    // The local active-session buffer is private to this device, so invalid lines are quarantined.
-    private async restoreActiveSessionBuffer(): Promise<void> {
-        if (!(await this.adapter.exists(this.layout.activeSessionBufferPath))) {
-            return;
-        }
+    private async loadLatestCursorSnapshot(
+        deviceFolderName: string,
+    ): Promise<SyroSessionCursorSnapshotLine | null> {
+        const deviceSessionsRoot = joinPath(this.layout.sessionsRoot, deviceFolderName);
+        const listing = await this.safeList(deviceSessionsRoot);
+        let latestSnapshot: SyroSessionCursorSnapshotLine | null = null;
 
-        const raw = await this.adapter.read(this.layout.activeSessionBufferPath);
-        const lines = raw
-            .split(/\r?\n/g)
-            .map((line) => line.trim())
-            .filter((line) => line.length > 0);
-
-        if (lines.length === 0) {
-            await this.clearActiveSessionBuffer();
-            return;
-        }
-
-        const validLines: BufferedSessionLineParseResult[] = [];
-        const badLines: string[] = [];
-        let expectedSessionSeq: number | null = null;
-        let expectedOpenedAt: string | null = null;
-
-        for (const line of lines) {
-            const parsed = parseBufferedSessionLine(line);
-            if (!parsed) {
-                badLines.push(line);
+        for (const filePath of listing.files.sort((left, right) => left.localeCompare(right))) {
+            const normalizedPath = normalizePath(filePath);
+            if (!isSessionFilePath(normalizedPath)) {
                 continue;
             }
 
-            if (expectedSessionSeq === null || expectedOpenedAt === null) {
-                expectedSessionSeq = parsed.value.sessionSeq;
-                expectedOpenedAt = parsed.value.openedAt;
+            const raw = await this.adapter.read(normalizedPath);
+            const completeText = raw.slice(0, getLastCompleteOffset(raw));
+            for (const { rawLine } of this.iterateCompleteLines(completeText, 0)) {
+                const parsedLine = parseSessionLine(rawLine);
+                if (
+                    parsedLine?.lineType === "cursor-snapshot" &&
+                    isIsoTimeNewer(parsedLine.updatedAt, latestSnapshot?.updatedAt ?? null)
+                ) {
+                    latestSnapshot = parsedLine;
+                }
             }
+        }
 
-            if (
-                parsed.value.sessionSeq !== expectedSessionSeq ||
-                parsed.value.openedAt !== expectedOpenedAt
-            ) {
-                badLines.push(line);
+        return latestSnapshot;
+    }
+
+    private async loadLatestCursorMapsByDevice(): Promise<
+        Map<string, Map<string, SyroSessionCursorState>>
+    > {
+        const listing = await this.safeList(this.layout.sessionsRoot);
+        const result = new Map<string, Map<string, SyroSessionCursorState>>();
+
+        for (const folderPath of listing.folders) {
+            const normalizedFolderPath = trimTrailingSlash(folderPath);
+            const deviceFolderName =
+                normalizedFolderPath.slice(normalizedFolderPath.lastIndexOf("/") + 1) ||
+                normalizedFolderPath;
+            const latestSnapshot = await this.loadLatestCursorSnapshot(deviceFolderName);
+            result.set(
+                deviceFolderName,
+                new Map(
+                    Object.entries(latestSnapshot?.cursors ?? {}).map(([sessionPath, cursor]) => [
+                        normalizePath(sessionPath),
+                        cursor,
+                    ]),
+                ),
+            );
+        }
+
+        return result;
+    }
+
+    private async listValidDeviceEntries(): Promise<SyroDeviceEntry[]> {
+        const listing = await this.safeList(this.layout.devicesRoot);
+        const devices: SyroDeviceEntry[] = [];
+
+        for (const deviceFolderPath of listing.folders) {
+            const normalizedFolderPath = trimTrailingSlash(deviceFolderPath);
+            const deviceFolderName =
+                normalizedFolderPath.slice(normalizedFolderPath.lastIndexOf("/") + 1) ||
+                normalizedFolderPath;
+            const metaPath = joinPath(normalizedFolderPath, "device.json");
+            if (!(await this.adapter.exists(metaPath))) {
                 continue;
             }
 
-            validLines.push(parsed);
-        }
-
-        if (badLines.length > 0) {
-            await this.writeBadBufferLines(badLines);
-        }
-
-        if (validLines.length === 0 || expectedSessionSeq === null || expectedOpenedAt === null) {
-            await this.clearActiveSessionBuffer();
-            return;
-        }
-
-        this.activeSession = {
-            sessionSeq: expectedSessionSeq,
-            openedAt: expectedOpenedAt,
-            records: validLines.map((line) => line.value.record),
-        };
-
-        const cleanedBuffer = `${validLines.map((line) => line.raw).join("\n")}\n`;
-        await this.adapter.write(this.layout.activeSessionBufferPath, cleanedBuffer);
-        this.scheduleIdleSealTimer();
-    }
-
-    private async writeBadBufferLines(badLines: string[]): Promise<void> {
-        const badPath = `${this.layout.activeSessionBufferPath}.bad`;
-        const existing =
-            (await this.adapter.exists(badPath)) && (await this.adapter.read(badPath))
-                ? await this.adapter.read(badPath)
-                : "";
-        const prefix = existing && !existing.endsWith("\n") ? `${existing}\n` : existing;
-        await this.adapter.write(badPath, `${prefix}${badLines.join("\n")}\n`);
-    }
-
-    private async clearActiveSessionBuffer(): Promise<void> {
-        if (await this.adapter.exists(this.layout.activeSessionBufferPath)) {
-            await this.adapter.remove(this.layout.activeSessionBufferPath);
-        }
-    }
-
-    private async listSessionFiles(): Promise<string[]> {
-        const listing = await this.safeList(this.layout.closedSessionsRoot);
-        return listing.files
-            .map((filePath) => normalizePath(filePath))
-            .filter((filePath) => filePath.toLowerCase().endsWith(".jsonl"))
-            .sort((left, right) => left.localeCompare(right));
-    }
-
-    private async parseSessionFile(filePath: string): Promise<SessionFileParseResult> {
-        const raw = await this.adapter.read(filePath);
-        const lines = raw
-            .split(/\r?\n/g)
-            .map((line) => line.trim())
-            .filter((line) => line.length > 0);
-        const validRecords: SyroSessionRecord[] = [];
-        const validLines: string[] = [];
-        const badLines: string[] = [];
-
-        for (const line of lines) {
-            let parsed: unknown;
             try {
-                parsed = parseJsonUnknown(line);
+                const raw = await this.adapter.read(metaPath);
+                const parsed = parseDeviceMetadata(parseJsonUnknown(raw));
+                if (!parsed) {
+                    continue;
+                }
+
+                devices.push({
+                    deviceFolderName,
+                    metaPath,
+                    metadata: parsed,
+                });
             } catch {
-                badLines.push(line);
                 continue;
             }
-
-            const record = parseSessionRecord(parsed);
-            if (!record) {
-                badLines.push(line);
-                continue;
-            }
-
-            validRecords.push(record);
-            validLines.push(line);
         }
 
-        return {
-            sessionId: getSessionIdFromPath(filePath),
-            filePath,
-            validRecords,
-            validLines,
-            badLines,
-        };
-    }
+        if (!devices.some((entry) => entry.metadata.deviceId === this.layout.device.deviceId)) {
+            devices.push({
+                deviceFolderName: this.getCurrentDeviceFolderName(),
+                metaPath: this.layout.deviceMetaPath,
+                metadata: this.layout.device,
+            });
+        }
 
-    private async writeBadSessionLines(filePath: string, badLines: string[]): Promise<void> {
-        const badPath = `${filePath}.bad`;
-        const existing =
-            (await this.adapter.exists(badPath)) && (await this.adapter.read(badPath))
-                ? await this.adapter.read(badPath)
-                : "";
-        const prefix = existing && !existing.endsWith("\n") ? `${existing}\n` : existing;
-        await this.adapter.write(badPath, `${prefix}${badLines.join("\n")}\n`);
-    }
-
-    private async writeCleanSessionFile(filePath: string, validLines: string[]): Promise<void> {
-        const serialized = validLines.length > 0 ? `${validLines.join("\n")}\n` : "";
-        await this.adapter.write(filePath, serialized);
+        return devices.sort((left, right) =>
+            left.deviceFolderName.localeCompare(right.deviceFolderName),
+        );
     }
 
     private async cleanupSessions(): Promise<{
         deletedSessionIds: string[];
-        archivedSessionIds: string[];
     }> {
         if (this.syncReadOnlyReason) {
-            return {
-                deletedSessionIds: [],
-                archivedSessionIds: [],
-            };
+            return { deletedSessionIds: [] };
         }
 
-        const deviceEntries = await this.listValidDeviceEntries();
-        const activeCutoff = Date.now() - ACTIVE_DEVICE_WINDOW_MS;
-        const activeDevices = deviceEntries.filter((entry) => {
-            const lastSeenAt = Date.parse(entry.metadata.lastSeenAt);
-            return Number.isFinite(lastSeenAt) && lastSeenAt >= activeCutoff;
-        });
-        const effectiveActiveDevices = activeDevices.length > 0 ? activeDevices : deviceEntries;
-        const sessionFiles = await this.listSessionFiles();
+        const sessionFiles = await this.listAllSessionFiles();
+        if (sessionFiles.length === 0) {
+            return { deletedSessionIds: [] };
+        }
+
+        const validDevices = await this.listValidDeviceEntries();
+        if (validDevices.length === 0) {
+            return { deletedSessionIds: [] };
+        }
+
+        const cursorMapsByDevice = await this.loadLatestCursorMapsByDevice();
+        const latestEventAtMs = await this.findLatestSessionEventAtMs(sessionFiles);
+        const silenceExpired =
+            latestEventAtMs !== null && Date.now() - latestEventAtMs >= STALE_SESSION_WINDOW_MS;
+        const todayKey = formatLocalSessionDateKey();
         const deletedSessionIds: string[] = [];
-        const archivedSessionIds: string[] = [];
 
-        for (const filePath of sessionFiles) {
-            const sessionId = getSessionIdFromPath(filePath);
-            const allActiveImported = effectiveActiveDevices.every((entry) =>
-                entry.metadata.importedSessionIds.includes(sessionId),
-            );
-            if (allActiveImported) {
-                await this.adapter.remove(filePath);
-                deletedSessionIds.push(sessionId);
+        for (const fileInfo of sessionFiles) {
+            if (fileInfo.dateKey === todayKey) {
                 continue;
             }
 
-            const closedAtMs = parseClosedAtMs(sessionId);
-            if (closedAtMs === null || Date.now() - closedAtMs < STALE_SESSION_WINDOW_MS) {
+            const completeLength = await this.getCompleteLength(fileInfo.filePath);
+            const allConfirmed = validDevices.every((deviceEntry) => {
+                if (deviceEntry.deviceFolderName === fileInfo.sourceDeviceFolderName) {
+                    return true;
+                }
+
+                const cursor = cursorMapsByDevice
+                    .get(deviceEntry.deviceFolderName)
+                    ?.get(fileInfo.sessionPath);
+                return !!cursor && cursor.offset >= completeLength;
+            });
+
+            if (!allConfirmed && !silenceExpired) {
                 continue;
             }
 
-            await this.archiveSessionFile(filePath, sessionId);
-            await this.adapter.remove(filePath);
-            archivedSessionIds.push(sessionId);
-        }
-
-        if (deletedSessionIds.length > 0 || archivedSessionIds.length > 0) {
-            await this.extendImportedSessionRetention(deviceEntries, [
-                ...deletedSessionIds,
-                ...archivedSessionIds,
-            ]);
-            await this.trimImportedSessionIds(deviceEntries);
+            await this.adapter.remove(fileInfo.filePath);
+            deletedSessionIds.push(fileInfo.sessionId);
         }
 
         return {
             deletedSessionIds,
-            archivedSessionIds,
         };
     }
 
-    private async archiveSessionFile(filePath: string, sessionId: string): Promise<void> {
-        const archivePackName = getArchivePackName(sessionId);
-        if (!archivePackName || !this.adapter.readBinary || !this.adapter.writeBinary) {
-            const fallbackPath = joinPath(this.layout.archivedSessionsRoot, `${sessionId}.jsonl`);
-            await this.adapter.write(fallbackPath, await this.adapter.read(filePath));
-            return;
-        }
+    private async findLatestSessionEventAtMs(sessionFiles: SessionFileInfo[]): Promise<number | null> {
+        let latestEventAtMs: number | null = null;
 
-        const archivePath = joinPath(this.layout.archivedSessionsRoot, archivePackName);
-        const content = await this.adapter.read(filePath);
-        const entry: ArchivedSessionPackEntry = {
-            version: SYRO_ARCHIVE_ENTRY_VERSION,
-            sessionId,
-            archivedAt: new Date().toISOString(),
-            content,
-        };
+        for (const fileInfo of sessionFiles) {
+            const raw = await this.adapter.read(fileInfo.filePath);
+            const completeText = raw.slice(0, getLastCompleteOffset(raw));
+            for (const { rawLine } of this.iterateCompleteLines(completeText, 0)) {
+                const parsedLine = parseSessionLine(rawLine);
+                if (parsedLine?.lineType !== "event") {
+                    continue;
+                }
 
-        let combinedText = `${JSON.stringify(entry)}\n`;
-        if (await this.adapter.exists(archivePath)) {
-            const previousBinary = await this.adapter.readBinary(archivePath);
-            const previousText = gunzipText(previousBinary);
-            combinedText = previousText.endsWith("\n")
-                ? `${previousText}${JSON.stringify(entry)}\n`
-                : `${previousText}\n${JSON.stringify(entry)}\n`;
-        }
+                const parsedUpdatedAt = Date.parse(parsedLine.record.updatedAt);
+                if (!Number.isFinite(parsedUpdatedAt)) {
+                    continue;
+                }
 
-        await this.adapter.writeBinary(archivePath, gzipText(combinedText));
-    }
-
-    private async trimImportedSessionIds(deviceEntries: SyroDeviceEntry[]): Promise<void> {
-        const retainedSessionIds = new Set(
-            (await this.listSessionFiles()).map((filePath) => getSessionIdFromPath(filePath)),
-        );
-        const currentEntry =
-            deviceEntries.find((entry) => entry.metadata.deviceId === this.layout.device.deviceId) ??
-            {
-                metaPath: this.layout.deviceMetaPath,
-                metadata: this.layout.device,
-            };
-        const now = Date.now();
-        const trimmed = currentEntry.metadata.importedSessionIds.filter((sessionId) => {
-            if (retainedSessionIds.has(sessionId)) {
-                return true;
+                latestEventAtMs =
+                    latestEventAtMs === null
+                        ? parsedUpdatedAt
+                        : Math.max(latestEventAtMs, parsedUpdatedAt);
             }
-
-            const retentionUntil = currentEntry.metadata.importedSessionRetentionUntil[sessionId];
-            const parsedRetention = Date.parse(retentionUntil);
-            return Number.isFinite(parsedRetention) && parsedRetention > now;
-        });
-        const trimmedRetention = Object.fromEntries(
-            Object.entries(currentEntry.metadata.importedSessionRetentionUntil).filter(
-                ([sessionId, retentionUntil]) =>
-                    trimmed.includes(sessionId) &&
-                    Number.isFinite(Date.parse(retentionUntil)) &&
-                    Date.parse(retentionUntil) > now,
-            ),
-        );
-        if (
-            trimmed.length === currentEntry.metadata.importedSessionIds.length &&
-            Object.keys(trimmedRetention).length ===
-                Object.keys(currentEntry.metadata.importedSessionRetentionUntil).length
-        ) {
-            return;
         }
 
-        currentEntry.metadata.importedSessionIds = trimmed;
-        currentEntry.metadata.importedSessionRetentionUntil = trimmedRetention;
-        currentEntry.metadata.updatedAt = new Date().toISOString();
-        this.layout.device.importedSessionIds = trimmed;
-        this.layout.device.importedSessionRetentionUntil =
-            currentEntry.metadata.importedSessionRetentionUntil;
-        this.layout.device.updatedAt = currentEntry.metadata.updatedAt;
-
-        await this.adapter.write(
-            currentEntry.metaPath,
-            JSON.stringify(currentEntry.metadata, null, 2),
-        );
+        return latestEventAtMs;
     }
 
-    private async flushOwnOpenSessionBeforeImport(): Promise<void> {
-        if (!this.activeSession || this.activeSession.records.length === 0) {
-            return;
-        }
-
-        await this.sealActiveSession("startup");
-    }
-
-    private async markCurrentDeviceImported(sessionId: string): Promise<void> {
-        if (this.syncReadOnlyReason) {
-            return;
-        }
-
-        if (!this.layout.device.importedSessionIds.includes(sessionId)) {
-            this.layout.device.importedSessionIds.push(sessionId);
-        }
-
-        const now = new Date().toISOString();
-        this.layout.device.updatedAt = now;
-        this.layout.device.lastSeenAt = now;
-        await this.adapter.write(
-            this.layout.deviceMetaPath,
-            JSON.stringify(this.layout.device, null, 2),
-        );
-    }
-
-    private clearIdleSealTimer(): void {
-        if (this.idleSealTimer !== null) {
-            clearTimeout(this.idleSealTimer);
-            this.idleSealTimer = null;
-        }
-    }
-
-    private scheduleIdleSealTimer(): void {
-        this.clearIdleSealTimer();
-        if (this.syncReadOnlyReason || !this.activeSession || this.activeSession.records.length === 0) {
-            return;
-        }
-
-        this.idleSealTimer = setTimeout(() => {
-            this.idleSealTimer = null;
-            void this.sealActiveSession("idle-timeout").catch((error) => {
-                console.error("[SR-Syro] idle session seal failed", error);
-            });
-        }, SESSION_IDLE_TIMEOUT_MS);
-    }
-
-    private async extendImportedSessionRetention(
-        deviceEntries: SyroDeviceEntry[],
-        sessionIds: string[],
-    ): Promise<void> {
-        if (sessionIds.length === 0) {
-            return;
-        }
-
-        const retentionUntil = new Date(Date.now() + IMPORTED_SESSION_RETENTION_WINDOW_MS).toISOString();
-        const currentEntry =
-            deviceEntries.find((entry) => entry.metadata.deviceId === this.layout.device.deviceId) ??
-            {
-                metaPath: this.layout.deviceMetaPath,
-                metadata: this.layout.device,
-            };
-        let changed = false;
-        for (const sessionId of sessionIds) {
-            if (!currentEntry.metadata.importedSessionIds.includes(sessionId)) {
-                continue;
-            }
-
-            const current = currentEntry.metadata.importedSessionRetentionUntil[sessionId];
-            if (current && current >= retentionUntil) {
-                continue;
-            }
-
-            currentEntry.metadata.importedSessionRetentionUntil[sessionId] = retentionUntil;
-            changed = true;
-        }
-
-        if (!changed) {
-            return;
-        }
-
-        currentEntry.metadata.updatedAt = new Date().toISOString();
-        this.layout.device.importedSessionRetentionUntil = {
-            ...currentEntry.metadata.importedSessionRetentionUntil,
-        };
-        this.layout.device.updatedAt = currentEntry.metadata.updatedAt;
-
-        await this.adapter.write(
-            currentEntry.metaPath,
-            JSON.stringify(currentEntry.metadata, null, 2),
-        );
+    private async getCompleteLength(filePath: string): Promise<number> {
+        const raw = await this.adapter.read(filePath);
+        return getLastCompleteOffset(raw);
     }
 }

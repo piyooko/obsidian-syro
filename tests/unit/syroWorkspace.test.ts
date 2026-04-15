@@ -381,19 +381,22 @@ describe("SyroWorkspace", () => {
         expect(layout.noteCachePath).toBe(
             ".obsidian/plugins/syro/devices/Desktop--d84f/note-cache.json",
         );
-        expect(layout.activeSessionBufferPath).toBe(
-            ".obsidian/plugins/syro/sessions/open/Desktop--d84f.open.jsonl",
+        expect(layout.currentDeviceSessionsRoot).toBe(
+            ".obsidian/plugins/syro/sessions/Desktop--d84f",
+        );
+        expect(layout.currentDeviceSessionFilePath).toMatch(
+            /^\.obsidian\/plugins\/syro\/sessions\/Desktop--d84f\/\d{4}-\d{2}-\d{2}\.session\.jsonl$/,
         );
         expect(directories.has(".obsidian/plugins/syro/devices/Desktop--d84f")).toBe(true);
-        expect(directories.has(".obsidian/plugins/syro/sessions/open")).toBe(true);
+        expect(directories.has(".obsidian/plugins/syro/sessions/Desktop--d84f")).toBe(true);
 
         const savedDeviceMeta = JSON.parse(
             files.get(".obsidian/plugins/syro/devices/Desktop--d84f/device.json") ?? "{}",
         );
         expect(savedDeviceMeta.deviceName).toBe("Desktop");
         expect(savedDeviceMeta.ownerInstallIdHash).toBe(ownerInstallIdHash);
-        expect(savedDeviceMeta.importedSessionIds).toEqual([]);
-        expect(savedDeviceMeta.importedSessionRetentionUntil).toEqual({});
+        expect(savedDeviceMeta.importedSessionIds).toBeUndefined();
+        expect(savedDeviceMeta.importedSessionRetentionUntil).toBeUndefined();
         expect(installState.installInstanceId).toBe("d84f1111-2222-3333-4444-555555555555");
         expect(currentDeviceState.deviceId).toBe("d84f1111-2222-3333-4444-555555555555");
         expect(currentDeviceState.deviceFolderName).toBe("Desktop--d84f");
@@ -500,7 +503,7 @@ describe("SyroWorkspace", () => {
         ).toBe(false);
     });
 
-    it("migrates compatibility local-state and legacy session roots into the new tree", async () => {
+    it("migrates compatibility local-state files but ignores legacy session roots", async () => {
         const { adapter, files, directories } = createMockAdapter();
         files.set(".obsidian/plugins/syro/data.json", '{"settings":{"openRandomNote":true}}');
         files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[]}');
@@ -513,10 +516,6 @@ describe("SyroWorkspace", () => {
         files.set(
             ".obsidian/plugins/syro/local-state/cards.review_overlay.json",
             '{"items":[{"id":"compat-overlay"}]}',
-        );
-        files.set(
-            ".obsidian/plugins/syro/local-state/active-session-buffer.jsonl",
-            '{"version":1,"sessionId":"open-1","opId":"op-1"}\n',
         );
         files.set(
             ".obsidian/plugins/syro/sessions/2026-04-12T15-30-12__d84f__0001.jsonl",
@@ -534,17 +533,13 @@ describe("SyroWorkspace", () => {
 
         expect(startup.startupDecision).toBe("ready");
         expect(files.get(layout.cardsOverlayPath)).toBe('{"items":[{"id":"compat-overlay"}]}');
-        expect(files.get(layout.activeSessionBufferPath)).toBe(
-            '{"version":1,"sessionId":"open-1","opId":"op-1"}\n',
+        expect(files.has(layout.currentDeviceSessionFilePath)).toBe(false);
+        expect(
+            files.has(".obsidian/plugins/syro/sessions/closed/2026-04-12T15-30-12__d84f__0001.jsonl"),
+        ).toBe(false);
+        expect(files.has(".obsidian/plugins/syro/sessions/archive/d84f__2026-04.sessionpack.gz")).toBe(
+            false,
         );
-        expect(
-            files.get(
-                ".obsidian/plugins/syro/sessions/closed/2026-04-12T15-30-12__d84f__0001.jsonl",
-            ),
-        ).toBe('{"version":1,"sessionId":"closed-1","opId":"op-1"}\n');
-        expect(
-            files.get(".obsidian/plugins/syro/sessions/archive/d84f__2026-04.sessionpack.gz"),
-        ).toBe("gzip-bytes");
     });
 
     it("enters read-only and skips the marker when migration validation fails", async () => {
@@ -789,8 +784,8 @@ describe("SyroWorkspace", () => {
         expect(layout.device.ownerInstallIdHash).toBe(
             await sha256Hex("d84f1111-2222-3333-4444-555555555555"),
         );
-        expect(layout.device.importedSessionIds).toEqual([]);
-        expect(layout.device.importedSessionRetentionUntil).toEqual({});
+        expect(layout.device.importedSessionIds).toBeUndefined();
+        expect(layout.device.importedSessionRetentionUntil).toBeUndefined();
         expect(files.get(layout.cardsPath)).toBe('{"items":[{"uuid":"card-1"}]}');
         expect(JSON.parse(files.get(layout.deckOptionsPath) ?? "{}")).toEqual(
             JSON.parse(createValidDeckOptionsPayload()),
@@ -939,18 +934,21 @@ describe("SyroWorkspace", () => {
         expect(startup.currentDevice).toBeNull();
     });
 
-    it("renames the current device folder and its open session buffer", async () => {
+    it("renames the current device folder and its session directory", async () => {
         const { adapter, files } = createMockAdapter();
         const workspace = createWorkspace(adapter);
         const initial = await workspace.initialize();
-        files.set(normalizePath(initial.layout.activeSessionBufferPath), '{"version":1}\n');
+        files.set(normalizePath(initial.layout.currentDeviceSessionFilePath), '{"version":1}\n');
 
         const renamed = await workspace.renameCurrentDevice(initial.layout, "Primary Desktop");
 
         expect(renamed.device.deviceName).toBe("Primary Desktop");
         expect(renamed.deviceRoot).toBe(".obsidian/plugins/syro/devices/Primary-Desktop--d84f");
-        expect(files.get(normalizePath(renamed.activeSessionBufferPath))).toBe('{"version":1}\n');
-        expect(files.has(normalizePath(initial.layout.activeSessionBufferPath))).toBe(false);
+        expect(renamed.currentDeviceSessionsRoot).toBe(
+            ".obsidian/plugins/syro/sessions/Primary-Desktop--d84f",
+        );
+        expect(files.get(normalizePath(renamed.currentDeviceSessionFilePath))).toBe('{"version":1}\n');
+        expect(files.has(normalizePath(initial.layout.currentDeviceSessionFilePath))).toBe(false);
         expect(
             JSON.parse(files.get(normalizePath(renamed.deviceMetaPath)) ?? "{}").deviceName,
         ).toBe("Primary Desktop");

@@ -1449,17 +1449,22 @@ export default class SRPlugin extends Plugin {
             }
         };
         const entries: string[] = [];
-        const closedListing = await this.safeVaultList(this.syroLayout.closedSessionsRoot);
-        const closedFiles = closedListing.files
-            .map((filePath) => normalizeSyroPath(filePath))
-            .filter((filePath) => filePath.toLowerCase().endsWith(".jsonl"))
+        const sessionListing = await this.safeVaultList(this.syroLayout.sessionsRoot);
+        const sessionDeviceFolders = sessionListing.folders
+            .map((folderPath) => normalizeSyroPath(folderPath))
             .sort((left, right) => left.localeCompare(right));
 
-        for (const filePath of closedFiles) {
-            const stat = await readFingerprintStat(filePath);
-            entries.push(
-                `${filePath}|${stat?.mtime ?? 0}|${stat?.size ?? 0}`,
-            );
+        for (const sessionDeviceFolder of sessionDeviceFolders) {
+            const deviceSessionListing = await this.safeVaultList(sessionDeviceFolder);
+            const sessionFiles = deviceSessionListing.files
+                .map((filePath) => normalizeSyroPath(filePath))
+                .filter((filePath) => filePath.toLowerCase().endsWith(".session.jsonl"))
+                .sort((left, right) => left.localeCompare(right));
+
+            for (const filePath of sessionFiles) {
+                const stat = await readFingerprintStat(filePath);
+                entries.push(`${filePath}|${stat?.mtime ?? 0}|${stat?.size ?? 0}`);
+            }
         }
 
         const deviceListing = await this.safeVaultList(this.syroLayout.devicesRoot);

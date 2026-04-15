@@ -1,7 +1,7 @@
-import { gunzipSync } from "zlib";
 import { createHash } from "crypto";
 import { DEFAULT_SETTINGS } from "src/settings";
 import { createDeckOptionsStoreSnapshot } from "src/dataStore/deckOptionsStore";
+import type { SyroSessionRecord } from "src/dataStore/syroSessionManager";
 import { SyroSessionManager } from "src/dataStore/syroSessionManager";
 import { SyroWorkspace } from "src/dataStore/syroWorkspace";
 
@@ -12,11 +12,9 @@ type MockAdapter = {
     list: jest.Mock<Promise<{ files: string[]; folders: string[] }>, [string]>;
     mkdir: jest.Mock<Promise<void>, [string]>;
     read: jest.Mock<Promise<string>, [string]>;
-    readBinary: jest.Mock<Promise<ArrayBuffer>, [string]>;
     remove: jest.Mock<Promise<void>, [string]>;
     rename: jest.Mock<Promise<void>, [string, string]>;
     write: jest.Mock<Promise<void>, [string, string]>;
-    writeBinary: jest.Mock<Promise<void>, [string, ArrayBuffer]>;
 };
 
 function normalizePath(path: string): string {
@@ -90,11 +88,6 @@ function createMockAdapter() {
             directories.add(normalizePath(path));
         }),
         read: jest.fn(async (path: string) => files.get(normalizePath(path)) ?? ""),
-        readBinary: jest.fn(async (path: string) => {
-            const value = files.get(normalizePath(path)) ?? "";
-            const encoded = Buffer.from(value, "base64");
-            return encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength);
-        }),
         remove: jest.fn(async (path: string) => {
             files.delete(normalizePath(path));
         }),
@@ -119,11 +112,6 @@ function createMockAdapter() {
             ensureParentDirectories(normalized);
             files.set(normalized, value);
         }),
-        writeBinary: jest.fn(async (path: string, value: ArrayBuffer) => {
-            const normalized = normalizePath(path);
-            ensureParentDirectories(normalized);
-            files.set(normalized, Buffer.from(value).toString("base64"));
-        }),
     };
 
     return { adapter, files, directories };
@@ -133,9 +121,6 @@ function createValidDeviceMetadata(options: {
     deviceId: string;
     deviceName: string;
     shortDeviceId: string;
-    importedSessionIds?: string[];
-    importedSessionRetentionUntil?: Record<string, string>;
-    lastSeenAt?: string;
 }): string {
     return JSON.stringify(
         {
@@ -145,15 +130,51 @@ function createValidDeviceMetadata(options: {
             shortDeviceId: options.shortDeviceId,
             createdAt: "2026-04-12T00:00:00.000Z",
             updatedAt: "2026-04-12T00:00:00.000Z",
-            lastSeenAt: options.lastSeenAt ?? "2026-04-13T00:00:00.000Z",
+            lastSeenAt: "2026-04-13T00:00:00.000Z",
+            ownerInstallIdHash: null,
             baselineFromDeviceId: null,
             baselineBuiltAt: null,
-            importedSessionIds: options.importedSessionIds ?? [],
-            importedSessionRetentionUntil: options.importedSessionRetentionUntil ?? {},
         },
         null,
         2,
     );
+}
+
+function createSessionEventLine(record: SyroSessionRecord): string {
+    return JSON.stringify({
+        version: 1,
+        lineType: "event",
+        record,
+    });
+}
+
+function createCursorSnapshotLine(cursors: Record<string, { offset: number; lastOpId: string | null; updatedAt: string }>): string {
+    return JSON.stringify({
+        version: 1,
+        lineType: "cursor-snapshot",
+        deviceId: "d84f1111-2222-3333-4444-555555555555",
+        deviceName: "Desktop",
+        updatedAt: "2026-04-13T12:34:57.000Z",
+        cursors,
+    });
+}
+
+function createRemoteRecord(overrides: Partial<SyroSessionRecord> = {}): SyroSessionRecord {
+    return {
+        version: 1,
+        sessionId: "Mobile--91ac/2026-04-13",
+        opId: "remote-op-1",
+        deviceId: "91ac1111-2222-3333-4444-555555555555",
+        deviceName: "Mobile",
+        domain: "cards",
+        entityType: "card-item",
+        opType: "review",
+        targetUuid: "card-1",
+        createdAt: "2026-04-13T12:00:00.000Z",
+        updatedAt: "2026-04-13T12:00:00.000Z",
+        payload: { id: 1 },
+        ...overrides,
+    };
 }
 
 describe("SyroSessionManager", () => {
@@ -169,23 +190,15 @@ describe("SyroSessionManager", () => {
                 randomUUID: () => "d84f1111-2222-3333-4444-555555555555",
                 getRandomValues: originalCrypto?.getRandomValues ?? ((buffer: Uint8Array) => buffer),
                 subtle: originalCrypto?.subtle ?? {
-                    digest: async (algorithm: string, data: BufferSource): Promise<ArrayBuffer> => {
-                        if (algorithm !== "SHA-256") {
-                            throw new Error(`Unsupported digest: ${algorithm}`);
-                        }
-
+                    digest: async (_algorithm: string, data: BufferSource): Promise<ArrayBuffer> => {
                         const hash = createHash("sha256");
                         if (data instanceof ArrayBuffer) {
                             hash.update(Buffer.from(data));
                         } else {
                             hash.update(Buffer.from(data.buffer, data.byteOffset, data.byteLength));
                         }
-
                         const digest = hash.digest();
-                        return digest.buffer.slice(
-                            digest.byteOffset,
-                            digest.byteOffset + digest.byteLength,
-                        );
+                        return digest.buffer.slice(digest.byteOffset, digest.byteOffset + digest.byteLength);
                     },
                 },
             },
@@ -215,545 +228,153 @@ describe("SyroSessionManager", () => {
         return { adapter, app, files, layout: startup.layout! };
     }
 
-    async function addSecondaryDevice(
-        adapter: MockAdapter,
-        files: Map<string, string>,
-        options: {
-            folderName?: string;
-            deviceId?: string;
-            deviceName?: string;
-            shortDeviceId?: string;
-            importedSessionIds?: string[];
-            importedSessionRetentionUntil?: Record<string, string>;
-            lastSeenAt?: string;
-        } = {},
-    ): Promise<void> {
-        const folderName = options.folderName ?? "Mobile--91ac";
-        await adapter.mkdir(`.obsidian/plugins/syro/devices/${folderName}`);
+    async function addSecondaryDevice(adapter: MockAdapter, files: Map<string, string>): Promise<void> {
+        await adapter.mkdir(".obsidian/plugins/syro/devices/Mobile--91ac");
+        await adapter.mkdir(".obsidian/plugins/syro/sessions/Mobile--91ac");
         files.set(
-            `.obsidian/plugins/syro/devices/${folderName}/device.json`,
+            ".obsidian/plugins/syro/devices/Mobile--91ac/device.json",
             createValidDeviceMetadata({
-                deviceId: options.deviceId ?? "91ac1111-2222-3333-4444-555555555555",
-                deviceName: options.deviceName ?? "Mobile",
-                shortDeviceId: options.shortDeviceId ?? "91ac",
-                importedSessionIds: options.importedSessionIds,
-                importedSessionRetentionUntil: options.importedSessionRetentionUntil,
-                lastSeenAt: options.lastSeenAt,
+                deviceId: "91ac1111-2222-3333-4444-555555555555",
+                deviceName: "Mobile",
+                shortDeviceId: "91ac",
             }),
         );
     }
 
-    test("appends new session records even before a second valid device appears", async () => {
+    test("appends new records to the current device daily session file", async () => {
         const { app, files, layout } = await createWorkspaceContext();
         const manager = new SyroSessionManager(app, layout);
         await manager.initialize();
 
         const deckOptionsState = createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state;
         await expect(manager.appendDeckOptionsChange(deckOptionsState)).resolves.toBe(true);
-        const bufferRaw = files.get(normalizePath(layout.activeSessionBufferPath)) ?? "";
-        expect(bufferRaw).toContain('"domain":"deck-options"');
-        expect(bufferRaw).toContain('"sessionSeq":1');
+
+        const sessionRaw = files.get(normalizePath(layout.currentDeviceSessionFilePath)) ?? "";
+        expect(sessionRaw).toContain('"lineType":"event"');
+        expect(sessionRaw).toContain('"domain":"deck-options"');
     });
 
-    test("ignores orphan device directories without blocking local session persistence", async () => {
-        const { app, adapter, files, layout } = await createWorkspaceContext();
-        await adapter.mkdir(".obsidian/plugins/syro/devices/Desktop--ec3c");
-        await adapter.write(
-            ".obsidian/plugins/syro/devices/Desktop--ec3c/settings.json",
-            JSON.stringify({ version: 1 }),
-        );
-
-        const manager = new SyroSessionManager(app, layout);
-        await manager.initialize();
-
-        const deckOptionsState = createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state;
-        await expect(manager.appendDeckOptionsChange(deckOptionsState)).resolves.toBe(true);
-        expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(true);
-    });
-
-    test("flushes the active buffer into a formal session file and confirms it locally", async () => {
+    test("imports remote records from a still-growing session file and appends a local cursor snapshot", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);
+        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        files.set(normalizePath(remoteSessionPath), `${createSessionEventLine(createRemoteRecord())}\n`);
 
         const manager = new SyroSessionManager(app, layout);
         await manager.initialize();
-
-        const deckOptionsState = createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state;
-        await manager.appendDeckOptionsChange(deckOptionsState);
-        const sessionId = await manager.flushActiveSession();
-
-        expect(sessionId).toBe("2026-04-13T12-34-56__d84f__0001");
-        expect(
-            files.get(normalizePath(`${layout.closedSessionsRoot}/${sessionId}.jsonl`)),
-        ).toContain('"sessionId":"2026-04-13T12-34-56__d84f__0001"');
-        expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(false);
-
-        const currentDeviceMeta = JSON.parse(
-            files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
-        ) as { importedSessionIds?: string[] };
-        expect(currentDeviceMeta.importedSessionIds).toContain(sessionId);
-    });
-
-    test("recovers buffered records on startup and quarantines bad buffer lines", async () => {
-        const { app, adapter, files, layout } = await createWorkspaceContext();
-        await addSecondaryDevice(adapter, files);
-
-        const manager = new SyroSessionManager(app, layout);
-        await manager.initialize();
-
-        const deckOptionsState = createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state;
-        await manager.appendDeckOptionsChange(deckOptionsState);
-        await adapter.append(layout.activeSessionBufferPath, "this is not valid json\n");
-
-        const restoredManager = new SyroSessionManager(app, layout);
-        await restoredManager.initialize();
-
-        expect(files.get(normalizePath(`${layout.activeSessionBufferPath}.bad`))).toContain(
-            "this is not valid json",
-        );
-
-        const sessionId = await restoredManager.flushActiveSession();
-        expect(sessionId).toBe("2026-04-13T12-34-56__d84f__0001");
-        expect(files.has(normalizePath(`${layout.closedSessionsRoot}/${sessionId}.jsonl`))).toBe(
-            true,
-        );
-    });
-
-    test("imports pending sessions, quarantines bad lines, and confirms the imported session", async () => {
-        const { app, adapter, files, layout } = await createWorkspaceContext();
-        await addSecondaryDevice(adapter, files);
-
-        const remoteSessionPath = `${layout.closedSessionsRoot}/2026-04-12T08-00-00__91ac__0001.jsonl`;
-        files.set(
-            normalizePath(remoteSessionPath),
-            [
-                JSON.stringify({
-                    version: 1,
-                    sessionId: "2026-04-12T08-00-00__91ac__0001",
-                    opId: "op-1",
-                    deviceId: "91ac1111-2222-3333-4444-555555555555",
-                    deviceName: "Mobile",
-                    domain: "deck-options",
-                    entityType: "deck-options",
-                    opType: "replace",
-                    targetUuid: "deck-options:global",
-                    createdAt: "2026-04-12T08:00:00.000Z",
-                    updatedAt: "2026-04-12T08:00:00.000Z",
-                    payload: createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state,
-                }),
-                "not-json",
-                "",
-            ].join("\n"),
-        );
-
-        const manager = new SyroSessionManager(app, layout);
-        await manager.initialize();
-
         const replaySession = jest.fn(async () => undefined);
+
         const result = await manager.importPendingSessions(replaySession);
 
-        expect(replaySession).toHaveBeenCalledWith(
-            "2026-04-12T08-00-00__91ac__0001",
-            expect.arrayContaining([
-                expect.objectContaining({
-                    sessionId: "2026-04-12T08-00-00__91ac__0001",
-                    domain: "deck-options",
-                }),
-            ]),
-        );
-        expect(result.importedSessionIds).toEqual(["2026-04-12T08-00-00__91ac__0001"]);
-        expect(files.get(normalizePath(`${remoteSessionPath}.bad`))).toContain("not-json");
-
-        const currentDeviceMeta = JSON.parse(
-            files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
-        ) as { importedSessionIds?: string[] };
-        expect(currentDeviceMeta.importedSessionIds).toContain(
-            "2026-04-12T08-00-00__91ac__0001",
-        );
+        expect(replaySession).toHaveBeenCalledWith("Mobile--91ac/2026-04-13", [
+            expect.objectContaining({ opId: "remote-op-1" }),
+        ]);
+        expect(result.importedSessionIds).toEqual(["Mobile--91ac/2026-04-13"]);
+        const localSessionRaw = files.get(normalizePath(layout.currentDeviceSessionFilePath)) ?? "";
+        expect(localSessionRaw).toContain('"lineType":"cursor-snapshot"');
+        expect(localSessionRaw).toContain("Mobile--91ac/2026-04-13.session.jsonl");
+        expect(files.get(normalizePath(remoteSessionPath))).toContain('"lineType":"event"');
     });
 
-    test("imports pending sessions even when only the current device is registered locally", async () => {
-        const { app, files, layout } = await createWorkspaceContext();
-
-        files.set(
-            normalizePath(`${layout.closedSessionsRoot}/2026-04-12T08-00-00__91ac__0001.jsonl`),
-            JSON.stringify({
-                version: 1,
-                sessionId: "2026-04-12T08-00-00__91ac__0001",
-                opId: "op-1",
-                deviceId: "91ac1111-2222-3333-4444-555555555555",
-                deviceName: "Mobile",
-                domain: "deck-options",
-                entityType: "deck-options",
-                opType: "replace",
-                targetUuid: "deck-options:global",
-                createdAt: "2026-04-12T08:00:00.000Z",
-                updatedAt: "2026-04-12T08:00:00.000Z",
-                payload: createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state,
+    test("ignores trailing partial lines until they become complete", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        await addSecondaryDevice(adapter, files);
+        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        const firstLine = createSessionEventLine(createRemoteRecord());
+        const secondLine = createSessionEventLine(
+            createRemoteRecord({
+                opId: "remote-op-2",
+                targetUuid: "card-2",
             }),
         );
+        files.set(normalizePath(remoteSessionPath), `${firstLine}\n${secondLine}`);
 
         const manager = new SyroSessionManager(app, layout);
         await manager.initialize();
-
         const replaySession = jest.fn(async () => undefined);
-        const result = await manager.importPendingSessions(replaySession);
 
+        await manager.importPendingSessions(replaySession);
         expect(replaySession).toHaveBeenCalledTimes(1);
-        expect(result.importedSessionIds).toEqual(["2026-04-12T08-00-00__91ac__0001"]);
+        const firstReplayArgs = replaySession.mock.calls[0] as unknown as [
+            string,
+            SyroSessionRecord[],
+        ];
+        expect(firstReplayArgs[1]).toHaveLength(1);
+
+        files.set(normalizePath(remoteSessionPath), `${firstLine}\n${secondLine}\n`);
+        await manager.importPendingSessions(replaySession);
+        expect(replaySession).toHaveBeenCalledTimes(2);
+        const secondReplayArgs = replaySession.mock.calls[1] as unknown as [
+            string,
+            SyroSessionRecord[],
+        ];
+        expect(secondReplayArgs[1]).toEqual([
+            expect.objectContaining({ opId: "remote-op-2" }),
+        ]);
     });
 
-    test("peekPendingSessions classifies runtime-only review deltas without forcing a global sync", async () => {
-        const { app, files, layout } = await createWorkspaceContext();
-
+    test("restores cursor snapshots after restart and resumes from the saved offset", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        await addSecondaryDevice(adapter, files);
+        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        const firstLine = `${createSessionEventLine(createRemoteRecord())}\n`;
+        files.set(normalizePath(remoteSessionPath), firstLine);
         files.set(
-            normalizePath(`${layout.closedSessionsRoot}/2026-04-12T08-00-00__91ac__0001.jsonl`),
-            [
-                JSON.stringify({
-                    version: 1,
-                    sessionId: "2026-04-12T08-00-00__91ac__0001",
-                    opId: "op-card-review",
-                    deviceId: "91ac1111-2222-3333-4444-555555555555",
-                    deviceName: "Mobile",
-                    domain: "cards",
-                    entityType: "card-item",
-                    opType: "review",
-                    targetUuid: "card-1",
-                    createdAt: "2026-04-12T08:00:00.000Z",
-                    updatedAt: "2026-04-12T08:00:00.000Z",
-                    payload: {
-                        item: {
-                            id: 1,
-                        },
-                    },
-                }),
-                JSON.stringify({
-                    version: 1,
-                    sessionId: "2026-04-12T08-00-00__91ac__0001",
-                    opId: "op-daily",
-                    deviceId: "91ac1111-2222-3333-4444-555555555555",
-                    deviceName: "Mobile",
-                    domain: "daily-state",
-                    entityType: "daily-state-op",
-                    opType: "deck-stats-delta",
-                    targetUuid: "daily-op:1",
-                    createdAt: "2026-04-12T08:00:01.000Z",
-                    updatedAt: "2026-04-12T08:00:01.000Z",
-                    payload: {
-                        date: "2026-04-12",
-                        deckName: "default",
-                        newDelta: 1,
-                        reviewDelta: 0,
-                    },
-                }),
-            ].join("\n"),
-        );
-
-        const manager = new SyroSessionManager(app, layout);
-        await manager.initialize();
-
-        await expect(manager.peekPendingSessions()).resolves.toEqual({
-            pendingSessionIds: ["2026-04-12T08-00-00__91ac__0001"],
-            impact: "runtime-only",
-        });
-    });
-
-    test("peekPendingSessions escalates when a structural remote change is pending", async () => {
-        const { app, files, layout } = await createWorkspaceContext();
-
-        files.set(
-            normalizePath(`${layout.closedSessionsRoot}/2026-04-12T08-00-00__91ac__0001.jsonl`),
-            JSON.stringify({
-                version: 1,
-                sessionId: "2026-04-12T08-00-00__91ac__0001",
-                opId: "op-settings",
-                deviceId: "91ac1111-2222-3333-4444-555555555555",
-                deviceName: "Mobile",
-                domain: "settings",
-                entityType: "shared-settings",
-                opType: "patch",
-                targetUuid: "settings:batch:1",
-                createdAt: "2026-04-12T08:00:00.000Z",
-                updatedAt: "2026-04-12T08:00:00.000Z",
-                payload: {
-                    changed: {
-                        openRandomNote: true,
-                    },
+            normalizePath(layout.currentDeviceSessionFilePath),
+            `${createCursorSnapshotLine({
+                "Mobile--91ac/2026-04-13.session.jsonl": {
+                    offset: firstLine.length,
+                    lastOpId: "remote-op-1",
+                    updatedAt: "2026-04-13T12:34:57.000Z",
                 },
-            }),
+            })}\n`,
         );
 
         const manager = new SyroSessionManager(app, layout);
         await manager.initialize();
+        const replaySession = jest.fn(async () => undefined);
 
-        await expect(manager.peekPendingSessions()).resolves.toEqual({
-            pendingSessionIds: ["2026-04-12T08-00-00__91ac__0001"],
-            impact: "requires-global-sync",
-        });
-    });
+        await manager.importPendingSessions(replaySession);
+        expect(replaySession).not.toHaveBeenCalled();
 
-    test("keeps importedSessionIds for the retention window after fully confirmed cleanup", async () => {
-        const { app, adapter, files, layout } = await createWorkspaceContext();
-        const sessionId = "2026-04-12T08-00-00__91ac__0001";
-        await addSecondaryDevice(adapter, files, {
-            importedSessionIds: [sessionId],
-        });
-
-        files.set(
-            normalizePath(`${layout.closedSessionsRoot}/${sessionId}.jsonl`),
-            JSON.stringify({
-                version: 1,
-                sessionId,
-                opId: "op-1",
-                deviceId: "91ac1111-2222-3333-4444-555555555555",
-                deviceName: "Mobile",
-                domain: "deck-options",
-                entityType: "deck-options",
-                opType: "replace",
-                targetUuid: "deck-options:global",
-                createdAt: "2026-04-12T08:00:00.000Z",
-                updatedAt: "2026-04-12T08:00:00.000Z",
-                payload: createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state,
-            }),
-        );
-
-        const currentDeviceMeta = JSON.parse(
-            files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
-        ) as {
-            importedSessionIds?: string[];
-            importedSessionRetentionUntil?: Record<string, string>;
-        };
-        currentDeviceMeta.importedSessionIds = [sessionId];
-        currentDeviceMeta.importedSessionRetentionUntil = {};
-        files.set(normalizePath(layout.deviceMetaPath), JSON.stringify(currentDeviceMeta, null, 2));
-        layout.device.importedSessionIds = [sessionId];
-        layout.device.importedSessionRetentionUntil = {};
-
-        const manager = new SyroSessionManager(app, layout);
-        await manager.initialize();
-        const result = await manager.importPendingSessions(async () => undefined);
-
-        expect(result.deletedSessionIds).toContain(sessionId);
-        expect(files.has(normalizePath(`${layout.closedSessionsRoot}/${sessionId}.jsonl`))).toBe(
-            false,
-        );
-
-        const retainedCurrentMeta = JSON.parse(
-            files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
-        ) as {
-            importedSessionIds?: string[];
-            importedSessionRetentionUntil?: Record<string, string>;
-        };
-        expect(retainedCurrentMeta.importedSessionIds).toContain(sessionId);
-        expect(retainedCurrentMeta.importedSessionRetentionUntil?.[sessionId]).toBeTruthy();
-    });
-
-    test("cleanup only rewrites the current device metadata and leaves foreign device.json untouched", async () => {
-        const { app, adapter, files, layout } = await createWorkspaceContext();
-        const sessionId = "2026-04-12T08-00-00__91ac__0001";
-        const foreignMetaPath = normalizePath(
-            ".obsidian/plugins/syro/devices/Mobile--91ac/device.json",
-        );
-        await addSecondaryDevice(adapter, files, {
-            importedSessionIds: [sessionId],
-        });
-
-        const currentDeviceMeta = JSON.parse(
-            files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
-        ) as {
-            importedSessionIds?: string[];
-            importedSessionRetentionUntil?: Record<string, string>;
-        };
-        currentDeviceMeta.importedSessionIds = [sessionId];
-        currentDeviceMeta.importedSessionRetentionUntil = {};
-        files.set(normalizePath(layout.deviceMetaPath), JSON.stringify(currentDeviceMeta, null, 2));
-        layout.device.importedSessionIds = [sessionId];
-        layout.device.importedSessionRetentionUntil = {};
-
-        files.set(
-            normalizePath(`${layout.closedSessionsRoot}/${sessionId}.jsonl`),
-            JSON.stringify({
-                version: 1,
-                sessionId,
-                opId: "op-1",
-                deviceId: "91ac1111-2222-3333-4444-555555555555",
-                deviceName: "Mobile",
-                domain: "deck-options",
-                entityType: "deck-options",
-                opType: "replace",
-                targetUuid: "deck-options:global",
-                createdAt: "2026-04-12T08:00:00.000Z",
-                updatedAt: "2026-04-12T08:00:00.000Z",
-                payload: createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state,
-            }),
-        );
-
-        const manager = new SyroSessionManager(app, layout);
-        await manager.initialize();
-        adapter.write.mockClear();
-
-        await manager.importPendingSessions(async () => undefined);
-
-        const touchedMetaPaths = adapter.write.mock.calls
-            .map(([path]) => normalizePath(path))
-            .filter((path) => path.endsWith("/device.json"));
-        expect(touchedMetaPaths).toContain(normalizePath(layout.deviceMetaPath));
-        expect(touchedMetaPaths).not.toContain(foreignMetaPath);
-    });
-
-    test("archives stale unconfirmed sessions into a real gzip pack and keeps retention metadata", async () => {
-        const { app, adapter, files, layout } = await createWorkspaceContext();
-        const sessionId = "2026-03-01T08-00-00__91ac__0001";
-        await addSecondaryDevice(adapter, files, {
-            importedSessionIds: [sessionId],
-        });
-        await addSecondaryDevice(adapter, files, {
-            folderName: "Tablet--22bb",
-            deviceId: "22bb1111-2222-3333-4444-555555555555",
-            deviceName: "Tablet",
-            shortDeviceId: "22bb",
-            importedSessionIds: [],
-        });
-
-        files.set(
-            normalizePath(`${layout.closedSessionsRoot}/${sessionId}.jsonl`),
-            JSON.stringify({
-                version: 1,
-                sessionId,
-                opId: "op-1",
-                deviceId: "91ac1111-2222-3333-4444-555555555555",
-                deviceName: "Mobile",
-                domain: "deck-options",
-                entityType: "deck-options",
-                opType: "replace",
-                targetUuid: "deck-options:global",
-                createdAt: "2026-03-01T08:00:00.000Z",
-                updatedAt: "2026-03-01T08:00:00.000Z",
-                payload: createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state,
-            }),
-        );
-
-        const currentDeviceMeta = JSON.parse(
-            files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
-        ) as {
-            importedSessionIds?: string[];
-            importedSessionRetentionUntil?: Record<string, string>;
-        };
-        currentDeviceMeta.importedSessionIds = [sessionId];
-        currentDeviceMeta.importedSessionRetentionUntil = {};
-        files.set(normalizePath(layout.deviceMetaPath), JSON.stringify(currentDeviceMeta, null, 2));
-        layout.device.importedSessionIds = [sessionId];
-        layout.device.importedSessionRetentionUntil = {};
-
-        const manager = new SyroSessionManager(app, layout);
-        await manager.initialize();
-        const result = await manager.importPendingSessions(async () => undefined);
-
-        const archivePath = normalizePath(
-            `${layout.archivedSessionsRoot}/91ac__2026-03.sessionpack.gz`,
-        );
-        expect(result.archivedSessionIds).toContain(sessionId);
-        expect(files.has(normalizePath(`${layout.closedSessionsRoot}/${sessionId}.jsonl`))).toBe(
-            false,
-        );
-        expect(files.has(archivePath)).toBe(true);
-
-        const archiveBuffer = Buffer.from(files.get(archivePath) ?? "", "base64");
-        const archiveText = gunzipSync(archiveBuffer).toString("utf8");
-        expect(archiveText).toContain(sessionId);
-
-        const retainedCurrentMeta = JSON.parse(
-            files.get(normalizePath(layout.deviceMetaPath)) ?? "{}",
-        ) as {
-            importedSessionIds?: string[];
-            importedSessionRetentionUntil?: Record<string, string>;
-        };
-        expect(retainedCurrentMeta.importedSessionIds).toContain(sessionId);
-        expect(retainedCurrentMeta.importedSessionRetentionUntil?.[sessionId]).toBeTruthy();
-    });
-
-    test("seals the active session after five minutes of idleness", async () => {
-        const { app, adapter, files, layout } = await createWorkspaceContext();
-        await addSecondaryDevice(adapter, files);
-
-        const manager = new SyroSessionManager(app, layout);
-        await manager.initialize();
-        await manager.appendDeckOptionsChange(createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state);
-
-        await jest.advanceTimersByTimeAsync(5 * 60 * 1000);
-
-        expect(
-            files.has(
-                normalizePath(`${layout.closedSessionsRoot}/2026-04-13T12-39-56__d84f__0001.jsonl`),
-            ),
-        ).toBe(true);
-        expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(false);
-    });
-
-    test("seals the active session immediately when the record limit is reached", async () => {
-        const { app, adapter, files, layout } = await createWorkspaceContext();
-        await addSecondaryDevice(adapter, files);
-
-        const manager = new SyroSessionManager(app, layout);
-        await manager.initialize();
-        const deckOptionsState = createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state;
-
-        for (let index = 0; index < 100; index++) {
-            await manager.appendDeckOptionsChange(
-                {
-                    ...deckOptionsState,
-                    deckPresetAssignment: {
-                        ...deckOptionsState.deckPresetAssignment,
-                        [`Deck-${index}`]: 0,
-                    },
-                },
-                `2026-04-13T12:34:${String(index % 60).padStart(2, "0")}.000Z`,
-            );
-        }
-
-        expect(
-            files.has(
-                normalizePath(`${layout.closedSessionsRoot}/2026-04-13T12-34-56__d84f__0001.jsonl`),
-            ),
-        ).toBe(true);
-        expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(false);
-    });
-
-    test("seals the local open session before importing foreign closed sessions", async () => {
-        const { app, adapter, files, layout } = await createWorkspaceContext();
-        await addSecondaryDevice(adapter, files);
-
-        const manager = new SyroSessionManager(app, layout);
-        await manager.initialize();
-
-        await manager.appendDeckOptionsChange(createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state);
-
-        const remoteSessionPath = `${layout.closedSessionsRoot}/2026-04-12T08-00-00__91ac__0001.jsonl`;
         files.set(
             normalizePath(remoteSessionPath),
-            JSON.stringify({
-                version: 1,
-                sessionId: "2026-04-12T08-00-00__91ac__0001",
-                opId: "op-remote",
-                deviceId: "91ac1111-2222-3333-4444-555555555555",
-                deviceName: "Mobile",
-                domain: "deck-options",
-                entityType: "deck-options",
-                opType: "replace",
-                targetUuid: "deck-options:global",
-                createdAt: "2026-04-12T08:00:00.000Z",
-                updatedAt: "2026-04-12T08:00:00.000Z",
-                payload: createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state,
-            }),
+            `${firstLine}${createSessionEventLine(
+                createRemoteRecord({
+                    opId: "remote-op-2",
+                    targetUuid: "card-2",
+                }),
+            )}\n`,
         );
 
-        await manager.importPendingSessions(async () => undefined);
+        await manager.importPendingSessions(replaySession);
+        expect(replaySession).toHaveBeenCalledTimes(1);
+        const resumedReplayArgs = replaySession.mock.calls[0] as unknown as [
+            string,
+            SyroSessionRecord[],
+        ];
+        expect(resumedReplayArgs[1]).toEqual([
+            expect.objectContaining({ opId: "remote-op-2" }),
+        ]);
+    });
 
-        expect(
-            files.has(
-                normalizePath(`${layout.closedSessionsRoot}/2026-04-13T12-34-56__d84f__0001.jsonl`),
-            ),
-        ).toBe(true);
-        expect(files.has(normalizePath(layout.activeSessionBufferPath))).toBe(false);
+    test("deletes historical session files after all devices have confirmed EOF", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        await addSecondaryDevice(adapter, files);
+        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-12.session.jsonl";
+        files.set(normalizePath(remoteSessionPath), `${createSessionEventLine(createRemoteRecord({
+            sessionId: "Mobile--91ac/2026-04-12",
+            createdAt: "2026-04-12T12:00:00.000Z",
+            updatedAt: "2026-04-12T12:00:00.000Z",
+        }))}\n`);
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+        const replaySession = jest.fn(async () => undefined);
+
+        const result = await manager.importPendingSessions(replaySession);
+
+        expect(result.deletedSessionIds).toEqual(["Mobile--91ac/2026-04-12"]);
+        expect(files.has(normalizePath(remoteSessionPath))).toBe(false);
     });
 });
