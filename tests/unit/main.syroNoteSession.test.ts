@@ -175,4 +175,77 @@ describe("SRPlugin syro note and timeline session hooks", () => {
         expect(plugin.appendSyroTimelineAdd).toHaveBeenCalledWith(notePath, timelineCommit);
         expect(plugin.syncEvents.emit).toHaveBeenCalledWith("note-review-updated");
     });
+
+    test("saveReviewResponse only persists daily-state when note review bury is enabled", async () => {
+        const notePath = "notes/Review.md";
+        const item = {
+            uuid: "note-2",
+            isNew: false,
+            nextReview: 0,
+            reviewUpdate: jest.fn(function (result: { nextReview: number }) {
+                this.nextReview = result.nextReview;
+            }),
+        };
+        const noteSnapshot = {
+            path: notePath,
+            source: "manual",
+            deckName: DEFAULT_DECKNAME,
+            item,
+        };
+        jest.mocked(autoCommitReviewResponseToTimeline).mockResolvedValue(null as never);
+
+        const plugin = {
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    showSchedulingDebugMessages: false,
+                    burySiblingCardsByNoteReview: true,
+                    timelineAutoCommitReviewSelection: false,
+                },
+            },
+            getNoteReviewIgnoreReason: jest.fn(() => null),
+            showNoteReviewIgnoreNotice: jest.fn(),
+            resolveNoteReviewTracking: jest.fn(() => ({
+                deckName: DEFAULT_DECKNAME,
+                source: "manual",
+            })),
+            noteReviewStore: {
+                ensureTracked: jest.fn(() => item),
+                save: jest.fn(async () => undefined),
+                getEntrySnapshot: jest.fn(() => noteSnapshot),
+            },
+            noteAlgorithm: {
+                calcAllOptsIntervals: jest.fn(() => ({
+                    [ReviewResponse.Good]: 3,
+                })),
+                srsOptions: jest.fn(() => ({
+                    [ReviewResponse.Good]: { id: "good" },
+                })),
+                onSelection: jest.fn(() => ({
+                    correct: true,
+                    nextReview: 3 * 24 * 60 * 60 * 1000,
+                })),
+            },
+            reviewCommitStore: {},
+            app: {},
+            savePluginData: jest.fn(async () => undefined),
+            appendSyroNoteUpsert: jest.fn(async () => true),
+            appendSyroTimelineAdd: jest.fn(async () => true),
+            postponeResponse: jest.fn(),
+            syncEvents: {
+                emit: jest.fn(),
+            },
+        };
+
+        await (SRPlugin.prototype.saveReviewResponse as unknown as Function).call(
+            plugin,
+            { path: notePath },
+            ReviewResponse.Good,
+        );
+
+        expect(plugin.savePluginData).toHaveBeenCalledWith({
+            domains: ["daily-state"],
+        });
+        expect(plugin.appendSyroNoteUpsert).toHaveBeenCalledWith(noteSnapshot, "review");
+    });
 });

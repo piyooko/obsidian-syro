@@ -268,6 +268,26 @@ interface PluginData {
     folderTrackingRules: Record<string, FolderTrackingRule>;
 }
 
+export const PLUGIN_DATA_PERSIST_DOMAINS = [
+    "shared-settings",
+    "tracking-rules",
+    "daily-state",
+    "device-state",
+    "license-state",
+    "deck-options",
+] as const;
+
+export type PluginDataPersistDomain = (typeof PLUGIN_DATA_PERSIST_DOMAINS)[number];
+
+interface PluginDataPersistRequest {
+    delayMs?: number;
+    domains?: PluginDataPersistDomain[];
+}
+
+interface PluginDataPersistOptions {
+    domains?: PluginDataPersistDomain[];
+}
+
 export interface SyroDeviceManagementState {
     currentDevice: SyroValidDeviceEntry | null;
     validDevices: SyroValidDeviceEntry[];
@@ -360,6 +380,7 @@ export default class SRPlugin extends Plugin {
     private hasPerformedInitialGC = false;
     private pendingPluginDataSaveTimer: ReturnType<typeof setTimeout> | null = null;
     private pendingPluginDataSaveRequested = false;
+    private pendingPluginDataSaveDomains = new Set<PluginDataPersistDomain>();
     private pendingPluginDataSavePromise: Promise<boolean> | null = null;
     private pluginDataSaveFailureNotified = false;
     private syroReadOnlyReason: string | null = null;
@@ -414,13 +435,44 @@ export default class SRPlugin extends Plugin {
         }
     }
 
-    public requestPluginDataSave(delayMs = 350): void {
-        this.pendingPluginDataSaveRequested = true;
+    private normalizeRequestedPluginDataDomains(
+        domains?: readonly PluginDataPersistDomain[] | null,
+    ): PluginDataPersistDomain[] {
+        if (!domains || domains.length === 0) {
+            return [...PLUGIN_DATA_PERSIST_DOMAINS];
+        }
+
+        return Array.from(new Set(domains));
+    }
+
+    private schedulePendingPluginDataSave(delayMs = 350): void {
         this.clearPendingPluginDataSaveTimer();
         this.pendingPluginDataSaveTimer = setTimeout(() => {
             this.pendingPluginDataSaveTimer = null;
             this.runAsync(this.flushPendingPluginDataSave(), "flush queued plugin data");
         }, delayMs);
+    }
+
+    private enqueuePendingPluginDataSaveDomains(
+        domains?: readonly PluginDataPersistDomain[] | null,
+    ): void {
+        for (const domain of this.normalizeRequestedPluginDataDomains(domains)) {
+            this.pendingPluginDataSaveDomains.add(domain);
+        }
+    }
+
+    private consumePendingPluginDataSaveDomains(): PluginDataPersistDomain[] {
+        const domains = Array.from(this.pendingPluginDataSaveDomains);
+        this.pendingPluginDataSaveDomains.clear();
+        return domains.length > 0 ? domains : [...PLUGIN_DATA_PERSIST_DOMAINS];
+    }
+
+    public requestPluginDataSave(request: number | PluginDataPersistRequest = 350): void {
+        const delayMs = typeof request === "number" ? request : (request.delayMs ?? 350);
+        const domains = typeof request === "number" ? undefined : request.domains;
+        this.pendingPluginDataSaveRequested = true;
+        this.enqueuePendingPluginDataSaveDomains(domains);
+        this.schedulePendingPluginDataSave(delayMs);
     }
 
     public async flushPendingPluginDataSave(timeoutMs = 1500): Promise<boolean> {
@@ -430,20 +482,22 @@ export default class SRPlugin extends Plugin {
         }
 
         if (this.pendingPluginDataSavePromise === null) {
+            const pendingDomains = this.consumePendingPluginDataSaveDomains();
             this.pendingPluginDataSavePromise = (async () => {
                 this.pendingPluginDataSaveRequested = false;
                 try {
-                    await this.savePluginData();
+                    await this.savePluginData({ domains: pendingDomains });
                     this.pluginDataSaveFailureNotified = false;
                     return true;
                 } catch (error) {
                     console.error("[SR] flush queued plugin data failed", error);
                     this.pendingPluginDataSaveRequested = true;
+                    this.enqueuePendingPluginDataSaveDomains(pendingDomains);
                     if (!this.pluginDataSaveFailureNotified) {
                         this.pluginDataSaveFailureNotified = true;
                         new Notice(t("DATA_UNABLE_TO_SAVE"));
                     }
-                    this.requestPluginDataSave(1000);
+                    this.schedulePendingPluginDataSave(1000);
                     return false;
                 } finally {
                     this.pendingPluginDataSavePromise = null;
@@ -451,7 +505,7 @@ export default class SRPlugin extends Plugin {
                         this.pendingPluginDataSaveRequested &&
                         this.pendingPluginDataSaveTimer === null
                     ) {
-                        this.requestPluginDataSave(0);
+                        this.schedulePendingPluginDataSave(0);
                     }
                 }
             })();
@@ -949,7 +1003,7 @@ export default class SRPlugin extends Plugin {
                 date: today,
                 counts: {},
             };
-            this.requestPluginDataSave(0);
+            this.requestPluginDataSave({ delayMs: 0, domains: ["daily-state"] });
             if (this.data.settings.showSchedulingDebugMessages) {
                 console.debug(`[SR] New day detected (${today}). Daily limits reset.`);
             }
@@ -985,7 +1039,7 @@ export default class SRPlugin extends Plugin {
             }
         }
 
-        this.requestPluginDataSave();
+        this.requestPluginDataSave({ domains: ["daily-state"] });
     }
 
     public decrementDailyCounts(deckName: string, isNew: boolean): void {
@@ -1013,7 +1067,7 @@ export default class SRPlugin extends Plugin {
             }
         }
 
-        this.requestPluginDataSave();
+        this.requestPluginDataSave({ domains: ["daily-state"] });
     }
 
     private static createDeckTreeIterator(settings: SRSettings, baseDeck: Deck): IDeckTreeIterator {
@@ -3937,7 +3991,7 @@ export default class SRPlugin extends Plugin {
         );
 
         if (settings.burySiblingCardsByNoteReview) {
-            await this.savePluginData();
+            await this.savePluginData({ domains: ["daily-state"] });
         }
 
         await this.noteReviewStore.save();
@@ -4492,7 +4546,17 @@ export default class SRPlugin extends Plugin {
         setDebugParser(this.data.settings.showParserDebugMessages);
     }
 
-    async savePluginData(): Promise<void> {
+    async savePluginData(options: PluginDataPersistOptions = {}): Promise<void> {
+        const requestedDomains = new Set(
+            this.normalizeRequestedPluginDataDomains(options.domains),
+        );
+        const persistSharedSettings = requestedDomains.has("shared-settings");
+        const persistTrackingRules = requestedDomains.has("tracking-rules");
+        const persistDailyState = requestedDomains.has("daily-state");
+        const persistDeviceState = requestedDomains.has("device-state");
+        const persistLicenseState = requestedDomains.has("license-state");
+        const persistDeckOptions = requestedDomains.has("deck-options");
+
         if (
             !this.deckOptionsStore ||
             !this.sharedSettingsStore ||
@@ -4505,118 +4569,148 @@ export default class SRPlugin extends Plugin {
             return;
         }
 
-        const sharedSettingsState = extractSharedSettingsWithMetadata(
-            this.data.settings,
-            this.sharedSettingsUpdatedAtByField,
-        );
-        const previousSharedSettingsState =
-            this.persistedSharedSettingsState ?? createDefaultSharedSettingsState();
-        const deviceState = extractDeviceState({
-            settings: this.data.settings,
-            historyDeck: this.data.historyDeck,
-        });
-        const licenseState = extractLicenseState(this.data.settings);
-        const previousTrackingRulesState =
-            this.persistedTrackingRulesState ?? createDefaultTrackingRulesState();
-        const trackingRulesState = extractTrackingRules(
-            this.data.folderTrackingRules,
-            this.trackingRulesUpdatedAtByFolderPath,
-            this.trackingRulesTombstones,
-        );
-        const previousDailyState = this.persistedDailyState ?? createDefaultDailyState();
-        const dailyState = extractDailyStateWithMetadata(
-            {
-                buryDate: this.data.buryDate,
-                buryList: this.data.buryList,
-                dailyDeckStats: this.data.dailyDeckStats,
-            },
-            this.dailyStateAppliedOpIds,
-        );
+        const sharedSettingsState = persistSharedSettings
+            ? extractSharedSettingsWithMetadata(
+                  this.data.settings,
+                  this.sharedSettingsUpdatedAtByField,
+              )
+            : null;
+        const previousSharedSettingsState = persistSharedSettings
+            ? (this.persistedSharedSettingsState ?? createDefaultSharedSettingsState())
+            : null;
+        const deviceState =
+            persistDeviceState || this.syroReadOnlyReason
+                ? extractDeviceState({
+                      settings: this.data.settings,
+                      historyDeck: this.data.historyDeck,
+                  })
+                : null;
+        const licenseState =
+            persistLicenseState || this.syroReadOnlyReason
+                ? extractLicenseState(this.data.settings)
+                : null;
+        const previousTrackingRulesState = persistTrackingRules
+            ? (this.persistedTrackingRulesState ?? createDefaultTrackingRulesState())
+            : null;
+        const trackingRulesState = persistTrackingRules
+            ? extractTrackingRules(
+                  this.data.folderTrackingRules,
+                  this.trackingRulesUpdatedAtByFolderPath,
+                  this.trackingRulesTombstones,
+              )
+            : null;
+        const previousDailyState = persistDailyState
+            ? (this.persistedDailyState ?? createDefaultDailyState())
+            : null;
+        const dailyState = persistDailyState
+            ? extractDailyStateWithMetadata(
+                  {
+                      buryDate: this.data.buryDate,
+                      buryList: this.data.buryList,
+                      dailyDeckStats: this.data.dailyDeckStats,
+                  },
+                  this.dailyStateAppliedOpIds,
+              )
+            : null;
 
         if (this.syroReadOnlyReason) {
-            await this.deviceStateStore.save(deviceState);
-            await this.licenseStateStore.save(licenseState);
-            this.persistedDeviceState = deviceState;
-            this.persistedLicenseState = licenseState;
+            if (persistDeviceState && deviceState) {
+                await this.deviceStateStore.save(deviceState);
+                this.persistedDeviceState = deviceState;
+            }
+            if (persistLicenseState && licenseState) {
+                await this.licenseStateStore.save(licenseState);
+                this.persistedLicenseState = licenseState;
+            }
             await this.saveDataShell();
             return;
         }
 
         const updatedAt = new Date().toISOString();
-        const sharedSettingsDiff = diffSharedSettings(previousSharedSettingsState, sharedSettingsState);
-        if (Object.keys(sharedSettingsDiff.changed).length > 0) {
-            const appended =
-                (await this.syroSessionManager?.appendRecord({
-                    domain: "settings",
-                    entityType: "shared-settings",
-                    opType: "patch",
-                    targetUuid: `settings:batch:${updatedAt}`,
-                    payload: sharedSettingsDiff,
-                    pathHint: this.syroLayout?.settingsPath,
-                    updatedAt,
-                })) ?? false;
-            if (appended) {
-                for (const field of Object.keys(sharedSettingsDiff.changed)) {
-                    this.sharedSettingsUpdatedAtByField[field] = updatedAt;
+        if (persistSharedSettings && sharedSettingsState && previousSharedSettingsState) {
+            const sharedSettingsDiff = diffSharedSettings(
+                previousSharedSettingsState,
+                sharedSettingsState,
+            );
+            if (Object.keys(sharedSettingsDiff.changed).length > 0) {
+                const appended =
+                    (await this.syroSessionManager?.appendRecord({
+                        domain: "settings",
+                        entityType: "shared-settings",
+                        opType: "patch",
+                        targetUuid: `settings:batch:${updatedAt}`,
+                        payload: sharedSettingsDiff,
+                        pathHint: this.syroLayout?.settingsPath,
+                        updatedAt,
+                    })) ?? false;
+                if (appended) {
+                    for (const field of Object.keys(sharedSettingsDiff.changed)) {
+                        this.sharedSettingsUpdatedAtByField[field] = updatedAt;
+                    }
                 }
             }
         }
 
-        for (const upsert of Object.keys(trackingRulesState.rules)) {
-            delete trackingRulesState.tombstones[upsert];
-        }
-        const trackingRulesDiff = diffTrackingRules(previousTrackingRulesState, trackingRulesState);
-        for (const removal of trackingRulesDiff.removals) {
-            trackingRulesState.tombstones[removal.folderPath] = {
-                updatedAt,
-            };
-        }
-
-        for (const upsert of trackingRulesDiff.upserts) {
-            const appended =
-                (await this.syroSessionManager?.appendRecord({
-                    domain: "tracking-rules",
-                    entityType: "folder-tracking-rule",
-                    opType: "upsert-rule",
-                    targetUuid: `tracking-rule:${upsert.folderPath}`,
-                    payload: {
-                        folderPath: upsert.folderPath,
-                        rule: upsert.rule,
-                    },
-                    pathHint: this.syroLayout?.trackingRulesPath,
-                    updatedAt,
-                })) ?? false;
-            if (appended) {
-                this.trackingRulesUpdatedAtByFolderPath[upsert.folderPath] = updatedAt;
-                delete this.trackingRulesTombstones[upsert.folderPath];
+        if (persistTrackingRules && trackingRulesState && previousTrackingRulesState) {
+            for (const upsert of Object.keys(trackingRulesState.rules)) {
+                delete trackingRulesState.tombstones[upsert];
             }
-        }
-        for (const removal of trackingRulesDiff.removals) {
-            const appended =
-                (await this.syroSessionManager?.appendRecord({
-                    domain: "tracking-rules",
-                    entityType: "folder-tracking-rule",
-                    opType: "remove-rule",
-                    targetUuid: `tracking-rule:${removal.folderPath}`,
-                    payload: {
-                        folderPath: removal.folderPath,
-                    },
-                    pathHint: this.syroLayout?.trackingRulesPath,
-                    updatedAt,
-                })) ?? false;
-            if (appended) {
-                delete this.trackingRulesUpdatedAtByFolderPath[removal.folderPath];
-                this.trackingRulesTombstones[removal.folderPath] = {
+            const trackingRulesDiff = diffTrackingRules(
+                previousTrackingRulesState,
+                trackingRulesState,
+            );
+            for (const removal of trackingRulesDiff.removals) {
+                trackingRulesState.tombstones[removal.folderPath] = {
                     updatedAt,
                 };
             }
+
+            for (const upsert of trackingRulesDiff.upserts) {
+                const appended =
+                    (await this.syroSessionManager?.appendRecord({
+                        domain: "tracking-rules",
+                        entityType: "folder-tracking-rule",
+                        opType: "upsert-rule",
+                        targetUuid: `tracking-rule:${upsert.folderPath}`,
+                        payload: {
+                            folderPath: upsert.folderPath,
+                            rule: upsert.rule,
+                        },
+                        pathHint: this.syroLayout?.trackingRulesPath,
+                        updatedAt,
+                    })) ?? false;
+                if (appended) {
+                    this.trackingRulesUpdatedAtByFolderPath[upsert.folderPath] = updatedAt;
+                    delete this.trackingRulesTombstones[upsert.folderPath];
+                }
+            }
+            for (const removal of trackingRulesDiff.removals) {
+                const appended =
+                    (await this.syroSessionManager?.appendRecord({
+                        domain: "tracking-rules",
+                        entityType: "folder-tracking-rule",
+                        opType: "remove-rule",
+                        targetUuid: `tracking-rule:${removal.folderPath}`,
+                        payload: {
+                            folderPath: removal.folderPath,
+                        },
+                        pathHint: this.syroLayout?.trackingRulesPath,
+                        updatedAt,
+                    })) ?? false;
+                if (appended) {
+                    delete this.trackingRulesUpdatedAtByFolderPath[removal.folderPath];
+                    this.trackingRulesTombstones[removal.folderPath] = {
+                        updatedAt,
+                    };
+                }
+            }
         }
 
-        const dailyStateOperations = diffDailyState(previousDailyState, dailyState);
-        for (const [index, operation] of dailyStateOperations.entries()) {
-            const targetUuid = `daily-op:${updatedAt}:${index}:${operation.opType}`;
-            const appended =
-                (await this.syroSessionManager?.appendRecord({
+        if (persistDailyState && dailyState && previousDailyState) {
+            const dailyStateOperations = diffDailyState(previousDailyState, dailyState);
+            for (const [index, operation] of dailyStateOperations.entries()) {
+                const targetUuid = `daily-op:${updatedAt}:${index}:${operation.opType}`;
+                await this.syroSessionManager?.appendRecord({
                     domain: "daily-state",
                     entityType: "daily-state-op",
                     opType: operation.opType,
@@ -4624,70 +4718,87 @@ export default class SRPlugin extends Plugin {
                     payload: operation,
                     pathHint: this.syroLayout?.dailyStatePath,
                     updatedAt,
-                })) ?? false;
-            if (appended) {
-                // daily-state idempotence is keyed by opId during replay, not by a separate local file.
-            }
-        }
-
-        const deckOptionsSnapshot = createDeckOptionsStoreSnapshot(
-            this.data.settings,
-            this.deckOptionsStore.getSyncEntities(),
-        );
-        const deckOptionsChanged = await this.deckOptionsStore.hasSerializedStateChanged(
-            deckOptionsSnapshot.serialized,
-        );
-        if (deckOptionsChanged) {
-            const appended =
-                (await this.syroSessionManager?.appendDeckOptionsChange(
-                    deckOptionsSnapshot.state,
-                    updatedAt,
-                )) ?? false;
-            if (appended) {
-                this.deckOptionsStore.markSyncEntity({
-                    targetUuid: "deck-options:global",
-                    updatedAt,
-                    deleted: false,
-                    entityType: "deck-options",
-                    pathHint: this.syroLayout?.deckOptionsPath,
                 });
             }
         }
 
-        const finalSharedSettingsState = extractSharedSettingsWithMetadata(
-            this.data.settings,
-            this.sharedSettingsUpdatedAtByField,
-        );
-        const finalTrackingRulesState = extractTrackingRules(
-            this.data.folderTrackingRules,
-            this.trackingRulesUpdatedAtByFolderPath,
-            this.trackingRulesTombstones,
-        );
-        const finalDailyState = extractDailyStateWithMetadata(
-            {
-                buryDate: this.data.buryDate,
-                buryList: this.data.buryList,
-                dailyDeckStats: this.data.dailyDeckStats,
-            },
-            this.dailyStateAppliedOpIds,
-        );
-        const finalDeckOptionsSnapshot = createDeckOptionsStoreSnapshot(
-            this.data.settings,
-            this.deckOptionsStore.getSyncEntities(),
-        );
+        if (persistDeckOptions) {
+            const deckOptionsSnapshot = createDeckOptionsStoreSnapshot(
+                this.data.settings,
+                this.deckOptionsStore.getSyncEntities(),
+            );
+            const deckOptionsChanged = await this.deckOptionsStore.hasSerializedStateChanged(
+                deckOptionsSnapshot.serialized,
+            );
+            if (deckOptionsChanged) {
+                const appended =
+                    (await this.syroSessionManager?.appendDeckOptionsChange(
+                        deckOptionsSnapshot.state,
+                        updatedAt,
+                    )) ?? false;
+                if (appended) {
+                    this.deckOptionsStore.markSyncEntity({
+                        targetUuid: "deck-options:global",
+                        updatedAt,
+                        deleted: false,
+                        entityType: "deck-options",
+                        pathHint: this.syroLayout?.deckOptionsPath,
+                    });
+                }
+            }
+        }
 
-        await this.sharedSettingsStore.save(finalSharedSettingsState);
-        await this.trackingRulesStore.save(finalTrackingRulesState);
-        await this.dailyStateStore.save(finalDailyState);
-        await this.deviceStateStore.save(deviceState);
-        await this.licenseStateStore.save(licenseState);
-        await this.deckOptionsStore.saveSerialized(finalDeckOptionsSnapshot.serialized);
-        this.persistedSharedSettingsState = finalSharedSettingsState;
-        this.persistedTrackingRulesState = finalTrackingRulesState;
-        this.persistedDailyState = finalDailyState;
-        this.persistedDeviceState = deviceState;
-        this.persistedLicenseState = licenseState;
-        this.trackingRulesTombstones = { ...finalTrackingRulesState.tombstones };
+        if (persistSharedSettings) {
+            const finalSharedSettingsState = extractSharedSettingsWithMetadata(
+                this.data.settings,
+                this.sharedSettingsUpdatedAtByField,
+            );
+            await this.sharedSettingsStore.save(finalSharedSettingsState);
+            this.persistedSharedSettingsState = finalSharedSettingsState;
+        }
+
+        if (persistTrackingRules) {
+            const finalTrackingRulesState = extractTrackingRules(
+                this.data.folderTrackingRules,
+                this.trackingRulesUpdatedAtByFolderPath,
+                this.trackingRulesTombstones,
+            );
+            await this.trackingRulesStore.save(finalTrackingRulesState);
+            this.persistedTrackingRulesState = finalTrackingRulesState;
+            this.trackingRulesTombstones = { ...finalTrackingRulesState.tombstones };
+        }
+
+        if (persistDailyState) {
+            const finalDailyState = extractDailyStateWithMetadata(
+                {
+                    buryDate: this.data.buryDate,
+                    buryList: this.data.buryList,
+                    dailyDeckStats: this.data.dailyDeckStats,
+                },
+                this.dailyStateAppliedOpIds,
+            );
+            await this.dailyStateStore.save(finalDailyState);
+            this.persistedDailyState = finalDailyState;
+        }
+
+        if (persistDeviceState && deviceState) {
+            await this.deviceStateStore.save(deviceState);
+            this.persistedDeviceState = deviceState;
+        }
+
+        if (persistLicenseState && licenseState) {
+            await this.licenseStateStore.save(licenseState);
+            this.persistedLicenseState = licenseState;
+        }
+
+        if (persistDeckOptions) {
+            const finalDeckOptionsSnapshot = createDeckOptionsStoreSnapshot(
+                this.data.settings,
+                this.deckOptionsStore.getSyncEntities(),
+            );
+            await this.deckOptionsStore.saveSerialized(finalDeckOptionsSnapshot.serialized);
+        }
+
         await this.saveDataShell();
     }
 

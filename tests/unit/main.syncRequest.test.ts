@@ -232,7 +232,7 @@ describe("SRPlugin sync request orchestration", () => {
 
     test("savePluginData persists split state files, deck options, and a shell-only data.json", async () => {
         const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
-        const plugin = {
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
             deckOptionsStore: {
                 getSyncEntities: jest.fn(() => ({})),
                 markSyncEntity: jest.fn(),
@@ -287,7 +287,7 @@ describe("SRPlugin sync request orchestration", () => {
             },
             trackingRulesTombstones: {},
             saveData: jest.fn(async () => undefined),
-        };
+        });
 
         await (SRPlugin.prototype.savePluginData as unknown as Function).call(plugin);
 
@@ -320,5 +320,146 @@ describe("SRPlugin sync request orchestration", () => {
                 }),
             }),
         );
+    });
+
+    test("savePluginData with daily-state only persists just daily-state and the shell", async () => {
+        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            deckOptionsStore: {
+                getSyncEntities: jest.fn(() => ({})),
+                markSyncEntity: jest.fn(),
+                hasSerializedStateChanged: jest.fn(async () => true),
+                saveSerialized: jest.fn(async () => undefined),
+            },
+            syroSessionManager: {
+                appendRecord: jest.fn(async () => true),
+                appendDeckOptionsChange: jest.fn(async () => true),
+            },
+            sharedSettingsStore: {
+                save: jest.fn(async () => undefined),
+            },
+            trackingRulesStore: {
+                save: jest.fn(async () => undefined),
+            },
+            dailyStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            deviceStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            licenseStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            saveDataShell,
+            dataShell: null as Record<string, unknown> | null,
+            persistedDailyState: {
+                version: 1,
+                buryDate: "2026-04-14",
+                buryList: [],
+                dailyDeckStats: {
+                    date: "2026-04-14",
+                    counts: {
+                        Deck: { new: 0, review: 0 },
+                    },
+                },
+                appliedOpIds: {},
+            },
+            sharedSettingsUpdatedAtByField: {},
+            trackingRulesUpdatedAtByFolderPath: {},
+            trackingRulesTombstones: {},
+            dailyStateAppliedOpIds: {},
+            saveData: jest.fn(async () => undefined),
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                },
+                buryDate: "2026-04-14",
+                buryList: [] as string[],
+                historyDeck: null as string | null,
+                dailyDeckStats: {
+                    date: "2026-04-14",
+                    counts: {
+                        Deck: { new: 0, review: 1 },
+                    },
+                },
+                folderTrackingRules: {},
+            },
+        });
+
+        await (SRPlugin.prototype.savePluginData as unknown as Function).call(plugin, {
+            domains: ["daily-state"],
+        });
+
+        expect(plugin.dailyStateStore.save).toHaveBeenCalledTimes(1);
+        expect(plugin.sharedSettingsStore.save).not.toHaveBeenCalled();
+        expect(plugin.trackingRulesStore.save).not.toHaveBeenCalled();
+        expect(plugin.deviceStateStore.save).not.toHaveBeenCalled();
+        expect(plugin.licenseStateStore.save).not.toHaveBeenCalled();
+        expect(plugin.deckOptionsStore.saveSerialized).not.toHaveBeenCalled();
+        expect(plugin.syroSessionManager.appendDeckOptionsChange).not.toHaveBeenCalled();
+        expect(plugin.syroSessionManager.appendRecord).toHaveBeenCalled();
+        expect(
+            plugin.syroSessionManager.appendRecord.mock.calls.every(
+                ([record]: [{ domain: string }]) => record.domain === "daily-state",
+            ),
+        ).toBe(true);
+        expect(plugin.saveData).toHaveBeenCalledTimes(1);
+    });
+
+    test("requestPluginDataSave merges pending domains within the debounce window", async () => {
+        jest.useFakeTimers();
+        try {
+            const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+                pendingPluginDataSaveTimer: null,
+                pendingPluginDataSaveRequested: false,
+                pendingPluginDataSaveDomains: new Set(),
+                pendingPluginDataSavePromise: null,
+                pluginDataSaveFailureNotified: false,
+                savePluginData: jest.fn(async () => undefined),
+                runAsync: jest.fn((task: Promise<unknown>) => {
+                    void task.catch(() => undefined);
+                }),
+            });
+
+            (SRPlugin.prototype.requestPluginDataSave as unknown as Function).call(plugin, {
+                delayMs: 100,
+                domains: ["device-state"],
+            });
+            (SRPlugin.prototype.requestPluginDataSave as unknown as Function).call(plugin, {
+                delayMs: 100,
+                domains: ["daily-state"],
+            });
+
+            await jest.advanceTimersByTimeAsync(100);
+
+            expect(plugin.savePluginData).toHaveBeenCalledTimes(1);
+            const domains = [...plugin.savePluginData.mock.calls[0][0].domains].sort();
+            expect(domains).toEqual(["daily-state", "device-state"]);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test("incrementDailyCounts only requests daily-state persistence", () => {
+        const plugin = {
+            data: {
+                settings: {
+                    rolloverHour: 4,
+                },
+                dailyDeckStats: {
+                    date: "2026-04-15",
+                    counts: {},
+                },
+            },
+            getRolloverDate: jest.fn(() => "2026-04-15"),
+            loadDailyDeckStats: SRPlugin.prototype.loadDailyDeckStats,
+            requestPluginDataSave: jest.fn(),
+        };
+
+        (SRPlugin.prototype.incrementDailyCounts as unknown as Function).call(plugin, "A/B", false);
+
+        expect(plugin.requestPluginDataSave).toHaveBeenCalledWith({
+            domains: ["daily-state"],
+        });
     });
 });
