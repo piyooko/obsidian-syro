@@ -15,13 +15,24 @@ jest.mock("obsidian", () => ({
 
 jest.mock("src/dataStore/data", () => ({
     DataStore: {
+        instance: {
+            dataPath: "/tmp/tracked_files.json",
+        },
         getInstance: () => ({
             dataPath: "/tmp/tracked_files.json",
         }),
     },
 }));
 
+import { DataStore } from "src/dataStore/data";
+
 describe("FSRS settings compatibility", () => {
+    beforeEach(() => {
+        (DataStore as any).instance = {
+            dataPath: "/tmp/tracked_files.json",
+        };
+    });
+
     test("updateSettings silently falls back to defaults for non-current w arrays", () => {
         const algorithm = new FsrsAlgorithm();
         const defaultW = [...algorithm.defaultSettings().w];
@@ -62,5 +73,15 @@ describe("FSRS settings compatibility", () => {
         expect(algorithm.settings.relearning_steps).toEqual(
             algorithm.defaultSettings().relearning_steps,
         );
+    });
+
+    test("updateSettings does not require DataStore instance during early startup", () => {
+        (DataStore as any).instance = undefined;
+        const algorithm = new FsrsAlgorithm();
+
+        expect(() => {
+            algorithm.updateSettings({});
+        }).not.toThrow();
+        expect(algorithm.logfilepath).toBe("ob_revlog.csv");
     });
 });

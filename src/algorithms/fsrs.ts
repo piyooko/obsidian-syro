@@ -112,28 +112,40 @@ export class FsrsAlgorithm extends SrsAlgorithm<FsrsSettings> {
     updateSettings(settings: unknown) {
         this.settings = normalizeFsrsSettings(settings, this.defaultSettings());
         this.updateFsrsParams();
-        this.getLogfilepath();
+        this.refreshLogfilepath();
     }
 
     updateFsrsParams() {
         this.fsrs = new tsfsrs.FSRS(tsfsrs.generatorParameters(this.settings));
     }
 
-    getLogfilepath() {
-        const store = DataStore.getInstance() as DataStore & {
-            getAuxiliaryPath?: (fileName: string) => string;
-            dataPath?: string;
-        };
+    private refreshLogfilepath(): string {
+        const store = (DataStore as typeof DataStore & { instance?: DataStore }).instance as
+            | (DataStore & {
+                  getAuxiliaryPath?: (fileName: string) => string;
+                  dataPath?: string;
+              })
+            | undefined;
+
+        if (!store) {
+            this.logfilepath = this.filename;
+            return this.logfilepath;
+        }
 
         if (typeof store.getAuxiliaryPath === "function") {
             this.logfilepath = store.getAuxiliaryPath(this.filename);
-            return;
+            return this.logfilepath;
         }
 
-        const dataPath = store?.dataPath ?? this.filename;
+        const dataPath = store.dataPath ?? this.filename;
         const sepIdx = Math.max(dataPath.lastIndexOf("/"), dataPath.lastIndexOf("\\"));
         const parentDir = sepIdx >= 0 ? dataPath.substring(0, sepIdx + 1) : "";
         this.logfilepath = `${parentDir}${this.filename}`;
+        return this.logfilepath;
+    }
+
+    getLogfilepath() {
+        return this.refreshLogfilepath();
     }
 
     defaultData(): FsrsData {
@@ -308,38 +320,41 @@ export class FsrsAlgorithm extends SrsAlgorithm<FsrsSettings> {
         const duration = this.review_duration > 0 ? new Date().getTime() - this.review_duration : 0;
         this.review_duration = 0;
         const rlog = new RevLog(item, reviewLog, duration, stability, difficulty);
+        const logfilepath = this.refreshLogfilepath();
 
         let data = Object.values(rlog).join(this.REVLOG_sep);
         data += "\n";
 
-        if (!(await adapter.exists(this.logfilepath))) {
+        if (!(await adapter.exists(logfilepath))) {
             if (!this.isWritingHeader) {
                 this.isWritingHeader = true;
                 data = this.REVLOG_TITLE + data;
-                await adapter.append(this.logfilepath, data);
+                await adapter.append(logfilepath, data);
                 this.isWritingHeader = false;
                 return data;
             }
         }
 
-        await adapter.append(this.logfilepath, data);
+        await adapter.append(logfilepath, data);
         return data;
     }
 
     async reWriteRevlog(data: string, withTitle = false) {
         const adapter = Iadapter.instance.adapter;
+        const logfilepath = this.refreshLogfilepath();
 
         if (withTitle) {
             data = this.REVLOG_TITLE + data;
         }
-        await adapter.write(this.logfilepath, data);
+        await adapter.write(logfilepath, data);
     }
 
     async readRevlog() {
         const adapter = Iadapter.instance.adapter;
+        const logfilepath = this.refreshLogfilepath();
         let data = "";
-        if (await adapter.exists(this.logfilepath)) {
-            data = await adapter.read(this.logfilepath);
+        if (await adapter.exists(logfilepath)) {
+            data = await adapter.read(logfilepath);
         }
         return data;
     }
