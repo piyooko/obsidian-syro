@@ -23,7 +23,13 @@ import { Iadapter } from "./adapter";
 import type { CardsStorePathConfig } from "./syroWorkspace";
 import { t } from "src/lang/helpers";
 import { createEmptyCard } from "ts-fsrs";
-import { getArrayProp, getNumberProp, isRecord, parseJsonUnknown } from "src/util/typeGuards";
+import { getArrayProp, isRecord, parseJsonUnknown } from "src/util/typeGuards";
+import {
+    createPendingCardsReviewSection,
+    PendingOverlayStore,
+    type PendingCardsReviewSection,
+    type ReviewItemDelta,
+} from "./pendingOverlayStore";
 import {
     cloneSyncEntities,
     markSyncEntity,
@@ -105,25 +111,6 @@ export const DEFAULT_SRS_DATA: SrsData = {
     syncEntities: {},
     mtime: 0,
 };
-
-const REVIEW_ITEM_OVERLAY_VERSION = 1;
-
-interface ReviewItemDelta {
-    id: number;
-    nextReview: number;
-    learningStep: number | null;
-    queue: CardQueue;
-    timesReviewed: number;
-    timesCorrect: number;
-    errorStreak: number;
-    data: unknown;
-}
-
-interface ReviewItemOverlayFile {
-    version: number;
-    baseMtime: number;
-    items: ReviewItemDelta[];
-}
 
 export interface TrackedCardSnapshot {
     path: string;
@@ -277,18 +264,13 @@ export class DataStore {
      * @type {string}
      */
     dataPath: string;
-    private reviewOverlayPath: string;
+    private pendingOverlayStore: PendingOverlayStore;
     private auxiliaryDataDir: string;
     private saveSuppressionCount: number = 0;
     private saveRequestedWhileSuppressed: boolean = false;
     private itemByIdIndex: Map<number, RepetitionItem> = new Map();
     private itemByIdIndexDirty = true;
     private reviewItemOverlayById: Map<number, ReviewItemDelta> = new Map();
-    private reviewItemOverlayVersion = 0;
-    private persistedReviewOverlayVersion = 0;
-    private reviewOverlayFlushPromise: Promise<"success" | "stale" | "failed"> | null = null;
-    private reviewOverlayRetryTimer: ReturnType<typeof setTimeout> | null = null;
-    private reviewOverlayFailureNotified = false;
     private syncReadOnlyReason: string | null = null;
 
     private getAlgorithmForItemType(itemType: RPITEMTYPE): SrsAlgorithm {
@@ -325,16 +307,33 @@ export class DataStore {
         // this.manifestDir = manifestDir;
         if (typeof manifestDirOrPaths === "string") {
             this.dataPath = getStorePath(manifestDirOrPaths, settings);
-            this.reviewOverlayPath = this.deriveReviewOverlayPath(this.dataPath);
             this.auxiliaryDataDir = this.getParentDir(this.dataPath);
+            this.pendingOverlayStore = new PendingOverlayStore({
+                adapter: Iadapter.instance.adapter,
+                path: this.derivePendingOverlayPath(this.dataPath),
+                shouldLogDebug: () => this.shouldLogDebug(),
+                logDebug: (...args: unknown[]) => this.logDebug(...args),
+                logWarn: (...args: unknown[]) => console.warn(...args),
+                notifyWriteFailure: () => MiscUtils.notice(t("DATA_UNABLE_TO_SAVE")),
+            });
         } else {
             this.dataPath = manifestDirOrPaths.cardsPath;
-            this.reviewOverlayPath =
-                manifestDirOrPaths.cardsOverlayPath ??
-                this.deriveReviewOverlayPath(manifestDirOrPaths.cardsPath);
             this.auxiliaryDataDir =
                 manifestDirOrPaths.auxiliaryDataDir ??
                 this.getParentDir(manifestDirOrPaths.cardsPath);
+            this.pendingOverlayStore =
+                manifestDirOrPaths.pendingOverlayStore ??
+                new PendingOverlayStore({
+                    adapter: Iadapter.instance.adapter,
+                    path:
+                        manifestDirOrPaths.pendingOverlayPath ??
+                        manifestDirOrPaths.cardsOverlayPath ??
+                        this.derivePendingOverlayPath(manifestDirOrPaths.cardsPath),
+                    shouldLogDebug: () => this.shouldLogDebug(),
+                    logDebug: (...args: unknown[]) => this.logDebug(...args),
+                    logWarn: (...args: unknown[]) => console.warn(...args),
+                    notifyWriteFailure: () => MiscUtils.notice(t("DATA_UNABLE_TO_SAVE")),
+                });
         }
         DataStore.instance = this;
     }
@@ -399,22 +398,9 @@ export class DataStore {
         }
     }
 
-    private deriveReviewOverlayPath(path = this.dataPath): string {
-        if (!path) return "tracked_files.review_overlay.json";
-        const sepIdx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
-        const dir = sepIdx >= 0 ? path.substring(0, sepIdx + 1) : "";
-        const fileName = sepIdx >= 0 ? path.substring(sepIdx + 1) : path;
-        const dotIdx = fileName.lastIndexOf(".");
-        const baseName = dotIdx > 0 ? fileName.substring(0, dotIdx) : fileName;
-        return `${dir}${baseName}.review_overlay.json`;
-    }
-
-    private getReviewOverlayPath(path = this.dataPath): string {
-        if (path === this.dataPath && this.reviewOverlayPath) {
-            return this.reviewOverlayPath;
-        }
-
-        return this.deriveReviewOverlayPath(path);
+    private derivePendingOverlayPath(path = this.dataPath): string {
+        const parentDir = this.getParentDir(path);
+        return this.joinWithParent(parentDir, "pending.overlay.json");
     }
 
     public getAuxiliaryPath(fileName: string): string {
@@ -441,61 +427,38 @@ export class DataStore {
     }
 
     private markReviewOverlayDirty(): void {
-        this.reviewItemOverlayVersion += 1;
+        const section =
+            this.reviewItemOverlayById.size > 0
+                ? createPendingCardsReviewSection(
+                      Array.from(this.reviewItemOverlayById.values()),
+                      this.data?.mtime ?? 0,
+                  )
+                : null;
+        this.pendingOverlayStore.stageCardsReviewSection(section);
     }
 
     private hasPendingReviewOverlayInMemory(): boolean {
-        return (
-            this.reviewItemOverlayById.size > 0 ||
-            this.reviewItemOverlayVersion > this.persistedReviewOverlayVersion
-        );
+        return this.reviewItemOverlayById.size > 0;
     }
 
     private hasPendingReviewOverlayForItem(itemId: number): boolean {
         return itemId >= 0 && this.reviewItemOverlayById.has(itemId);
     }
 
-    private clearReviewOverlayRetryTimer(): void {
-        if (this.reviewOverlayRetryTimer !== null) {
-            clearTimeout(this.reviewOverlayRetryTimer);
-            this.reviewOverlayRetryTimer = null;
-        }
-    }
-
-    private async loadReviewOverlayFromDisk(
-        path = this.dataPath,
-    ): Promise<ReviewItemOverlayFile | null> {
+    private async loadReviewOverlayFromDisk(): Promise<PendingCardsReviewSection | null> {
         try {
-            const adapter = Iadapter.instance.adapter;
-            const overlayPath = this.getReviewOverlayPath(path);
-            if (!(await adapter.exists(overlayPath))) return null;
-            const raw = await adapter.read(overlayPath);
-            if (!raw) return null;
-            const parsed = parseJsonUnknown(raw);
-            if (!isRecord(parsed)) {
-                this.lastLoadError =
-                    this.lastLoadError ?? "[SR-Overlay] Invalid cards review overlay payload.";
-                return null;
-            }
-
-            const version = getNumberProp(parsed, "version");
-            const items = getArrayProp(parsed, "items");
-            if (version !== REVIEW_ITEM_OVERLAY_VERSION || !items) {
-                this.lastLoadError =
-                    this.lastLoadError ?? "[SR-Overlay] Invalid cards review overlay schema.";
-                return null;
-            }
-            return parsed as unknown as ReviewItemOverlayFile;
+            await this.pendingOverlayStore.refreshFromDisk();
+            return await this.pendingOverlayStore.getCardsReviewSection();
         } catch (error) {
             this.lastLoadError =
                 this.lastLoadError ??
-                `[SR-Overlay] Failed to load review overlay: ${String(error)}`;
-            console.warn("[SR-Overlay] Failed to load review overlay:", error);
+                `[SR-PendingOverlay] Failed to load cardsReview section: ${String(error)}`;
+            console.warn("[SR-PendingOverlay] Failed to load cardsReview section:", error);
             return null;
         }
     }
 
-    private applyReviewOverlayToData(overlay: ReviewItemOverlayFile): number {
+    private applyReviewOverlayToData(overlay: PendingCardsReviewSection): number {
         const itemById = new Map<number, RepetitionItem>();
         for (const item of this.data.items ?? []) {
             if (item && typeof item.ID === "number") {
@@ -519,39 +482,6 @@ export class DataStore {
         return applied;
     }
 
-    private async writeReviewOverlayToDisk(
-        path = this.dataPath,
-        items: ReviewItemDelta[] = Array.from(this.reviewItemOverlayById.values()),
-    ): Promise<void> {
-        const adapter = Iadapter.instance.adapter;
-        const overlayPath = this.getReviewOverlayPath(path);
-        if (items.length === 0) {
-            if (await adapter.exists(overlayPath)) {
-                await adapter.remove(overlayPath);
-            }
-            return;
-        }
-
-        const payload: ReviewItemOverlayFile = {
-            version: REVIEW_ITEM_OVERLAY_VERSION,
-            baseMtime: this.data?.mtime ?? 0,
-            items,
-        };
-        await adapter.write(overlayPath, JSON.stringify(payload));
-    }
-
-    private async clearReviewOverlayFromDisk(path = this.dataPath): Promise<void> {
-        try {
-            const adapter = Iadapter.instance.adapter;
-            const overlayPath = this.getReviewOverlayPath(path);
-            if (await adapter.exists(overlayPath)) {
-                await adapter.remove(overlayPath);
-            }
-        } catch (error) {
-            console.warn("[SR-Overlay] Failed to clear review overlay:", error);
-        }
-    }
-
     stageReviewItemDelta(itemOrId: RepetitionItem | number | null | undefined): void {
         const item = typeof itemOrId === "number" ? this.getItembyID(itemOrId) : itemOrId;
         if (!item || item.ID < 0) return;
@@ -559,94 +489,12 @@ export class DataStore {
         this.markReviewOverlayDirty();
     }
 
-    private async flushReviewOverlayOnce(
-        path = this.dataPath,
-    ): Promise<"success" | "stale" | "failed"> {
-        const versionToPersist = this.reviewItemOverlayVersion;
-        const snapshot = Array.from(this.reviewItemOverlayById.values());
-
-        try {
-            await this.writeReviewOverlayToDisk(path, snapshot);
-            this.persistedReviewOverlayVersion = versionToPersist;
-            this.reviewOverlayFailureNotified = false;
-            return versionToPersist === this.reviewItemOverlayVersion ? "success" : "stale";
-        } catch (error) {
-            console.warn("[SR-Overlay] Failed to write review overlay:", error);
-            return "failed";
-        }
+    requestFlushReviewOverlay(): void {
+        this.pendingOverlayStore.requestFlush();
     }
 
-    requestFlushReviewOverlay(path = this.dataPath, attempt = 0): void {
-        if (this.reviewOverlayFlushPromise !== null) {
-            return;
-        }
-
-        this.clearReviewOverlayRetryTimer();
-        this.reviewOverlayFlushPromise = (async () => {
-            const outcome = await this.flushReviewOverlayOnce(path);
-            this.reviewOverlayFlushPromise = null;
-
-            if (outcome === "success") {
-                return outcome;
-            }
-
-            if (this.reviewItemOverlayVersion <= this.persistedReviewOverlayVersion) {
-                return "success";
-            }
-
-            if (outcome === "stale") {
-                this.requestFlushReviewOverlay(path, 0);
-                return outcome;
-            }
-
-            if (
-                attempt >= 2 &&
-                !this.reviewOverlayFailureNotified &&
-                this.reviewItemOverlayVersion > this.persistedReviewOverlayVersion
-            ) {
-                this.reviewOverlayFailureNotified = true;
-                MiscUtils.notice(t("DATA_UNABLE_TO_SAVE"));
-            }
-
-            const retryDelays = [200, 1000, 3000];
-            const delayMs = retryDelays[Math.min(attempt, retryDelays.length - 1)];
-            this.reviewOverlayRetryTimer = setTimeout(() => {
-                this.reviewOverlayRetryTimer = null;
-                this.requestFlushReviewOverlay(path, attempt + 1);
-            }, delayMs);
-            return outcome;
-        })();
-    }
-
-    async drainReviewOverlayFlush(timeoutMs = 1500, path = this.dataPath): Promise<boolean> {
-        this.clearReviewOverlayRetryTimer();
-        this.requestFlushReviewOverlay(path, 0);
-
-        const waitForFlush = async (): Promise<boolean> => {
-            for (
-                let flushPromise = this.reviewOverlayFlushPromise;
-                flushPromise !== null;
-                flushPromise = this.reviewOverlayFlushPromise
-            ) {
-                await flushPromise;
-            }
-            return this.reviewItemOverlayVersion <= this.persistedReviewOverlayVersion;
-        };
-
-        const result = await Promise.race([
-            waitForFlush(),
-            new Promise<boolean>((resolve) => setTimeout(() => resolve(false), timeoutMs)),
-        ]);
-
-        if (
-            !result &&
-            this.reviewItemOverlayVersion > this.persistedReviewOverlayVersion &&
-            this.reviewOverlayRetryTimer === null
-        ) {
-            this.requestFlushReviewOverlay(path, 0);
-        }
-
-        return result;
+    async drainReviewOverlayFlush(timeoutMs = 1500): Promise<boolean> {
+        return this.pendingOverlayStore.drainFlush(timeoutMs);
     }
 
     async saveReviewItemDelta(itemOrId: RepetitionItem | number | null | undefined): Promise<void> {
@@ -793,23 +641,20 @@ export class DataStore {
     }
 
     async ensureReviewOverlayMerged(path = this.dataPath): Promise<boolean> {
-        const adapter = Iadapter.instance.adapter;
-        const overlayPath = this.getReviewOverlayPath(path);
-        const hasOverlayOnDisk = await adapter.exists(overlayPath);
-        const hasOverlayInMemory = this.hasPendingReviewOverlayInMemory();
-        if (!hasOverlayOnDisk && !hasOverlayInMemory) {
+        if (this.hasPendingReviewOverlayInMemory()) {
+            await this.drainReviewOverlayFlush(1500);
+        }
+
+        const overlay = await this.loadReviewOverlayFromDisk();
+        if (!overlay && !this.hasPendingReviewOverlayInMemory()) {
             return false;
         }
-
-        if (hasOverlayInMemory) {
-            await this.drainReviewOverlayFlush(1500, path);
-        }
-
-        const overlay = await this.loadReviewOverlayFromDisk(path);
         if (overlay) {
             const applied = this.applyReviewOverlayToData(overlay);
             if (applied > 0) {
-                this.logInfo(`[SR-Overlay] Ensured ${applied} review deltas before rebuild.`);
+                this.logInfo(
+                    `[SR-PendingOverlay] Ensured ${applied} cardsReview deltas before rebuild.`,
+                );
             }
         }
 
@@ -844,12 +689,12 @@ export class DataStore {
                         parsedData && Array.isArray(parsedData.items) ? parsedData.items.length : 0,
                     );
                     this.data.mtime = await this.getmtime();
-                    const overlay = await this.loadReviewOverlayFromDisk(path);
+                    const overlay = await this.loadReviewOverlayFromDisk();
                     if (overlay) {
                         const applied = this.applyReviewOverlayToData(overlay);
                         if (applied > 0) {
                             this.logInfo(
-                                `[SR-Overlay] Applied ${applied} review deltas from overlay.`,
+                                `[SR-PendingOverlay] Applied ${applied} cardsReview deltas from overlay.`,
                             );
                         }
                         await this.save(path);
@@ -863,8 +708,6 @@ export class DataStore {
             }
             if (overlayMerged) {
                 this.reviewItemOverlayById.clear();
-                this.reviewItemOverlayVersion = 0;
-                this.persistedReviewOverlayVersion = 0;
             }
         } catch (error) {
             this.lastLoadError = `[SR-Data] Failed to load cards.json: ${String(error)}`;
@@ -892,12 +735,13 @@ export class DataStore {
     }
     setdataPath(path = this.dataPath, options: Partial<CardsStorePathConfig> = {}) {
         this.dataPath = path;
-        this.reviewOverlayPath = options.cardsOverlayPath ?? this.deriveReviewOverlayPath(path);
         this.auxiliaryDataDir = options.auxiliaryDataDir ?? this.getParentDir(path);
+        this.pendingOverlayStore.configure(
+            options.pendingOverlayPath ??
+                options.cardsOverlayPath ??
+                this.derivePendingOverlayPath(path),
+        );
         this.reviewItemOverlayById.clear();
-        this.reviewItemOverlayVersion = 0;
-        this.persistedReviewOverlayVersion = 0;
-        this.clearReviewOverlayRetryTimer();
     }
     suspendSaves(): () => void {
         this.saveSuppressionCount += 1;
@@ -927,22 +771,11 @@ export class DataStore {
             return;
         }
         try {
-            this.clearReviewOverlayRetryTimer();
-            for (
-                let flushPromise = this.reviewOverlayFlushPromise;
-                flushPromise !== null;
-                flushPromise = this.reviewOverlayFlushPromise
-            ) {
-                await flushPromise;
-                this.clearReviewOverlayRetryTimer();
-            }
             await Iadapter.instance.adapter.write(path, JSON.stringify(this.data));
             this.data.mtime = await this.getmtime();
             this.reviewItemOverlayById.clear();
-            this.reviewItemOverlayVersion = 0;
-            this.persistedReviewOverlayVersion = 0;
-            this.reviewOverlayFailureNotified = false;
-            await this.clearReviewOverlayFromDisk(path);
+            this.pendingOverlayStore.clearCardsReviewSection();
+            await this.pendingOverlayStore.drainFlush();
         } catch (error) {
             MiscUtils.notice(t("DATA_UNABLE_TO_SAVE"));
             this.logError("Unable to save data", error);
@@ -2036,9 +1869,7 @@ export class DataStore {
         this.data = createDefaultSrsData();
         this.markItemByIdIndexDirty();
         this.reviewItemOverlayById.clear();
-        this.reviewItemOverlayVersion = 0;
-        this.persistedReviewOverlayVersion = 0;
-        this.clearReviewOverlayRetryTimer();
+        this.pendingOverlayStore.clearCardsReviewSection();
     }
 
     /**
@@ -2074,9 +1905,7 @@ export class DataStore {
             .flat();
         this.markItemByIdIndexDirty();
         this.reviewItemOverlayById.clear();
-        this.reviewItemOverlayVersion = 0;
-        this.persistedReviewOverlayVersion = 0;
-        this.clearReviewOverlayRetryTimer();
+        this.pendingOverlayStore.clearCardsReviewSection();
 
         this.data.queues.clearQueue();
         await this.save();
@@ -2143,9 +1972,7 @@ export class DataStore {
             this.data.items = keptItems;
             this.markItemByIdIndexDirty();
             this.reviewItemOverlayById.clear();
-            this.reviewItemOverlayVersion = 0;
-            this.persistedReviewOverlayVersion = 0;
-            this.clearReviewOverlayRetryTimer();
+            this.pendingOverlayStore.clearCardsReviewSection();
             this.logInfo(
                 `[SR-GC] GC completed. Purged ${purgedCount} orphan items (${oldItemCount} -> ${keptItems.length})`,
             );

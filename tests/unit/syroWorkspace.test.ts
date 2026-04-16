@@ -377,8 +377,8 @@ describe("SyroWorkspace", () => {
         expect(layout.device.shortDeviceId).toBe("d84f");
         expect(layout.deviceRoot).toBe(".obsidian/plugins/syro/devices/Desktop--d84f");
         expect(layout.cardsPath).toBe(".obsidian/plugins/syro/devices/Desktop--d84f/cards.json");
-        expect(layout.cardsOverlayPath).toBe(
-            ".obsidian/plugins/syro/devices/Desktop--d84f/cards.review_overlay.json",
+        expect(layout.pendingOverlayPath).toBe(
+            ".obsidian/plugins/syro/devices/Desktop--d84f/pending.overlay.json",
         );
         expect(layout.noteCachePath).toBe(
             ".obsidian/plugins/syro/devices/Desktop--d84f/note-cache.json",
@@ -480,7 +480,16 @@ describe("SyroWorkspace", () => {
         expect(files.get(layout.cardsPath)).toBe('{"items":[]}');
         expect(files.get(layout.notesPath)).toBe(createValidNotesPayload());
         expect(files.get(layout.timelinePath)).toBe('{"note.md":[{"id":"1"}]}');
-        expect(files.get(layout.cardsOverlayPath)).toBe('{"items":[{"id":1}]}');
+        expect(JSON.parse(files.get(layout.pendingOverlayPath) ?? "{}")).toEqual({
+            version: 1,
+            sections: {
+                cardsReview: {
+                    version: 1,
+                    baseMtime: 0,
+                    items: [{ id: 1 }],
+                },
+            },
+        });
         expect(files.get(layout.noteCachePath)).toBe('{"items":[{"path":"note.md"}]}');
         expect(JSON.parse(files.get(layout.deckOptionsPath) ?? "{}")).toEqual(
             JSON.parse(createValidDeckOptionsPayload()),
@@ -587,7 +596,16 @@ describe("SyroWorkspace", () => {
         const layout = startup.layout!;
 
         expect(startup.startupDecision).toBe("ready");
-        expect(files.get(layout.cardsOverlayPath)).toBe('{"items":[{"id":"compat-overlay"}]}');
+        expect(JSON.parse(files.get(layout.pendingOverlayPath) ?? "{}")).toEqual({
+            version: 1,
+            sections: {
+                cardsReview: {
+                    version: 1,
+                    baseMtime: 0,
+                    items: [{ id: "compat-overlay" }],
+                },
+            },
+        });
         expect(files.has(layout.currentDeviceSessionFilePath)).toBe(false);
         expect(
             files.has(".obsidian/plugins/syro/sessions/closed/2026-04-12T15-30-12__d84f__0001.jsonl"),

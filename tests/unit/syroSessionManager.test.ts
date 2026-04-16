@@ -241,6 +241,19 @@ describe("SyroSessionManager", () => {
         );
     }
 
+    async function addTabletDevice(adapter: MockAdapter, files: Map<string, string>): Promise<void> {
+        await adapter.mkdir(".obsidian/plugins/syro/devices/Tablet--7f3a");
+        await adapter.mkdir(".obsidian/plugins/syro/sessions/Tablet--7f3a");
+        files.set(
+            ".obsidian/plugins/syro/devices/Tablet--7f3a/device.json",
+            createValidDeviceMetadata({
+                deviceId: "7f3a1111-2222-3333-4444-555555555555",
+                deviceName: "Tablet",
+                shortDeviceId: "7f3a",
+            }),
+        );
+    }
+
     test("appends new records to the current device daily session file", async () => {
         const { app, files, layout } = await createWorkspaceContext();
         const manager = new SyroSessionManager(app, layout);
@@ -358,6 +371,84 @@ describe("SyroSessionManager", () => {
         ]);
     });
 
+    test("recovers stale mid-line cursors by lastOpId instead of skipping malformed fragments", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        await addSecondaryDevice(adapter, files);
+        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        const firstLine = `${createSessionEventLine(createRemoteRecord())}\n`;
+        const secondLine = `${createSessionEventLine(
+            createRemoteRecord({
+                opId: "remote-op-2",
+                targetUuid: "card-2",
+            }),
+        )}\n`;
+        files.set(normalizePath(remoteSessionPath), `${firstLine}${secondLine}`);
+        files.set(
+            normalizePath(layout.currentDeviceSessionFilePath),
+            `${createCursorSnapshotLine({
+                "Mobile--91ac/2026-04-13.session.jsonl": {
+                    offset: firstLine.length + 15,
+                    lastOpId: "remote-op-1",
+                    updatedAt: "2026-04-13T12:34:57.000Z",
+                },
+            })}\n`,
+        );
+
+        const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+        const replaySession = jest.fn(async () => undefined);
+
+        await manager.importPendingSessions(replaySession);
+
+        expect(replaySession).toHaveBeenCalledTimes(1);
+        const replayArgs = replaySession.mock.calls[0] as unknown as [string, SyroSessionRecord[]];
+        expect(replayArgs[1]).toEqual([
+            expect.objectContaining({ opId: "remote-op-2" }),
+        ]);
+        expect(warnSpy).not.toHaveBeenCalledWith(
+            "[SR-Syro] Ignored malformed session line.",
+            expect.anything(),
+        );
+    });
+
+    test("resets stale cursors to zero when the saved lastOpId no longer exists", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        await addSecondaryDevice(adapter, files);
+        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        const firstLine = `${createSessionEventLine(createRemoteRecord())}\n`;
+        const secondLine = `${createSessionEventLine(
+            createRemoteRecord({
+                opId: "remote-op-2",
+                targetUuid: "card-2",
+            }),
+        )}\n`;
+        files.set(normalizePath(remoteSessionPath), `${firstLine}${secondLine}`);
+        files.set(
+            normalizePath(layout.currentDeviceSessionFilePath),
+            `${createCursorSnapshotLine({
+                "Mobile--91ac/2026-04-13.session.jsonl": {
+                    offset: firstLine.length + 8,
+                    lastOpId: "missing-op",
+                    updatedAt: "2026-04-13T12:34:57.000Z",
+                },
+            })}\n`,
+        );
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+        const replaySession = jest.fn(async () => undefined);
+
+        await manager.importPendingSessions(replaySession);
+
+        expect(replaySession).toHaveBeenCalledTimes(1);
+        const replayArgs = replaySession.mock.calls[0] as unknown as [string, SyroSessionRecord[]];
+        expect(replayArgs[1]).toEqual([
+            expect.objectContaining({ opId: "remote-op-1" }),
+            expect.objectContaining({ opId: "remote-op-2" }),
+        ]);
+    });
+
     test("summarizes pending remote changes, synced cursors, and devices without session history", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);
@@ -440,6 +531,52 @@ describe("SyroSessionManager", () => {
         expect(localSessionRaw).toContain('"lineType":"cursor-snapshot"');
         expect(localSessionRaw).not.toContain('"opId":"local-op-1"');
         expect(replaySession).not.toHaveBeenCalled();
+    });
+
+    test("aligns only the overwritten source device sessions to EOF and preserves unrelated remote history", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        await addSecondaryDevice(adapter, files);
+        await addTabletDevice(adapter, files);
+        const mobileSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        const tabletSessionPath = ".obsidian/plugins/syro/sessions/Tablet--7f3a/2026-04-13.session.jsonl";
+
+        files.set(normalizePath(mobileSessionPath), `${createSessionEventLine(createRemoteRecord())}\n`);
+        files.set(
+            normalizePath(tabletSessionPath),
+            `${createSessionEventLine(
+                createRemoteRecord({
+                    sessionId: "Tablet--7f3a/2026-04-13",
+                    opId: "tablet-op-1",
+                    deviceId: "7f3a1111-2222-3333-4444-555555555555",
+                    deviceName: "Tablet",
+                    targetUuid: "card-2",
+                }),
+            )}\n`,
+        );
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+
+        await manager.alignRemoteDeviceSessionsToEof("Mobile--91ac");
+
+        const replaySession = jest.fn<Promise<void>, [string, SyroSessionRecord[]]>(
+            async () => undefined,
+        );
+        const result = await manager.importPendingSessions(replaySession);
+
+        expect(result.importedSessionIds).toEqual(["Tablet--7f3a/2026-04-13"]);
+        expect(replaySession).toHaveBeenCalledTimes(1);
+        const firstReplayRecords = replaySession.mock.calls[0]?.[1];
+        expect(firstReplayRecords).toEqual([
+            expect.objectContaining({
+                sessionId: "Tablet--7f3a/2026-04-13",
+                opId: "tablet-op-1",
+            }),
+        ]);
+
+        const localSessionRaw = files.get(normalizePath(layout.currentDeviceSessionFilePath)) ?? "";
+        expect(localSessionRaw).toContain("Mobile--91ac/2026-04-13.session.jsonl");
+        expect(localSessionRaw).toContain("Tablet--7f3a/2026-04-13.session.jsonl");
     });
 
     test("prunes cursor entries for a deleted device", async () => {

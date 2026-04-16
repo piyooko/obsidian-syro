@@ -345,27 +345,32 @@ describe("DataStore algorithm binding", () => {
 
         await store.save();
 
-        const overlayPath = "./tracked_files.review_overlay.json";
+        const overlayPath = "./pending.overlay.json";
         await adapter.write(
             overlayPath,
             JSON.stringify({
                 version: 1,
-                baseMtime: 0,
-                items: [
-                    {
-                        id: item.ID,
-                        nextReview: 123456789,
-                        learningStep: 0,
-                        queue: CardQueue.Learn,
-                        timesReviewed: 1,
-                        timesCorrect: 1,
-                        errorStreak: 0,
-                        data: {
-                            ...(item.data as Record<string, unknown>),
-                            state: 1,
-                        },
+                sections: {
+                    cardsReview: {
+                        version: 1,
+                        baseMtime: 0,
+                        items: [
+                            {
+                                id: item.ID,
+                                nextReview: 123456789,
+                                learningStep: 0,
+                                queue: CardQueue.Learn,
+                                timesReviewed: 1,
+                                timesCorrect: 1,
+                                errorStreak: 0,
+                                data: {
+                                    ...(item.data as Record<string, unknown>),
+                                    state: 1,
+                                },
+                            },
+                        ],
                     },
-                ],
+                },
             }),
         );
 
@@ -375,6 +380,9 @@ describe("DataStore algorithm binding", () => {
         expect(item.queue).toBe(CardQueue.Learn);
         expect(item.timesReviewed).toBe(1);
         expect(item.nextReview).toBe(123456789);
-        expect(files.has(normalizePath(overlayPath))).toBe(false);
+        expect(JSON.parse(files.get(normalizePath(overlayPath)) ?? "{}")).toEqual({
+            version: 1,
+            sections: {},
+        });
     });
 });

@@ -2,6 +2,8 @@ import { App, DataAdapter, Platform } from "obsidian";
 import { NOTE_CACHE_VERSION } from "src/cache/noteCacheStore";
 import { createDefaultSrsData } from "./data";
 import { createDeckOptionsStoreSnapshot } from "./deckOptionsStore";
+import type { PendingOverlayStore } from "./pendingOverlayStore";
+import { wrapLegacyCardsReviewOverlay } from "./pendingOverlayStore";
 import {
     createDefaultDailyState,
     createDefaultDeviceState,
@@ -32,7 +34,9 @@ const SYRO_DEVICE_IDENTITY_CONFLICT_REASON =
 
 export interface CardsStorePathConfig {
     cardsPath: string;
+    pendingOverlayPath?: string;
     cardsOverlayPath?: string;
+    pendingOverlayStore?: PendingOverlayStore;
     auxiliaryDataDir?: string;
 }
 
@@ -179,7 +183,7 @@ export interface SyroPersistenceLayout {
     dailyStatePath: string;
     deviceStatePath: string;
     licenseStatePath: string;
-    cardsOverlayPath: string;
+    pendingOverlayPath: string;
     currentDeviceSessionsRoot: string;
     currentDeviceSessionFilePath: string;
     noteCachePath: string;
@@ -1005,7 +1009,7 @@ export class SyroWorkspace {
         | "dailyStatePath"
         | "deviceStatePath"
         | "licenseStatePath"
-        | "cardsOverlayPath"
+        | "pendingOverlayPath"
         | "currentDeviceSessionsRoot"
         | "currentDeviceSessionFilePath"
         | "noteCachePath"
@@ -1600,6 +1604,10 @@ export class SyroWorkspace {
         return [
             ["sync-merge-state.json", joinPath(layout.deviceRoot, "sync-merge-state.json")],
             [
+                "cards.review_overlay.json",
+                joinPath(layout.deviceRoot, "cards.review_overlay.json"),
+            ],
+            [
                 "local-state/cards.review_overlay.json",
                 joinPath(legacyLocalStateRoot, "cards.review_overlay.json"),
             ],
@@ -1634,7 +1642,11 @@ export class SyroWorkspace {
         }
 
         await this.migrateCompatibilityLayout(layout);
-        await copyFileIfMissing(this.adapter, legacyOverlayPath, layout.cardsOverlayPath);
+        await this.migrateLegacyCardsOverlay(
+            legacyOverlayPath,
+            layout.pendingOverlayPath,
+            "legacy-root",
+        );
     }
 
     private buildLayout(
@@ -1651,7 +1663,7 @@ export class SyroWorkspace {
             | "dailyStatePath"
             | "deviceStatePath"
             | "licenseStatePath"
-            | "cardsOverlayPath"
+            | "pendingOverlayPath"
             | "currentDeviceSessionsRoot"
             | "currentDeviceSessionFilePath"
             | "noteCachePath"
@@ -1675,7 +1687,7 @@ export class SyroWorkspace {
             dailyStatePath: joinPath(deviceRoot, "daily-state.json"),
             deviceStatePath: joinPath(deviceRoot, "device-state.json"),
             licenseStatePath: joinPath(deviceRoot, "license-state.json"),
-            cardsOverlayPath: joinPath(deviceRoot, "cards.review_overlay.json"),
+            pendingOverlayPath: joinPath(deviceRoot, "pending.overlay.json"),
             currentDeviceSessionsRoot,
             currentDeviceSessionFilePath: buildCurrentDeviceSessionFilePath(
                 roots.sessionsRoot,
@@ -1700,7 +1712,7 @@ export class SyroWorkspace {
             | "dailyStatePath"
             | "deviceStatePath"
             | "licenseStatePath"
-            | "cardsOverlayPath"
+            | "pendingOverlayPath"
             | "currentDeviceSessionsRoot"
             | "currentDeviceSessionFilePath"
             | "noteCachePath"
@@ -2089,12 +2101,53 @@ export class SyroWorkspace {
         await this.migrateLocalStateFiles(layout);
     }
 
+    private async migrateLegacyCardsOverlay(
+        sourcePath: string,
+        targetPath: string,
+        sourceKind: "legacy-root" | "device-root" | "local-state",
+    ): Promise<void> {
+        if (
+            !sourcePath ||
+            (await this.adapter.exists(targetPath)) ||
+            !(await this.adapter.exists(sourcePath))
+        ) {
+            return;
+        }
+
+        try {
+            const wrapped = wrapLegacyCardsReviewOverlay(await this.adapter.read(sourcePath));
+            if (!wrapped) {
+                return;
+            }
+
+            await this.writeJson(targetPath, wrapped);
+            this.logDebug("[SR-PendingOverlay] legacy-migrated", {
+                sourceKind,
+                sourcePath,
+                targetPath,
+                sections: Object.keys(wrapped.sections),
+            });
+        } catch (error) {
+            this.logDebug("[SR-PendingOverlay] legacy-migration-skipped", {
+                sourceKind,
+                sourcePath,
+                targetPath,
+                error: String(error),
+            });
+        }
+    }
+
     private async migrateLocalStateFiles(layout: SyroPersistenceLayout): Promise<void> {
         const legacyLocalStateRoot = joinPath(trimTrailingSlash(this.manifestDir), "local-state");
-        await copyFileIfMissing(
-            this.adapter,
+        await this.migrateLegacyCardsOverlay(
+            joinPath(layout.deviceRoot, "cards.review_overlay.json"),
+            layout.pendingOverlayPath,
+            "device-root",
+        );
+        await this.migrateLegacyCardsOverlay(
             joinPath(legacyLocalStateRoot, "cards.review_overlay.json"),
-            layout.cardsOverlayPath,
+            layout.pendingOverlayPath,
+            "local-state",
         );
     }
 }

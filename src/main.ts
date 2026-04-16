@@ -117,6 +117,11 @@ import {
     type PersistedTrackingRulesTombstone,
 } from "./dataStore/syroPluginDataStore";
 import {
+    createPendingDailyStateSection,
+    PendingOverlayStore,
+    type PendingDailyStateSection,
+} from "./dataStore/pendingOverlayStore";
+import {
     compareIsoTime,
     SYRO_SYNC_RETENTION_WINDOW_MS,
     pruneTimestampMap,
@@ -308,6 +313,23 @@ interface PluginDataPersistOptions {
     domains?: PluginDataPersistDomain[];
 }
 
+const BUFFERED_IMPORT_PROTECTED_DOMAINS = [
+    "shared-settings",
+    "tracking-rules",
+    "daily-state",
+] as const;
+
+type BufferedImportProtectedDomain = (typeof BUFFERED_IMPORT_PROTECTED_DOMAINS)[number];
+
+type BufferedStateRevisionMap = Record<BufferedImportProtectedDomain, number>;
+
+interface BufferedImportBaselineSnapshot {
+    revisions: BufferedStateRevisionMap;
+    sharedSettingsState: PersistedSharedSettingsState;
+    trackingRulesState: PersistedTrackingRulesState;
+    dailyState: PersistedDailyState;
+}
+
 const AUTO_SYNC_COOLDOWN_MS = 15_000;
 const REMOTE_DELTA_POLL_INTERVAL_MS = 7_000;
 
@@ -319,6 +341,22 @@ type SyroDataReadyAction =
     | "sync"
     | "review-queue"
     | "item-info";
+
+function createBufferedStateRevisionMap(): BufferedStateRevisionMap {
+    return {
+        "shared-settings": 0,
+        "tracking-rules": 0,
+        "daily-state": 0,
+    };
+}
+
+function isBufferedImportProtectedDomain(
+    domain: PluginDataPersistDomain,
+): domain is BufferedImportProtectedDomain {
+    return BUFFERED_IMPORT_PROTECTED_DOMAINS.includes(
+        domain as BufferedImportProtectedDomain,
+    );
+}
 
 // export interface SchedNote {
 //     note: TFile;
@@ -405,9 +443,13 @@ export default class SRPlugin extends Plugin {
     private pendingPluginDataSaveDomains = new Set<PluginDataPersistDomain>();
     private pendingPluginDataSavePromise: Promise<boolean> | null = null;
     private pluginDataSaveFailureNotified = false;
+    private bufferedStateDirtyRevisions: BufferedStateRevisionMap = createBufferedStateRevisionMap();
+    private bufferedStatePersistedRevisions: BufferedStateRevisionMap =
+        createBufferedStateRevisionMap();
     private syroReadOnlyReason: string | null = null;
     private syroWorkspace: SyroWorkspace | null = null;
     private syroLayout: SyroPersistenceLayout | null = null;
+    private pendingOverlayStore: PendingOverlayStore | null = null;
     private deckOptionsStore: DeckOptionsStore | null = null;
     private sharedSettingsStore: SyroJsonStateStore<PersistedSharedSettingsState> | null = null;
     private trackingRulesStore: SyroJsonStateStore<PersistedTrackingRulesState> | null = null;
@@ -424,6 +466,7 @@ export default class SRPlugin extends Plugin {
     private trackingRulesTombstones: Record<string, PersistedTrackingRulesTombstone> = {};
     private dailyStateAppliedOpIds: Record<string, string> = {};
     private currentDeviceReviewCount = 0;
+    private pendingDailyStateOverlayFormalization = false;
     private dataShell: LegacyPluginData | null = null;
     private syroSessionManager: SyroSessionManager | null = null;
     private pendingSyroRecoveryContext: SyroRecoveryModalContext | null = null;
@@ -481,6 +524,77 @@ export default class SRPlugin extends Plugin {
         );
     }
 
+    private buildPendingDailyStateSection(): PendingDailyStateSection {
+        return createPendingDailyStateSection({
+            buryDate: this.data.buryDate,
+            buryList: this.data.buryList,
+            dailyDeckStats: this.data.dailyDeckStats,
+            deviceReviewCount: this.currentDeviceReviewCount,
+        });
+    }
+
+    private buildDailyStateSnapshotFromPendingSection(
+        section: PendingDailyStateSection,
+        appliedOpIds: Record<string, string> = this.dailyStateAppliedOpIds,
+    ): PersistedDailyState {
+        return extractDailyStateWithMetadata(
+            {
+                buryDate: section.buryDate,
+                buryList: section.buryList,
+                dailyDeckStats: section.dailyDeckStats,
+                deviceReviewCount: normalizeDeviceReviewCount(section.deviceReviewCount),
+            },
+            appliedOpIds,
+        );
+    }
+
+    private stagePendingDailyStateSection(options: { requestFlush?: boolean } = {}): void {
+        if (!this.pendingOverlayStore) {
+            return;
+        }
+
+        this.pendingOverlayStore.stageDailyStateSection(this.buildPendingDailyStateSection());
+        if (options.requestFlush ?? true) {
+            this.pendingOverlayStore.requestFlush();
+        }
+    }
+
+    private async applyPendingDailyStateSection(reason: string): Promise<boolean> {
+        if (!this.pendingOverlayStore) {
+            return false;
+        }
+
+        const section = await this.pendingOverlayStore.getDailyStateSection();
+        if (!section) {
+            return false;
+        }
+
+        const nextDailyDeckStats: DailyDeckStats = {
+            date: section.dailyDeckStats.date,
+            counts: Object.fromEntries(
+                Object.entries(section.dailyDeckStats.counts).map(([deckPath, count]) => [
+                    deckPath,
+                    {
+                        new: count.new,
+                        review: count.review,
+                    },
+                ]),
+            ),
+        };
+        this.data.buryDate = section.buryDate;
+        this.data.buryList = [...section.buryList];
+        this.data.dailyDeckStats = nextDailyDeckStats;
+        this.currentDeviceReviewCount = normalizeDeviceReviewCount(section.deviceReviewCount);
+        this.pendingDailyStateOverlayFormalization = true;
+        this.markBufferedPluginStateDirty(["daily-state"]);
+        this.logRuntimeDebug("[SR-PendingOverlay] section-applied", {
+            section: "dailyState",
+            reason,
+            path: this.syroLayout?.pendingOverlayPath,
+        });
+        return true;
+    }
+
     private normalizeRequestedPluginDataDomains(
         domains?: readonly PluginDataPersistDomain[] | null,
     ): PluginDataPersistDomain[] {
@@ -489,6 +603,151 @@ export default class SRPlugin extends Plugin {
         }
 
         return Array.from(new Set(domains));
+    }
+
+    private ensureBufferedStateRevisionTracking(): void {
+        if (!this.bufferedStateDirtyRevisions) {
+            this.bufferedStateDirtyRevisions = createBufferedStateRevisionMap();
+        }
+        if (!this.bufferedStatePersistedRevisions) {
+            this.bufferedStatePersistedRevisions = createBufferedStateRevisionMap();
+        }
+    }
+
+    private normalizeBufferedImportProtectedDomains(
+        domains?: readonly PluginDataPersistDomain[] | null,
+    ): BufferedImportProtectedDomain[] {
+        return this.normalizeRequestedPluginDataDomains(domains).filter(
+            isBufferedImportProtectedDomain,
+        );
+    }
+
+    private getBufferedStateDirtyRevisionSnapshot(): BufferedStateRevisionMap {
+        this.ensureBufferedStateRevisionTracking();
+        return {
+            ...this.bufferedStateDirtyRevisions,
+        };
+    }
+
+    private getPendingBufferedPluginStateDomains(): BufferedImportProtectedDomain[] {
+        this.ensureBufferedStateRevisionTracking();
+        return BUFFERED_IMPORT_PROTECTED_DOMAINS.filter(
+            (domain) =>
+                this.bufferedStateDirtyRevisions[domain] !==
+                this.bufferedStatePersistedRevisions[domain],
+        );
+    }
+
+    private markBufferedPluginStateDirty(
+        domains?: readonly PluginDataPersistDomain[] | null,
+    ): BufferedImportProtectedDomain[] {
+        this.ensureBufferedStateRevisionTracking();
+        const touched = this.normalizeBufferedImportProtectedDomains(domains);
+        for (const domain of touched) {
+            this.bufferedStateDirtyRevisions[domain] += 1;
+        }
+        return touched;
+    }
+
+    private ensureBufferedPluginStateMarkedDirtyForSave(
+        domains?: readonly PluginDataPersistDomain[] | null,
+    ): void {
+        this.ensureBufferedStateRevisionTracking();
+        for (const domain of this.normalizeBufferedImportProtectedDomains(domains)) {
+            if (
+                this.bufferedStateDirtyRevisions[domain] !==
+                this.bufferedStatePersistedRevisions[domain]
+            ) {
+                continue;
+            }
+            this.bufferedStateDirtyRevisions[domain] += 1;
+        }
+    }
+
+    private markBufferedPluginStatePersisted(
+        domains: readonly BufferedImportProtectedDomain[],
+        revisions: BufferedStateRevisionMap,
+    ): void {
+        this.ensureBufferedStateRevisionTracking();
+        for (const domain of domains) {
+            this.bufferedStatePersistedRevisions[domain] = revisions[domain];
+        }
+    }
+
+    private resetBufferedStateRevisionTracking(): void {
+        this.bufferedStateDirtyRevisions = createBufferedStateRevisionMap();
+        this.bufferedStatePersistedRevisions = createBufferedStateRevisionMap();
+    }
+
+    private captureBufferedImportBaselineSnapshot(): BufferedImportBaselineSnapshot {
+        return {
+            revisions: this.getBufferedStateDirtyRevisionSnapshot(),
+            sharedSettingsState: extractSharedSettingsWithMetadata(
+                this.data.settings,
+                this.sharedSettingsUpdatedAtByField,
+            ),
+            trackingRulesState: extractTrackingRules(
+                this.data.folderTrackingRules,
+                this.trackingRulesUpdatedAtByFolderPath,
+                this.trackingRulesTombstones,
+            ),
+            dailyState: this.buildDailyStateSnapshotWithMetadata(),
+        };
+    }
+
+    private applyBufferedImportBaselineSnapshot(
+        snapshot: BufferedImportBaselineSnapshot,
+        domains: readonly BufferedImportProtectedDomain[],
+    ): void {
+        const revisionSnapshot = snapshot.revisions;
+        if (domains.includes("shared-settings")) {
+            this.persistedSharedSettingsState = snapshot.sharedSettingsState;
+            this.markBufferedPluginStatePersisted(["shared-settings"], revisionSnapshot);
+        }
+        if (domains.includes("tracking-rules")) {
+            this.persistedTrackingRulesState = snapshot.trackingRulesState;
+            this.markBufferedPluginStatePersisted(["tracking-rules"], revisionSnapshot);
+        }
+        if (domains.includes("daily-state")) {
+            this.persistedDailyState = snapshot.dailyState;
+            this.markBufferedPluginStatePersisted(["daily-state"], revisionSnapshot);
+        }
+    }
+
+    private async prepareBufferedPluginStateForRemoteImport(reason: string): Promise<boolean> {
+        const pendingDomains = this.getPendingBufferedPluginStateDomains();
+        if (pendingDomains.length === 0) {
+            return true;
+        }
+
+        this.logRuntimeDebug("[SR-BufferedState] buffered-state-flush-before-import:start", {
+            reason,
+            domains: pendingDomains,
+        });
+
+        const flushed = await this.flushPendingPluginDataSave(1200);
+        const remainingDomains = this.getPendingBufferedPluginStateDomains();
+        if (!flushed) {
+            this.logRuntimeDebug("[SR-BufferedState] buffered-state-flush-before-import:timeout", {
+                reason,
+                remainingDomains,
+            });
+            return false;
+        }
+
+        if (remainingDomains.length > 0) {
+            this.logRuntimeDebug("[SR-BufferedState] buffered-state-flush-before-import:failed", {
+                reason,
+                remainingDomains,
+            });
+            return false;
+        }
+
+        this.logRuntimeDebug("[SR-BufferedState] buffered-state-flush-before-import:success", {
+            reason,
+            domains: pendingDomains,
+        });
+        return true;
     }
 
     private schedulePendingPluginDataSave(delayMs = 350): void {
@@ -513,9 +772,20 @@ export default class SRPlugin extends Plugin {
         return domains.length > 0 ? domains : [...PLUGIN_DATA_PERSIST_DOMAINS];
     }
 
-    public requestPluginDataSave(request: number | PluginDataPersistRequest = 350): void {
+    public requestPluginDataSave(
+        request: number | PluginDataPersistRequest = 350,
+        options: { markDirty?: boolean } = {},
+    ): void {
         const delayMs = typeof request === "number" ? request : (request.delayMs ?? 350);
-        const domains = typeof request === "number" ? undefined : request.domains;
+        const domains = this.normalizeRequestedPluginDataDomains(
+            typeof request === "number" ? undefined : request.domains,
+        );
+        if (options.markDirty ?? true) {
+            this.markBufferedPluginStateDirty(domains);
+        }
+        if (domains.includes("daily-state")) {
+            this.stagePendingDailyStateSection();
+        }
         this.pendingPluginDataSaveRequested = true;
         this.enqueuePendingPluginDataSaveDomains(domains);
         this.schedulePendingPluginDataSave(delayMs);
@@ -670,6 +940,7 @@ export default class SRPlugin extends Plugin {
         this.syroSessionManager = null;
         this.syroLayout = null;
         this.syroWorkspace = null;
+        this.pendingOverlayStore = null;
         this.deckOptionsStore = null;
         this.sharedSettingsStore = null;
         this.trackingRulesStore = null;
@@ -681,6 +952,13 @@ export default class SRPlugin extends Plugin {
         this.persistedDailyState = null;
         this.persistedDeviceState = null;
         this.persistedLicenseState = null;
+        this.sharedSettingsUpdatedAtByField = {};
+        this.trackingRulesUpdatedAtByFolderPath = {};
+        this.trackingRulesTombstones = {};
+        this.dailyStateAppliedOpIds = {};
+        this.currentDeviceReviewCount = 0;
+        this.pendingDailyStateOverlayFormalization = false;
+        this.resetBufferedStateRevisionTracking();
         this.remoteDeltaFingerprint = "";
         this.pendingSyncRequest = null;
         this.lastSyncReviewMode = null;
@@ -1524,6 +1802,7 @@ export default class SRPlugin extends Plugin {
 
         const importResult = await this.importPendingSyroSessions({
             sealOwnOpenSession: false,
+            reason: `remote-delta:${reason}`,
         });
         const outcome = await this.applyLightweightSessionDelta(importResult);
         if (outcome === "escalated") {
@@ -2847,11 +3126,12 @@ export default class SRPlugin extends Plugin {
         }
 
         await this.flushBeforeSyroDeviceMutation();
+        const sourceDeviceFolderName = sourceDevice.deviceFolderName;
         this.syroLayout = await this.syroWorkspace.overwriteCurrentDeviceFromSource(
             this.syroLayout,
             deviceId,
         );
-        await this.syroSessionManager.resetCurrentDeviceSessionsToRemoteEof();
+        await this.syroSessionManager.alignRemoteDeviceSessionsToEof(sourceDeviceFolderName);
         await this.reloadAfterSyroDeviceChange();
         new Notice(t("NOTICE_SYRO_DEVICE_PULLED"));
         return true;
@@ -2912,6 +3192,7 @@ export default class SRPlugin extends Plugin {
     private async importPendingSyroSessions(
         options: {
             sealOwnOpenSession?: boolean;
+            reason?: string;
         } = {},
     ): Promise<SyroSessionImportResult | null> {
         if (this.syroReadOnlyReason) {
@@ -2932,10 +3213,24 @@ export default class SRPlugin extends Plugin {
             return null;
         }
 
+        const importReason = options.reason ?? "manual";
+        const readyForImport =
+            await this.prepareBufferedPluginStateForRemoteImport(importReason);
+        if (!readyForImport) {
+            return {
+                importedSessionIds: [],
+                deletedSessionIds: [],
+                archivedSessionIds: [],
+                replayImpact: createEmptySyroSessionReplaySummary(),
+            };
+        }
+
         const inventory = await this.syroWorkspace.listDeviceInventory();
         const validDevicesById = new Map(
             inventory.validDevices.map((entry) => [entry.deviceId, entry] as const),
         );
+        const importStartSnapshot = this.captureBufferedImportBaselineSnapshot();
+        let latestCleanSnapshot = importStartSnapshot;
         const remoteCardsCache = new Map<string, ReturnType<typeof parseTrackedCardsStoreSnapshots>>();
         const remoteNotesCache = new Map<string, ReturnType<typeof parseNoteReviewStoreSnapshots>>();
         const aliasGroupsByDomain: Record<"cards" | "notes", Map<string, SyroUuidAliasGroup>> = {
@@ -3001,7 +3296,7 @@ export default class SRPlugin extends Plugin {
 
         const result = await this.syroSessionManager.importPendingSessions(
             async (_sessionId, records) => {
-                return replaySyroSessionRecords(records, {
+                const replaySummary = await replaySyroSessionRecords(records, {
                     settings: this.data.settings,
                     data: this.data,
                     store: this.store,
@@ -3022,6 +3317,30 @@ export default class SRPlugin extends Plugin {
                     shouldLogDebug: () => this.shouldLogRuntimeDebug(),
                     logDebug: (...args: unknown[]) => this.logRuntimeDebug(...args),
                 });
+                const currentSnapshot = this.captureBufferedImportBaselineSnapshot();
+                const currentRevisions = this.getBufferedStateDirtyRevisionSnapshot();
+                for (const domain of BUFFERED_IMPORT_PROTECTED_DOMAINS) {
+                    if (currentRevisions[domain] !== importStartSnapshot.revisions[domain]) {
+                        continue;
+                    }
+                    latestCleanSnapshot = {
+                        ...latestCleanSnapshot,
+                        revisions: {
+                            ...latestCleanSnapshot.revisions,
+                            [domain]: currentSnapshot.revisions[domain],
+                        },
+                        ...(domain === "shared-settings"
+                            ? { sharedSettingsState: currentSnapshot.sharedSettingsState }
+                            : {}),
+                        ...(domain === "tracking-rules"
+                            ? { trackingRulesState: currentSnapshot.trackingRulesState }
+                            : {}),
+                        ...(domain === "daily-state"
+                            ? { dailyState: currentSnapshot.dailyState }
+                            : {}),
+                    };
+                }
+                return replaySummary;
             },
             options,
         );
@@ -3032,16 +3351,44 @@ export default class SRPlugin extends Plugin {
             }
             await this.appendSyroUuidAliasBatch(domain, groups);
         }
-        this.persistedSharedSettingsState = extractSharedSettingsWithMetadata(
-            this.data.settings,
-            this.sharedSettingsUpdatedAtByField,
+        const locallyDirtyDuringImport = BUFFERED_IMPORT_PROTECTED_DOMAINS.filter(
+            (domain) =>
+                this.getBufferedStateDirtyRevisionSnapshot()[domain] !==
+                importStartSnapshot.revisions[domain],
         );
-        this.persistedTrackingRulesState = extractTrackingRules(
-            this.data.folderTrackingRules,
-            this.trackingRulesUpdatedAtByFolderPath,
-            this.trackingRulesTombstones,
+        const safeDomains = BUFFERED_IMPORT_PROTECTED_DOMAINS.filter(
+            (domain) => !locallyDirtyDuringImport.includes(domain),
         );
-        this.persistedDailyState = this.buildDailyStateSnapshotWithMetadata();
+        if (safeDomains.length > 0) {
+            this.applyBufferedImportBaselineSnapshot(latestCleanSnapshot, safeDomains);
+        }
+        if (locallyDirtyDuringImport.length > 0) {
+            this.logRuntimeDebug(
+                "[SR-BufferedState] buffered-state-baseline-preserved-due-to-local-dirty",
+                {
+                    reason: importReason,
+                    domains: locallyDirtyDuringImport,
+                },
+            );
+        }
+        const requeueDomains = BUFFERED_IMPORT_PROTECTED_DOMAINS.filter((domain) =>
+            this.getPendingBufferedPluginStateDomains().includes(domain),
+        );
+        if (requeueDomains.length > 0) {
+            this.requestPluginDataSave(
+                {
+                    delayMs: 0,
+                    domains: requeueDomains,
+                },
+                {
+                    markDirty: false,
+                },
+            );
+            this.logRuntimeDebug("[SR-BufferedState] buffered-state-save-requeued-after-import", {
+                reason: importReason,
+                domains: requeueDomains,
+            });
+        }
         await this.pruneSyroInlineSyncMetadata();
         return result;
     }
@@ -4100,6 +4447,7 @@ export default class SRPlugin extends Plugin {
 
         const sessionImportResult = await this.importPendingSyroSessions?.({
             sealOwnOpenSession: request.trigger !== "remote-poll",
+            reason: request.trigger,
         });
         if (
             sessionImportResult &&
@@ -4109,6 +4457,13 @@ export default class SRPlugin extends Plugin {
                 sessionImportResult.archivedSessionIds.length > 0)
         ) {
             console.debug("[SR-Syro] Imported pending sessions before sync.", sessionImportResult);
+        }
+        if (sessionImportResult?.replayImpact.dailyStateChanged) {
+            this.logRuntimeDebug("[SR-DailyState] pre-sync import updated daily-state", {
+                trigger: request.trigger,
+                importedSessionIds: sessionImportResult.importedSessionIds,
+                deletedSessionIds: sessionImportResult.deletedSessionIds,
+            });
         }
 
         await this.sync(request.reviewMode, request.mode, {
@@ -5117,6 +5472,7 @@ export default class SRPlugin extends Plugin {
                 await this.dailyStateStore.save(nextState);
             }
         }
+        await this.applyPendingDailyStateSection("load-plugin-data");
 
         const deviceState = await this.deviceStateStore.load();
         if (deviceState) {
@@ -5152,6 +5508,7 @@ export default class SRPlugin extends Plugin {
         }
 
         upgradeSettings(this.data.settings);
+        this.resetBufferedStateRevisionTracking();
         return null;
     }
 
@@ -5179,6 +5536,15 @@ export default class SRPlugin extends Plugin {
             return;
         }
 
+        this.pendingOverlayStore = new PendingOverlayStore({
+            adapter: this.app.vault.adapter,
+            path: this.syroLayout.pendingOverlayPath,
+            shouldLogDebug: () => this.shouldLogRuntimeDebug(),
+            logDebug: (...args: unknown[]) => this.logRuntimeDebug(...args),
+            logWarn: (...args: unknown[]) => console.warn(...args),
+            notifyWriteFailure: () => new Notice(t("DATA_UNABLE_TO_SAVE")),
+        });
+        await this.pendingOverlayStore.ensureLoaded();
         this.initializeSplitStateStores();
 
         const migrationError =
@@ -5197,14 +5563,28 @@ export default class SRPlugin extends Plugin {
         this.deckOptionsStore = new DeckOptionsStore({
             deckOptionsPath: this.syroLayout.deckOptionsPath,
         });
-        this.syroSessionManager = new SyroSessionManager(this.app, this.syroLayout);
+        this.syroSessionManager = new SyroSessionManager(this.app, this.syroLayout, {
+            logDebug: (...args: unknown[]) => this.logRuntimeDebug(...args),
+        });
         this.applySyroReadOnlyState();
         await this.syroSessionManager.initialize();
+        if (this.pendingDailyStateOverlayFormalization) {
+            this.requestPluginDataSave(
+                {
+                    delayMs: 0,
+                    domains: ["daily-state"],
+                },
+                {
+                    markDirty: false,
+                },
+            );
+        }
         this.applySyroReadOnlyState();
         await this.deckOptionsStore.loadIntoSettings(this.data.settings);
         this.store = new DataStore(this.data.settings, {
             cardsPath: this.syroLayout.cardsPath,
-            cardsOverlayPath: this.syroLayout.cardsOverlayPath,
+            pendingOverlayPath: this.syroLayout.pendingOverlayPath,
+            pendingOverlayStore: this.pendingOverlayStore,
             auxiliaryDataDir: this.syroLayout.deviceRoot,
         });
         this.applySyroReadOnlyState();
@@ -5250,6 +5630,8 @@ export default class SRPlugin extends Plugin {
         const requestedDomains = new Set(
             this.normalizeRequestedPluginDataDomains(options.domains),
         );
+        this.ensureBufferedPluginStateMarkedDirtyForSave(options.domains);
+        const bufferedRevisionSnapshot = this.getBufferedStateDirtyRevisionSnapshot();
         const persistSharedSettings = requestedDomains.has("shared-settings");
         const persistTrackingRules = requestedDomains.has("tracking-rules");
         const persistDailyState = requestedDomains.has("daily-state");
@@ -5302,9 +5684,15 @@ export default class SRPlugin extends Plugin {
         const previousDailyState = persistDailyState
             ? (this.persistedDailyState ?? createDefaultDailyState())
             : null;
-        const dailyState = persistDailyState
-            ? this.buildDailyStateSnapshotWithMetadata()
+        const pendingDailyStateSection = persistDailyState
+            ? ((await this.pendingOverlayStore?.getDailyStateSection()) ?? null)
             : null;
+        const dailyState = persistDailyState
+            ? pendingDailyStateSection
+                ? this.buildDailyStateSnapshotFromPendingSection(pendingDailyStateSection)
+                : this.buildDailyStateSnapshotWithMetadata()
+            : null;
+        let dailyStateSessionCommitted = !persistDailyState;
 
         if (this.syroReadOnlyReason) {
             if (persistDeviceState && deviceState) {
@@ -5401,17 +5789,37 @@ export default class SRPlugin extends Plugin {
 
         if (persistDailyState && dailyState && previousDailyState) {
             const dailyStateOperations = diffDailyState(previousDailyState, dailyState);
+            if (dailyStateOperations.length === 0) {
+                dailyStateSessionCommitted = true;
+            }
             for (const [index, operation] of dailyStateOperations.entries()) {
                 const targetUuid = `daily-op:${updatedAt}:${index}:${operation.opType}`;
-                await this.syroSessionManager?.appendRecord({
-                    domain: "daily-state",
-                    entityType: "daily-state-op",
-                    opType: operation.opType,
-                    targetUuid,
-                    payload: operation,
-                    pathHint: this.syroLayout?.dailyStatePath,
-                    updatedAt,
-                });
+                const appended =
+                    (await this.syroSessionManager?.appendRecord({
+                        domain: "daily-state",
+                        entityType: "daily-state-op",
+                        opType: operation.opType,
+                        targetUuid,
+                        payload: operation,
+                        pathHint: this.syroLayout?.dailyStatePath,
+                        updatedAt,
+                    })) ?? false;
+                if (!appended) {
+                    this.logRuntimeDebug(
+                        "[SR-PendingOverlay] section-retained-due-to-incomplete-commit",
+                        {
+                            section: "dailyState",
+                            reason: "session-append-failed",
+                            targetUuid,
+                        },
+                    );
+                    throw new Error(
+                        `[SR-PendingOverlay] Failed to append daily-state session record: ${targetUuid}`,
+                    );
+                }
+            }
+            if (dailyStateOperations.length > 0) {
+                dailyStateSessionCommitted = true;
             }
         }
 
@@ -5448,6 +5856,10 @@ export default class SRPlugin extends Plugin {
             );
             await this.sharedSettingsStore.save(finalSharedSettingsState);
             this.persistedSharedSettingsState = finalSharedSettingsState;
+            this.markBufferedPluginStatePersisted(
+                ["shared-settings"],
+                bufferedRevisionSnapshot,
+            );
         }
 
         if (persistTrackingRules) {
@@ -5459,12 +5871,25 @@ export default class SRPlugin extends Plugin {
             await this.trackingRulesStore.save(finalTrackingRulesState);
             this.persistedTrackingRulesState = finalTrackingRulesState;
             this.trackingRulesTombstones = { ...finalTrackingRulesState.tombstones };
+            this.markBufferedPluginStatePersisted(
+                ["tracking-rules"],
+                bufferedRevisionSnapshot,
+            );
         }
 
         if (persistDailyState) {
-            const finalDailyState = this.buildDailyStateSnapshotWithMetadata();
+            const finalDailyState = pendingDailyStateSection
+                ? this.buildDailyStateSnapshotFromPendingSection(pendingDailyStateSection)
+                : this.buildDailyStateSnapshotWithMetadata();
             await this.dailyStateStore.save(finalDailyState);
             this.persistedDailyState = finalDailyState;
+            if (dailyStateSessionCommitted && this.pendingOverlayStore) {
+                this.pendingOverlayStore.clearDailyStateSection();
+                this.pendingOverlayStore.requestFlush();
+                await this.pendingOverlayStore.drainFlush();
+            }
+            this.pendingDailyStateOverlayFormalization = false;
+            this.markBufferedPluginStatePersisted(["daily-state"], bufferedRevisionSnapshot);
         }
 
         if (persistDeviceState && deviceState) {

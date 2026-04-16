@@ -127,6 +127,10 @@ export interface SyroDeviceSessionSummary {
     hasPendingRemoteChanges: boolean;
 }
 
+type SyroSessionManagerOptions = {
+    logDebug?: (...args: unknown[]) => void;
+};
+
 function normalizePath(path: string): string {
     return path.replace(/\\/g, "/").replace(/\/+/g, "/");
 }
@@ -424,6 +428,7 @@ export class SyroSessionManager {
     constructor(
         private readonly app: App,
         private readonly layout: SyroPersistenceLayout,
+        private readonly options: SyroSessionManagerOptions = {},
     ) {
         this.adapter = this.app.vault.adapter as SessionAdapter;
     }
@@ -513,6 +518,7 @@ export class SyroSessionManager {
 
         const remoteSessionFiles = await this.listRemoteSessionFiles();
         const updatedAt = new Date().toISOString();
+        const alignedSessionPaths: string[] = [];
 
         for (const fileInfo of remoteSessionFiles) {
             const meta = await this.inspectSessionFile(fileInfo.filePath);
@@ -521,8 +527,54 @@ export class SyroSessionManager {
                 lastOpId: meta.lastOpId,
                 updatedAt,
             });
+            alignedSessionPaths.push(fileInfo.sessionPath);
         }
 
+        this.logDebug("[SR-SyroSession] aligned all remote sessions to EOF", {
+            alignedSessionPaths,
+        });
+        await this.appendCurrentCursorSnapshot();
+    }
+
+    async alignRemoteDeviceSessionsToEof(deviceFolderName: string): Promise<void> {
+        if (this.syncReadOnlyReason) {
+            return;
+        }
+
+        const preservedEntries = Array.from(this.sessionCursors.entries()).filter(
+            ([sessionPath]) => getSourceDeviceFolderName(sessionPath) !== deviceFolderName,
+        );
+
+        await this.clearCurrentDeviceSessionFiles();
+        this.sessionCursors.clear();
+
+        for (const [sessionPath, cursor] of preservedEntries) {
+            this.sessionCursors.set(sessionPath, cursor);
+        }
+
+        const remoteSessionFiles = await this.listRemoteSessionFiles();
+        const updatedAt = new Date().toISOString();
+        const alignedSessionPaths: string[] = [];
+
+        for (const fileInfo of remoteSessionFiles) {
+            if (fileInfo.sourceDeviceFolderName !== deviceFolderName) {
+                continue;
+            }
+
+            const meta = await this.inspectSessionFile(fileInfo.filePath);
+            this.sessionCursors.set(fileInfo.sessionPath, {
+                offset: meta.completeLength,
+                lastOpId: meta.lastOpId,
+                updatedAt,
+            });
+            alignedSessionPaths.push(fileInfo.sessionPath);
+        }
+
+        this.logDebug("[SR-SyroSession] aligned remote source sessions to EOF after overwrite", {
+            deviceFolderName,
+            alignedSessionPaths,
+            preservedSessionPaths: preservedEntries.map(([sessionPath]) => sessionPath),
+        });
         await this.appendCurrentCursorSnapshot();
     }
 
@@ -635,27 +687,30 @@ export class SyroSessionManager {
         let replayImpact = createEmptySyroSessionReplaySummary();
         let cursorSnapshotChanged = false;
 
-        for (const delta of deltas) {
-            if (!delta.cursorAdvanced) {
-                continue;
+        try {
+            for (const delta of deltas) {
+                if (!delta.cursorAdvanced) {
+                    continue;
+                }
+
+                if (delta.records.length > 0) {
+                    const sessionReplayImpact = await replaySession(delta.sessionId, delta.records);
+                    if (sessionReplayImpact) {
+                        replayImpact = mergeSyroSessionReplaySummary(
+                            replayImpact,
+                            sessionReplayImpact,
+                        );
+                    }
+                }
+
+                this.sessionCursors.set(delta.sessionPath, delta.nextCursor);
+                importedSessionIds.push(delta.sessionId);
+                cursorSnapshotChanged = true;
             }
-
-            this.sessionCursors.set(delta.sessionPath, delta.nextCursor);
-            importedSessionIds.push(delta.sessionId);
-            cursorSnapshotChanged = true;
-
-            if (delta.records.length === 0) {
-                continue;
+        } finally {
+            if (cursorSnapshotChanged) {
+                await this.appendCurrentCursorSnapshot();
             }
-
-            const sessionReplayImpact = await replaySession(delta.sessionId, delta.records);
-            if (sessionReplayImpact) {
-                replayImpact = mergeSyroSessionReplaySummary(replayImpact, sessionReplayImpact);
-            }
-        }
-
-        if (cursorSnapshotChanged) {
-            await this.appendCurrentCursorSnapshot();
         }
 
         const cleanup = await this.cleanupSessions();
@@ -716,6 +771,10 @@ export class SyroSessionManager {
     private getCurrentDeviceFolderName(): string {
         const normalized = trimTrailingSlash(this.layout.currentDeviceSessionsRoot);
         return normalized.slice(normalized.lastIndexOf("/") + 1) || normalized;
+    }
+
+    private logDebug(...args: unknown[]): void {
+        this.options.logDebug?.(...args);
     }
 
     private async appendText(path: string, value: string): Promise<void> {
@@ -847,7 +906,10 @@ export class SyroSessionManager {
         const records: SyroSessionRecord[] = [];
         let impact: SyroPendingSessionImpact | null = null;
         let lastProcessedOffset = resumeOffset;
-        let lastOpId = currentCursor?.lastOpId ?? null;
+        let lastOpId =
+            resumeOffset > 0
+                ? this.getPreviousEventOpIdAtOffset(completeText, resumeOffset)
+                : null;
 
         for (const { rawLine, endOffset } of this.iterateCompleteLines(completeText, resumeOffset)) {
             lastProcessedOffset = endOffset;
@@ -906,18 +968,80 @@ export class SyroSessionManager {
             return 0;
         }
 
-        if (currentCursor.offset >= 0 && currentCursor.offset <= completeText.length) {
-            return currentCursor.offset;
-        }
-
-        if (!currentCursor.lastOpId) {
+        if (currentCursor.offset === 0) {
             return 0;
         }
 
-        let lastMatchedOffset = 0;
+        const offset = Math.min(Math.max(currentCursor.offset, 0), completeText.length);
+        if (
+            currentCursor.lastOpId &&
+            this.isLineBoundary(completeText, offset) &&
+            this.getPreviousEventOpIdAtOffset(completeText, offset) === currentCursor.lastOpId
+        ) {
+            return offset;
+        }
+
+        if (!currentCursor.lastOpId) {
+            if (!this.isLineBoundary(completeText, offset)) {
+                this.logDebug("[SR-Syro] stale-cursor-reset", {
+                    offset,
+                    reason: "mid-line-without-last-opid",
+                });
+            }
+            return 0;
+        }
+
+        const recoveredOffset = this.findEventEndOffsetByOpId(
+            completeText,
+            currentCursor.lastOpId,
+        );
+        if (recoveredOffset !== null) {
+            this.logDebug("[SR-Syro] stale-cursor-recovered-by-opid", {
+                offset,
+                recoveredOffset,
+                lastOpId: currentCursor.lastOpId,
+            });
+            return recoveredOffset;
+        }
+
+        this.logDebug("[SR-Syro] stale-cursor-recovered-from-zero", {
+            offset,
+            lastOpId: currentCursor.lastOpId,
+        });
+        return 0;
+    }
+
+    private isLineBoundary(completeText: string, offset: number): boolean {
+        if (offset <= 0 || offset >= completeText.length) {
+            return true;
+        }
+
+        return completeText[offset - 1] === "\n";
+    }
+
+    private getPreviousEventOpIdAtOffset(
+        completeText: string,
+        offset: number,
+    ): string | null {
+        let lastOpId: string | null = null;
+        for (const { rawLine, endOffset } of this.iterateCompleteLines(completeText, 0)) {
+            if (endOffset > offset) {
+                break;
+            }
+            const parsedLine = parseSessionLine(rawLine);
+            if (parsedLine?.lineType === "event") {
+                lastOpId = parsedLine.record.opId;
+            }
+        }
+
+        return lastOpId;
+    }
+
+    private findEventEndOffsetByOpId(completeText: string, opId: string): number | null {
+        let lastMatchedOffset: number | null = null;
         for (const { rawLine, endOffset } of this.iterateCompleteLines(completeText, 0)) {
             const parsedLine = parseSessionLine(rawLine);
-            if (parsedLine?.lineType === "event" && parsedLine.record.opId === currentCursor.lastOpId) {
+            if (parsedLine?.lineType === "event" && parsedLine.record.opId === opId) {
                 lastMatchedOffset = endOffset;
             }
         }

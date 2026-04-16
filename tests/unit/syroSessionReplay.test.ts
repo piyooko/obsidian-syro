@@ -94,7 +94,7 @@ function createStoreWithAdapter(adapter: ReturnType<typeof createMockAdapter>["a
     };
     const store = new DataStore(DEFAULT_SETTINGS, {
         cardsPath: "syro/devices/Desktop--d84f/cards.json",
-        cardsOverlayPath: "syro/devices/Desktop--d84f/cards.review_overlay.json",
+        pendingOverlayPath: "syro/devices/Desktop--d84f/pending.overlay.json",
         auxiliaryDataDir: "syro/devices/Desktop--d84f",
     });
     store.resetData();
@@ -410,6 +410,53 @@ describe("replaySyroSessionRecords", () => {
         expect(files.get("syro/devices/Desktop--d84f/daily-state.json")).toContain(
             '"deviceReviewCount": 7',
         );
+    });
+
+    test("merges remote daily-state deck deltas incrementally on top of local counts", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+        deps.data.dailyDeckStats = {
+            date: "2026-04-13",
+            counts: {
+                default: {
+                    new: 3,
+                    review: 0,
+                },
+            },
+        };
+
+        const summary = await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-delta-incremental",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "daily-state",
+                    entityType: "daily-state-op",
+                    opType: "deck-stats-delta",
+                    targetUuid: "daily-op:incremental",
+                    createdAt: "2026-04-13T12:05:00.000Z",
+                    updatedAt: "2026-04-13T12:05:00.000Z",
+                    payload: {
+                        date: "2026-04-13",
+                        deckName: "default",
+                        newDelta: 2,
+                        reviewDelta: 0,
+                    },
+                    pathHint: "syro/devices/Desktop--d84f/daily-state.json",
+                },
+            ],
+            deps,
+        );
+
+        expect(summary.dailyStateChanged).toBe(true);
+        expect(deps.data.dailyDeckStats.counts.default).toEqual({
+            new: 5,
+            review: 0,
+        });
     });
 
     test("returns a runtime-only replay summary for pure card review session deltas", async () => {
@@ -915,7 +962,7 @@ describe("replaySyroSessionRecords", () => {
 
         const reloadedStore = new DataStore(DEFAULT_SETTINGS, {
             cardsPath: "syro/devices/Desktop--d84f/cards.json",
-            cardsOverlayPath: "syro/devices/Desktop--d84f/cards.review_overlay.json",
+            pendingOverlayPath: "syro/devices/Desktop--d84f/pending.overlay.json",
             auxiliaryDataDir: "syro/devices/Desktop--d84f",
         });
         await reloadedStore.load();

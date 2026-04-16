@@ -404,6 +404,16 @@ function logAliasDebug(
     }
 }
 
+function logDailyStateDebug(
+    deps: ReplayDependencies,
+    event: string,
+    payload: Record<string, unknown>,
+): void {
+    if (deps.shouldLogDebug?.()) {
+        deps.logDebug?.(`[SR-DailyState] ${event}`, payload);
+    }
+}
+
 function buildNegativeCacheKey(record: SyroSessionRecord): string {
     return `${record.deviceId}|${record.domain}|${record.entityType}|${record.targetUuid}`;
 }
@@ -482,6 +492,15 @@ export async function replaySyroSessionRecords(
     };
     const deferredRecords: DeferredReplayRecord[] = [];
     const negativeCache = new Set<string>();
+    const dailyStateReplayStats = {
+        seen: 0,
+        applied: 0,
+        skippedInvalid: 0,
+        skippedAlreadyApplied: 0,
+        skippedStaleDate: 0,
+        skippedUnsupportedOp: 0,
+        affectedDeckLineages: new Set<string>(),
+    };
 
     const registerPendingAliasGroup = (group: SyroUuidAliasGroup): void => {
         const registry = pendingAliasGroups[group.entityType];
@@ -1170,18 +1189,24 @@ export async function replaySyroSessionRecords(
             }
 
             case "daily-state": {
+                dailyStateReplayStats.seen++;
                 const payload = parseDailyStateOpPayload(record.payload);
+                if (!payload) {
+                    dailyStateReplayStats.skippedInvalid++;
+                    continue;
+                }
                 if (
-                    !payload ||
                     deps.dailyStateAppliedOpIds[record.opId] ||
                     deps.dailyStateAppliedOpIds[record.targetUuid]
                 ) {
+                    dailyStateReplayStats.skippedAlreadyApplied++;
                     continue;
                 }
 
                 const date = getStringProp(payload, "date")?.trim() ?? "";
                 if (record.opType === "rollover-reset") {
                     if (ensureDailyStateDate(deps.data, date) === "stale") {
+                        dailyStateReplayStats.skippedStaleDate++;
                         continue;
                     }
                     deps.data.buryList.splice(0, deps.data.buryList.length);
@@ -1191,6 +1216,7 @@ export async function replaySyroSessionRecords(
                     };
                 } else if (record.opType === "bury-add") {
                     if (ensureDailyStateDate(deps.data, date) === "stale") {
+                        dailyStateReplayStats.skippedStaleDate++;
                         continue;
                     }
                     for (const entry of getArrayProp(payload, "entries")) {
@@ -1201,6 +1227,7 @@ export async function replaySyroSessionRecords(
                     }
                 } else if (record.opType === "bury-clear") {
                     if (ensureDailyStateDate(deps.data, date) === "stale") {
+                        dailyStateReplayStats.skippedStaleDate++;
                         continue;
                     }
                     deps.data.buryList.splice(
@@ -1212,10 +1239,12 @@ export async function replaySyroSessionRecords(
                     );
                 } else if (record.opType === "deck-stats-delta") {
                     if (ensureDailyStateDate(deps.data, date) === "stale") {
+                        dailyStateReplayStats.skippedStaleDate++;
                         continue;
                     }
                     const deckName = getStringProp(payload, "deckName")?.trim();
                     if (!deckName) {
+                        dailyStateReplayStats.skippedInvalid++;
                         continue;
                     }
                     const newDelta = Number(payload["newDelta"] ?? 0);
@@ -1231,7 +1260,9 @@ export async function replaySyroSessionRecords(
                             currentCounts.review + (Number.isFinite(reviewDelta) ? reviewDelta : 0),
                         ),
                     };
+                    dailyStateReplayStats.affectedDeckLineages.add(deckName);
                 } else {
+                    dailyStateReplayStats.skippedUnsupportedOp++;
                     continue;
                 }
 
@@ -1240,6 +1271,7 @@ export async function replaySyroSessionRecords(
                 dailyStateChanged = true;
                 dailyStateMetadataChanged = true;
                 replaySummary.dailyStateChanged = true;
+                dailyStateReplayStats.applied++;
                 break;
             }
 
@@ -1566,6 +1598,18 @@ export async function replaySyroSessionRecords(
                 deps.dailyStateAppliedOpIds,
             ),
         );
+    }
+
+    if (dailyStateReplayStats.seen > 0) {
+        logDailyStateDebug(deps, "replay-summary", {
+            seen: dailyStateReplayStats.seen,
+            applied: dailyStateReplayStats.applied,
+            skippedInvalid: dailyStateReplayStats.skippedInvalid,
+            skippedAlreadyApplied: dailyStateReplayStats.skippedAlreadyApplied,
+            skippedStaleDate: dailyStateReplayStats.skippedStaleDate,
+            skippedUnsupportedOp: dailyStateReplayStats.skippedUnsupportedOp,
+            affectedDeckLineages: Array.from(dailyStateReplayStats.affectedDeckLineages).sort(),
+        });
     }
 
     for (const domain of ["cards", "notes"] as const) {

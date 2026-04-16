@@ -163,6 +163,7 @@ describe("SRPlugin remote delta sync", () => {
             remoteDeltaFingerprint: "same",
             captureRemoteDeltaFingerprint: jest.fn(async () => "same"),
             logRuntimeDebug: jest.fn(),
+            shouldLogRuntimeDebug: jest.fn(() => false),
             data: {
                 settings: {
                     showRuntimeDebugMessages: false,
@@ -193,6 +194,7 @@ describe("SRPlugin remote delta sync", () => {
         expect(plugin.syroSessionManager.peekPendingSessions).toHaveBeenCalledTimes(1);
         expect(plugin.importPendingSyroSessions).toHaveBeenCalledWith({
             sealOwnOpenSession: false,
+            reason: "remote-delta:interval",
         });
         expect(plugin.applyLightweightSessionDelta).toHaveBeenCalledTimes(1);
     });
@@ -247,6 +249,7 @@ describe("SRPlugin remote delta sync", () => {
             remoteDeltaFingerprint: "old",
             captureRemoteDeltaFingerprint: jest.fn(async () => "new"),
             logRuntimeDebug: jest.fn(),
+            shouldLogRuntimeDebug: jest.fn(() => false),
             data: {
                 settings: {
                     showRuntimeDebugMessages: false,
@@ -276,6 +279,7 @@ describe("SRPlugin remote delta sync", () => {
 
         expect(plugin.importPendingSyroSessions).toHaveBeenCalledWith({
             sealOwnOpenSession: false,
+            reason: "remote-delta:interval",
         });
         expect(plugin.applyLightweightSessionDelta).toHaveBeenCalledTimes(1);
         expect(plugin.requestSync).not.toHaveBeenCalled();

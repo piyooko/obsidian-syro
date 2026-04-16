@@ -80,6 +80,63 @@ describe("SRPlugin sync request orchestration", () => {
         });
     });
 
+    test("pullSyroDeviceToCurrent aligns only the copied source device sessions after overwrite", async () => {
+        const currentLayout = {
+            device: {
+                deviceId: "desktop-id",
+                deviceName: "Desktop",
+            },
+        };
+        const overwrittenLayout = {
+            device: {
+                deviceId: "desktop-id",
+                deviceName: "Desktop",
+            },
+        };
+        const plugin: any = {
+            syroWorkspace: {
+                listDeviceInventory: jest.fn(async () => ({
+                    currentDevice: {
+                        deviceId: "desktop-id",
+                        deviceName: "Desktop",
+                        deviceFolderName: "Desktop--d84f",
+                    },
+                    validDevices: [
+                        {
+                            deviceId: "mobile-id",
+                            deviceName: "Mobile",
+                            deviceFolderName: "Mobile--91ac",
+                        },
+                    ],
+                })),
+                overwriteCurrentDeviceFromSource: jest.fn(async () => overwrittenLayout),
+            },
+            syroLayout: currentLayout,
+            syroSessionManager: {
+                alignRemoteDeviceSessionsToEof: jest.fn(async () => undefined),
+            },
+            syroReadOnlyReason: null,
+            confirmSyroAction: jest.fn(async () => true),
+            flushBeforeSyroDeviceMutation: jest.fn(async () => undefined),
+            reloadAfterSyroDeviceChange: jest.fn(async () => undefined),
+        };
+
+        const result = await (SRPlugin.prototype.pullSyroDeviceToCurrent as unknown as Function).call(
+            plugin,
+            "mobile-id",
+        );
+
+        expect(plugin.syroWorkspace.overwriteCurrentDeviceFromSource).toHaveBeenCalledWith(
+            currentLayout,
+            "mobile-id",
+        );
+        expect(plugin.syroSessionManager.alignRemoteDeviceSessionsToEof).toHaveBeenCalledWith(
+            "Mobile--91ac",
+        );
+        expect(plugin.reloadAfterSyroDeviceChange).toHaveBeenCalledTimes(1);
+        expect(result).toBe(true);
+    });
+
     test("requestSync skips active session sealing during remote-poll and imports without sealing its own buffer", async () => {
         const plugin: any = {
             data: {
@@ -111,6 +168,7 @@ describe("SRPlugin sync request orchestration", () => {
         expect(plugin.syroSessionManager.flushActiveSession).not.toHaveBeenCalled();
         expect(plugin.importPendingSyroSessions).toHaveBeenCalledWith({
             sealOwnOpenSession: false,
+            reason: "remote-poll",
         });
         expect(plugin.sync).toHaveBeenCalledWith(FlashcardReviewMode.Review, "incremental", {
             trigger: "remote-poll",
@@ -335,6 +393,23 @@ describe("SRPlugin sync request orchestration", () => {
 
     test("savePluginData with daily-state only persists just daily-state and the shell", async () => {
         const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
+        const pendingOverlayStore = {
+            getDailyStateSection: jest.fn(async () => ({
+                version: 1,
+                buryDate: "2026-04-14",
+                buryList: [],
+                dailyDeckStats: {
+                    date: "2026-04-14",
+                    counts: {
+                        Deck: { new: 0, review: 1 },
+                    },
+                },
+                deviceReviewCount: 4,
+            })),
+            clearDailyStateSection: jest.fn(),
+            requestFlush: jest.fn(),
+            drainFlush: jest.fn(async () => true),
+        };
         const plugin = Object.assign(Object.create(SRPlugin.prototype), {
             deckOptionsStore: {
                 getSyncEntities: jest.fn(() => ({})),
@@ -381,6 +456,7 @@ describe("SRPlugin sync request orchestration", () => {
             trackingRulesTombstones: {},
             dailyStateAppliedOpIds: {},
             currentDeviceReviewCount: 4,
+            pendingOverlayStore,
             saveData: jest.fn(async () => undefined),
             data: {
                 settings: {
@@ -421,7 +497,145 @@ describe("SRPlugin sync request orchestration", () => {
                 ([record]: [{ domain: string }]) => record.domain === "daily-state",
             ),
         ).toBe(true);
+        expect(pendingOverlayStore.clearDailyStateSection).toHaveBeenCalledTimes(1);
+        expect(pendingOverlayStore.requestFlush).toHaveBeenCalledTimes(1);
+        expect(pendingOverlayStore.drainFlush).toHaveBeenCalledTimes(1);
         expect(plugin.saveData).toHaveBeenCalledTimes(1);
+    });
+
+    test("savePluginData retains daily-state overlay when session append fails", async () => {
+        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
+        const pendingOverlayStore = {
+            getDailyStateSection: jest.fn(async () => ({
+                version: 1,
+                buryDate: "2026-04-14",
+                buryList: [],
+                dailyDeckStats: {
+                    date: "2026-04-14",
+                    counts: {
+                        Deck: { new: 0, review: 1 },
+                    },
+                },
+                deviceReviewCount: 4,
+            })),
+            clearDailyStateSection: jest.fn(),
+            requestFlush: jest.fn(),
+            drainFlush: jest.fn(async () => true),
+        };
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            deckOptionsStore: {
+                getSyncEntities: jest.fn(() => ({})),
+                markSyncEntity: jest.fn(),
+                hasSerializedStateChanged: jest.fn(async () => true),
+                saveSerialized: jest.fn(async () => undefined),
+            },
+            syroSessionManager: {
+                appendRecord: jest.fn(async () => false),
+                appendDeckOptionsChange: jest.fn(async () => true),
+            },
+            sharedSettingsStore: {
+                save: jest.fn(async () => undefined),
+            },
+            trackingRulesStore: {
+                save: jest.fn(async () => undefined),
+            },
+            dailyStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            deviceStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            licenseStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            saveDataShell,
+            dataShell: null as Record<string, unknown> | null,
+            persistedDailyState: {
+                version: 1,
+                buryDate: "2026-04-14",
+                buryList: [],
+                dailyDeckStats: {
+                    date: "2026-04-14",
+                    counts: {
+                        Deck: { new: 0, review: 0 },
+                    },
+                },
+                deviceReviewCount: 3,
+                appliedOpIds: {},
+            },
+            sharedSettingsUpdatedAtByField: {},
+            trackingRulesUpdatedAtByFolderPath: {},
+            trackingRulesTombstones: {},
+            dailyStateAppliedOpIds: {},
+            currentDeviceReviewCount: 4,
+            pendingOverlayStore,
+            logRuntimeDebug: jest.fn(),
+            saveData: jest.fn(async () => undefined),
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                },
+                buryDate: "2026-04-14",
+                buryList: [] as string[],
+                historyDeck: null as string | null,
+                dailyDeckStats: {
+                    date: "2026-04-14",
+                    counts: {
+                        Deck: { new: 0, review: 1 },
+                    },
+                },
+                folderTrackingRules: {},
+            },
+        });
+
+        await expect(
+            (SRPlugin.prototype.savePluginData as unknown as Function).call(plugin, {
+                domains: ["daily-state"],
+            }),
+        ).rejects.toThrow("Failed to append daily-state session record");
+
+        expect(plugin.dailyStateStore.save).not.toHaveBeenCalled();
+        expect(pendingOverlayStore.clearDailyStateSection).not.toHaveBeenCalled();
+    });
+
+    test("requestPluginDataSave stages daily-state into pending overlay immediately", () => {
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            pendingPluginDataSaveTimer: null,
+            pendingPluginDataSaveRequested: false,
+            pendingPluginDataSaveDomains: new Set(),
+            pendingPluginDataSavePromise: null,
+            pluginDataSaveFailureNotified: false,
+            savePluginData: jest.fn(async () => undefined),
+            runAsync: jest.fn((task: Promise<unknown>) => {
+                void task.catch(() => undefined);
+            }),
+            pendingOverlayStore: {
+                stageDailyStateSection: jest.fn(),
+                requestFlush: jest.fn(),
+            },
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                },
+                buryDate: "2026-04-16",
+                buryList: [] as string[],
+                historyDeck: null as string | null,
+                dailyDeckStats: {
+                    date: "2026-04-16",
+                    counts: {},
+                },
+                folderTrackingRules: {},
+            },
+            currentDeviceReviewCount: 2,
+        });
+
+        (SRPlugin.prototype.requestPluginDataSave as unknown as Function).call(plugin, {
+            delayMs: 100,
+            domains: ["daily-state"],
+        });
+
+        expect(plugin.pendingOverlayStore.stageDailyStateSection).toHaveBeenCalledTimes(1);
+        expect(plugin.pendingOverlayStore.requestFlush).toHaveBeenCalledTimes(1);
     });
 
     test("requestPluginDataSave merges pending domains within the debounce window", async () => {
@@ -433,10 +647,28 @@ describe("SRPlugin sync request orchestration", () => {
                 pendingPluginDataSaveDomains: new Set(),
                 pendingPluginDataSavePromise: null,
                 pluginDataSaveFailureNotified: false,
+                pendingOverlayStore: {
+                    stageDailyStateSection: jest.fn(),
+                    requestFlush: jest.fn(),
+                },
                 savePluginData: jest.fn(async () => undefined),
                 runAsync: jest.fn((task: Promise<unknown>) => {
                     void task.catch(() => undefined);
                 }),
+                data: {
+                    settings: {
+                        ...DEFAULT_SETTINGS,
+                    },
+                    buryDate: "2026-04-16",
+                    buryList: [] as string[],
+                    historyDeck: null as string | null,
+                    dailyDeckStats: {
+                        date: "2026-04-16",
+                        counts: {},
+                    },
+                    folderTrackingRules: {},
+                },
+                currentDeviceReviewCount: 0,
             });
 
             (SRPlugin.prototype.requestPluginDataSave as unknown as Function).call(plugin, {
@@ -456,6 +688,191 @@ describe("SRPlugin sync request orchestration", () => {
         } finally {
             jest.useRealTimers();
         }
+    });
+
+    test("importPendingSyroSessions skips remote replay when buffered split-state flush times out", async () => {
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            syroReadOnlyReason: null,
+            syroSessionManager: {
+                importPendingSessions: jest.fn(async () => {
+                    throw new Error("should not reach replay");
+                }),
+            },
+            syroWorkspace: {
+                listDeviceInventory: jest.fn(async () => ({
+                    validDevices: [],
+                })),
+            },
+            deckOptionsStore: {},
+            sharedSettingsStore: {},
+            trackingRulesStore: {},
+            dailyStateStore: {},
+            store: {},
+            noteReviewStore: {},
+            reviewCommitStore: {},
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                },
+                buryDate: "",
+                buryList: [] as string[],
+                historyDeck: null as string | null,
+                dailyDeckStats: {
+                    date: "2026-04-16",
+                    counts: {},
+                },
+                folderTrackingRules: {},
+            },
+            sharedSettingsUpdatedAtByField: {},
+            trackingRulesUpdatedAtByFolderPath: {},
+            trackingRulesTombstones: {},
+            dailyStateAppliedOpIds: {},
+            currentDeviceReviewCount: 0,
+            bufferedStateDirtyRevisions: {
+                "shared-settings": 0,
+                "tracking-rules": 0,
+                "daily-state": 1,
+            },
+            bufferedStatePersistedRevisions: {
+                "shared-settings": 0,
+                "tracking-rules": 0,
+                "daily-state": 0,
+            },
+            flushPendingPluginDataSave: jest.fn(async () => false),
+            logRuntimeDebug: jest.fn(),
+            pruneSyroInlineSyncMetadata: jest.fn(async () => undefined),
+        });
+
+        const result = await (
+            SRPlugin.prototype as unknown as { importPendingSyroSessions: Function }
+        ).importPendingSyroSessions.call(plugin, {
+            reason: "remote-delta:test",
+        });
+
+        expect(plugin.flushPendingPluginDataSave).toHaveBeenCalledWith(1200);
+        expect(plugin.syroSessionManager.importPendingSessions).not.toHaveBeenCalled();
+        expect(result).toEqual({
+            importedSessionIds: [],
+            deletedSessionIds: [],
+            archivedSessionIds: [],
+            replayImpact: expect.objectContaining({
+                dailyStateChanged: false,
+            }),
+        });
+    });
+
+    test("importPendingSyroSessions preserves persisted daily-state baseline when local dirty changes appear during import", async () => {
+        const oldDailyState = {
+            version: 1,
+            buryDate: "2026-04-16",
+            buryList: [] as string[],
+            dailyDeckStats: {
+                date: "2026-04-16",
+                counts: {
+                    Deck: { new: 1, review: 0 },
+                },
+            },
+            deviceReviewCount: 1,
+            appliedOpIds: {},
+        };
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            syroReadOnlyReason: null,
+            syroSessionManager: {
+                importPendingSessions: jest.fn(async () => {
+                    plugin.data.dailyDeckStats = {
+                        date: "2026-04-16",
+                        counts: {
+                            Deck: { new: 5, review: 0 },
+                        },
+                    };
+                    plugin.currentDeviceReviewCount = 5;
+                    plugin.bufferedStateDirtyRevisions["daily-state"] = 1;
+                    return {
+                        importedSessionIds: ["Mobile--cf8e/2026-04-16"],
+                        deletedSessionIds: [],
+                        archivedSessionIds: [],
+                        replayImpact: {
+                            cardsRuntimeChanged: false,
+                            noteReviewChanged: false,
+                            timelineChanged: false,
+                            deckOptionsChanged: false,
+                            sharedSettingsChanged: false,
+                            trackingRulesChanged: false,
+                            dailyStateChanged: false,
+                            requiresGlobalSync: false,
+                        },
+                    };
+                }),
+            },
+            syroWorkspace: {
+                listDeviceInventory: jest.fn(async () => ({
+                    validDevices: [],
+                })),
+            },
+            deckOptionsStore: {},
+            sharedSettingsStore: {},
+            trackingRulesStore: {},
+            dailyStateStore: {},
+            store: {},
+            noteReviewStore: {},
+            reviewCommitStore: {},
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                },
+                buryDate: "2026-04-16",
+                buryList: [] as string[],
+                historyDeck: null as string | null,
+                dailyDeckStats: {
+                    date: "2026-04-16",
+                    counts: {
+                        Deck: { new: 1, review: 0 },
+                    },
+                },
+                folderTrackingRules: {},
+            },
+            persistedDailyState: oldDailyState,
+            sharedSettingsUpdatedAtByField: {},
+            trackingRulesUpdatedAtByFolderPath: {},
+            trackingRulesTombstones: {},
+            dailyStateAppliedOpIds: {},
+            currentDeviceReviewCount: 1,
+            pendingPluginDataSaveTimer: null,
+            pendingPluginDataSaveRequested: false,
+            pendingPluginDataSaveDomains: new Set(),
+            pendingPluginDataSavePromise: null,
+            bufferedStateDirtyRevisions: {
+                "shared-settings": 0,
+                "tracking-rules": 0,
+                "daily-state": 0,
+            },
+            bufferedStatePersistedRevisions: {
+                "shared-settings": 0,
+                "tracking-rules": 0,
+                "daily-state": 0,
+            },
+            flushPendingPluginDataSave: jest.fn(async () => true),
+            logRuntimeDebug: jest.fn(),
+            pruneSyroInlineSyncMetadata: jest.fn(async () => undefined),
+        });
+        const requestPluginDataSaveSpy = jest.spyOn(plugin, "requestPluginDataSave");
+
+        await (
+            SRPlugin.prototype as unknown as { importPendingSyroSessions: Function }
+        ).importPendingSyroSessions.call(plugin, {
+            reason: "manual",
+        });
+
+        expect(plugin.persistedDailyState).toBe(oldDailyState);
+        expect(requestPluginDataSaveSpy).toHaveBeenCalledWith(
+            {
+                delayMs: 0,
+                domains: ["daily-state"],
+            },
+            {
+                markDirty: false,
+            },
+        );
     });
 
     test("incrementDailyCounts only requests daily-state persistence", () => {
