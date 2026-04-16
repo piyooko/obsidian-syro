@@ -790,6 +790,8 @@ export default normalizeSentenceCaseLocale({
     SYRO_DELETE_INVALID_DEVICE_PHRASE: "I understand the risks and want to delete",
     SYRO_DELETE_INVALID_DEVICE_BUTTON: "Delete invalid directory",
     NOTICE_SYRO_READ_ONLY: "Syro sync data is inconsistent. Read-only protection is now enabled.",
+    NOTICE_SYRO_DATA_NOT_READY:
+        "Syro data is not ready yet. Finish device recovery or device selection first.",
     NOTICE_SYRO_RECOVERY_NOT_NEEDED: "There is no pending Syro recovery action right now.",
     NOTICE_SYRO_RECOVERY_CANCELLED:
         "Syro recovery was cancelled. Read-only protection remains active.",

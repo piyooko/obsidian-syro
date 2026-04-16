@@ -153,6 +153,7 @@ import { DEFAULT_DECKNAME, SR_TAB_VIEW } from "./constants";
 import { addFileMenuEvt, registerTrackFileEvents } from "./Events/trackFileEvents";
 import { SyncEvents } from "./Events/SyncEvents";
 import { ItemTrans, itemToShedNote } from "./dataStore/itemTrans";
+import { Queue } from "./dataStore/queue";
 import { LinkRank } from "src/algorithms/priorities/linkPageranks";
 import { ReviewDeckSelectionModal } from "./ui/modals/reviewDeckSelectionModal";
 import { setDueDates } from "./algorithms/balance/balance";
@@ -312,6 +313,13 @@ const REMOTE_DELTA_POLL_INTERVAL_MS = 7_000;
 
 const STYLE_SETTINGS_BRIDGE_RETRY_DELAYS_MS = [0, 400, 1400, 3200] as const;
 
+type SyroDataReadyAction =
+    | "note-review"
+    | "flashcard-review"
+    | "sync"
+    | "review-queue"
+    | "item-info";
+
 // export interface SchedNote {
 //     note: TFile;
 //     dueUnix: number;
@@ -345,7 +353,7 @@ export default class SRPlugin extends Plugin {
     public lastSelectedReviewDeck: string;
 
     public easeByPath: NoteEaseList;
-    public noteReviewStore: NoteReviewStore;
+    public noteReviewStore: NoteReviewStore | null = null;
     private questionPostponementList: QuestionPostponementList;
     // public incomingLinks: Record<string, LinkStat[]> = {}; // del, has linkRank
     // public pageranks: Record<string, number> = {}; // del, has linkRank
@@ -372,14 +380,17 @@ export default class SRPlugin extends Plugin {
     private remoteDeltaSyncLock = false;
     private remoteDeltaSyncPending = false;
     private remoteDeltaFingerprint = "";
+    private pendingFirstRunTutorialInitialization = false;
+    private dataBackedRuntimeInitialized = false;
+    private reviewQueueViewRegistered = false;
 
     // Derived from earlier pre-Syro command handling.
-    public store: DataStore;
+    public store: DataStore | null = null;
     public commands: Commands;
     public reviewFloatBar: reviewResponseModal;
     public settingTab: SRSettingTab;
-    public reviewCommitStore: ReviewCommitStore;
-    public reviewPersistenceCoordinator: ReviewPersistenceCoordinator;
+    public reviewCommitStore: ReviewCommitStore | null = null;
+    public reviewPersistenceCoordinator: ReviewPersistenceCoordinator | null = null;
 
     public syncEvents: SyncEvents = new SyncEvents();
     private timelineReviewCardPath: string | null = null;
@@ -588,6 +599,141 @@ export default class SRPlugin extends Plugin {
         this.getReviewQueueView()?.redraw();
     }
 
+    private getSyroDataNotReadyReason(): string | null {
+        if (this.pendingSyroRecoveryContext || this.pendingSyroDeviceSelectionContext) {
+            return t("NOTICE_SYRO_DATA_NOT_READY");
+        }
+
+        if (
+            !this.syroLayout ||
+            !this.store ||
+            !this.noteReviewStore ||
+            !this.reviewCommitStore ||
+            !this.reviewPersistenceCoordinator
+        ) {
+            return t("NOTICE_SYRO_DATA_NOT_READY");
+        }
+
+        return null;
+    }
+
+    public isSyroDataReady(): boolean {
+        return this.getSyroDataNotReadyReason() === null;
+    }
+
+    public guardSyroDataReady(
+        action: SyroDataReadyAction,
+        options: {
+            notify?: boolean;
+            requireWritable?: boolean;
+            logDebug?: boolean;
+        } = {},
+    ): boolean {
+        const notify = options.notify ?? true;
+        const requireWritable = options.requireWritable ?? action !== "item-info";
+        const logDebug = options.logDebug ?? true;
+        const notReadyReason = this.getSyroDataNotReadyReason();
+
+        if (notReadyReason) {
+            if (logDebug) {
+                this.logRuntimeDebug(`[SR-StartupGate] blocked ${action}: ${notReadyReason}`);
+            }
+            if (notify) {
+                new Notice(notReadyReason);
+            }
+            return false;
+        }
+
+        if (requireWritable && this.syroReadOnlyReason) {
+            if (logDebug) {
+                this.logRuntimeDebug(
+                    `[SR-StartupGate] blocked ${action}: read-only protection active.`,
+                    this.syroReadOnlyReason,
+                );
+            }
+            if (notify) {
+                new Notice(t("NOTICE_SYRO_READ_ONLY"));
+            }
+            return false;
+        }
+
+        return true;
+    }
+
+    private resetSyroDataBackedRuntimeState(): void {
+        this.dataBackedRuntimeInitialized = false;
+        this.hasPerformedInitialGC = false;
+        this.store = null;
+        this.noteReviewStore = null;
+        this.reviewCommitStore = null;
+        this.reviewPersistenceCoordinator = null;
+        this.syroSessionManager = null;
+        this.syroLayout = null;
+        this.syroWorkspace = null;
+        this.deckOptionsStore = null;
+        this.sharedSettingsStore = null;
+        this.trackingRulesStore = null;
+        this.dailyStateStore = null;
+        this.deviceStateStore = null;
+        this.licenseStateStore = null;
+        this.persistedSharedSettingsState = null;
+        this.persistedTrackingRulesState = null;
+        this.persistedDailyState = null;
+        this.persistedDeviceState = null;
+        this.persistedLicenseState = null;
+        this.remoteDeltaFingerprint = "";
+        this.pendingSyncRequest = null;
+        this.lastSyncReviewMode = null;
+        this.reviewDecks = {};
+        this.lastSelectedReviewDeck = "";
+        this.deckTree = new Deck("root", null);
+        this.remainingDeckTree = new Deck("root", null);
+        this.noteCache.clear();
+        this.noteCacheSignature = "";
+        this.cardStats = new Stats();
+        this.noteStats = new Stats();
+        this.dueNotesCount = 0;
+        this.dueDatesNotes = {};
+        DataStore.clearInstance();
+        Queue.clearInstance();
+    }
+
+    private initializeSyroDataBackedRuntimeIfReady(
+        context: "startup" | "layout-ready" | "device-change",
+    ): Promise<boolean> {
+        if (!this.guardSyroDataReady("note-review", { notify: false })) {
+            this.logRuntimeDebug(
+                `[SR-DataReady] skipped data-backed runtime initialization: context=${context}`,
+            );
+            return Promise.resolve(false);
+        }
+
+        if (this.dataBackedRuntimeInitialized) {
+            return Promise.resolve(true);
+        }
+
+        IReviewNote.create(this.data.settings);
+        if (this.noteReviewStore) {
+            this.reviewDecks = this.noteReviewStore.buildReviewDecks(this.app.vault);
+            this.updateAndSortDueNotes();
+        }
+        this.dataBackedRuntimeInitialized = true;
+        this.logRuntimeDebug(
+            `[SR-DataReady] data-backed runtime initialized: context=${context}`,
+        );
+        return Promise.resolve(true);
+    }
+
+    private ensureReviewQueueViewRegistered(): void {
+        if (this.reviewQueueViewRegistered) {
+            return;
+        }
+
+        this.app.workspace.detachLeavesOfType(REVIEW_QUEUE_VIEW_TYPE);
+        this.registerView(REVIEW_QUEUE_VIEW_TYPE, (leaf) => new ReactNoteReviewView(leaf, this));
+        this.reviewQueueViewRegistered = true;
+    }
+
     onload(): void {
         this.runAsync(this.performOnload(), "plugin load");
     }
@@ -642,13 +788,12 @@ export default class SRPlugin extends Plugin {
         settings.weightedMultiplierSettings = this.noteAlgorithm
             .settings as WeightedMultiplierSettings;
 
-        if (obsidianJustInstalled) {
-            await this.initializeFirstRunTutorialNote();
-        }
+        this.pendingFirstRunTutorialInitialization = obsidianJustInstalled;
+        await this.initializeSyroDataBackedRuntimeIfReady("startup");
+        await this.maybeInitializeFirstRunTutorialNote("startup");
 
         this.runAsync(this.savePluginData(), "save plugin data");
 
-        IReviewNote.create(settings);
         ReviewView.create(this, this.data.settings);
         MixQueSet.create(settings.mixDue, settings.mixNew, settings.mixCard, settings.mixNote);
         this.commands = new Commands(this);
@@ -718,8 +863,14 @@ export default class SRPlugin extends Plugin {
         this.statusBarNote.classList.add("mod-clickable");
         setTooltip(this.statusBarNote, t("OPEN_NOTE_FOR_REVIEW"), { placement: "top" });
         this.statusBarNote.addEventListener("click", () => {
+            if (!this.guardSyroDataReady("note-review")) {
+                return;
+            }
             this.runAsync(
                 this.refreshNoteReview({ trigger: "review-entry" }).then(() => {
+                    if (!this.guardSyroDataReady("note-review", { notify: false })) {
+                        return;
+                    }
                     this.reviewNextNoteModal();
                 }),
                 "open note review",
@@ -734,9 +885,15 @@ export default class SRPlugin extends Plugin {
             if (this.syncLock) {
                 return;
             }
+            if (!this.guardSyroDataReady("flashcard-review")) {
+                return;
+            }
 
             this.runAsync(
-                this.requestSync({ trigger: "review-entry" }).then(() => {
+                this.requestSync({ trigger: "review-entry" }).then((result) => {
+                    if (result.status === "skipped" && result.reason === "not-ready") {
+                        return;
+                    }
                     return this.tabViewManager.openSRTabView(FlashcardReviewMode.Review);
                 }),
                 "open flashcard review",
@@ -751,9 +908,15 @@ export default class SRPlugin extends Plugin {
             if (this.syncLock) {
                 return;
             }
+            if (!this.guardSyroDataReady("flashcard-review")) {
+                return;
+            }
 
             this.runAsync(
-                this.requestSync({ trigger: "review-entry" }).then(() => {
+                this.requestSync({ trigger: "review-entry" }).then((result) => {
+                    if (result.status === "skipped" && result.reason === "not-ready") {
+                        return;
+                    }
                     return this.tabViewManager.openSRTabView(FlashcardReviewMode.Review);
                 }),
                 "open ribbon flashcard review",
@@ -763,10 +926,13 @@ export default class SRPlugin extends Plugin {
         if (!this.data.settings.disableFileMenuReviewOptions) {
             this.registerEvent(
                 this.app.workspace.on("file-menu", (menu, fileish: TAbstractFile) => {
+                    const noteReviewStore = this.noteReviewStore;
                     if (
+                        this.isSyroDataReady() &&
+                        noteReviewStore &&
                         fileish instanceof TFile &&
                         fileish.extension === "md" &&
-                        this.noteReviewStore.isTracked(fileish.path)
+                        noteReviewStore.isTracked(fileish.path)
                     ) {
                         const options = this.noteAlgorithm.srsOptions();
                         const responseTexts = this.data.settings.noteResponseTexts;
@@ -779,7 +945,7 @@ export default class SRPlugin extends Plugin {
 
                         let intervals: number[] | null = null;
                         try {
-                            const noteItem = this.noteReviewStore.getItem(fileish.path);
+                            const noteItem = noteReviewStore.getItem(fileish.path);
                             if (noteItem) {
                                 intervals = this.noteAlgorithm.calcAllOptsIntervals(noteItem);
                             }
@@ -823,7 +989,7 @@ export default class SRPlugin extends Plugin {
                         menu.addSeparator();
 
                         menu.addItem((item) => {
-                            const noteItem = this.noteReviewStore.getItem(fileish.path);
+                            const noteItem = noteReviewStore.getItem(fileish.path);
                             const currentPriority = noteItem?.priority ?? 5;
 
                             item.setTitle(
@@ -842,7 +1008,7 @@ export default class SRPlugin extends Plugin {
                                             this.runAsync(
                                                 (async () => {
                                                     noteItem.priority = newPriority;
-                                                    await this.noteReviewStore.save();
+                                                    await noteReviewStore.save();
                                                     this.updateAndSortDueNotes();
                                                     this.syncEvents.emit("note-review-updated");
                                                 })(),
@@ -938,9 +1104,18 @@ export default class SRPlugin extends Plugin {
         this.inlineTitleReviewButtonManager.register();
 
         this.app.workspace.onLayoutReady(() => {
-            this.runAsync(this.initReviewQueueView(), "init review queue view");
-            void this.refreshNoteReview({ trigger: "startup" });
-            this.queueRemoteDeltaSyncCheck("startup");
+            this.runAsync(
+                (async () => {
+                    await this.initializeSyroDataBackedRuntimeIfReady("layout-ready");
+                    if (!this.guardSyroDataReady("sync", { notify: false, logDebug: false })) {
+                        return;
+                    }
+                    await this.initReviewQueueView();
+                    await this.refreshNoteReview({ trigger: "startup" });
+                    this.queueRemoteDeltaSyncCheck("startup");
+                })(),
+                "layout-ready data tasks",
+            );
             setTimeout(() => {
                 if (this.syncLock) {
                     return;
@@ -1358,7 +1533,7 @@ export default class SRPlugin extends Plugin {
 
         if (
             importResult &&
-            this.data.settings.showRuntimeDebugMessages &&
+            this.shouldLogRuntimeDebug() &&
             (importResult.importedSessionIds.length > 0 ||
                 importResult.deletedSessionIds.length > 0 ||
                 importResult.archivedSessionIds.length > 0)
@@ -1818,9 +1993,13 @@ export default class SRPlugin extends Plugin {
     }
 
     private logRuntimeDebug(...args: unknown[]): void {
-        if (this.data.settings.showRuntimeDebugMessages) {
+        if (this.shouldLogRuntimeDebug()) {
             console.debug(...args);
         }
+    }
+
+    private shouldLogRuntimeDebug(): boolean {
+        return this.data?.settings?.showRuntimeDebugMessages === true;
     }
 
     public markSyncDirty(): void {
@@ -2371,6 +2550,8 @@ export default class SRPlugin extends Plugin {
         this.pendingSyroDeviceSelectionContext = null;
         this.clearSyroReadOnly();
         await this.loadPluginData();
+        await this.initializeSyroDataBackedRuntimeIfReady("device-change");
+        await this.maybeInitializeFirstRunTutorialNote("device-change");
         await this.refreshNoteReview({ trigger: "startup" });
         this.syncEvents.emit("note-review-updated");
         this.syncEvents.emit("sync-complete");
@@ -2838,7 +3019,7 @@ export default class SRPlugin extends Plugin {
                     loadRemoteCardsSnapshots,
                     loadRemoteNotesSnapshots,
                     collectAliasGroups,
-                    shouldLogDebug: () => this.data.settings.showRuntimeDebugMessages,
+                    shouldLogDebug: () => this.shouldLogRuntimeDebug(),
                     logDebug: (...args: unknown[]) => this.logRuntimeDebug(...args),
                 });
             },
@@ -3624,27 +3805,36 @@ export default class SRPlugin extends Plugin {
     }
 
     public async trackNoteFromMenu(file: TFile): Promise<void> {
+        if (!this.guardSyroDataReady("note-review")) {
+            return;
+        }
+        const noteReviewStore = this.noteReviewStore;
+        if (!noteReviewStore) {
+            return;
+        }
         this.clearFolderTrackingExclusion(file.path);
 
-        this.noteReviewStore.ensureTracked(
-            file.path,
-            DEFAULT_DECKNAME,
-            "manual",
-            this.noteAlgorithm,
-        );
-        await this.noteReviewStore.save();
-        await this.appendSyroNoteUpsert(this.noteReviewStore.getEntrySnapshot(file.path), "track");
+        noteReviewStore.ensureTracked(file.path, DEFAULT_DECKNAME, "manual", this.noteAlgorithm);
+        await noteReviewStore.save();
+        await this.appendSyroNoteUpsert(noteReviewStore.getEntrySnapshot(file.path), "track");
         await this.refreshNoteReview({ trigger: "manual" });
     }
 
     public async untrackNoteFromMenu(file: TFile): Promise<void> {
+        if (!this.guardSyroDataReady("note-review")) {
+            return;
+        }
+        const noteReviewStore = this.noteReviewStore;
+        if (!noteReviewStore) {
+            return;
+        }
         const resolvedRule = this.getResolvedFolderTrackingRule(file.path);
         if (resolvedRule?.rule.track === true) {
             this.excludeNoteFromFolderTracking(file.path);
         }
 
-        const removedSnapshot = this.noteReviewStore.removeWithSnapshot(file.path);
-        await this.noteReviewStore.save();
+        const removedSnapshot = noteReviewStore.removeWithSnapshot(file.path);
+        await noteReviewStore.save();
         await this.appendSyroNoteRemove(removedSnapshot, "remove");
 
         if (this.reviewFloatBar.isDisplay() && this.data.settings.autoNextNote) {
@@ -3654,35 +3844,117 @@ export default class SRPlugin extends Plugin {
         await this.refreshNoteReview({ trigger: "manual" });
     }
 
-    private async initializeFirstRunTutorialNote(): Promise<void> {
+    private async maybeInitializeFirstRunTutorialNote(
+        trigger: "startup" | "device-change",
+    ): Promise<void> {
+        if (!this.pendingFirstRunTutorialInitialization) {
+            return;
+        }
+
+        const result = await this.initializeFirstRunTutorialNote();
+        if (result === "initialized") {
+            this.pendingFirstRunTutorialInitialization = false;
+            return;
+        }
+
+        if (result === "deferred") {
+            this.logRuntimeDebug(
+                `[SR-FirstRunTutorial] Initialization deferred: trigger=${trigger} noteReviewStoreReady=${
+                    this.noteReviewStore ? "true" : "false"
+                } noteAlgorithmReady=${this.noteAlgorithm ? "true" : "false"}`,
+            );
+            return;
+        }
+
+        console.warn(
+            `[SR-FirstRunTutorial] Initialization failed; continuing plugin startup. trigger=${trigger}`,
+        );
+    }
+
+    private async initializeFirstRunTutorialNote(): Promise<
+        "initialized" | "deferred" | "failed"
+    > {
+        if (!this.noteReviewStore || !this.noteAlgorithm) {
+            return "deferred";
+        }
+
         const tutorial = getFirstRunTutorial();
         let tutorialFile = this.app.vault.getAbstractFileByPath(tutorial.path);
 
         if (!tutorialFile) {
-            tutorialFile = await this.app.vault.create(tutorial.path, tutorial.content);
+            try {
+                tutorialFile = await this.app.vault.create(tutorial.path, tutorial.content);
+            } catch (error) {
+                console.warn(
+                    "[SR-FirstRunTutorial] Failed to create tutorial file:",
+                    tutorial.path,
+                    error,
+                );
+                return "failed";
+            }
         }
 
         if (!(tutorialFile instanceof TFile)) {
-            console.warn("[SR] First-run tutorial path is not a markdown file:", tutorial.path);
-            return;
+            console.warn(
+                "[SR-FirstRunTutorial] Tutorial path is not a markdown file:",
+                tutorial.path,
+            );
+            return "failed";
         }
 
-        this.noteReviewStore.ensureTracked(
-            tutorialFile.path,
-            DEFAULT_DECKNAME,
-            "manual",
-            this.noteAlgorithm,
-        );
+        try {
+            this.noteReviewStore.ensureTracked(
+                tutorialFile.path,
+                DEFAULT_DECKNAME,
+                "manual",
+                this.noteAlgorithm,
+            );
+        } catch (error) {
+            console.warn(
+                "[SR-FirstRunTutorial] Failed to track tutorial note:",
+                tutorialFile.path,
+                error,
+            );
+            return "failed";
+        }
 
-        await this.noteReviewStore.save();
-        this.reviewDecks = this.noteReviewStore.buildReviewDecks(this.app.vault);
-        this.updateAndSortDueNotes();
-        this.syncEvents.emit("note-review-updated");
+        try {
+            await this.noteReviewStore.save();
+        } catch (error) {
+            console.warn(
+                "[SR-FirstRunTutorial] Failed to save tutorial note review state:",
+                tutorialFile.path,
+                error,
+            );
+            return "failed";
+        }
+
+        try {
+            this.reviewDecks = this.noteReviewStore.buildReviewDecks(this.app.vault);
+            this.updateAndSortDueNotes();
+            this.syncEvents.emit("note-review-updated");
+        } catch (error) {
+            console.warn(
+                "[SR-FirstRunTutorial] Failed to refresh tutorial note runtime state:",
+                tutorialFile.path,
+                error,
+            );
+            return "failed";
+        }
+
+        return "initialized";
     }
 
     public async refreshNoteReview({
         trigger = "manual",
     }: { trigger?: SyncTrigger } = {}): Promise<void> {
+        if (
+            !this.guardSyroDataReady("note-review", {
+                notify: trigger === "manual" || trigger === "review-entry",
+            })
+        ) {
+            return;
+        }
         if (this.noteReviewRefreshLock) {
             this.noteReviewRefreshPending = true;
             return;
@@ -3701,36 +3973,41 @@ export default class SRPlugin extends Plugin {
     }
 
     private async refreshNoteReviewOnce(_trigger: SyncTrigger): Promise<void> {
+        const noteReviewStore = this.noteReviewStore;
+        if (!noteReviewStore) {
+            this.logRuntimeDebug("[SR-StartupGate] refreshNoteReviewOnce skipped: store not ready");
+            return;
+        }
         graph.reset();
         this.easeByPath = this.easeByPath ?? new NoteEaseList(this.data.settings);
         this.linkRank = new LinkRank(this.data.settings, this.app.metadataCache);
 
         const notes = this.getNoteReviewableMarkdownFiles();
         const visiblePaths = new Set(notes.map((note) => note.path));
-        let changed = this.noteReviewStore.cleanupMissingFiles(this.app.vault);
+        let changed = noteReviewStore.cleanupMissingFiles(this.app.vault);
 
         this.linkRank.readLinks(notes);
 
-        for (const path of this.noteReviewStore.listPaths()) {
+        for (const path of noteReviewStore.listPaths()) {
             if (!visiblePaths.has(path)) {
-                changed = this.noteReviewStore.remove(path) || changed;
+                changed = noteReviewStore.remove(path) || changed;
             }
         }
 
         for (const note of notes) {
             const tracking = this.resolveNoteReviewTracking(note);
-            const existing = this.noteReviewStore.getEntry(note.path);
+            const existing = noteReviewStore.getEntry(note.path);
             const previousDeckName = existing?.deckName;
             const previousSource = existing?.source;
 
             if (!tracking) {
                 if (existing) {
-                    changed = this.noteReviewStore.remove(note.path) || changed;
+                    changed = noteReviewStore.remove(note.path) || changed;
                 }
                 continue;
             }
 
-            const item = this.noteReviewStore.ensureTracked(
+            const item = noteReviewStore.ensureTracked(
                 note.path,
                 tracking.deckName,
                 tracking.source,
@@ -3754,11 +4031,11 @@ export default class SRPlugin extends Plugin {
             }
         }
 
-        this.reviewDecks = this.noteReviewStore.buildReviewDecks(this.app.vault);
+        this.reviewDecks = noteReviewStore.buildReviewDecks(this.app.vault);
         this.updateAndSortDueNotes();
 
         if (changed) {
-            await this.noteReviewStore.save();
+            await noteReviewStore.save();
         }
 
         this.syncEvents.emit("note-review-updated");
@@ -3771,6 +4048,11 @@ export default class SRPlugin extends Plugin {
         force = false,
     }: SyncRequestOptions = {}): Promise<SyncRequestResult> {
         const request = normalizeSyncRequest({ reviewMode, mode, trigger, force });
+        const shouldNotifyNotReady = trigger === "manual" || trigger === "review-entry";
+
+        if (!this.guardSyroDataReady("sync", { notify: shouldNotifyNotReady })) {
+            return { ...request, status: "skipped", reason: "not-ready" };
+        }
 
         if (
             !request.force &&
@@ -3821,7 +4103,7 @@ export default class SRPlugin extends Plugin {
         });
         if (
             sessionImportResult &&
-            this.data.settings.showRuntimeDebugMessages &&
+            this.shouldLogRuntimeDebug() &&
             (sessionImportResult.importedSessionIds.length > 0 ||
                 sessionImportResult.deletedSessionIds.length > 0 ||
                 sessionImportResult.archivedSessionIds.length > 0)
@@ -3849,6 +4131,11 @@ export default class SRPlugin extends Plugin {
             trigger: requestOptions.trigger,
             force: requestOptions.force,
         });
+        const shouldNotifyNotReady =
+            request.trigger === "manual" || request.trigger === "review-entry";
+        if (!this.guardSyroDataReady("sync", { notify: shouldNotifyNotReady })) {
+            return;
+        }
         if (this.syncLock) {
             this.queueSyncRequest(request);
             return;
@@ -4235,6 +4522,19 @@ export default class SRPlugin extends Plugin {
                 totalCount: 0,
             };
         }
+        if (!this.guardSyroDataReady("item-info", { notify: false })) {
+            return {
+                reviewableCount: 0,
+                totalCount: 0,
+            };
+        }
+        const store = this.store;
+        if (!store) {
+            return {
+                reviewableCount: 0,
+                totalCount: 0,
+            };
+        }
 
         const now = Date.now();
         const learnAheadMillis = Math.max(0, this.data.settings.learnAheadMinutes ?? 0) * 60 * 1000;
@@ -4249,13 +4549,13 @@ export default class SRPlugin extends Plugin {
             const fileText = await this.app.vault.read(file);
             const trackedFile = cloneTrackedFileForInlineTitleStats(
                 file.path,
-                this.store.getTrackedFile(file.path),
+                store.getTrackedFile(file.path),
             );
             trackedFile.syncNoteCardsIndex(fileText, this.data.settings);
 
             return countInlineTitleStatsFromTrackedFile(
                 trackedFile,
-                (id) => this.store.getItembyID(id),
+                (id) => store.getItembyID(id),
                 now,
                 learnAheadMillis,
             );
@@ -4291,6 +4591,14 @@ export default class SRPlugin extends Plugin {
     }
 
     async saveReviewResponse(note: TFile, response: ReviewResponse): Promise<void> {
+        if (!this.guardSyroDataReady("note-review")) {
+            return;
+        }
+        const noteReviewStore = this.noteReviewStore;
+        const reviewCommitStore = this.reviewCommitStore;
+        if (!noteReviewStore || !reviewCommitStore) {
+            return;
+        }
         const settings = this.data.settings;
         const debugScheduling = settings.showSchedulingDebugMessages;
         if (debugScheduling) {
@@ -4314,7 +4622,7 @@ export default class SRPlugin extends Plugin {
             return;
         }
 
-        const item = this.noteReviewStore.ensureTracked(
+        const item = noteReviewStore.ensureTracked(
             note.path,
             tracking.deckName,
             tracking.source,
@@ -4372,12 +4680,12 @@ export default class SRPlugin extends Plugin {
             this.requestPluginDataSave({ domains: ["daily-state"] });
         }
 
-        await this.noteReviewStore.save();
-        await this.appendSyroNoteUpsert(this.noteReviewStore.getEntrySnapshot(note.path), "review");
+        await noteReviewStore.save();
+        await this.appendSyroNoteUpsert(noteReviewStore.getEntrySnapshot(note.path), "review");
         try {
             const timelineCommit = await autoCommitReviewResponseToTimeline({
                 app: this.app,
-                commitStore: this.reviewCommitStore,
+                commitStore: reviewCommitStore,
                 enabled: settings.timelineAutoCommitReviewSelection,
                 notePath: note.path,
                 response,
@@ -4466,6 +4774,9 @@ export default class SRPlugin extends Plugin {
     }
 
     reviewNextNoteModal(): void {
+        if (!this.guardSyroDataReady("note-review")) {
+            return;
+        }
         const reviewDeckNames: string[] = Object.keys(this.reviewDecks);
         if (reviewDeckNames.length === 0) {
             this.reviewFloatBar.close();
@@ -4490,6 +4801,9 @@ export default class SRPlugin extends Plugin {
     }
 
     async reviewNextNote(deckKey: string): Promise<void> {
+        if (!this.guardSyroDataReady("note-review")) {
+            return;
+        }
         if (!Object.prototype.hasOwnProperty.call(this.reviewDecks, deckKey)) {
             new Notice(t("NO_DECK_EXISTS", { deckName: deckKey }));
             return;
@@ -4838,12 +5152,15 @@ export default class SRPlugin extends Plugin {
     }
 
     async loadPluginData(): Promise<void> {
+        this.resetSyroDataBackedRuntimeState();
         const loadedDataRaw = (await this.loadData()) as unknown;
         const legacyData = parseLegacyPluginData(loadedDataRaw);
         this.dataShell = legacyData;
         this.initializeRuntimePluginData(legacyData);
         this.clearSyroReadOnly();
-        this.syroWorkspace = new SyroWorkspace(this.app, this.manifest.dir, this.data.settings);
+        this.syroWorkspace = new SyroWorkspace(this.app, this.manifest.dir, this.data.settings, {
+            logDebug: (...args: unknown[]) => this.logRuntimeDebug(...args),
+        });
         const startup = await this.resolveSyroWorkspaceInitialization(
             await this.syroWorkspace.initialize(),
         );
@@ -4854,6 +5171,7 @@ export default class SRPlugin extends Plugin {
         if (!this.syroLayout) {
             this.remoteDeltaFingerprint = "";
             this.applySyroReadOnlyState();
+            this.logRuntimeDebug("[SR-StartupGate] loadPluginData exited without syroLayout");
             return;
         }
 
@@ -4913,8 +5231,8 @@ export default class SRPlugin extends Plugin {
         }
         await this.importPendingSyroSessions();
         this.reviewPersistenceCoordinator = new ReviewPersistenceCoordinator({
-            shouldLogDebug: () => this.data.settings.showRuntimeDebugMessages,
-            logDebug: (...args: unknown[]) => console.debug(...args),
+            shouldLogDebug: () => this.shouldLogRuntimeDebug(),
+            logDebug: (...args: unknown[]) => this.logRuntimeDebug(...args),
         });
         this.easeByPath = new NoteEaseList(this.data.settings);
         this.linkRank = new LinkRank(this.data.settings, this.app.metadataCache);
@@ -5176,20 +5494,25 @@ export default class SRPlugin extends Plugin {
     }
 
     private async initReviewQueueView() {
-        // Unregister existing view first to prevent duplicates
-        this.app.workspace.detachLeavesOfType(REVIEW_QUEUE_VIEW_TYPE);
-
-        this.registerView(REVIEW_QUEUE_VIEW_TYPE, (leaf) => new ReactNoteReviewView(leaf, this));
+        this.ensureReviewQueueViewRegistered();
 
         if (
             this.data.settings.enableNoteReviewPaneOnStartup &&
-            this.getActiveLeaf(REVIEW_QUEUE_VIEW_TYPE) == null
+            this.getActiveLeaf(REVIEW_QUEUE_VIEW_TYPE) == null &&
+            this.guardSyroDataReady("review-queue", { notify: false })
         ) {
             await this.activateReviewQueueViewPanel();
         }
     }
 
     private async activateReviewQueueViewPanel() {
+        if (!this.guardSyroDataReady("review-queue")) {
+            return;
+        }
+        const store = this.store;
+        if (!store) {
+            return;
+        }
         await this.app.workspace.getRightLeaf(false).setViewState({
             type: REVIEW_QUEUE_VIEW_TYPE,
             active: true,
@@ -5203,7 +5526,7 @@ export default class SRPlugin extends Plugin {
                     );
                 }
                 this.runAsync(
-                    this.store.performGlobalGarbageCollection().then(() => {
+                    store.performGlobalGarbageCollection().then(() => {
                         this.hasPerformedInitialGC = true;
                         this.getReviewQueueView()?.redraw();
                     }),
@@ -5214,6 +5537,10 @@ export default class SRPlugin extends Plugin {
     }
 
     private async openReviewQueueView() {
+        this.ensureReviewQueueViewRegistered();
+        if (!this.guardSyroDataReady("review-queue")) {
+            return;
+        }
         let reviewQueueLeaf = this.getActiveLeaf(REVIEW_QUEUE_VIEW_TYPE);
         if (reviewQueueLeaf == null) {
             await this.activateReviewQueueViewPanel();
@@ -5353,14 +5680,20 @@ export default class SRPlugin extends Plugin {
         reviewMode: FlashcardReviewMode,
         file: TFile,
     ): Promise<void> {
+        if (!this.guardSyroDataReady("flashcard-review")) {
+            return;
+        }
         this.logRuntimeDebug("[SR-InNoteReview] openFlashcardsInNoteReview:start", {
             mode: FlashcardReviewMode[reviewMode],
             filePath: file.path,
         });
-        await this.requestSync({
+        const syncResult = await this.requestSync({
             reviewMode,
             trigger: "review-entry",
         });
+        if (syncResult.status === "skipped" && syncResult.reason === "not-ready") {
+            return;
+        }
 
         const targetDeckTopicPath = TopicPath.getFolderPathFromFilename(
             this.createSrTFile(file),
@@ -5384,6 +5717,10 @@ export default class SRPlugin extends Plugin {
     }
 
     private assertPreparedSingleNoteReviewCardsBound(deckTree: Deck, notePath: string): void {
+        const store = this.store;
+        if (!store) {
+            throw new Error(`Single-note review store is not ready: ${notePath}`);
+        }
         const cards = deckTree.getFlattenedCardArray(CardListType.All, true);
         for (const card of cards) {
             if (typeof card.Id !== "number" || card.Id < 0) {
@@ -5395,7 +5732,7 @@ export default class SRPlugin extends Plugin {
                 throw error;
             }
 
-            if (!this.store.getItembyID(card.Id)) {
+            if (!store.getItembyID(card.Id)) {
                 const error = new Error(
                     `Single-note review card is missing a store item binding: ${notePath}#${card.Id}`,
                 );

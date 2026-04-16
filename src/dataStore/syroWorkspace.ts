@@ -1,6 +1,13 @@
 import { App, DataAdapter, Platform } from "obsidian";
+import { NOTE_CACHE_VERSION } from "src/cache/noteCacheStore";
+import { createDefaultSrsData } from "./data";
 import { createDeckOptionsStoreSnapshot } from "./deckOptionsStore";
 import {
+    createDefaultDailyState,
+    createDefaultDeviceState,
+    createDefaultLicenseState,
+    createDefaultSharedSettingsState,
+    createDefaultTrackingRulesState,
     hasSyro012MigrationMarker,
     normalizeDeviceReviewCount,
     parseDailyState,
@@ -178,6 +185,8 @@ export interface SyroPersistenceLayout {
     noteCachePath: string;
     device: SyroDeviceMetadata;
 }
+
+type SyroWorkspaceLogFn = (...args: unknown[]) => void;
 
 type FileBackedAdapter = Pick<
     DataAdapter,
@@ -527,16 +536,59 @@ function validateDeckOptionsStoreFile(raw: string): boolean {
     );
 }
 
+function createDefaultNoteReviewStoreFile(): {
+    version: number;
+    nextItemId: number;
+    items: Record<string, never>;
+    syncEntities: Record<string, never>;
+} {
+    return {
+        version: 1,
+        nextItemId: 1,
+        items: {},
+        syncEntities: {},
+    };
+}
+
+function createDefaultTimelineStoreFile(): {
+    version: number;
+    files: Record<string, never>;
+    syncEntities: Record<string, never>;
+} {
+    return {
+        version: 1,
+        files: {},
+        syncEntities: {},
+    };
+}
+
+function createDefaultNoteCacheFile(): {
+    version: number;
+    signature: string;
+    items: [];
+} {
+    return {
+        version: NOTE_CACHE_VERSION,
+        signature: "",
+        items: [],
+    };
+}
+
 export class SyroWorkspace {
     private readonly adapter: FileBackedAdapter;
+    private readonly logDebug: SyroWorkspaceLogFn;
     private installInstanceIdFallback: string | null = null;
 
     constructor(
         private readonly app: App,
         private readonly manifestDir: string,
         private readonly settings: SRSettings,
+        options: {
+            logDebug?: SyroWorkspaceLogFn;
+        } = {},
     ) {
         this.adapter = this.app.vault.adapter as FileBackedAdapter;
+        this.logDebug = options.logDebug ?? (() => undefined);
     }
 
     async initialize(): Promise<SyroWorkspaceInitializeResult> {
@@ -703,6 +755,12 @@ export class SyroWorkspace {
         );
         layout.device.baselineFromDeviceId = source.deviceId;
         layout.device.baselineBuiltAt = new Date().toISOString();
+        this.logDebug("[SR-SyroWorkspace] completeBaselineJoin:start", {
+            sourceDeviceId: source.deviceId,
+            sourceFolderName: source.deviceFolderName,
+            targetDeviceName: layout.device.deviceName,
+            targetFolderName: this.getDeviceFolderNameFromLayout(layout),
+        });
 
         try {
             await this.copyBaselineDomainFiles(source, layout);
@@ -710,8 +768,16 @@ export class SyroWorkspace {
             if (!result.ok) {
                 throw new Error(result.reason ?? "[SR-Syro] Baseline validation failed.");
             }
+            this.logDebug("[SR-SyroWorkspace] completeBaselineJoin:ready", {
+                deviceId: layout.device.deviceId,
+                deviceRoot: layout.deviceRoot,
+            });
             return layout;
         } catch (error) {
+            this.logDebug("[SR-SyroWorkspace] completeBaselineJoin:failed", {
+                deviceRoot: layout.deviceRoot,
+                error: String(error),
+            });
             await this.cleanupUnfinishedLayout(layout);
             throw error;
         }
@@ -736,6 +802,12 @@ export class SyroWorkspace {
         );
         layout.device.baselineFromDeviceId = source.deviceId;
         layout.device.baselineBuiltAt = new Date().toISOString();
+        this.logDebug("[SR-SyroWorkspace] rebuildFromBaseline:start", {
+            sourceDeviceId: source.deviceId,
+            sourceFolderName: source.deviceFolderName,
+            targetDeviceName: layout.device.deviceName,
+            targetFolderName: this.getDeviceFolderNameFromLayout(layout),
+        });
 
         try {
             await this.copyBaselineDomainFiles(source, layout);
@@ -743,8 +815,16 @@ export class SyroWorkspace {
             if (!result.ok) {
                 throw new Error(result.reason ?? "[SR-Syro] Rebuild validation failed.");
             }
+            this.logDebug("[SR-SyroWorkspace] rebuildFromBaseline:ready", {
+                deviceId: layout.device.deviceId,
+                deviceRoot: layout.deviceRoot,
+            });
             return layout;
         } catch (error) {
+            this.logDebug("[SR-SyroWorkspace] rebuildFromBaseline:failed", {
+                deviceRoot: layout.deviceRoot,
+                error: String(error),
+            });
             await this.cleanupUnfinishedLayout(layout);
             throw error;
         }
@@ -851,7 +931,7 @@ export class SyroWorkspace {
 
         const roots = this.buildRootPaths();
         const sourceLayout = this.buildLayout(roots, source.deviceFolderName, source.metadata);
-        const sourceValidation = await this.validateGeneratedFiles(sourceLayout, true);
+        const sourceValidation = await this.validateGeneratedFiles(sourceLayout, false);
         if (!sourceValidation.ok) {
             throw new Error(sourceValidation.reason ?? "[SR-Syro] Source device is invalid.");
         }
@@ -867,6 +947,7 @@ export class SyroWorkspace {
 
         await this.replaceCurrentDeviceDomainFiles(source, nextLayout);
         await this.writeJson(nextLayout.deviceMetaPath, nextLayout.device);
+        await this.ensureFormalDeviceFiles(nextLayout);
 
         const validation = await this.validateGeneratedFiles(nextLayout, true);
         if (!validation.ok) {
@@ -1367,6 +1448,10 @@ export class SyroWorkspace {
     }
 
     private async cleanupUnfinishedLayout(layout: SyroPersistenceLayout): Promise<void> {
+        this.logDebug("[SR-SyroWorkspace] cleanupUnfinishedLayout:start", {
+            deviceRoot: layout.deviceRoot,
+            sessionRoot: layout.currentDeviceSessionsRoot,
+        });
         if (await this.adapter.exists(layout.currentDeviceSessionsRoot)) {
             await this.removeDirectoryRecursive(layout.currentDeviceSessionsRoot);
         }
@@ -1380,6 +1465,9 @@ export class SyroWorkspace {
         ) {
             this.clearPersistedCurrentDeviceState();
         }
+        this.logDebug("[SR-SyroWorkspace] cleanupUnfinishedLayout:done", {
+            deviceRoot: layout.deviceRoot,
+        });
     }
 
     private async writeJson(path: string, value: unknown): Promise<void> {
@@ -1655,6 +1743,11 @@ export class SyroWorkspace {
         reason: string | null;
         validation: SyroMigrationValidationResult | null;
     }> {
+        this.logDebug("[SR-SyroWorkspace] prepareReadyLayout:start", {
+            deviceRoot: layout.deviceRoot,
+            shouldRunMigration,
+            requireDomainSnapshots,
+        });
         await ensureDirectory(this.adapter, layout.deviceRoot);
         await ensureDirectory(this.adapter, layout.currentDeviceSessionsRoot);
 
@@ -1664,9 +1757,15 @@ export class SyroWorkspace {
         }
 
         await this.writeJson(layout.deviceMetaPath, layout.device);
+        await this.ensureFormalDeviceFiles(layout);
 
         const validation = await this.validateGeneratedFiles(layout, requireDomainSnapshots);
         if (!validation.ok) {
+            this.logDebug("[SR-SyroWorkspace] prepareReadyLayout:validation-failed", {
+                deviceRoot: layout.deviceRoot,
+                reason: validation.reason,
+                validatedPaths: validation.validatedPaths,
+            });
             return {
                 ok: false,
                 reason:
@@ -1684,6 +1783,10 @@ export class SyroWorkspace {
             version: SYRO_CURRENT_DEVICE_STATE_VERSION,
             deviceId: layout.device.deviceId,
             deviceFolderName: this.getDeviceFolderNameFromLayout(layout),
+        });
+        this.logDebug("[SR-SyroWorkspace] prepareReadyLayout:ready", {
+            deviceRoot: layout.deviceRoot,
+            validatedPaths: validation.validatedPaths,
         });
 
         return {
@@ -1785,11 +1888,80 @@ export class SyroWorkspace {
         };
     }
 
+    private async writeJsonIfMissing(
+        path: string,
+        value: unknown,
+        reason: string,
+    ): Promise<void> {
+        if (await this.adapter.exists(path)) {
+            return;
+        }
+
+        await this.writeJson(path, value);
+        this.logDebug("[SR-SyroWorkspace] seeded missing formal file", {
+            path,
+            reason,
+        });
+    }
+
+    private async ensureFormalDeviceFiles(layout: SyroPersistenceLayout): Promise<void> {
+        await this.writeJsonIfMissing(layout.cardsPath, createDefaultSrsData(), "cards-default");
+        await this.writeJsonIfMissing(
+            layout.notesPath,
+            createDefaultNoteReviewStoreFile(),
+            "notes-default",
+        );
+        await this.writeJsonIfMissing(
+            layout.timelinePath,
+            createDefaultTimelineStoreFile(),
+            "timeline-default",
+        );
+        await this.writeJsonIfMissing(
+            layout.deckOptionsPath,
+            createDeckOptionsStoreSnapshot(this.settings).state,
+            "deck-options-default",
+        );
+        await this.writeJsonIfMissing(
+            layout.settingsPath,
+            createDefaultSharedSettingsState(),
+            "shared-settings-default",
+        );
+        await this.writeJsonIfMissing(
+            layout.trackingRulesPath,
+            createDefaultTrackingRulesState(),
+            "tracking-rules-default",
+        );
+        await this.writeJsonIfMissing(
+            layout.dailyStatePath,
+            createDefaultDailyState(),
+            "daily-state-default",
+        );
+        await this.writeJsonIfMissing(
+            layout.deviceStatePath,
+            createDefaultDeviceState(),
+            "device-state-default",
+        );
+        await this.writeJsonIfMissing(
+            layout.licenseStatePath,
+            createDefaultLicenseState(),
+            "license-state-default",
+        );
+        await this.writeJsonIfMissing(
+            layout.noteCachePath,
+            createDefaultNoteCacheFile(),
+            "note-cache-default",
+        );
+    }
+
     private async copyBaselineDomainFiles(
         source: SyroBaselineCandidate,
         targetLayout: SyroPersistenceLayout,
     ): Promise<void> {
         const sourceRoot = joinPath(this.buildRootPaths().devicesRoot, source.deviceFolderName);
+        this.logDebug("[SR-SyroWorkspace] copyBaselineDomainFiles:start", {
+            sourceRoot,
+            targetRoot: targetLayout.deviceRoot,
+        });
         await ensureDirectory(this.adapter, targetLayout.deviceRoot);
         await copyFile(this.adapter, joinPath(sourceRoot, "cards.json"), targetLayout.cardsPath);
         await copyFile(this.adapter, joinPath(sourceRoot, "notes.json"), targetLayout.notesPath);
@@ -1823,6 +1995,10 @@ export class SyroWorkspace {
             joinPath(sourceRoot, "note-cache.json"),
             targetLayout.noteCachePath,
         );
+        this.logDebug("[SR-SyroWorkspace] copyBaselineDomainFiles:done", {
+            sourceRoot,
+            targetRoot: targetLayout.deviceRoot,
+        });
     }
 
     private async replaceCurrentDeviceDomainFiles(
@@ -1830,6 +2006,10 @@ export class SyroWorkspace {
         targetLayout: SyroPersistenceLayout,
     ): Promise<void> {
         const sourceRoot = joinPath(this.buildRootPaths().devicesRoot, source.deviceFolderName);
+        this.logDebug("[SR-SyroWorkspace] replaceCurrentDeviceDomainFiles:start", {
+            sourceRoot,
+            targetRoot: targetLayout.deviceRoot,
+        });
         await ensureDirectory(this.adapter, targetLayout.deviceRoot);
         await replaceFileFromSource(
             this.adapter,
@@ -1871,6 +2051,10 @@ export class SyroWorkspace {
             joinPath(sourceRoot, "note-cache.json"),
             targetLayout.noteCachePath,
         );
+        this.logDebug("[SR-SyroWorkspace] replaceCurrentDeviceDomainFiles:done", {
+            sourceRoot,
+            targetRoot: targetLayout.deviceRoot,
+        });
     }
 
     private async listBaselineCandidates(): Promise<SyroBaselineCandidate[]> {

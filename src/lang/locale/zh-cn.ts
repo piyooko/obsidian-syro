@@ -588,6 +588,7 @@ export default {
     SYRO_DELETE_INVALID_DEVICE_PHRASE: "我已知风险并决定删除",
     SYRO_DELETE_INVALID_DEVICE_BUTTON: "删除异常目录",
     NOTICE_SYRO_READ_ONLY: "当前同步数据异常，已进入只读保护。",
+    NOTICE_SYRO_DATA_NOT_READY: "当前 Syro 数据尚未就绪，请先完成设备恢复或设备选择。",
     NOTICE_SYRO_RECOVERY_NOT_NEEDED: "当前没有待处理的 Syro 恢复操作。",
     NOTICE_SYRO_RECOVERY_CANCELLED: "已取消 Syro 恢复，当前仍保持只读保护。",
     NOTICE_SYRO_DEVICE_SELECTED: "已切换当前 Syro 设备。",

@@ -391,6 +391,59 @@ describe("SyroWorkspace", () => {
         );
         expect(directories.has(".obsidian/plugins/syro/devices/Desktop--d84f")).toBe(true);
         expect(directories.has(".obsidian/plugins/syro/sessions/Desktop--d84f")).toBe(true);
+        expect(JSON.parse(files.get(layout.cardsPath) ?? "{}")).toMatchObject({
+            items: [],
+            trackedFiles: {},
+            fileOrder: [],
+        });
+        expect(JSON.parse(files.get(layout.notesPath) ?? "{}")).toEqual({
+            version: 1,
+            nextItemId: 1,
+            items: {},
+            syncEntities: {},
+        });
+        expect(JSON.parse(files.get(layout.timelinePath) ?? "{}")).toEqual({
+            version: 1,
+            files: {},
+            syncEntities: {},
+        });
+        expect(JSON.parse(files.get(layout.settingsPath) ?? "{}")).toMatchObject({
+            version: 1,
+            settings: expect.any(Object),
+        });
+        expect(JSON.parse(files.get(layout.trackingRulesPath) ?? "{}")).toEqual({
+            version: 1,
+            rules: {},
+            tombstones: {},
+        });
+        expect(JSON.parse(files.get(layout.dailyStatePath) ?? "{}")).toEqual({
+            version: 1,
+            buryDate: "",
+            buryList: [],
+            dailyDeckStats: {
+                date: "",
+                counts: {},
+            },
+            deviceReviewCount: 0,
+            appliedOpIds: {},
+        });
+        expect(JSON.parse(files.get(layout.deviceStatePath) ?? "{}")).toMatchObject({
+            version: 1,
+            settings: expect.any(Object),
+            historyDeck: null,
+        });
+        expect(JSON.parse(files.get(layout.licenseStatePath) ?? "{}")).toEqual({
+            version: 1,
+            licenseKey: "",
+            isPro: false,
+            licenseInstallationId: "",
+            licenseState: null,
+        });
+        expect(JSON.parse(files.get(layout.noteCachePath) ?? "{}")).toEqual({
+            version: 4,
+            signature: "",
+            items: [],
+        });
 
         const savedDeviceMeta = JSON.parse(
             files.get(".obsidian/plugins/syro/devices/Desktop--d84f/device.json") ?? "{}",
@@ -839,6 +892,44 @@ describe("SyroWorkspace", () => {
         );
     });
 
+    it("seeds missing formal baseline files instead of leaving the new device empty", async () => {
+        const { adapter, files } = createMockAdapter();
+        await addSourceDevice(adapter, files, {
+            folderName: "Mobile--91ac",
+            deviceId: "91ac1111-2222-3333-4444-555555555555",
+            deviceName: "Mobile",
+            shortDeviceId: "91ac",
+        });
+        files.delete(".obsidian/plugins/syro/devices/Mobile--91ac/timeline.json");
+        files.delete(".obsidian/plugins/syro/devices/Mobile--91ac/device-state.json");
+        files.delete(".obsidian/plugins/syro/devices/Mobile--91ac/license-state.json");
+
+        const workspace = createWorkspace(adapter);
+        const layout = await workspace.completeBaselineJoin({
+            deviceName: "Tablet",
+            sourceDeviceId: "91ac1111-2222-3333-4444-555555555555",
+        });
+
+        expect(JSON.parse(files.get(layout.timelinePath) ?? "{}")).toEqual({
+            version: 1,
+            files: {},
+            syncEntities: {},
+        });
+        expect(JSON.parse(files.get(layout.deviceStatePath) ?? "{}")).toMatchObject({
+            version: 1,
+            settings: expect.any(Object),
+            historyDeck: null,
+        });
+        expect(JSON.parse(files.get(layout.licenseStatePath) ?? "{}")).toEqual({
+            version: 1,
+            licenseKey: "",
+            isPro: false,
+            licenseInstallationId: "",
+            licenseState: null,
+        });
+        expect(files.has(".obsidian/plugins/syro/devices/Tablet--d84f/device.json")).toBe(true);
+    });
+
     it("cleans up the provisional device directory when baseline creation fails", async () => {
         const { adapter, files, directories } = createMockAdapter();
         await addSourceDevice(adapter, files, {
@@ -847,7 +938,7 @@ describe("SyroWorkspace", () => {
             deviceName: "Mobile",
             shortDeviceId: "91ac",
         });
-        files.delete(".obsidian/plugins/syro/devices/Mobile--91ac/daily-state.json");
+        files.set(".obsidian/plugins/syro/devices/Mobile--91ac/cards.json", '{"trackedFiles":5}');
 
         const workspace = createWorkspace(adapter);
 
@@ -902,7 +993,7 @@ describe("SyroWorkspace", () => {
             deviceName: "Mobile",
             shortDeviceId: "91ac",
         });
-        files.delete(".obsidian/plugins/syro/devices/Mobile--91ac/cards.json");
+        files.set(".obsidian/plugins/syro/devices/Mobile--91ac/cards.json", '{"trackedFiles":5}');
 
         const workspace = createWorkspace(adapter);
 

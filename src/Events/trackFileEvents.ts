@@ -25,9 +25,12 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
 
     const debouncedSync = debounce(
         async () => {
+            if (!plugin.guardSyroDataReady("sync", { notify: false })) {
+                return;
+            }
             logRuntimeDebug("[SR-DynSync] debounced flashcard sync triggered.");
             await plugin.requestSync({ trigger: "file-event" });
-            await plugin.store.save();
+            await plugin.store?.save();
             plugin.redrawReviewQueueView();
         },
         2000,
@@ -36,6 +39,9 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
 
     const debouncedNoteRefresh = debounce(
         async () => {
+            if (!plugin.guardSyroDataReady("note-review", { notify: false })) {
+                return;
+            }
             logRuntimeDebug("[SR-NoteReview] debounced note refresh triggered.");
             await plugin.refreshNoteReview({ trigger: "file-event" });
         },
@@ -45,14 +51,23 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
 
     plugin.registerEvent(
         plugin.app.vault.on("rename", async (file, oldPath) => {
+            if (!plugin.guardSyroDataReady("sync", { notify: false })) {
+                return;
+            }
             let noteChanged = false;
-            const renamedNote = plugin.noteReviewStore.renameWithSnapshot(oldPath, file.path);
-            const renamedNotesByPrefix = plugin.noteReviewStore.renamePathPrefixWithSnapshots(
+            const noteReviewStore = plugin.noteReviewStore;
+            const reviewCommitStore = plugin.reviewCommitStore;
+            const store = plugin.store;
+            if (!noteReviewStore || !reviewCommitStore || !store) {
+                return;
+            }
+            const renamedNote = noteReviewStore.renameWithSnapshot(oldPath, file.path);
+            const renamedNotesByPrefix = noteReviewStore.renamePathPrefixWithSnapshots(
                 oldPath,
                 file.path,
             );
             if (renamedNote || renamedNotesByPrefix.length > 0) {
-                await plugin.noteReviewStore.save();
+                await noteReviewStore.save();
                 noteChanged = true;
                 await plugin.appendSyroNoteRename(oldPath, renamedNote);
                 for (const snapshot of renamedNotesByPrefix) {
@@ -73,11 +88,13 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                 }
             }
 
-            const renamedTimeline = plugin.reviewCommitStore.renameFileWithSnapshot(oldPath, file.path);
-            const renamedTimelineByPrefix =
-                plugin.reviewCommitStore.renamePathPrefixWithSnapshots(oldPath, file.path);
+            const renamedTimeline = reviewCommitStore.renameFileWithSnapshot(oldPath, file.path);
+            const renamedTimelineByPrefix = reviewCommitStore.renamePathPrefixWithSnapshots(
+                oldPath,
+                file.path,
+            );
             if (renamedTimeline || renamedTimelineByPrefix.length > 0) {
-                await plugin.reviewCommitStore.save();
+                await reviewCommitStore.save();
                 if (renamedTimeline) {
                     await plugin.appendSyroTimelineRenameFile(
                         renamedTimeline.oldPath,
@@ -94,9 +111,9 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                 }
             }
 
-            const renamedTrackedFiles = plugin.store.renamePathPrefixWithSnapshots(oldPath, file.path);
+            const renamedTrackedFiles = store.renamePathPrefixWithSnapshots(oldPath, file.path);
             if (renamedTrackedFiles.length > 0) {
-                await plugin.store.save();
+                await store.save();
                 for (const snapshot of renamedTrackedFiles) {
                     await plugin.appendSyroCardsRenameFile(snapshot.oldPath, snapshot.file);
                 }
@@ -112,6 +129,9 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
 
     plugin.registerEvent(
         plugin.app.vault.on("create", async (file) => {
+            if (!plugin.guardSyroDataReady("note-review", { notify: false })) {
+                return;
+            }
             if (!(file instanceof TFile) || file.extension !== "md") {
                 return;
             }
@@ -119,7 +139,7 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
             const folderRuleChanged = await plugin.ensureFolderTrackingForFile(file);
             const shouldRefreshNote =
                 folderRuleChanged ||
-                plugin.noteReviewStore.isTracked(file.path) ||
+                !!plugin.noteReviewStore?.isTracked(file.path) ||
                 plugin.getResolvedFolderTrackingRule(file.path)?.rule.track === true;
 
             if (shouldRefreshNote) {
@@ -130,13 +150,22 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
 
     plugin.registerEvent(
         plugin.app.vault.on("delete", async (file) => {
+            if (!plugin.guardSyroDataReady("sync", { notify: false })) {
+                return;
+            }
             let noteChanged = false;
-            const removedNote = plugin.noteReviewStore.removeWithSnapshot(file.path);
-            const removedNotesByPrefix = plugin.noteReviewStore.removePathPrefixWithSnapshots(
+            const noteReviewStore = plugin.noteReviewStore;
+            const reviewCommitStore = plugin.reviewCommitStore;
+            const store = plugin.store;
+            if (!noteReviewStore || !reviewCommitStore || !store) {
+                return;
+            }
+            const removedNote = noteReviewStore.removeWithSnapshot(file.path);
+            const removedNotesByPrefix = noteReviewStore.removePathPrefixWithSnapshots(
                 file.path,
             );
             if (removedNote || removedNotesByPrefix.length > 0) {
-                await plugin.noteReviewStore.save();
+                await noteReviewStore.save();
                 noteChanged = true;
                 await plugin.appendSyroNoteRemove(removedNote);
                 for (const snapshot of removedNotesByPrefix) {
@@ -148,11 +177,11 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                 noteChanged = true;
             }
 
-            const removedTimeline = plugin.reviewCommitStore.deleteFileWithSnapshot(file.path);
+            const removedTimeline = reviewCommitStore.deleteFileWithSnapshot(file.path);
             const removedTimelineByPrefix =
-                plugin.reviewCommitStore.deletePathPrefixWithSnapshots(file.path);
+                reviewCommitStore.deletePathPrefixWithSnapshots(file.path);
             if (removedTimeline || removedTimelineByPrefix.length > 0) {
-                await plugin.reviewCommitStore.save();
+                await reviewCommitStore.save();
                 if (removedTimeline) {
                     await plugin.appendSyroTimelineDeleteFile(
                         removedTimeline.path,
@@ -164,9 +193,9 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                 }
             }
 
-            const removedTrackedFiles = plugin.store.untrackPathPrefixWithSnapshots(file.path);
+            const removedTrackedFiles = store.untrackPathPrefixWithSnapshots(file.path);
             if (removedTrackedFiles.length > 0) {
-                await plugin.store.save();
+                await store.save();
                 for (const snapshot of removedTrackedFiles) {
                     await plugin.appendSyroCardsDeleteFile(snapshot);
                 }
@@ -182,20 +211,28 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
 
     plugin.registerEvent(
         plugin.app.vault.on("modify", async (file: TFile) => {
+            if (!plugin.guardSyroDataReady("sync", { notify: false })) {
+                return;
+            }
             if (file.extension !== "md") return;
 
-            const trackedFile = plugin.store.getTrackedFile(file.path);
+            const store = plugin.store;
+            const noteReviewStore = plugin.noteReviewStore;
+            if (!store || !noteReviewStore) {
+                return;
+            }
+            const trackedFile = store.getTrackedFile(file.path);
             const shouldRefreshNote =
-                plugin.noteReviewStore.isTracked(file.path) ||
+                noteReviewStore.isTracked(file.path) ||
                 plugin.getResolvedFolderTrackingRule(file.path)?.rule.track === true;
 
-            if (plugin.store.isTrackedCardfile(file.path) && trackedFile) {
+            if (store.isTrackedCardfile(file.path) && trackedFile) {
                 const fileText = await plugin.app.vault.read(file);
                 const result = trackedFile.syncNoteCardsIndex(fileText, plugin.data.settings);
 
                 if (result.removedIds.length > 0) {
                     for (const id of result.removedIds) {
-                        plugin.store.unTrackItem(id);
+                        store.unTrackItem(id);
                     }
                 }
 
@@ -258,6 +295,10 @@ export function addFileMenuEvt(plugin: SRPlugin, menu: Menu, fileish: TAbstractF
     }
 
     if (!(fileish instanceof TFile)) {
+        return;
+    }
+
+    if (!plugin.isSyroDataReady() || !plugin.noteReviewStore) {
         return;
     }
 

@@ -260,7 +260,7 @@ export function parseTrackedCardsStoreSnapshots(
  * DataStore.
  */
 export class DataStore {
-    static instance: DataStore;
+    static instance: DataStore | null;
     public lastLoadError: string | null = null;
 
     /**
@@ -308,6 +308,10 @@ export class DataStore {
             throw Error("there is not DataStore instance.");
         }
         return DataStore.instance;
+    }
+
+    public static clearInstance(): void {
+        DataStore.instance = null;
     }
 
     /**

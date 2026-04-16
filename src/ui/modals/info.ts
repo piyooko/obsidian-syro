@@ -30,10 +30,10 @@ function formatDebugValue(value: unknown): string {
 
 export class ItemInfoModal extends Modal {
     plugin: SRPlugin;
-    store: DataStore;
+    store: DataStore | null;
     settings: SRSettings;
     file: TFile;
-    item: RepetitionItem;
+    item: RepetitionItem | null;
     markdownComponent: Component;
 
     mnextReview: Map<number, number> = new Map();
@@ -42,13 +42,13 @@ export class ItemInfoModal extends Modal {
     constructor(plugin: SRPlugin, file: TFile, item: RepetitionItem = null) {
         super(plugin.app);
         this.plugin = plugin;
-        this.store = DataStore.getInstance();
+        this.store = plugin.store ?? null;
         this.settings = plugin.data.settings;
         this.file = file;
         this.markdownComponent = new Component();
 
         if (item == null) {
-            this.item = plugin.noteReviewStore.getItem(file.path);
+            this.item = plugin.noteReviewStore?.getItem(file.path) ?? null;
         } else {
             this.item = item;
         }
@@ -58,6 +58,18 @@ export class ItemInfoModal extends Modal {
 
     onOpen() {
         const { contentEl } = this;
+        if (!this.plugin.guardSyroDataReady("item-info")) {
+            this.close();
+            return;
+        }
+
+        const store = this.store ?? this.plugin.store;
+        if (!store) {
+            this.close();
+            return;
+        }
+
+        this.store = store;
         const path = this.file.path;
 
         this.markdownComponent.load();

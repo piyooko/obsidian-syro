@@ -143,20 +143,23 @@ export abstract class IReviewNote {
 }
 
 export class RNonTrackfiles extends IReviewNote {
-    private store = DataStore.getInstance();
+    private getStore(): DataStore {
+        return DataStore.getInstance();
+    }
     // @logExecutionTime()
     async sync(notes: TFile[], reviewDecks: Decks, easeByPath: NoteEaseList): Promise<void> {
+        const store = this.getStore();
         // const settings = this.data.settings;
-        await this.store.data.queues.buildQueue();
+        await store.data.queues.buildQueue();
 
         // check trackfile
-        await this.store.reLoad();
+        await store.reLoad();
 
         ItemTrans.create(this.settings).itemToReviewDecks(reviewDecks, notes, easeByPath);
     }
 
     tagCheck(note: TFile): boolean {
-        const store = this.store;
+        const store = this.getStore();
 
         let deckName = Tags.getNoteDeckName(note, this.settings);
         if (
@@ -175,10 +178,10 @@ export class RNonTrackfiles extends IReviewNote {
         return true;
     }
     isNew(note: TFile): boolean {
-        return this.store.getNoteItem(note.path)?.isNew ?? true;
+        return this.getStore().getNoteItem(note.path)?.isNew ?? true;
     }
     responseProcess(note: TFile, response: ReviewResponse, ease?: number): Promise<TrespResult> {
-        const store = this.store;
+        const store = this.getStore();
 
         const plugin = SRPlugin.getInstance();
         const algorithm = plugin.noteAlgorithm;

@@ -27,18 +27,25 @@ export default class Commands {
             id: "track-file",
             name: t("CMD_TRACK_NOTE"),
             checkCallback: (checking: boolean) => {
+                if (!plugin.isSyroDataReady()) {
+                    if (!checking) {
+                        plugin.guardSyroDataReady("note-review");
+                    }
+                    return false;
+                }
                 const file = plugin.app.workspace.getActiveFile();
+                const noteReviewStore = plugin.noteReviewStore;
                 if (file != null) {
-                    if (!plugin.noteReviewStore.isTracked(file.path)) {
+                    if (noteReviewStore && !noteReviewStore.isTracked(file.path)) {
                         if (!checking) {
                             const deckName = Tags.getNoteDeckName(file, plugin.data.settings);
-                            plugin.noteReviewStore.ensureTracked(
+                            noteReviewStore.ensureTracked(
                                 file.path,
                                 deckName ?? DEFAULT_DECKNAME,
                                 deckName ? "tag" : "manual",
                                 plugin.noteAlgorithm,
                             );
-                            void plugin.noteReviewStore.save();
+                            void noteReviewStore.save();
                             void plugin.refreshNoteReview({ trigger: "manual" });
                         }
                         return true;
@@ -71,8 +78,11 @@ export default class Commands {
             id: "global-sync-full",
             name: t("CMD_GLOBAL_SYNC_FULL"),
             callback: async () => {
+                if (!plugin.guardSyroDataReady("sync")) {
+                    return;
+                }
                 if (!plugin.syncLock) {
-                    await plugin.store.performGlobalGarbageCollection();
+                    await plugin.store?.performGlobalGarbageCollection();
                 }
                 await plugin.requestSync({
                     reviewMode: FlashcardReviewMode.Review,
@@ -90,6 +100,9 @@ export default class Commands {
             id: "build-queue",
             name: t("CMD_BUILD_QUEUE"),
             callback: () => {
+                if (!plugin.guardSyroDataReady("review-queue")) {
+                    return;
+                }
                 void Queue.getInstance().buildQueue();
             },
         });
@@ -98,6 +111,9 @@ export default class Commands {
             id: "review-view",
             name: t("CMD_REVIEW"),
             callback: () => {
+                if (!plugin.guardSyroDataReady("note-review")) {
+                    return;
+                }
                 void Queue.getInstance().buildQueue();
                 void ReviewView.getInstance().recallReviewNote(this.plugin.data.settings);
             },
@@ -137,6 +153,9 @@ export default class Commands {
             id: "debug-clear-queue",
             name: t("CMD_CLEAR_QUEUE"),
             callback: () => {
+                if (!plugin.guardSyroDataReady("review-queue")) {
+                    return;
+                }
                 Queue.getInstance().clearQueue();
             },
         });
@@ -145,6 +164,9 @@ export default class Commands {
             id: "debug-queue-all",
             name: t("CMD_QUEUE_ALL"),
             callback: () => {
+                if (!plugin.guardSyroDataReady("review-queue")) {
+                    return;
+                }
                 const que = Queue.getInstance();
                 que.buildQueueAll();
                 console.debug("Queue Size: " + que.queueSize());
@@ -155,7 +177,10 @@ export default class Commands {
             id: "debug-print-data",
             name: t("CMD_PRINT_DATA"),
             callback: () => {
-                console.debug(plugin.store.data);
+                if (!plugin.guardSyroDataReady("item-info")) {
+                    return;
+                }
+                console.debug(plugin.store?.data);
             },
         });
 
@@ -183,7 +208,10 @@ export default class Commands {
             id: "update-dataItems",
             name: t("CMD_UPDATE_ITEMS"),
             callback: () => {
-                void plugin.store.verifyItems();
+                if (!plugin.guardSyroDataReady("sync")) {
+                    return;
+                }
+                void plugin.store?.verifyItems();
             },
         });
     }

@@ -24,7 +24,7 @@ export interface NormalizedSyncRequest {
 }
 
 export type SyncRequestStatus = "executed" | "queued" | "skipped";
-export type SyncSkipReason = "auto-sync-disabled" | "cooldown";
+export type SyncSkipReason = "auto-sync-disabled" | "cooldown" | "not-ready";
 
 export interface SyncRequestResult extends NormalizedSyncRequest {
     status: SyncRequestStatus;

@@ -64,7 +64,7 @@ export const DEFAULT_QUEUE_DATA: IQueue = {
 const KEY_ALL = "ALL";
 
 export class Queue implements IQueue {
-    static instance: Queue;
+    static instance: Queue | null;
     /**
      * @type {number[]}
      * e.g. review: [1,2,3]
@@ -91,6 +91,10 @@ export class Queue implements IQueue {
             throw Error("there is not Queue instance.");
         }
         return Queue.instance;
+    }
+
+    public static clearInstance(): void {
+        Queue.instance = null;
     }
 
     static create(que: Queue) {
