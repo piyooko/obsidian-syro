@@ -2,6 +2,7 @@ import SRPlugin from "src/main";
 import { FlashcardReviewMode } from "src/scheduling";
 import { SR_TAB_VIEW } from "src/constants";
 import { DEFAULT_SETTINGS } from "src/settings";
+import { SyroDeleteValidDeviceModal } from "src/ui/modals/SyroDeleteValidDeviceModal";
 
 function createMomentStub(timestamp: number) {
     return {
@@ -136,6 +137,100 @@ describe("SRPlugin sync request orchestration", () => {
         );
         expect(plugin.reloadAfterSyroDeviceChange).toHaveBeenCalledTimes(1);
         expect(result).toBe(true);
+    });
+
+    test("deleteValidSyroDevice deletes a peer device only after modal confirmation", async () => {
+        const openAndWaitSpy = jest
+            .spyOn(SyroDeleteValidDeviceModal.prototype, "openAndWait")
+            .mockResolvedValue(true);
+        const plugin: any = {
+            app: {},
+            syroWorkspace: {
+                listDeviceInventory: jest.fn(async () => ({
+                    currentDevice: {
+                        deviceId: "desktop-id",
+                        deviceName: "Desktop",
+                        deviceFolderName: "Desktop--d84f",
+                    },
+                    validDevices: [
+                        {
+                            deviceId: "mobile-id",
+                            deviceName: "Mobile",
+                            deviceFolderName: "Mobile--91ac",
+                        },
+                    ],
+                })),
+                deleteValidDevice: jest.fn(async () => undefined),
+            },
+            syroSessionManager: {
+                pruneRemoteDeviceCursorState: jest.fn(async () => undefined),
+            },
+            syroReadOnlyReason: null,
+            flushBeforeSyroDeviceMutation: jest.fn(async () => undefined),
+        };
+
+        try {
+            const result = await (SRPlugin.prototype.deleteValidSyroDevice as unknown as Function).call(
+                plugin,
+                "mobile-id",
+            );
+
+            expect(openAndWaitSpy).toHaveBeenCalledTimes(1);
+            expect(plugin.flushBeforeSyroDeviceMutation).toHaveBeenCalledTimes(1);
+            expect(plugin.syroWorkspace.deleteValidDevice).toHaveBeenCalledWith("mobile-id");
+            expect(plugin.syroSessionManager.pruneRemoteDeviceCursorState).toHaveBeenCalledWith(
+                "Mobile--91ac",
+            );
+            expect(result).toBe(true);
+        } finally {
+            openAndWaitSpy.mockRestore();
+        }
+    });
+
+    test("deleteValidSyroDevice skips deletion when the modal is cancelled", async () => {
+        const openAndWaitSpy = jest
+            .spyOn(SyroDeleteValidDeviceModal.prototype, "openAndWait")
+            .mockResolvedValue(false);
+        const plugin: any = {
+            app: {},
+            syroWorkspace: {
+                listDeviceInventory: jest.fn(async () => ({
+                    currentDevice: {
+                        deviceId: "desktop-id",
+                        deviceName: "Desktop",
+                        deviceFolderName: "Desktop--d84f",
+                    },
+                    validDevices: [
+                        {
+                            deviceId: "mobile-id",
+                            deviceName: "Mobile",
+                            deviceFolderName: "Mobile--91ac",
+                        },
+                    ],
+                })),
+                deleteValidDevice: jest.fn(async () => undefined),
+            },
+            syroSessionManager: {
+                pruneRemoteDeviceCursorState: jest.fn(async () => undefined),
+            },
+            syroReadOnlyReason: null,
+            flushBeforeSyroDeviceMutation: jest.fn(async () => undefined),
+        };
+
+        try {
+            const result = await (SRPlugin.prototype.deleteValidSyroDevice as unknown as Function).call(
+                plugin,
+                "mobile-id",
+            );
+
+            expect(openAndWaitSpy).toHaveBeenCalledTimes(1);
+            expect(plugin.flushBeforeSyroDeviceMutation).not.toHaveBeenCalled();
+            expect(plugin.syroWorkspace.deleteValidDevice).not.toHaveBeenCalled();
+            expect(plugin.syroSessionManager.pruneRemoteDeviceCursorState).not.toHaveBeenCalled();
+            expect(result).toBe(false);
+        } finally {
+            openAndWaitSpy.mockRestore();
+        }
     });
 
     test("requestSync skips active session sealing during remote-poll and imports without sealing its own buffer", async () => {

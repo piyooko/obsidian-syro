@@ -803,7 +803,12 @@ export default normalizeSentenceCaseLocale({
     SYRO_PULL_TO_CURRENT_CONFIRM:
         "Use the snapshot from `${source}` to **overwrite the current device** `${current}`? Local unsynced data on this device will be replaced.",
     SYRO_DELETE_VALID_DEVICE_CONFIRM:
-        "Delete the device `${device}` together with its stored session history? This only removes that device copy and cannot be undone.",
+        "Delete the device ${device} together with its stored session history? This only removes that device copy and cannot be undone.",
+    SYRO_DELETE_VALID_DEVICE_TITLE: "Delete device",
+    SYRO_DELETE_VALID_DEVICE_CONFIRM_LABEL: "Type the confirmation phrase",
+    SYRO_DELETE_VALID_DEVICE_CONFIRM_DESC: 'Type "${phrase}" to confirm deletion.',
+    SYRO_DELETE_VALID_DEVICE_PHRASE: "I understand the risks and want to delete",
+    SYRO_DELETE_VALID_DEVICE_BUTTON: "Delete device",
     SETTINGS_SYNC_DEVICE_MANAGEMENT: "Device Management",
     SETTINGS_SYNC_CURRENT_DEVICE: "Current Device",
     SETTINGS_SYNC_DEVICE_LIST: "Valid Devices",

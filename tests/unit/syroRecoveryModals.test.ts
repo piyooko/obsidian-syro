@@ -209,6 +209,7 @@ jest.mock("obsidian", () => {
 
 import { App } from "obsidian";
 import { SyroDeleteInvalidDeviceModal } from "src/ui/modals/SyroDeleteInvalidDeviceModal";
+import { SyroDeleteValidDeviceModal } from "src/ui/modals/SyroDeleteValidDeviceModal";
 import { SyroDeviceSelectionModal } from "src/ui/modals/SyroDeviceSelectionModal";
 import { SyroRecoveryModal } from "src/ui/modals/SyroRecoveryModal";
 
@@ -407,6 +408,30 @@ describe("Syro recovery modals", () => {
         confirmInput.dispatchEvent(new Event("input", { bubbles: true }));
 
         const deleteButton = findButton("Delete invalid directory");
+        expect(deleteButton.disabled).toBe(false);
+
+        deleteButton.click();
+        deleteButton.click();
+
+        await expect(resultPromise).resolves.toBe(true);
+        expect(modal.containerEl.isConnected).toBe(false);
+    });
+
+    it("submits the valid device delete modal only once and closes immediately", async () => {
+        const modal = new SyroDeleteValidDeviceModal(new App(), "Desktop");
+
+        const resultPromise = modal.openAndWait();
+        const confirmInput = document.querySelector("input");
+        expect(confirmInput).not.toBeNull();
+
+        if (!(confirmInput instanceof HTMLInputElement)) {
+            throw new Error("Unable to find valid device confirmation input.");
+        }
+
+        confirmInput.value = "I understand the risks and want to delete";
+        confirmInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+        const deleteButton = findButton("Delete device");
         expect(deleteButton.disabled).toBe(false);
 
         deleteButton.click();

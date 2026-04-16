@@ -599,7 +599,12 @@ export default {
     SYRO_PULL_TO_CURRENT_CONFIRM:
         "确定要用 `${source}` 的快照 **覆盖当前设备** `${current}` 吗？当前设备尚未同步的本地数据会被替换。",
     SYRO_DELETE_VALID_DEVICE_CONFIRM:
-        "确定要删除设备 `${device}` 及其保存的会话历史吗？这只会移除该设备副本，且无法撤销。",
+        "确定要删除设备 ${device} 及其保存的会话历史吗？这只会移除该设备副本，且无法撤销。",
+    SYRO_DELETE_VALID_DEVICE_TITLE: "删除设备",
+    SYRO_DELETE_VALID_DEVICE_CONFIRM_LABEL: "输入确认短语",
+    SYRO_DELETE_VALID_DEVICE_CONFIRM_DESC: "请输入 ${phrase} 以确认删除。",
+    SYRO_DELETE_VALID_DEVICE_PHRASE: "我已知风险并决定删除",
+    SYRO_DELETE_VALID_DEVICE_BUTTON: "删除设备",
     SETTINGS_SYNC_DEVICE_MANAGEMENT: "设备管理",
     SETTINGS_SYNC_CURRENT_DEVICE: "当前设备",
     SETTINGS_SYNC_DEVICE_LIST: "有效设备",

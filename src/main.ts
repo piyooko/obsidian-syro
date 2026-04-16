@@ -178,6 +178,7 @@ import {
     type SyroDeviceSelectionModalContext,
 } from "src/ui/modals/SyroDeviceSelectionModal";
 import { SyroDeleteInvalidDeviceModal } from "src/ui/modals/SyroDeleteInvalidDeviceModal";
+import { SyroDeleteValidDeviceModal } from "src/ui/modals/SyroDeleteValidDeviceModal";
 import { clozeDecorationPlugin, initializeClozeDecoration } from "./editor/cloze-decoration";
 import { latexPopoverExtension, initializeLatexPopover } from "./editor/latex-popover-manager";
 import { latexClozePreprocessorPlugin } from "./editor/latex-cloze-preprocessor";
@@ -3310,11 +3311,10 @@ export default class SRPlugin extends Plugin {
             throw new Error("[SR-Syro] The current device cannot be deleted.");
         }
 
-        const confirmed = await this.confirmSyroAction(
-            t("SYRO_DELETE_VALID_DEVICE_CONFIRM", {
-                device: targetDevice.deviceName,
-            }),
-        );
+        const confirmed = await new SyroDeleteValidDeviceModal(
+            this.app,
+            targetDevice.deviceName,
+        ).openAndWait();
         if (!confirmed) {
             return false;
         }
