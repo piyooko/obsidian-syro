@@ -117,6 +117,7 @@ import {
     type PersistedTrackingRulesTombstone,
 } from "./dataStore/syroPluginDataStore";
 import {
+    createPendingOverlayCommitId,
     createPendingDailyStateSection,
     PendingOverlayStore,
     type PendingDailyStateSection,
@@ -217,6 +218,7 @@ import {
 } from "src/cache/noteCacheStore";
 import { ReviewCommitStore, type ReviewCommitLog } from "src/dataStore/reviewCommitStore";
 import { ReviewPersistenceCoordinator } from "src/services/reviewPersistenceCoordinator";
+import { ReviewStateCommitCoordinator } from "src/services/reviewStateCommitCoordinator";
 import { autoCommitReviewResponseToTimeline } from "src/ui/timeline/reviewResponseTimeline";
 import {
     InlineTitleCardStats,
@@ -429,6 +431,7 @@ export default class SRPlugin extends Plugin {
     public settingTab: SRSettingTab;
     public reviewCommitStore: ReviewCommitStore | null = null;
     public reviewPersistenceCoordinator: ReviewPersistenceCoordinator | null = null;
+    public reviewStateCommitCoordinator: ReviewStateCommitCoordinator | null = null;
 
     public syncEvents: SyncEvents = new SyncEvents();
     private timelineReviewCardPath: string | null = null;
@@ -439,10 +442,14 @@ export default class SRPlugin extends Plugin {
 
     private hasPerformedInitialGC = false;
     private pendingPluginDataSaveTimer: ReturnType<typeof setTimeout> | null = null;
+    private pendingCardsStoreSaveTimer: ReturnType<typeof setTimeout> | null = null;
     private pendingPluginDataSaveRequested = false;
+    private pendingCardsStoreSaveRequested = false;
     private pendingPluginDataSaveDomains = new Set<PluginDataPersistDomain>();
     private pendingPluginDataSavePromise: Promise<boolean> | null = null;
+    private pendingCardsStoreSavePromise: Promise<boolean> | null = null;
     private pluginDataSaveFailureNotified = false;
+    private cardsStoreSaveFailureNotified = false;
     private bufferedStateDirtyRevisions: BufferedStateRevisionMap = createBufferedStateRevisionMap();
     private bufferedStatePersistedRevisions: BufferedStateRevisionMap =
         createBufferedStateRevisionMap();
@@ -467,6 +474,7 @@ export default class SRPlugin extends Plugin {
     private dailyStateAppliedOpIds: Record<string, string> = {};
     private currentDeviceReviewCount = 0;
     private pendingDailyStateOverlayFormalization = false;
+    private pendingDailyStateCommitId: string | null = null;
     private dataShell: LegacyPluginData | null = null;
     private syroSessionManager: SyroSessionManager | null = null;
     private pendingSyroRecoveryContext: SyroRecoveryModalContext | null = null;
@@ -501,6 +509,13 @@ export default class SRPlugin extends Plugin {
         }
     }
 
+    private clearPendingCardsStoreSaveTimer(): void {
+        if (this.pendingCardsStoreSaveTimer !== null) {
+            clearTimeout(this.pendingCardsStoreSaveTimer);
+            this.pendingCardsStoreSaveTimer = null;
+        }
+    }
+
     private buildDailyStateSnapshot(): PersistedDailyState {
         return extractDailyState({
             buryDate: this.data.buryDate,
@@ -524,8 +539,9 @@ export default class SRPlugin extends Plugin {
         );
     }
 
-    private buildPendingDailyStateSection(): PendingDailyStateSection {
+    private buildPendingDailyStateSection(commitId?: string): PendingDailyStateSection {
         return createPendingDailyStateSection({
+            commitId: commitId ?? this.pendingDailyStateCommitId ?? undefined,
             buryDate: this.data.buryDate,
             buryList: this.data.buryList,
             dailyDeckStats: this.data.dailyDeckStats,
@@ -548,12 +564,22 @@ export default class SRPlugin extends Plugin {
         );
     }
 
-    private stagePendingDailyStateSection(options: { requestFlush?: boolean } = {}): void {
+    private stagePendingDailyStateSection(options: {
+        requestFlush?: boolean;
+        preserveCommitId?: boolean;
+    } = {}): void {
         if (!this.pendingOverlayStore) {
             return;
         }
 
-        this.pendingOverlayStore.stageDailyStateSection(this.buildPendingDailyStateSection());
+        const nextCommitId =
+            options.preserveCommitId && this.pendingDailyStateCommitId
+                ? this.pendingDailyStateCommitId
+                : createPendingOverlayCommitId("daily-state");
+        this.pendingDailyStateCommitId = nextCommitId;
+        this.pendingOverlayStore.stageDailyStateSection(
+            this.buildPendingDailyStateSection(nextCommitId),
+        );
         if (options.requestFlush ?? true) {
             this.pendingOverlayStore.requestFlush();
         }
@@ -585,6 +611,7 @@ export default class SRPlugin extends Plugin {
         this.data.buryList = [...section.buryList];
         this.data.dailyDeckStats = nextDailyDeckStats;
         this.currentDeviceReviewCount = normalizeDeviceReviewCount(section.deviceReviewCount);
+        this.pendingDailyStateCommitId = section.commitId;
         this.pendingDailyStateOverlayFormalization = true;
         this.markBufferedPluginStateDirty(["daily-state"]);
         this.logRuntimeDebug("[SR-PendingOverlay] section-applied", {
@@ -715,6 +742,33 @@ export default class SRPlugin extends Plugin {
     }
 
     private async prepareBufferedPluginStateForRemoteImport(reason: string): Promise<boolean> {
+        const hasPendingCardsReview =
+            this.store?.hasPendingReviewOverlayEntries() ||
+            this.reviewStateCommitCoordinator?.hasPendingWork() ||
+            this.pendingCardsStoreSaveRequested ||
+            this.pendingCardsStoreSavePromise != null;
+        if (hasPendingCardsReview) {
+            this.logRuntimeDebug("[SR-BufferedState] cards-review-flush-before-import:start", {
+                reason,
+            });
+            const flushedCards = await this.flushReviewPersistence(1200, { notify: false });
+            if (
+                !flushedCards ||
+                this.store?.hasPendingReviewOverlayEntries() ||
+                this.reviewStateCommitCoordinator?.hasPendingWork() ||
+                this.pendingCardsStoreSaveRequested ||
+                this.pendingCardsStoreSavePromise != null
+            ) {
+                this.logRuntimeDebug("[SR-BufferedState] cards-review-flush-before-import:failed", {
+                    reason,
+                });
+                return false;
+            }
+            this.logRuntimeDebug("[SR-BufferedState] cards-review-flush-before-import:success", {
+                reason,
+            });
+        }
+
         const pendingDomains = this.getPendingBufferedPluginStateDomains();
         if (pendingDomains.length === 0) {
             return true;
@@ -758,6 +812,65 @@ export default class SRPlugin extends Plugin {
         }, delayMs);
     }
 
+    public requestCardsStoreSave(delayMs = 1200): void {
+        if (!this.store || this.syroReadOnlyReason) {
+            return;
+        }
+        this.pendingCardsStoreSaveRequested = true;
+        this.clearPendingCardsStoreSaveTimer();
+        this.pendingCardsStoreSaveTimer = setTimeout(() => {
+            this.pendingCardsStoreSaveTimer = null;
+            this.runAsync(this.flushPendingCardsStoreSave(), "flush queued cards store");
+        }, delayMs);
+    }
+
+    public async flushPendingCardsStoreSave(timeoutMs = 1500): Promise<boolean> {
+        this.clearPendingCardsStoreSaveTimer();
+        if (!this.pendingCardsStoreSaveRequested && this.pendingCardsStoreSavePromise === null) {
+            return true;
+        }
+
+        if (this.pendingCardsStoreSavePromise === null) {
+            this.pendingCardsStoreSavePromise = (async () => {
+                this.pendingCardsStoreSaveRequested = false;
+                try {
+                    const saved = (await this.store?.save()) ?? false;
+                    if (!saved) {
+                        throw new Error("cards-save-skipped");
+                    }
+                    this.cardsStoreSaveFailureNotified = false;
+                    return true;
+                } catch (error) {
+                    console.error("[SR] flush queued cards store failed", error);
+                    this.pendingCardsStoreSaveRequested = true;
+                    if (!this.cardsStoreSaveFailureNotified) {
+                        this.cardsStoreSaveFailureNotified = true;
+                        new Notice(t("DATA_UNABLE_TO_SAVE"));
+                    }
+                    this.requestCardsStoreSave(1000);
+                    return false;
+                } finally {
+                    this.pendingCardsStoreSavePromise = null;
+                    if (
+                        this.pendingCardsStoreSaveRequested &&
+                        this.pendingCardsStoreSaveTimer === null
+                    ) {
+                        this.requestCardsStoreSave(0);
+                    }
+                }
+            })();
+        }
+
+        const result = await Promise.race([
+            this.pendingCardsStoreSavePromise,
+            new Promise<boolean>((resolve) => {
+                setTimeout(() => resolve(false), timeoutMs);
+            }),
+        ]);
+
+        return result && !this.pendingCardsStoreSaveRequested;
+    }
+
     private enqueuePendingPluginDataSaveDomains(
         domains?: readonly PluginDataPersistDomain[] | null,
     ): void {
@@ -784,7 +897,9 @@ export default class SRPlugin extends Plugin {
             this.markBufferedPluginStateDirty(domains);
         }
         if (domains.includes("daily-state")) {
-            this.stagePendingDailyStateSection();
+            this.stagePendingDailyStateSection({
+                preserveCommitId: options.markDirty === false,
+            });
         }
         this.pendingPluginDataSaveRequested = true;
         this.enqueuePendingPluginDataSaveDomains(domains);
@@ -837,23 +952,57 @@ export default class SRPlugin extends Plugin {
         return result && !this.pendingPluginDataSaveRequested;
     }
 
-    public async flushReviewPersistence(timeoutMs = 1500): Promise<boolean> {
+    public async flushReviewPersistence(
+        timeoutMs = 1500,
+        options: { notify?: boolean } = {},
+    ): Promise<boolean> {
         const results = await Promise.race([
-            Promise.all([
-                this.store?.drainReviewOverlayFlush(timeoutMs) ?? Promise.resolve(true),
-                this.flushPendingPluginDataSave(timeoutMs),
-                this.reviewPersistenceCoordinator?.drain(timeoutMs) ?? Promise.resolve(true),
-            ]).then((values) => values.every(Boolean)),
+            (async () => {
+                const values = [
+                    this.store && typeof this.store.drainReviewOverlayFlush === "function"
+                        ? await this.store.drainReviewOverlayFlush(timeoutMs)
+                        : true,
+                    await this.flushPendingPluginDataSave(timeoutMs),
+                    this.reviewPersistenceCoordinator &&
+                    typeof this.reviewPersistenceCoordinator.drain === "function"
+                        ? await this.reviewPersistenceCoordinator.drain(timeoutMs)
+                        : true,
+                    this.reviewStateCommitCoordinator &&
+                    typeof this.reviewStateCommitCoordinator.drain === "function"
+                        ? await this.reviewStateCommitCoordinator.drain(timeoutMs)
+                        : await this.flushPendingCardsStoreSave(timeoutMs),
+                ];
+                return values.every(Boolean);
+            })(),
             new Promise<boolean>((resolve) => {
                 setTimeout(() => resolve(false), timeoutMs);
             }),
         ]);
 
-        if (!results) {
+        if (!results && (options.notify ?? true)) {
             new Notice(t("DATA_REVIEW_SAVE_PENDING"));
         }
 
         return results;
+    }
+
+    private restorePendingCardReviewCommits(): void {
+        if (!this.store || !this.reviewStateCommitCoordinator) {
+            return;
+        }
+
+        const pendingEntries = this.store.getPendingReviewOverlayEntries();
+        let needsCardsSave = false;
+        for (const entry of pendingEntries) {
+            if (entry.sessionCommitted === true) {
+                needsCardsSave = true;
+                continue;
+            }
+            this.reviewStateCommitCoordinator.restorePendingEntry(entry);
+        }
+        if (needsCardsSave) {
+            this.requestCardsStoreSave(0);
+        }
     }
 
     private getReviewQueueView(): ReactNoteReviewView | null {
@@ -879,7 +1028,8 @@ export default class SRPlugin extends Plugin {
             !this.store ||
             !this.noteReviewStore ||
             !this.reviewCommitStore ||
-            !this.reviewPersistenceCoordinator
+            !this.reviewPersistenceCoordinator ||
+            !this.reviewStateCommitCoordinator
         ) {
             return t("NOTICE_SYRO_DATA_NOT_READY");
         }
@@ -937,7 +1087,13 @@ export default class SRPlugin extends Plugin {
         this.noteReviewStore = null;
         this.reviewCommitStore = null;
         this.reviewPersistenceCoordinator = null;
+        this.reviewStateCommitCoordinator = null;
         this.syroSessionManager = null;
+        this.pendingCardsStoreSaveRequested = false;
+        this.pendingCardsStoreSavePromise = null;
+        this.cardsStoreSaveFailureNotified = false;
+        this.clearPendingCardsStoreSaveTimer();
+        this.pendingDailyStateCommitId = null;
         this.syroLayout = null;
         this.syroWorkspace = null;
         this.pendingOverlayStore = null;
@@ -3371,8 +3527,11 @@ export default class SRPlugin extends Plugin {
                 },
             );
         }
-        const requeueDomains = BUFFERED_IMPORT_PROTECTED_DOMAINS.filter((domain) =>
-            this.getPendingBufferedPluginStateDomains().includes(domain),
+        const pendingBufferedDomains = this.getPendingBufferedPluginStateDomains();
+        const requeueDomains = BUFFERED_IMPORT_PROTECTED_DOMAINS.filter(
+            (domain) =>
+                locallyDirtyDuringImport.includes(domain) ||
+                pendingBufferedDomains.includes(domain),
         );
         if (requeueDomains.length > 0) {
             this.requestPluginDataSave(
@@ -4429,6 +4588,10 @@ export default class SRPlugin extends Plugin {
             const queuedRequest = this.queueSyncRequest(request);
             return { ...queuedRequest, status: "queued", reason: "busy" };
         }
+
+        await this.flushReviewPersistence(1500, {
+            notify: request.trigger === "manual" || request.trigger === "review-entry",
+        });
 
         if (
             !this.syroReadOnlyReason &&
@@ -5589,6 +5752,15 @@ export default class SRPlugin extends Plugin {
         });
         this.applySyroReadOnlyState();
         await this.store.load();
+        this.reviewStateCommitCoordinator = new ReviewStateCommitCoordinator({
+            getStore: () => this.store,
+            appendCardSnapshot: (snapshot, opType) => this.appendSyroCardSnapshot(opType, snapshot),
+            requestCardsSave: (delayMs = 1200) => this.requestCardsStoreSave(delayMs),
+            flushCardsSave: (timeoutMs = 1500) => this.flushPendingCardsStoreSave(timeoutMs),
+            shouldLogDebug: () => this.shouldLogRuntimeDebug(),
+            logDebug: (...args: unknown[]) => this.logRuntimeDebug(...args),
+        });
+        this.restorePendingCardReviewCommits();
         this.noteReviewStore = new NoteReviewStore(this.data.settings, {
             notesPath: this.syroLayout.notesPath,
         });
@@ -5613,6 +5785,7 @@ export default class SRPlugin extends Plugin {
         if (legacyMergeStateError) {
             this.enableSyroReadOnly(legacyMergeStateError);
         }
+        await this.flushReviewPersistence(1200, { notify: false });
         await this.importPendingSyroSessions();
         this.reviewPersistenceCoordinator = new ReviewPersistenceCoordinator({
             shouldLogDebug: () => this.shouldLogRuntimeDebug(),
@@ -5687,6 +5860,9 @@ export default class SRPlugin extends Plugin {
         const pendingDailyStateSection = persistDailyState
             ? ((await this.pendingOverlayStore?.getDailyStateSection()) ?? null)
             : null;
+        if (pendingDailyStateSection) {
+            this.pendingDailyStateCommitId = pendingDailyStateSection.commitId;
+        }
         const dailyState = persistDailyState
             ? pendingDailyStateSection
                 ? this.buildDailyStateSnapshotFromPendingSection(pendingDailyStateSection)
@@ -5789,11 +5965,15 @@ export default class SRPlugin extends Plugin {
 
         if (persistDailyState && dailyState && previousDailyState) {
             const dailyStateOperations = diffDailyState(previousDailyState, dailyState);
+            const dailyStateCommitKey =
+                pendingDailyStateSection?.commitId ??
+                this.pendingDailyStateCommitId ??
+                updatedAt;
             if (dailyStateOperations.length === 0) {
                 dailyStateSessionCommitted = true;
             }
             for (const [index, operation] of dailyStateOperations.entries()) {
-                const targetUuid = `daily-op:${updatedAt}:${index}:${operation.opType}`;
+                const targetUuid = `daily-op:${dailyStateCommitKey}:${index}:${operation.opType}`;
                 const appended =
                     (await this.syroSessionManager?.appendRecord({
                         domain: "daily-state",
@@ -5887,6 +6067,9 @@ export default class SRPlugin extends Plugin {
                 this.pendingOverlayStore.clearDailyStateSection();
                 this.pendingOverlayStore.requestFlush();
                 await this.pendingOverlayStore.drainFlush();
+            }
+            if (dailyStateSessionCommitted) {
+                this.pendingDailyStateCommitId = null;
             }
             this.pendingDailyStateOverlayFormalization = false;
             this.markBufferedPluginStatePersisted(["daily-state"], bufferedRevisionSnapshot);

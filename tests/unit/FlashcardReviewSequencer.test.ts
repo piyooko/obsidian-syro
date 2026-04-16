@@ -167,7 +167,7 @@ function createStore(settings: SRSettings): DataStore {
     store.resetData();
     store.data.queues = Queue.create(store.data.queues as any);
     jest.spyOn(store, "requestFlushReviewOverlay").mockImplementation(() => undefined);
-    jest.spyOn(store, "save").mockResolvedValue(undefined);
+    jest.spyOn(store, "save").mockResolvedValue(true);
     return store;
 }
 
@@ -402,6 +402,34 @@ describe("FlashcardReviewSequencer", () => {
             }),
         );
         expect(snapshot.item.timesReviewed).toBeGreaterThan(0);
+    });
+
+    test("processReview routes review commits through reviewStateCommitCoordinator when available", async () => {
+        const settings = createSettings();
+        const sequencer = createSequencer(settings);
+        const topicPath = new TopicPath(["DeckA"]);
+        const root = new Deck("root", null);
+        const deck = root.getOrCreateDeck(topicPath);
+        const { store, item } = createTrackedCardState(settings);
+        const queueCardCommit = jest.fn();
+        const plugin = installSequencerPlugin(settings, store, {
+            reviewStateCommitCoordinator: {
+                queueCardCommit,
+            },
+        });
+        const card = createCardForDeck(topicPath, item.ID);
+
+        deck.newFlashcards.push(card);
+        sequencer.setDeckTree(root, root, root, "DeckA");
+        (DataStore as any).instance = store;
+        (sequencer as any)._currentCard = card;
+        (sequencer as any)._isLearning = false;
+
+        sequencer.processReview(ReviewResponse.Good);
+        await Promise.resolve();
+
+        expect(queueCardCommit).toHaveBeenCalledWith(item.ID, "review");
+        expect(plugin.appendSyroCardUpsert).not.toHaveBeenCalled();
     });
 
     test("processReview counts learning queue answers toward device review count", async () => {

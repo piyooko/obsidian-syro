@@ -481,12 +481,19 @@ describe("SyroWorkspace", () => {
         expect(files.get(layout.notesPath)).toBe(createValidNotesPayload());
         expect(files.get(layout.timelinePath)).toBe('{"note.md":[{"id":"1"}]}');
         expect(JSON.parse(files.get(layout.pendingOverlayPath) ?? "{}")).toEqual({
-            version: 1,
+            version: 2,
             sections: {
                 cardsReview: {
-                    version: 1,
+                    version: 2,
                     baseMtime: 0,
-                    items: [{ id: 1 }],
+                    items: [
+                        {
+                            id: 1,
+                            commitId: "legacy-card:1",
+                            sessionCommitted: false,
+                            sessionOpType: "upsert",
+                        },
+                    ],
                 },
             },
         });
@@ -597,12 +604,19 @@ describe("SyroWorkspace", () => {
 
         expect(startup.startupDecision).toBe("ready");
         expect(JSON.parse(files.get(layout.pendingOverlayPath) ?? "{}")).toEqual({
-            version: 1,
+            version: 2,
             sections: {
                 cardsReview: {
-                    version: 1,
+                    version: 2,
                     baseMtime: 0,
-                    items: [{ id: "compat-overlay" }],
+                    items: [
+                        {
+                            id: "compat-overlay",
+                            commitId: "legacy-card:compat-overlay",
+                            sessionCommitted: false,
+                            sessionOpType: "upsert",
+                        },
+                    ],
                 },
             },
         });

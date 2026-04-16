@@ -125,12 +125,6 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         return Math.max(0, this.settings.learnAheadMinutes) * 60 * 1000;
     }
 
-    private queueReviewOverlayFlush(item: RepetitionItem | null | undefined): void {
-        const store = DataStore.getInstance();
-        store.stageReviewItemDelta(item);
-        store.requestFlushReviewOverlay();
-    }
-
     private queueQuestionWrite(question: Question): void {
         const plugin = SRPlugin.getInstance();
         if (plugin?.reviewPersistenceCoordinator) {
@@ -156,13 +150,44 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         });
     }
 
-    private queueSyroCardUpsert(snapshot: TrackedCardSnapshot | null, opType: string): void {
-        const plugin = SRPlugin.getInstance();
-        if (!plugin || !snapshot) {
+    private queueReviewStateCommit(snapshot: TrackedCardSnapshot | null, opType: string): void {
+        if (!snapshot) {
             return;
         }
 
-        this.queueSyroCardSession(opType, plugin.appendSyroCardUpsert(snapshot, opType));
+        const plugin = SRPlugin.getInstance();
+        if (plugin?.reviewStateCommitCoordinator) {
+            plugin.reviewStateCommitCoordinator.queueCardCommit(snapshot.item.ID, opType);
+            return;
+        }
+
+        const store = DataStore.getInstance();
+        const entry = store.stageReviewItemDelta(snapshot.item.ID, {
+            sessionCommitted: false,
+            sessionOpType: opType,
+        });
+        store.requestFlushReviewOverlay();
+
+        if (!plugin) {
+            return;
+        }
+
+        this.queueSyroCardSession(
+            opType,
+            (async () => {
+                const appended = await plugin.appendSyroCardUpsert(snapshot, opType);
+                if (!appended) {
+                    return false;
+                }
+
+                if (entry) {
+                    store.markPendingReviewSessionCommitted(snapshot.item.ID, entry.commitId);
+                    store.requestFlushReviewOverlay();
+                }
+                plugin.requestCardsStoreSave?.(1200);
+                return true;
+            })(),
+        );
     }
 
     private queueSyroCardRemove(snapshot: TrackedCardSnapshot | null, opType: string): void {
@@ -652,7 +677,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             });
         }
         if (this.reviewMode === FlashcardReviewMode.Review) {
-            this.queueSyroCardUpsert(store.getCardSnapshot(card.Id), "review");
+            this.queueReviewStateCommit(store.getCardSnapshot(card.Id), "review");
         }
         this.logRuntimeDebug("[SR-DynSync] sequencer.processReview: completed");
     }
@@ -709,7 +734,6 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             this.queueQuestionWrite(card.question);
         }
 
-        this.queueReviewOverlayFlush(resolvedItem);
         this.syncGlobalRemainingDeckTree(card, resolvedItem.queue);
 
         if (this._isLearning) this._currentCard = null;
@@ -878,7 +902,6 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             Object.assign(item, lastAction.itemSnapshot);
             item.learningStep = lastAction.learningStepSnapshot;
         }
-        this.queueReviewOverlayFlush(item);
 
         const deck = lastAction.originalDeck;
 
@@ -935,7 +958,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             );
         }
 
-        this.queueSyroCardUpsert(store.getCardSnapshot(card.Id), "undo");
+        this.queueReviewStateCommit(store.getCardSnapshot(card.Id), "undo");
     }
 
     async untrackCurrentCard(): Promise<void> {

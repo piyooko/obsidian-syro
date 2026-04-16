@@ -3,9 +3,9 @@ import type { DailyDeckStats } from "./syroPluginDataStore";
 import { parseDailyState } from "./syroPluginDataStore";
 import { getArrayProp, getNumberProp, isRecord, parseJsonUnknown } from "src/util/typeGuards";
 
-export const PENDING_OVERLAY_VERSION = 1;
-export const PENDING_CARDS_REVIEW_SECTION_VERSION = 1;
-export const PENDING_DAILY_STATE_SECTION_VERSION = 1;
+export const PENDING_OVERLAY_VERSION = 2;
+export const PENDING_CARDS_REVIEW_SECTION_VERSION = 2;
+export const PENDING_DAILY_STATE_SECTION_VERSION = 2;
 
 export interface ReviewItemDelta {
     id: number;
@@ -18,14 +18,21 @@ export interface ReviewItemDelta {
     data: unknown;
 }
 
+export interface PendingReviewItemEntry extends ReviewItemDelta {
+    commitId: string;
+    sessionCommitted?: boolean;
+    sessionOpType?: string;
+}
+
 export interface PendingCardsReviewSection {
     version: number;
     baseMtime: number;
-    items: ReviewItemDelta[];
+    items: PendingReviewItemEntry[];
 }
 
 export interface PendingDailyStateSection {
     version: number;
+    commitId: string;
     buryDate: string;
     buryList: string[];
     dailyDeckStats: DailyDeckStats;
@@ -70,7 +77,7 @@ export function createEmptyPendingOverlayFile(): PendingOverlayFile {
 }
 
 export function createPendingCardsReviewSection(
-    items: ReviewItemDelta[],
+    items: PendingReviewItemEntry[],
     baseMtime: number,
 ): PendingCardsReviewSection {
     return {
@@ -80,7 +87,29 @@ export function createPendingCardsReviewSection(
     };
 }
 
+export function createPendingOverlayCommitId(prefix = "pending"): string {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return `${prefix}:${crypto.randomUUID()}`;
+    }
+
+    return `${prefix}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createLegacyCardCommitId(id: number): string {
+    return `legacy-card:${id}`;
+}
+
+function createLegacyDailyStateCommitId(input: {
+    buryDate: string;
+    dailyDeckStats: DailyDeckStats;
+}): string {
+    const deckCount = Object.keys(input.dailyDeckStats?.counts ?? {}).length;
+    const date = input.dailyDeckStats?.date || input.buryDate || "unknown";
+    return `legacy-daily:${date}:${deckCount}`;
+}
+
 export function createPendingDailyStateSection(input: {
+    commitId?: string;
     buryDate: string;
     buryList: string[];
     dailyDeckStats: DailyDeckStats;
@@ -88,6 +117,7 @@ export function createPendingDailyStateSection(input: {
 }): PendingDailyStateSection {
     return {
         version: PENDING_DAILY_STATE_SECTION_VERSION,
+        commitId: input.commitId ?? createPendingOverlayCommitId("daily-state"),
         buryDate: input.buryDate,
         buryList: [...input.buryList],
         dailyDeckStats: cloneJson(input.dailyDeckStats),
@@ -108,7 +138,20 @@ function parseCardsReviewSection(value: unknown): PendingCardsReviewSection | nu
     return {
         version: getNumberProp(value, "version") ?? PENDING_CARDS_REVIEW_SECTION_VERSION,
         baseMtime: getNumberProp(value, "baseMtime") ?? 0,
-        items: cloneJson(items as ReviewItemDelta[]),
+        items: cloneJson(items as Array<ReviewItemDelta & Partial<PendingReviewItemEntry>>).map(
+            (item) => ({
+                ...item,
+                commitId:
+                    typeof item.commitId === "string" && item.commitId.length > 0
+                        ? item.commitId
+                        : createLegacyCardCommitId(item.id),
+                sessionCommitted: item.sessionCommitted === true,
+                sessionOpType:
+                    typeof item.sessionOpType === "string" && item.sessionOpType.length > 0
+                        ? item.sessionOpType
+                        : "upsert",
+            }),
+        ),
     };
 }
 
@@ -131,6 +174,10 @@ function parseDailyStateSection(value: unknown): PendingDailyStateSection | null
 
     return {
         version: getNumberProp(value, "version") ?? PENDING_DAILY_STATE_SECTION_VERSION,
+        commitId:
+            typeof value["commitId"] === "string" && value["commitId"].length > 0
+                ? value["commitId"]
+                : createLegacyDailyStateCommitId(parsed),
         buryDate: parsed.buryDate,
         buryList: [...parsed.buryList],
         dailyDeckStats: cloneJson(parsed.dailyDeckStats),
@@ -181,7 +228,12 @@ export function wrapLegacyCardsReviewOverlay(raw: string): PendingOverlayFile | 
             cardsReview: {
                 version: PENDING_CARDS_REVIEW_SECTION_VERSION,
                 baseMtime: getNumberProp(parsed, "baseMtime") ?? 0,
-                items: cloneJson(items as ReviewItemDelta[]),
+                items: cloneJson(items as ReviewItemDelta[]).map((item) => ({
+                    ...item,
+                    commitId: createLegacyCardCommitId(item.id),
+                    sessionCommitted: false,
+                    sessionOpType: "upsert",
+                })),
             },
         },
     };

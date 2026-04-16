@@ -26,9 +26,10 @@ import { createEmptyCard } from "ts-fsrs";
 import { getArrayProp, isRecord, parseJsonUnknown } from "src/util/typeGuards";
 import {
     createPendingCardsReviewSection,
+    createPendingOverlayCommitId,
     PendingOverlayStore,
     type PendingCardsReviewSection,
-    type ReviewItemDelta,
+    type PendingReviewItemEntry,
 } from "./pendingOverlayStore";
 import {
     cloneSyncEntities,
@@ -270,7 +271,7 @@ export class DataStore {
     private saveRequestedWhileSuppressed: boolean = false;
     private itemByIdIndex: Map<number, RepetitionItem> = new Map();
     private itemByIdIndexDirty = true;
-    private reviewItemOverlayById: Map<number, ReviewItemDelta> = new Map();
+    private reviewItemOverlayById: Map<number, PendingReviewItemEntry> = new Map();
     private syncReadOnlyReason: string | null = null;
 
     private getAlgorithmForItemType(itemType: RPITEMTYPE): SrsAlgorithm {
@@ -407,7 +408,10 @@ export class DataStore {
         return this.joinWithParent(this.auxiliaryDataDir, fileName);
     }
 
-    private createReviewItemDelta(item: RepetitionItem): ReviewItemDelta {
+    private createReviewItemDelta(
+        item: RepetitionItem,
+        options: Partial<PendingReviewItemEntry> = {},
+    ): PendingReviewItemEntry {
         let serializedData: unknown = null;
         try {
             serializedData = JSON.parse(JSON.stringify(item.data ?? null));
@@ -423,14 +427,47 @@ export class DataStore {
             timesCorrect: item.timesCorrect,
             errorStreak: item.errorStreak,
             data: serializedData,
+            commitId: options.commitId ?? createPendingOverlayCommitId("card-review"),
+            sessionCommitted: options.sessionCommitted === true,
+            sessionOpType: options.sessionOpType ?? "upsert",
         };
+    }
+
+    private clonePendingReviewEntries(): PendingReviewItemEntry[] {
+        return Array.from(this.reviewItemOverlayById.values()).map((entry) =>
+            JSON.parse(JSON.stringify(entry)) as PendingReviewItemEntry,
+        );
+    }
+
+    private restorePendingReviewEntries(entries: PendingReviewItemEntry[]): void {
+        this.reviewItemOverlayById.clear();
+        for (const entry of entries) {
+            if (!entry || typeof entry.id !== "number" || entry.id < 0) {
+                continue;
+            }
+            this.reviewItemOverlayById.set(
+                entry.id,
+                JSON.parse(JSON.stringify(entry)) as PendingReviewItemEntry,
+            );
+        }
+    }
+
+    private clearCommittedReviewOverlayEntries(): number {
+        let cleared = 0;
+        for (const [itemId, entry] of this.reviewItemOverlayById.entries()) {
+            if (entry.sessionCommitted === true) {
+                this.reviewItemOverlayById.delete(itemId);
+                cleared++;
+            }
+        }
+        return cleared;
     }
 
     private markReviewOverlayDirty(): void {
         const section =
             this.reviewItemOverlayById.size > 0
                 ? createPendingCardsReviewSection(
-                      Array.from(this.reviewItemOverlayById.values()),
+                      this.clonePendingReviewEntries(),
                       this.data?.mtime ?? 0,
                   )
                 : null;
@@ -443,6 +480,51 @@ export class DataStore {
 
     private hasPendingReviewOverlayForItem(itemId: number): boolean {
         return itemId >= 0 && this.reviewItemOverlayById.has(itemId);
+    }
+
+    hasPendingReviewOverlayEntries(): boolean {
+        return this.reviewItemOverlayById.size > 0;
+    }
+
+    getPendingReviewOverlayEntries(): PendingReviewItemEntry[] {
+        return this.clonePendingReviewEntries();
+    }
+
+    getPendingReviewOverlayEntry(itemId: number): PendingReviewItemEntry | null {
+        const entry = this.reviewItemOverlayById.get(itemId);
+        if (!entry) {
+            return null;
+        }
+        return JSON.parse(JSON.stringify(entry)) as PendingReviewItemEntry;
+    }
+
+    markPendingReviewSessionCommitted(itemId: number, commitId?: string): boolean {
+        const entry = this.reviewItemOverlayById.get(itemId);
+        if (!entry) {
+            return false;
+        }
+        if (commitId && entry.commitId !== commitId) {
+            return false;
+        }
+        if (entry.sessionCommitted === true) {
+            return true;
+        }
+        entry.sessionCommitted = true;
+        this.markReviewOverlayDirty();
+        return true;
+    }
+
+    clearPendingReviewEntry(itemId: number, commitId?: string): boolean {
+        const entry = this.reviewItemOverlayById.get(itemId);
+        if (!entry) {
+            return false;
+        }
+        if (commitId && entry.commitId !== commitId) {
+            return false;
+        }
+        this.reviewItemOverlayById.delete(itemId);
+        this.markReviewOverlayDirty();
+        return true;
     }
 
     private async loadReviewOverlayFromDisk(): Promise<PendingCardsReviewSection | null> {
@@ -459,6 +541,7 @@ export class DataStore {
     }
 
     private applyReviewOverlayToData(overlay: PendingCardsReviewSection): number {
+        this.restorePendingReviewEntries(overlay.items);
         const itemById = new Map<number, RepetitionItem>();
         for (const item of this.data.items ?? []) {
             if (item && typeof item.ID === "number") {
@@ -482,11 +565,21 @@ export class DataStore {
         return applied;
     }
 
-    stageReviewItemDelta(itemOrId: RepetitionItem | number | null | undefined): void {
+    stageReviewItemDelta(
+        itemOrId: RepetitionItem | number | null | undefined,
+        options: Partial<PendingReviewItemEntry> = {},
+    ): PendingReviewItemEntry | null {
         const item = typeof itemOrId === "number" ? this.getItembyID(itemOrId) : itemOrId;
-        if (!item || item.ID < 0) return;
-        this.reviewItemOverlayById.set(item.ID, this.createReviewItemDelta(item));
+        if (!item || item.ID < 0) return null;
+        const existing = this.reviewItemOverlayById.get(item.ID);
+        const entry = this.createReviewItemDelta(item, {
+            commitId: options.commitId ?? existing?.commitId,
+            sessionCommitted: options.sessionCommitted ?? existing?.sessionCommitted,
+            sessionOpType: options.sessionOpType ?? existing?.sessionOpType,
+        });
+        this.reviewItemOverlayById.set(item.ID, entry);
         this.markReviewOverlayDirty();
+        return entry;
     }
 
     requestFlushReviewOverlay(): void {
@@ -669,8 +762,6 @@ export class DataStore {
         this.lastLoadError = null;
         try {
             const adapter = Iadapter.instance.adapter;
-            let overlayMerged = false;
-
             if (await adapter.exists(path)) {
                 const data = await adapter.read(path);
                 if (data == null) {
@@ -698,16 +789,12 @@ export class DataStore {
                             );
                         }
                         await this.save(path);
-                        overlayMerged = true;
                     }
                 }
             } else {
                 this.logInfo("Tracked files not found! Creating new file...");
                 this.data = createDefaultSrsData();
                 await this.save();
-            }
-            if (overlayMerged) {
-                this.reviewItemOverlayById.clear();
             }
         } catch (error) {
             this.lastLoadError = `[SR-Data] Failed to load cards.json: ${String(error)}`;
@@ -761,25 +848,30 @@ export class DataStore {
     /**
      * save.
      */
-    async save(path = this.dataPath) {
+    async save(path = this.dataPath): Promise<boolean> {
         if (this.syncReadOnlyReason) {
             this.logError("[SR-Readonly] Skip cards save:", this.syncReadOnlyReason);
-            return;
+            return false;
         }
         if (this.saveSuppressionCount > 0) {
             this.saveRequestedWhileSuppressed = true;
-            return;
+            return false;
         }
         try {
             await Iadapter.instance.adapter.write(path, JSON.stringify(this.data));
             this.data.mtime = await this.getmtime();
-            this.reviewItemOverlayById.clear();
-            this.pendingOverlayStore.clearCardsReviewSection();
+            this.clearCommittedReviewOverlayEntries();
+            if (this.reviewItemOverlayById.size === 0) {
+                this.pendingOverlayStore.clearCardsReviewSection();
+            } else {
+                this.markReviewOverlayDirty();
+            }
             await this.pendingOverlayStore.drainFlush();
+            return true;
         } catch (error) {
             MiscUtils.notice(t("DATA_UNABLE_TO_SAVE"));
             this.logError("Unable to save data", error);
-            return;
+            return false;
         }
     }
 

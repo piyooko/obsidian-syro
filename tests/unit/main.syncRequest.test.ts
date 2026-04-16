@@ -52,6 +52,7 @@ describe("SRPlugin sync request orchestration", () => {
             shouldSkipDisabledAutomaticIncrementalSync: jest.fn(() => false),
             shouldSkipAutomaticSync: jest.fn(() => false),
             syncLock: false,
+            flushReviewPersistence: jest.fn(async () => true),
             syroSessionManager: {
                 flushActiveSession: jest.fn(async () => "2026-04-13T12-00-00__d84f__0001"),
             },
@@ -150,6 +151,7 @@ describe("SRPlugin sync request orchestration", () => {
             shouldSkipAutomaticSync: jest.fn(() => false),
             syncLock: false,
             syroReadOnlyReason: null,
+            flushReviewPersistence: jest.fn(async () => true),
             syroSessionManager: {
                 flushActiveSession: jest.fn(async () => "2026-04-13T12-00-00__d84f__0001"),
             },
@@ -395,7 +397,8 @@ describe("SRPlugin sync request orchestration", () => {
         const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
         const pendingOverlayStore = {
             getDailyStateSection: jest.fn(async () => ({
-                version: 1,
+                version: 2,
+                commitId: "daily-state:test-1",
                 buryDate: "2026-04-14",
                 buryList: [],
                 dailyDeckStats: {
@@ -497,6 +500,12 @@ describe("SRPlugin sync request orchestration", () => {
                 ([record]: [{ domain: string }]) => record.domain === "daily-state",
             ),
         ).toBe(true);
+        expect(
+            plugin.syroSessionManager.appendRecord.mock.calls.every(
+                ([record]: [{ targetUuid: string }]) =>
+                    record.targetUuid.startsWith("daily-op:daily-state:test-1:"),
+            ),
+        ).toBe(true);
         expect(pendingOverlayStore.clearDailyStateSection).toHaveBeenCalledTimes(1);
         expect(pendingOverlayStore.requestFlush).toHaveBeenCalledTimes(1);
         expect(pendingOverlayStore.drainFlush).toHaveBeenCalledTimes(1);
@@ -507,7 +516,8 @@ describe("SRPlugin sync request orchestration", () => {
         const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
         const pendingOverlayStore = {
             getDailyStateSection: jest.fn(async () => ({
-                version: 1,
+                version: 2,
+                commitId: "daily-state:test-2",
                 buryDate: "2026-04-14",
                 buryList: [],
                 dailyDeckStats: {
@@ -707,7 +717,9 @@ describe("SRPlugin sync request orchestration", () => {
             sharedSettingsStore: {},
             trackingRulesStore: {},
             dailyStateStore: {},
-            store: {},
+            store: {
+                hasPendingReviewOverlayEntries: jest.fn(() => false),
+            },
             noteReviewStore: {},
             reviewCommitStore: {},
             data: {
@@ -737,6 +749,9 @@ describe("SRPlugin sync request orchestration", () => {
                 "shared-settings": 0,
                 "tracking-rules": 0,
                 "daily-state": 0,
+            },
+            reviewStateCommitCoordinator: {
+                hasPendingWork: jest.fn(() => false),
             },
             flushPendingPluginDataSave: jest.fn(async () => false),
             logRuntimeDebug: jest.fn(),
@@ -813,7 +828,9 @@ describe("SRPlugin sync request orchestration", () => {
             sharedSettingsStore: {},
             trackingRulesStore: {},
             dailyStateStore: {},
-            store: {},
+            store: {
+                hasPendingReviewOverlayEntries: jest.fn(() => false),
+            },
             noteReviewStore: {},
             reviewCommitStore: {},
             data: {
@@ -851,12 +868,13 @@ describe("SRPlugin sync request orchestration", () => {
                 "tracking-rules": 0,
                 "daily-state": 0,
             },
+            reviewStateCommitCoordinator: {
+                hasPendingWork: jest.fn(() => false),
+            },
             flushPendingPluginDataSave: jest.fn(async () => true),
             logRuntimeDebug: jest.fn(),
             pruneSyroInlineSyncMetadata: jest.fn(async () => undefined),
         });
-        const requestPluginDataSaveSpy = jest.spyOn(plugin, "requestPluginDataSave");
-
         await (
             SRPlugin.prototype as unknown as { importPendingSyroSessions: Function }
         ).importPendingSyroSessions.call(plugin, {
@@ -864,14 +882,13 @@ describe("SRPlugin sync request orchestration", () => {
         });
 
         expect(plugin.persistedDailyState).toBe(oldDailyState);
-        expect(requestPluginDataSaveSpy).toHaveBeenCalledWith(
-            {
-                delayMs: 0,
+        expect(plugin.bufferedStatePersistedRevisions["daily-state"]).toBe(0);
+        expect(plugin.logRuntimeDebug).toHaveBeenCalledWith(
+            "[SR-BufferedState] buffered-state-baseline-preserved-due-to-local-dirty",
+            expect.objectContaining({
+                reason: "manual",
                 domains: ["daily-state"],
-            },
-            {
-                markDirty: false,
-            },
+            }),
         );
     });
 

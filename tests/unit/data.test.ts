@@ -72,7 +72,7 @@ function createStore(adapter: Record<string, unknown> = {}): DataStore {
     const store = new DataStore(DEFAULT_SETTINGS, "./");
     store.resetData();
     store.data.queues = Queue.create(store.data.queues as any);
-    return store;
+        return store;
 }
 
 describe("DataStore algorithm binding", () => {
@@ -381,7 +381,97 @@ describe("DataStore algorithm binding", () => {
         expect(item.timesReviewed).toBe(1);
         expect(item.nextReview).toBe(123456789);
         expect(JSON.parse(files.get(normalizePath(overlayPath)) ?? "{}")).toEqual({
-            version: 1,
+            version: 2,
+            sections: {
+                cardsReview: {
+                    version: 2,
+                    baseMtime: expect.any(Number),
+                    items: [
+                        expect.objectContaining({
+                            id: item.ID,
+                            commitId: "legacy-card:0",
+                            sessionCommitted: false,
+                            sessionOpType: "upsert",
+                            timesReviewed: 1,
+                            queue: CardQueue.Learn,
+                        }),
+                    ],
+                },
+            },
+        });
+    });
+
+    test("save retains cardsReview overlay entries until both session and cards save are complete", async () => {
+        const { adapter, files } = createMockAdapter();
+        const store = createStore(adapter);
+        store.trackFile("cards/pending-commit.md", RPITEMTYPE.CARD, false);
+
+        const trackedFile = store.getTrackedFile("cards/pending-commit.md");
+        const trackedItem = new TrackedItem(
+            "hash-pending-commit",
+            0,
+            "",
+            CardType.SingleLineBasic,
+            {
+                startOffset: 0,
+                endOffset: 0,
+                blockStartOffset: 0,
+                blockEndOffset: 0,
+            },
+            "c1",
+        );
+        trackedFile.trackedItems.push(trackedItem);
+        store.updateCardItems(trackedFile, trackedItem, "#flashcards", false);
+
+        const item = store.getItembyID(trackedItem.reviewId);
+        if (!item) {
+            throw new Error("Expected local item");
+        }
+
+        item.queue = CardQueue.Learn;
+        item.nextReview = 123456789;
+        item.learningStep = 0;
+        item.timesReviewed = 1;
+        item.timesCorrect = 1;
+        item.errorStreak = 0;
+        item.data = {
+            ...(item.data as Record<string, unknown>),
+            state: 1,
+        };
+
+        const entry = store.stageReviewItemDelta(item, {
+            commitId: "card-review:test-1",
+            sessionCommitted: false,
+            sessionOpType: "review",
+        });
+        expect(entry?.commitId).toBe("card-review:test-1");
+
+        expect(await store.save()).toBe(true);
+
+        expect(JSON.parse(files.get(normalizePath("./pending.overlay.json")) ?? "{}")).toEqual({
+            version: 2,
+            sections: {
+                cardsReview: {
+                    version: 2,
+                    baseMtime: expect.any(Number),
+                    items: [
+                        expect.objectContaining({
+                            id: item.ID,
+                            commitId: "card-review:test-1",
+                            sessionCommitted: false,
+                            sessionOpType: "review",
+                            timesReviewed: 1,
+                            queue: CardQueue.Learn,
+                        }),
+                    ],
+                },
+            },
+        });
+
+        expect(store.markPendingReviewSessionCommitted(item.ID, "card-review:test-1")).toBe(true);
+        expect(await store.save()).toBe(true);
+        expect(JSON.parse(files.get(normalizePath("./pending.overlay.json")) ?? "{}")).toEqual({
+            version: 2,
             sections: {},
         });
     });
