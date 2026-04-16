@@ -434,11 +434,16 @@ describe("replaySyroSessionRecords", () => {
         trackedFile.trackedItems.push(trackedItem);
         sourceStore.updateCardItems(trackedFile, trackedItem, "#flashcards", false);
         const cardSnapshot = sourceStore.getCardSnapshot(trackedItem.reviewId);
+        const fileSnapshot = sourceStore.getTrackedFileSnapshot("cards/runtime.md");
         if (!cardSnapshot) {
             throw new Error("Expected card snapshot");
         }
+        if (!fileSnapshot) {
+            throw new Error("Expected file snapshot");
+        }
 
         const targetStore = createStoreWithAdapter(adapter);
+        targetStore.renameTrackedFileFromSnapshot(fileSnapshot);
         const deps = createReplayDependencies(adapter, settings, targetStore);
 
         const summary = await replaySyroSessionRecords(
@@ -535,7 +540,7 @@ describe("replaySyroSessionRecords", () => {
                     pathHint: "cards/old.md",
                 },
             ],
-            deps,
+            deps as any,
         );
 
         const fileId = targetStore.findFileIdByUuid(fileSnapshot.uuid);
@@ -606,10 +611,318 @@ describe("replaySyroSessionRecords", () => {
                     pathHint: "cards/ghost.md",
                 },
             ],
-            deps,
+            deps as any,
         );
 
         expect(targetStore.findFileIdByUuid(fileSnapshot.uuid)).toBe("");
-        expect(targetStore.findItemByUuid(cardSnapshot.item.uuid)?.isTracked).toBe(false);
+        expect(targetStore.findItemByUuid(cardSnapshot.item.uuid)).toBeNull();
+    });
+
+    test("absorbs uuid alias batch into local store without re-emitting the same group", async () => {
+        const { adapter, files } = createMockAdapter();
+        const settings = createSettings();
+        const targetStore = createStoreWithAdapter(adapter);
+        targetStore.trackFile("cards/alias.md", RPITEMTYPE.CARD, false);
+        const trackedFile = targetStore.getTrackedFile("cards/alias.md");
+        const trackedItem = new TrackedItem(
+            "hash-alias",
+            0,
+            "context",
+            CardType.SingleLineBasic,
+            {
+                startOffset: 0,
+                endOffset: 1,
+                blockStartOffset: 0,
+                blockEndOffset: 1,
+            },
+            "c1",
+        );
+        trackedFile.trackedItems.push(trackedItem);
+        targetStore.updateCardItems(trackedFile, trackedItem, "#flashcards", false);
+        const cardSnapshot = targetStore.getCardSnapshot(trackedItem.reviewId);
+        const fileSnapshot = targetStore.getTrackedFileSnapshot("cards/alias.md");
+        if (!cardSnapshot || !fileSnapshot) {
+            throw new Error("Expected local snapshots");
+        }
+
+        const deps = createReplayDependencies(adapter, settings, targetStore) as ReturnType<
+            typeof createReplayDependencies
+        > & {
+            collectAliasGroups?: (domain: "cards" | "notes", groups: unknown[]) => void;
+        };
+        const collectAliasGroups = jest.fn();
+        deps.collectAliasGroups = collectAliasGroups;
+
+        const summary = await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-alias-batch",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "cards",
+                    entityType: "uuid-alias-batch",
+                    opType: "merge-aliases",
+                    targetUuid: "uuid-alias-batch:cards:1",
+                    createdAt: "2026-04-13T12:00:00.000Z",
+                    updatedAt: "2026-04-13T12:00:00.000Z",
+                    payload: {
+                        groups: [
+                            {
+                                entityType: "tracked-file",
+                                equivalentUuids: [fileSnapshot.uuid, "tf-remote"],
+                                pathHint: "cards/alias.md",
+                                emitterPrimaryUuid: "tf-remote",
+                                evidence: {
+                                    sourceDeviceId: "91ac",
+                                    sourcePath: "cards/alias.md",
+                                    matchedBy: "snapshot-reconcile",
+                                },
+                            },
+                            {
+                                entityType: "card-item",
+                                equivalentUuids: [cardSnapshot.item.uuid, "i-remote"],
+                                pathHint: "cards/alias.md",
+                                emitterPrimaryUuid: "i-remote",
+                                evidence: {
+                                    sourceDeviceId: "91ac",
+                                    sourcePath: "cards/alias.md",
+                                    matchedBy: "tracked-file-match",
+                                    lineNo: 0,
+                                    clozeId: "c1",
+                                    fingerprintUnique: true,
+                                },
+                            },
+                        ],
+                    },
+                    pathHint: "cards/alias.md",
+                },
+            ],
+            deps,
+        );
+
+        expect(summary).toEqual({
+            cardsRuntimeChanged: false,
+            noteReviewChanged: false,
+            timelineChanged: false,
+            dailyStateChanged: false,
+            requiresGlobalSync: false,
+        });
+        expect(targetStore.getTrackedFile("cards/alias.md")?.aliases).toContain("tf-remote");
+        expect(targetStore.findItemByUuid(cardSnapshot.item.uuid)?.aliases).toContain("i-remote");
+        expect(collectAliasGroups).not.toHaveBeenCalled();
+        expect(files.get("syro/devices/Desktop--d84f/cards.json")).toContain('"tf-remote"');
+        expect(files.get("syro/devices/Desktop--d84f/cards.json")).toContain('"i-remote"');
+    });
+
+    test("preloads tracked-file alias batches before card replay and avoids ghost files", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const targetStore = createStoreWithAdapter(adapter);
+        targetStore.trackFile("cards/deferred.md", RPITEMTYPE.CARD, false);
+        const localFile = targetStore.getTrackedFile("cards/deferred.md");
+        const localTrackedItem = new TrackedItem(
+            "hash-deferred",
+            0,
+            "context",
+            CardType.SingleLineBasic,
+            {
+                startOffset: 0,
+                endOffset: 1,
+                blockStartOffset: 0,
+                blockEndOffset: 1,
+            },
+            "c1",
+        );
+        localFile.trackedItems.push(localTrackedItem);
+        targetStore.updateCardItems(localFile, localTrackedItem, "#flashcards", false);
+        const localCardSnapshot = targetStore.getCardSnapshot(localTrackedItem.reviewId);
+        const localFileSnapshot = targetStore.getTrackedFileSnapshot("cards/deferred.md");
+        if (!localCardSnapshot || !localFileSnapshot) {
+            throw new Error("Expected local snapshots");
+        }
+
+        const remoteCardSnapshot = JSON.parse(JSON.stringify(localCardSnapshot));
+        remoteCardSnapshot.trackedFileUuid = "tf-remote-deferred";
+        remoteCardSnapshot.trackedFileAliases = [];
+        remoteCardSnapshot.item.uuid = "i-remote-deferred";
+        remoteCardSnapshot.item.aliases = [];
+
+        const deps = createReplayDependencies(adapter, settings, targetStore);
+        await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-card-deferred",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "cards",
+                    entityType: "card-item",
+                    opType: "review",
+                    targetUuid: "i-remote-deferred",
+                    createdAt: "2026-04-13T12:00:00.000Z",
+                    updatedAt: "2026-04-13T12:00:00.000Z",
+                    payload: remoteCardSnapshot,
+                    pathHint: "cards/deferred.md",
+                },
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-file-alias",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "cards",
+                    entityType: "uuid-alias-batch",
+                    opType: "merge-aliases",
+                    targetUuid: "uuid-alias-batch:cards:2",
+                    createdAt: "2026-04-13T12:00:01.000Z",
+                    updatedAt: "2026-04-13T12:00:01.000Z",
+                    payload: {
+                        groups: [
+                            {
+                                entityType: "tracked-file",
+                                equivalentUuids: [localFileSnapshot.uuid, "tf-remote-deferred"],
+                                pathHint: "cards/deferred.md",
+                                emitterPrimaryUuid: "tf-remote-deferred",
+                                evidence: {
+                                    sourceDeviceId: "91ac",
+                                    sourcePath: "cards/deferred.md",
+                                    matchedBy: "snapshot-reconcile",
+                                },
+                            },
+                        ],
+                    },
+                    pathHint: "cards/deferred.md",
+                },
+            ],
+            deps,
+        );
+
+        expect(Object.keys((targetStore as any).data.trackedFiles)).toHaveLength(1);
+        expect(targetStore.getTrackedFile("cards/deferred.md")?.aliases).toContain(
+            "tf-remote-deferred",
+        );
+        expect(targetStore.findItemByUuid(localCardSnapshot.item.uuid)?.aliases).toContain(
+            "i-remote-deferred",
+        );
+    });
+
+    test("negative cache prevents repeated remote snapshot fetches for the same ghost uuid", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const sourceStore = createStoreWithAdapter(adapter);
+        sourceStore.trackFile("cards/ghost-remote.md", RPITEMTYPE.CARD, false);
+        const trackedFile = sourceStore.getTrackedFile("cards/ghost-remote.md");
+        const trackedItem = new TrackedItem(
+            "hash-ghost",
+            0,
+            "context",
+            CardType.SingleLineBasic,
+            {
+                startOffset: 0,
+                endOffset: 1,
+                blockStartOffset: 0,
+                blockEndOffset: 1,
+            },
+            "c1",
+        );
+        trackedFile.trackedItems.push(trackedItem);
+        sourceStore.updateCardItems(trackedFile, trackedItem, "#flashcards", false);
+        const cardSnapshot = sourceStore.getCardSnapshot(trackedItem.reviewId);
+        if (!cardSnapshot) {
+            throw new Error("Expected card snapshot");
+        }
+
+        const deps = createReplayDependencies(adapter, settings, createStoreWithAdapter(adapter)) as
+            ReturnType<typeof createReplayDependencies> & {
+                loadRemoteCardsSnapshots?: (deviceId: string) => Promise<{
+                    files: unknown[];
+                    cards: unknown[];
+                }>;
+            };
+        const loadRemoteCardsSnapshots = jest.fn(async () => ({ files: [], cards: [] }));
+        deps.loadRemoteCardsSnapshots = loadRemoteCardsSnapshots;
+
+        await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-ghost-1",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "cards",
+                    entityType: "card-item",
+                    opType: "review",
+                    targetUuid: "ghost-card-uuid",
+                    createdAt: "2026-04-13T12:00:00.000Z",
+                    updatedAt: "2026-04-13T12:00:00.000Z",
+                    payload: cardSnapshot,
+                    pathHint: "cards/ghost-remote.md",
+                },
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-ghost-2",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "cards",
+                    entityType: "card-item",
+                    opType: "review",
+                    targetUuid: "ghost-card-uuid",
+                    createdAt: "2026-04-13T12:00:01.000Z",
+                    updatedAt: "2026-04-13T12:00:01.000Z",
+                    payload: cardSnapshot,
+                    pathHint: "cards/ghost-remote.md",
+                },
+            ],
+            deps as any,
+        );
+
+        expect(loadRemoteCardsSnapshots).toHaveBeenCalledTimes(1);
+    });
+
+    test("persists tracked-file and card aliases across save and load", async () => {
+        const { adapter } = createMockAdapter();
+        const store = createStoreWithAdapter(adapter);
+        store.trackFile("cards/persist-alias.md", RPITEMTYPE.CARD, false);
+        const trackedFile = store.getTrackedFile("cards/persist-alias.md");
+        const trackedItem = new TrackedItem(
+            "hash-persist",
+            0,
+            "context",
+            CardType.SingleLineBasic,
+            {
+                startOffset: 0,
+                endOffset: 1,
+                blockStartOffset: 0,
+                blockEndOffset: 1,
+            },
+            "c1",
+        );
+        trackedFile.trackedItems.push(trackedItem);
+        store.updateCardItems(trackedFile, trackedItem, "#flashcards", false);
+        trackedFile.aliases = ["tf-persist-remote"];
+        const item = store.getItembyID(trackedItem.reviewId);
+        if (!item) {
+            throw new Error("Expected local item");
+        }
+        item.aliases = ["i-persist-remote"];
+
+        await store.save();
+
+        const reloadedStore = new DataStore(DEFAULT_SETTINGS, {
+            cardsPath: "syro/devices/Desktop--d84f/cards.json",
+            cardsOverlayPath: "syro/devices/Desktop--d84f/cards.review_overlay.json",
+            auxiliaryDataDir: "syro/devices/Desktop--d84f",
+        });
+        await reloadedStore.load();
+
+        expect(reloadedStore.getTrackedFile("cards/persist-alias.md")?.aliases).toEqual([
+            "tf-persist-remote",
+        ]);
+        expect(reloadedStore.findItemByUuid(item.uuid)?.aliases).toEqual(["i-persist-remote"]);
     });
 });

@@ -5,6 +5,7 @@ import { t } from "src/lang/helpers";
 import { DateUtils } from "src/util/utils_recall";
 import { isRecord } from "src/util/typeGuards";
 import { State } from "ts-fsrs";
+import { normalizeUuidAliases } from "./syroUuidAlias";
 
 export enum RPITEMTYPE {
     NOTE = "note",
@@ -130,6 +131,7 @@ export class RepetitionItem {
      * @type {string}
      */
     uuid: string;
+    aliases: string[];
     /**
      * @type {RPITEMTYPE}
      */
@@ -180,6 +182,7 @@ export class RepetitionItem {
         if (!newItem.uuid) {
             newItem.uuid = generateUUID();
         }
+        newItem.aliases = normalizeUuidAliases(newItem.uuid, newItem.aliases);
 
         // Data migration: derive queue from legacy fields if missing
         if (newItem.queue === undefined || newItem.queue === null) {
@@ -228,6 +231,7 @@ export class RepetitionItem {
         this.ID = id;
         this.fileID = fileID;
         this.uuid = generateUUID();
+        this.aliases = [];
         this.itemType = itemType;
         this.deckName = deckName;
         this.timesReviewed = 0;

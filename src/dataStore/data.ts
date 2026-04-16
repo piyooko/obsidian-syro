@@ -12,9 +12,13 @@ import { getStorePath } from "src/dataStore/dataLocation";
 import { isPathInsideFolder, renamePathPrefix } from "src/folderTracking";
 import { Tags } from "src/tags";
 import { SrsAlgorithm } from "src/algorithms/algorithms";
-import { TrackedFile, TrackedItem } from "./trackedFile";
+import {
+    TrackedFile,
+    TrackedItem,
+    reconcileTrackedItemsWithCandidates,
+} from "./trackedFile";
 import { RPITEMTYPE, RepetitionItem, ReviewResult, CardQueue } from "./repetitionItem";
-import { DEFAULT_QUEUE_DATA, Queue } from "./queue";
+import { Queue } from "./queue";
 import { Iadapter } from "./adapter";
 import type { CardsStorePathConfig } from "./syroWorkspace";
 import { t } from "src/lang/helpers";
@@ -28,6 +32,7 @@ import {
     shouldApplySyncEntity,
     type PersistedSyncEntityState,
 } from "./syroSyncMeta";
+import { mergeEquivalentUuids } from "./syroUuidAlias";
 
 /**
  * SrsData.
@@ -66,8 +71,32 @@ export function generateFileID(): string {
     return "f_" + Math.random().toString(36).substring(2, 8);
 }
 
+function createDefaultQueueState(): Queue {
+    return Queue.create({
+        queue: {},
+        repeatQueue: [],
+        toDayAllQueue: {},
+        toDayLaterQueue: {},
+        lastQueue: 0,
+        newAdded: 0,
+    } as Queue);
+}
+
+export function createDefaultSrsData(): SrsData {
+    return {
+        queues: createDefaultQueueState(),
+        reviewedCounts: {},
+        reviewedCardCounts: {},
+        items: [],
+        trackedFiles: {},
+        fileOrder: [],
+        syncEntities: {},
+        mtime: 0,
+    };
+}
+
 export const DEFAULT_SRS_DATA: SrsData = {
-    queues: Object.assign({}, DEFAULT_QUEUE_DATA) as Queue,
+    queues: createDefaultQueueState(),
     reviewedCounts: {},
     reviewedCardCounts: {},
     items: [],
@@ -99,6 +128,7 @@ interface ReviewItemOverlayFile {
 export interface TrackedCardSnapshot {
     path: string;
     trackedFileUuid: string;
+    trackedFileAliases: string[];
     trackedFileTags: string[];
     trackedItem: TrackedItem | null;
     item: RepetitionItem;
@@ -106,6 +136,7 @@ export interface TrackedCardSnapshot {
 
 export interface TrackedCardsFileSnapshot {
     uuid: string;
+    aliases: string[];
     path: string;
     tags: string[];
     items: Record<string, number>;
@@ -117,6 +148,11 @@ export interface RenamedTrackedCardsFileSnapshot {
     oldPath: string;
     newPath: string;
     file: TrackedCardsFileSnapshot;
+}
+
+export interface ParsedTrackedCardsStoreSnapshots {
+    files: TrackedCardsFileSnapshot[];
+    cards: TrackedCardSnapshot[];
 }
 
 type LegacyFileIndexItem = RepetitionItem & {
@@ -149,6 +185,77 @@ function cloneTrackedItem(item: TrackedItem | null | undefined): TrackedItem | n
     );
 }
 
+export function parseTrackedCardsStoreSnapshots(
+    raw: string,
+): ParsedTrackedCardsStoreSnapshots | null {
+    const parsed = parseJsonUnknown(raw);
+    if (!isRecord(parsed)) {
+        return null;
+    }
+
+    const items = getArrayProp(parsed, "items")
+        .filter((entry): entry is RepetitionItem => isRecord(entry))
+        .map((entry) => RepetitionItem.create(entry));
+    const trackedFilesRaw = parsed["trackedFiles"];
+    if (!isRecord(trackedFilesRaw)) {
+        return null;
+    }
+
+    const itemsById = new Map<number, RepetitionItem>(items.map((item) => [item.ID, item]));
+    const files: TrackedCardsFileSnapshot[] = [];
+    const cards: TrackedCardSnapshot[] = [];
+
+    for (const trackedFileRaw of Object.values(trackedFilesRaw)) {
+        if (!isRecord(trackedFileRaw) || typeof trackedFileRaw.path !== "string") {
+            continue;
+        }
+
+        const trackedFile = TrackedFile.create(trackedFileRaw as unknown as TrackedFile);
+        const relatedItems = trackedFile.itemIDs
+            .map((itemId) => cloneRepetitionItem(itemsById.get(itemId)))
+            .filter((item): item is RepetitionItem => item !== null);
+        const fileSnapshot: TrackedCardsFileSnapshot = {
+            uuid: trackedFile.uuid,
+            aliases: [...(trackedFile.aliases ?? [])],
+            path: trackedFile.path,
+            tags: [...(trackedFile.tags ?? [])],
+            items: { ...(trackedFile.items ?? {}) },
+            trackedItems: (trackedFile.trackedItems ?? [])
+                .map((item) => cloneTrackedItem(item))
+                .filter((item): item is TrackedItem => item !== null),
+            relatedItems,
+        };
+        files.push(fileSnapshot);
+
+        for (const trackedItem of trackedFile.trackedItems ?? []) {
+            const relatedItem = itemsById.get(trackedItem.reviewId);
+            if (!relatedItem || relatedItem.itemType !== RPITEMTYPE.CARD) {
+                continue;
+            }
+
+            const clonedItem = cloneRepetitionItem(relatedItem);
+            const clonedTrackedItem = cloneTrackedItem(trackedItem);
+            if (!clonedItem || !clonedTrackedItem) {
+                continue;
+            }
+
+            cards.push({
+                path: trackedFile.path,
+                trackedFileUuid: trackedFile.uuid,
+                trackedFileAliases: [...(trackedFile.aliases ?? [])],
+                trackedFileTags: [...(trackedFile.tags ?? [])],
+                trackedItem: clonedTrackedItem,
+                item: clonedItem,
+            });
+        }
+    }
+
+    return {
+        files,
+        cards,
+    };
+}
+
 /**
  * DataStore.
  */
@@ -159,7 +266,7 @@ export class DataStore {
     /**
      * @type {SrsData}
      */
-    data: SrsData;
+    data: SrsData = createDefaultSrsData();
     /**
      * @type {SRPlugin}
      */
@@ -680,14 +787,14 @@ export class DataStore {
                 const data = await adapter.read(path);
                 if (data == null) {
                     this.logError("Unable to read SRS data!");
-                    this.data = Object.assign({}, DEFAULT_SRS_DATA);
+                    this.data = createDefaultSrsData();
                 } else {
                     const parsed = parseJsonUnknown(data);
                     const parsedData = isRecord(parsed) ? (parsed as Partial<SrsData>) : null;
                     if (!parsedData) {
                         throw new Error("Invalid cards.json payload");
                     }
-                    this.data = Object.assign(Object.assign({}, DEFAULT_SRS_DATA), parsedData);
+                    this.data = Object.assign(createDefaultSrsData(), parsedData);
                     this.data.syncEntities = parseSyncEntities(parsedData?.syncEntities);
                     this.logDebug(
                         "[SR-Debug] Data loaded from disk. Items in JSON:",
@@ -708,7 +815,7 @@ export class DataStore {
                 }
             } else {
                 this.logInfo("Tracked files not found! Creating new file...");
-                this.data = Object.assign({}, DEFAULT_SRS_DATA);
+                this.data = createDefaultSrsData();
                 await this.save();
             }
             if (overlayMerged) {
@@ -719,7 +826,7 @@ export class DataStore {
         } catch (error) {
             this.lastLoadError = `[SR-Data] Failed to load cards.json: ${String(error)}`;
             this.logError("Error loading data", error);
-            this.data = Object.assign({}, DEFAULT_SRS_DATA);
+            this.data = createDefaultSrsData();
         } finally {
             this.toInstances();
         }
@@ -976,6 +1083,7 @@ export class DataStore {
         return {
             path: trackedFile.path,
             trackedFileUuid: trackedFile.uuid,
+            trackedFileAliases: [...(trackedFile.aliases ?? [])],
             trackedFileTags: [...(trackedFile.tags ?? [])],
             trackedItem: cloneTrackedItem(trackedItem),
             item: clonedItem,
@@ -990,6 +1098,7 @@ export class DataStore {
 
         return {
             uuid: trackedFile.uuid,
+            aliases: [...(trackedFile.aliases ?? [])],
             path: trackedFile.path,
             tags: [...(trackedFile.tags ?? [])],
             items: { ...(trackedFile.items ?? {}) },
@@ -1016,6 +1125,23 @@ export class DataStore {
         return "";
     }
 
+    findFileIdByUuidOrAlias(uuid: string): string {
+        if (!uuid) {
+            return "";
+        }
+
+        for (const [fileID, trackedFile] of Object.entries(this.data.trackedFiles)) {
+            if (
+                trackedFile?.uuid === uuid ||
+                (Array.isArray(trackedFile?.aliases) && trackedFile.aliases.includes(uuid))
+            ) {
+                return fileID;
+            }
+        }
+
+        return "";
+    }
+
     findItemByUuid(uuid: string): RepetitionItem | null {
         if (!uuid) {
             return null;
@@ -1024,15 +1150,102 @@ export class DataStore {
         return this.data.items.find((item) => item?.uuid === uuid) ?? null;
     }
 
+    findItemByUuidOrAlias(uuid: string): RepetitionItem | null {
+        if (!uuid) {
+            return null;
+        }
+
+        return (
+            this.data.items.find(
+                (item) =>
+                    item?.uuid === uuid ||
+                    (Array.isArray(item?.aliases) && item.aliases.includes(uuid)),
+            ) ?? null
+        );
+    }
+
+    mergeFileUuidEquivalence(fileID: string, incomingUuids: readonly string[]): string[] {
+        const trackedFile = this.getFileByID(fileID);
+        if (!trackedFile) {
+            return [];
+        }
+
+        trackedFile.aliases = mergeEquivalentUuids(
+            trackedFile.uuid,
+            trackedFile.aliases,
+            incomingUuids,
+        );
+        return [...trackedFile.aliases];
+    }
+
+    getFileEquivalentUuids(fileID: string): string[] {
+        const trackedFile = this.getFileByID(fileID);
+        if (!trackedFile) {
+            return [];
+        }
+        return [trackedFile.uuid, ...(trackedFile.aliases ?? [])];
+    }
+
+    mergeItemUuidEquivalence(itemId: number, incomingUuids: readonly string[]): string[] {
+        const item = this.getItembyID(itemId);
+        if (!item) {
+            return [];
+        }
+
+        item.aliases = mergeEquivalentUuids(item.uuid, item.aliases, incomingUuids);
+        return [...item.aliases];
+    }
+
+    getItemEquivalentUuids(itemId: number): string[] {
+        const item = this.getItembyID(itemId);
+        if (!item) {
+            return [];
+        }
+        return [item.uuid, ...(item.aliases ?? [])];
+    }
+
+    findMatchingItemByTrackedSnapshot(snapshot: TrackedCardSnapshot): RepetitionItem | null {
+        if (!snapshot.trackedItem) {
+            return null;
+        }
+
+        const trackedFile = this.getTrackedFile(snapshot.path);
+        const localTrackedItems = trackedFile?.trackedItems ?? [];
+        if (!trackedFile || localTrackedItems.length === 0) {
+            return null;
+        }
+
+        const remoteCandidate = cloneTrackedItem(snapshot.trackedItem);
+        if (!remoteCandidate) {
+            return null;
+        }
+
+        const matched = reconcileTrackedItemsWithCandidates(localTrackedItems, [remoteCandidate]);
+        const matchedReviewId = matched[0]?.reviewId ?? -1;
+        return matchedReviewId >= 0 ? this.getItembyID(matchedReviewId) : null;
+    }
+
+    isTrackedFingerprintUnique(path: string, fingerprint: string): boolean {
+        const trackedFile = this.getTrackedFile(path);
+        if (!trackedFile) {
+            return false;
+        }
+
+        return (
+            (trackedFile.trackedItems ?? []).filter((item) => item.fingerprint === fingerprint).length <= 1
+        );
+    }
+
     upsertCardSnapshot(snapshot: TrackedCardSnapshot): void {
         const { fileID, trackedFile } = this.ensureTrackedFileRecord({
             uuid: snapshot.trackedFileUuid,
             path: snapshot.path,
             tags: snapshot.trackedFileTags,
+            aliases: snapshot.trackedFileAliases,
+            updatePath: false,
         });
         const localItemId = this.upsertClonedItem(snapshot.item, fileID);
 
-        trackedFile.path = snapshot.path;
         trackedFile.tags = [...snapshot.trackedFileTags];
         trackedFile.items = trackedFile.items ?? { file: -1 };
         if (snapshot.item.itemType === RPITEMTYPE.NOTE) {
@@ -1052,9 +1265,14 @@ export class DataStore {
     }
 
     renameTrackedFileFromSnapshot(snapshot: TrackedCardsFileSnapshot): void {
-        const fileIDByUuid = this.findFileIdByUuid(snapshot.uuid);
+        const fileIDByUuid = this.findFileIdByUuidOrAlias(snapshot.uuid);
         if (fileIDByUuid) {
             const trackedFile = this.data.trackedFiles[fileIDByUuid];
+            trackedFile.aliases = mergeEquivalentUuids(
+                trackedFile.uuid,
+                trackedFile.aliases,
+                [snapshot.uuid, ...(snapshot.aliases ?? [])],
+            );
             trackedFile.path = snapshot.path;
             trackedFile.tags = [...snapshot.tags];
             return;
@@ -1064,7 +1282,7 @@ export class DataStore {
     }
 
     removeCardByUuid(uuid: string, fallbackPath?: string): boolean {
-        const item = this.findItemByUuid(uuid);
+        const item = this.findItemByUuidOrAlias(uuid);
         if (!item) {
             return false;
         }
@@ -1080,7 +1298,8 @@ export class DataStore {
     }
 
     removeTrackedFileByUuid(uuid: string, fallbackPath?: string): boolean {
-        const fileID = this.findFileIdByUuid(uuid) || (fallbackPath ? this.getFileID(fallbackPath) : "");
+        const fileID =
+            this.findFileIdByUuidOrAlias(uuid) || (fallbackPath ? this.getFileID(fallbackPath) : "");
         if (!fileID || !this.data.trackedFiles[fileID]) {
             return false;
         }
@@ -1132,6 +1351,7 @@ export class DataStore {
             uuid: snapshot.uuid,
             path: snapshot.path,
             tags: snapshot.tags,
+            aliases: snapshot.aliases,
         });
         const localIdsByRemoteId = new Map<number, number>();
         const nextItems: Record<string, number> = { file: -1 };
@@ -1156,12 +1376,20 @@ export class DataStore {
         uuid: string;
         path: string;
         tags: string[];
+        aliases?: string[];
+        updatePath?: boolean;
     }): { fileID: string; trackedFile: TrackedFile } {
-        const existingFileId = this.findFileIdByUuid(input.uuid) || this.getFileID(input.path);
+        const existingFileId = this.findFileIdByUuidOrAlias(input.uuid) || this.getFileID(input.path);
         if (existingFileId) {
             const trackedFile = this.data.trackedFiles[existingFileId];
-            trackedFile.uuid = input.uuid;
-            trackedFile.path = input.path;
+            trackedFile.aliases = mergeEquivalentUuids(
+                trackedFile.uuid,
+                trackedFile.aliases,
+                [input.uuid, ...(input.aliases ?? [])],
+            );
+            if (input.updatePath !== false) {
+                trackedFile.path = input.path;
+            }
             trackedFile.tags = [...input.tags];
             if (!Array.isArray(trackedFile.trackedItems)) {
                 trackedFile.trackedItems = [];
@@ -1176,6 +1404,7 @@ export class DataStore {
         const fileID = generateFileID();
         const trackedFile = TrackedFile.create({
             uuid: input.uuid,
+            aliases: input.aliases ?? [],
             path: input.path,
             items: { file: -1 },
             trackedItems: [],
@@ -1196,15 +1425,26 @@ export class DataStore {
             return -1;
         }
 
-        const existingItem = this.findItemByUuid(clonedItem.uuid);
+        const existingItem = this.findItemByUuidOrAlias(clonedItem.uuid);
         const targetId = existingItem?.ID ?? this.maxItemId + 1;
         clonedItem.ID = targetId;
         clonedItem.fileID = fileID;
 
         if (existingItem) {
+            clonedItem.aliases = mergeEquivalentUuids(
+                existingItem.uuid,
+                existingItem.aliases,
+                [clonedItem.uuid, ...(clonedItem.aliases ?? [])],
+            );
+            clonedItem.uuid = existingItem.uuid;
             Object.assign(existingItem, clonedItem);
             this.data.queues.remove(existingItem);
         } else {
+            clonedItem.aliases = mergeEquivalentUuids(
+                clonedItem.uuid,
+                clonedItem.aliases,
+                [],
+            );
             this.data.items.push(clonedItem);
         }
 
@@ -1750,7 +1990,7 @@ export class DataStore {
      * resetData.
      */
     resetData() {
-        this.data = Object.assign({}, DEFAULT_SRS_DATA);
+        this.data = createDefaultSrsData();
         this.markItemByIdIndexDirty();
         this.reviewItemOverlayById.clear();
         this.reviewItemOverlayVersion = 0;
@@ -1764,7 +2004,7 @@ export class DataStore {
      * @returns
      */
     async pruneData() {
-        this.data = MiscUtils.assignOnly(DEFAULT_SRS_DATA, this.data);
+        this.data = MiscUtils.assignOnly(createDefaultSrsData(), this.data);
 
         const newTrackedFiles: Record<string, TrackedFile> = {};
         const newFileOrder: string[] = [];

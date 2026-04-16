@@ -53,6 +53,14 @@ export function classifySyroSessionRecordImpact(
     }
 
     if (
+        (record.domain === "cards" || record.domain === "notes") &&
+        record.entityType === "uuid-alias-batch" &&
+        record.opType === "merge-aliases"
+    ) {
+        return "runtime-only";
+    }
+
+    if (
         record.domain === "notes" &&
         record.entityType === "note-review" &&
         record.opType === "review"

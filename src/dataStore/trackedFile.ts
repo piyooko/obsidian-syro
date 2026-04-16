@@ -11,6 +11,7 @@ import {
     getLegacyAnkiClozeId,
     isLineScopedAnkiClozeId,
 } from "src/util/ankiClozeGrouping";
+import { normalizeUuidAliases } from "./syroUuidAlias";
 
 // ============================================================================
 // ============================================================================
@@ -56,6 +57,7 @@ export type CardInfo = TrackedItem;
 
 export interface ITrackedFile {
     uuid?: string;
+    aliases?: string[];
     path: string;
     items: Record<string, number>;
     trackedItems?: TrackedItem[];
@@ -77,6 +79,7 @@ export interface CardItemSummary {
 // 记录一个笔记文件里所有复习项（笔记复习 + 闪卡复习）的容器类
 export class TrackedFile implements ITrackedFile {
     uuid: string;
+    aliases: string[];
     path: string;
     items: Record<string, number>; // 存笔记级的复习 ID，通常是 { file: 123 }
     trackedItems?: TrackedItem[]; // 存该文件下所有的闪卡项
@@ -107,6 +110,7 @@ export class TrackedFile implements ITrackedFile {
             typeof data.uuid === "string" && data.uuid.trim().length > 0
                 ? data.uuid
                 : generateTrackedFileUUID();
+        tf.aliases = normalizeUuidAliases(tf.uuid, data.aliases);
         const type = (data.tags?.[0] as RPITEMTYPE) || RPITEMTYPE.NOTE;
         const dname = data.tags?.[1];
         tf.setTracked(type, dname);
@@ -135,6 +139,7 @@ export class TrackedFile implements ITrackedFile {
 
     constructor(path: string = "", type: RPITEMTYPE = RPITEMTYPE.NOTE, dname?: string) {
         this.uuid = generateTrackedFileUUID();
+        this.aliases = [];
         this.path = path;
         this.items = {};
         if (type === RPITEMTYPE.CARD) {
@@ -306,6 +311,13 @@ export class TrackedFile implements ITrackedFile {
 
         return { hasChange, removedIds };
     }
+}
+
+export function reconcileTrackedItemsWithCandidates(
+    oldItems: TrackedItem[],
+    candidates: TrackedItem[],
+): TrackedItem[] {
+    return matchItems(oldItems, candidates);
 }
 
 // ============================================================================

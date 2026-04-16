@@ -62,6 +62,7 @@ import { setDebugParser } from "src/parser";
 // Legacy migration note retained from the pre-Syro codebase.
 import {
     DataStore,
+    parseTrackedCardsStoreSnapshots,
     type TrackedCardSnapshot,
     type TrackedCardsFileSnapshot,
 } from "./dataStore/data";
@@ -73,6 +74,7 @@ import { DataLocation } from "./dataStore/dataLocation";
 import {
     NoteReviewStore,
     NoteReviewSource,
+    parseNoteReviewStoreSnapshots,
     type NoteReviewEntrySnapshot,
 } from "./dataStore/noteReviewStore";
 import { replaySyroSessionRecords } from "./dataStore/syroSessionReplay";
@@ -136,6 +138,9 @@ import {
     createEmptySyroSessionReplaySummary,
     hasSyroSessionReplayChanges,
 } from "./dataStore/syroSessionImpact";
+import {
+    type SyroUuidAliasGroup,
+} from "./dataStore/syroUuidAlias";
 import Commands from "./commands";
 import { SrsAlgorithm } from "src/algorithms/algorithms";
 import { FsrsAlgorithm } from "src/algorithms/fsrs";
@@ -2734,6 +2739,7 @@ export default class SRPlugin extends Plugin {
 
         if (
             !this.syroSessionManager ||
+            !this.syroWorkspace ||
             !this.deckOptionsStore ||
             !this.sharedSettingsStore ||
             !this.trackingRulesStore ||
@@ -2744,6 +2750,73 @@ export default class SRPlugin extends Plugin {
         ) {
             return null;
         }
+
+        const inventory = await this.syroWorkspace.listDeviceInventory();
+        const validDevicesById = new Map(
+            inventory.validDevices.map((entry) => [entry.deviceId, entry] as const),
+        );
+        const remoteCardsCache = new Map<string, ReturnType<typeof parseTrackedCardsStoreSnapshots>>();
+        const remoteNotesCache = new Map<string, ReturnType<typeof parseNoteReviewStoreSnapshots>>();
+        const aliasGroupsByDomain: Record<"cards" | "notes", Map<string, SyroUuidAliasGroup>> = {
+            cards: new Map<string, SyroUuidAliasGroup>(),
+            notes: new Map<string, SyroUuidAliasGroup>(),
+        };
+        const buildAliasGroupKey = (group: SyroUuidAliasGroup): string => {
+            const normalized = Array.from(new Set(group.equivalentUuids))
+                .filter((uuid) => typeof uuid === "string" && uuid.trim().length > 0)
+                .sort((left, right) => left.localeCompare(right));
+            return `${group.entityType}:${normalized.join("|")}`;
+        };
+        const collectAliasGroups = (
+            domain: "cards" | "notes",
+            groups: SyroUuidAliasGroup[],
+        ): void => {
+            for (const group of groups) {
+                aliasGroupsByDomain[domain].set(buildAliasGroupKey(group), group);
+            }
+        };
+        const loadRemoteCardsSnapshots = async (deviceId: string) => {
+            if (remoteCardsCache.has(deviceId)) {
+                return remoteCardsCache.get(deviceId) ?? null;
+            }
+
+            const validDevice = validDevicesById.get(deviceId);
+            if (!validDevice) {
+                remoteCardsCache.set(deviceId, null);
+                return null;
+            }
+
+            try {
+                const raw = await this.app.vault.adapter.read(`${validDevice.deviceRoot}/cards.json`);
+                const parsed = parseTrackedCardsStoreSnapshots(raw);
+                remoteCardsCache.set(deviceId, parsed);
+                return parsed;
+            } catch {
+                remoteCardsCache.set(deviceId, null);
+                return null;
+            }
+        };
+        const loadRemoteNotesSnapshots = async (deviceId: string) => {
+            if (remoteNotesCache.has(deviceId)) {
+                return remoteNotesCache.get(deviceId) ?? null;
+            }
+
+            const validDevice = validDevicesById.get(deviceId);
+            if (!validDevice) {
+                remoteNotesCache.set(deviceId, null);
+                return null;
+            }
+
+            try {
+                const raw = await this.app.vault.adapter.read(`${validDevice.deviceRoot}/notes.json`);
+                const parsed = parseNoteReviewStoreSnapshots(raw);
+                remoteNotesCache.set(deviceId, parsed);
+                return parsed;
+            } catch {
+                remoteNotesCache.set(deviceId, null);
+                return null;
+            }
+        };
 
         const result = await this.syroSessionManager.importPendingSessions(
             async (_sessionId, records) => {
@@ -2762,10 +2835,22 @@ export default class SRPlugin extends Plugin {
                     trackingRulesTombstones: this.trackingRulesTombstones,
                     dailyStateAppliedOpIds: this.dailyStateAppliedOpIds,
                     currentDeviceReviewCount: this.currentDeviceReviewCount,
+                    loadRemoteCardsSnapshots,
+                    loadRemoteNotesSnapshots,
+                    collectAliasGroups,
+                    shouldLogDebug: () => this.data.settings.showRuntimeDebugMessages,
+                    logDebug: (...args: unknown[]) => this.logRuntimeDebug(...args),
                 });
             },
             options,
         );
+        for (const domain of ["cards", "notes"] as const) {
+            const groups = [...aliasGroupsByDomain[domain].values()];
+            if (groups.length === 0) {
+                continue;
+            }
+            await this.appendSyroUuidAliasBatch(domain, groups);
+        }
         this.persistedSharedSettingsState = extractSharedSettingsWithMetadata(
             this.data.settings,
             this.sharedSettingsUpdatedAtByField,
@@ -2876,6 +2961,7 @@ export default class SRPlugin extends Plugin {
                 payload: {
                     path: snapshot.path,
                     trackedFileUuid: snapshot.trackedFileUuid,
+                    trackedFileAliases: snapshot.trackedFileAliases,
                     trackedFileTags: snapshot.trackedFileTags,
                     trackedItem: snapshot.trackedItem,
                     item: snapshot.item,
@@ -2915,6 +3001,7 @@ export default class SRPlugin extends Plugin {
                 targetUuid,
                 payload: {
                     uuid: snapshot.uuid,
+                    aliases: snapshot.aliases,
                     path: snapshot.path,
                     tags: snapshot.tags,
                     items: snapshot.items,
@@ -2944,6 +3031,29 @@ export default class SRPlugin extends Plugin {
             }
         }
         return appended;
+    }
+
+    private async appendSyroUuidAliasBatch(
+        domain: "cards" | "notes",
+        groups: SyroUuidAliasGroup[],
+    ): Promise<boolean> {
+        if (this.syroReadOnlyReason || groups.length === 0) {
+            return false;
+        }
+
+        const updatedAt = new Date().toISOString();
+        return (
+            (await this.syroSessionManager?.appendRecord({
+                domain,
+                entityType: "uuid-alias-batch",
+                opType: "merge-aliases",
+                targetUuid: `uuid-alias-batch:${domain}:${updatedAt}`,
+                payload: {
+                    groups,
+                },
+                updatedAt,
+            })) ?? false
+        );
     }
 
     public async appendSyroNoteUpsert(

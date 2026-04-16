@@ -21,6 +21,7 @@ import {
     shouldApplySyncEntity,
     type PersistedSyncEntityState,
 } from "./syroSyncMeta";
+import { mergeEquivalentUuids } from "./syroUuidAlias";
 
 export type NoteReviewSource = "manual" | "tag" | "folder";
 
@@ -56,11 +57,46 @@ export interface RenamedNoteReviewEntrySnapshot {
     entry: NoteReviewEntrySnapshot;
 }
 
+export interface ParsedNoteReviewStoreSnapshots {
+    notes: NoteReviewEntrySnapshot[];
+}
+
 const NOTE_REVIEW_STORE_VERSION = 1;
 
 function cloneItem(item: RepetitionItem): RepetitionItem {
     const cloned = parseJsonUnknown(JSON.stringify(item)) as RepetitionItem;
     return RepetitionItem.create(cloned);
+}
+
+export function parseNoteReviewStoreSnapshots(raw: string): ParsedNoteReviewStoreSnapshots | null {
+    const parsed = parseJsonUnknown(raw) as NoteReviewStoreFile | null;
+    if (!parsed || parsed.version !== NOTE_REVIEW_STORE_VERSION || typeof parsed.items !== "object") {
+        return null;
+    }
+
+    const notes: NoteReviewEntrySnapshot[] = [];
+    for (const [path, entry] of Object.entries(parsed.items ?? {})) {
+        if (!entry?.item) {
+            continue;
+        }
+
+        const item = RepetitionItem.create(entry.item);
+        item.setTracked(path);
+        item.updateDeckName(entry.deckName ?? DEFAULT_DECKNAME, false);
+        notes.push({
+            path,
+            source:
+                entry.source === "tag"
+                    ? "tag"
+                    : entry.source === "folder"
+                      ? "folder"
+                      : "manual",
+            deckName: entry.deckName ?? item.deckName ?? DEFAULT_DECKNAME,
+            item,
+        });
+    }
+
+    return { notes };
 }
 
 export class NoteReviewStore {
@@ -188,6 +224,42 @@ export class NoteReviewStore {
         }
 
         return null;
+    }
+
+    findPathByUuidOrAlias(uuid: string): string | null {
+        if (!uuid) {
+            return null;
+        }
+
+        for (const [path, entry] of Object.entries(this.data)) {
+            if (entry.item.uuid === uuid || entry.item.aliases.includes(uuid)) {
+                return path;
+            }
+        }
+
+        return null;
+    }
+
+    mergeUuidEquivalenceForPath(path: string, incomingUuids: readonly string[]): string[] {
+        const entry = this.data[path];
+        if (!entry) {
+            return [];
+        }
+
+        entry.item.aliases = mergeEquivalentUuids(
+            entry.item.uuid,
+            entry.item.aliases,
+            incomingUuids,
+        );
+        return [...entry.item.aliases];
+    }
+
+    getEquivalentUuidsForPath(path: string): string[] {
+        const entry = this.data[path];
+        if (!entry) {
+            return [];
+        }
+        return [entry.item.uuid, ...(entry.item.aliases ?? [])];
     }
 
     getEntrySnapshot(path: string): NoteReviewEntrySnapshot | null {
@@ -345,12 +417,21 @@ export class NoteReviewStore {
     }
 
     upsertSnapshot(snapshot: NoteReviewEntrySnapshot): void {
-        const existingPath = this.findPathByUuid(snapshot.item.uuid);
+        const existingPath = this.findPathByUuidOrAlias(snapshot.item.uuid);
         if (existingPath && existingPath !== snapshot.path) {
             delete this.data[existingPath];
         }
 
         const item = cloneItem(snapshot.item);
+        const pathEntry = this.data[snapshot.path];
+        if (pathEntry) {
+            item.aliases = mergeEquivalentUuids(
+                pathEntry.item.uuid,
+                pathEntry.item.aliases,
+                [item.uuid, ...(item.aliases ?? [])],
+            );
+            item.uuid = pathEntry.item.uuid;
+        }
         item.setTracked(snapshot.path);
         item.updateDeckName(snapshot.deckName, false);
         this.data[snapshot.path] = {
@@ -362,7 +443,7 @@ export class NoteReviewStore {
     }
 
     removeByUuid(uuid: string, fallbackPath?: string): boolean {
-        const existingPath = this.findPathByUuid(uuid) ?? fallbackPath ?? "";
+        const existingPath = this.findPathByUuidOrAlias(uuid) ?? fallbackPath ?? "";
         if (!existingPath || !this.data[existingPath]) {
             return false;
         }
