@@ -4202,6 +4202,10 @@ export default class SRPlugin extends Plugin {
         progressTip?.show();
         let releaseSaveSuppression: (() => void) | null = null;
         try {
+            if (this.store) {
+                await this.store.ensureReviewOverlayMerged();
+            }
+
             // Clean transient dirty items before rebuilding the sync state.
             if (this.store) {
                 this.store.cleanDirtyNewItems();

@@ -444,6 +444,17 @@ export class DataStore {
         this.reviewItemOverlayVersion += 1;
     }
 
+    private hasPendingReviewOverlayInMemory(): boolean {
+        return (
+            this.reviewItemOverlayById.size > 0 ||
+            this.reviewItemOverlayVersion > this.persistedReviewOverlayVersion
+        );
+    }
+
+    private hasPendingReviewOverlayForItem(itemId: number): boolean {
+        return itemId >= 0 && this.reviewItemOverlayById.has(itemId);
+    }
+
     private clearReviewOverlayRetryTimer(): void {
         if (this.reviewOverlayRetryTimer !== null) {
             clearTimeout(this.reviewOverlayRetryTimer);
@@ -746,6 +757,9 @@ export class DataStore {
         let cleanedCount = 0;
         for (const item of this.data.items) {
             if (item == null) continue;
+            if (this.hasPendingReviewOverlayForItem(item.ID)) {
+                continue;
+            }
             if (item.timesReviewed === 0) {
                 let needsClean = false;
 
@@ -776,6 +790,31 @@ export class DataStore {
                 `[SR-DataClean] Cleaned ${cleanedCount} new items with dirty state/nextReview`,
             );
         }
+    }
+
+    async ensureReviewOverlayMerged(path = this.dataPath): Promise<boolean> {
+        const adapter = Iadapter.instance.adapter;
+        const overlayPath = this.getReviewOverlayPath(path);
+        const hasOverlayOnDisk = await adapter.exists(overlayPath);
+        const hasOverlayInMemory = this.hasPendingReviewOverlayInMemory();
+        if (!hasOverlayOnDisk && !hasOverlayInMemory) {
+            return false;
+        }
+
+        if (hasOverlayInMemory) {
+            await this.drainReviewOverlayFlush(1500, path);
+        }
+
+        const overlay = await this.loadReviewOverlayFromDisk(path);
+        if (overlay) {
+            const applied = this.applyReviewOverlayToData(overlay);
+            if (applied > 0) {
+                this.logInfo(`[SR-Overlay] Ensured ${applied} review deltas before rebuild.`);
+            }
+        }
+
+        await this.save(path);
+        return true;
     }
 
     /**

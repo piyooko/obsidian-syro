@@ -3,10 +3,18 @@ import { FlashcardReviewMode } from "src/scheduling";
 import { SR_TAB_VIEW } from "src/constants";
 import { DEFAULT_SETTINGS } from "src/settings";
 
+function createMomentStub(timestamp: number) {
+    return {
+        valueOf: () => timestamp,
+        format: (_pattern: string) => "2026-04-16",
+    };
+}
+
 describe("SRPlugin sync request orchestration", () => {
     test("requestSync queues a rebuild instead of dropping it while a sync is running", async () => {
         const plugin = {
             data: { settings: { showSchedulingDebugMessages: false } },
+            guardSyroDataReady: jest.fn(() => true),
             shouldSkipDisabledAutomaticIncrementalSync: jest.fn(() => false),
             shouldSkipAutomaticSync: jest.fn(() => false),
             syncLock: true,
@@ -40,6 +48,7 @@ describe("SRPlugin sync request orchestration", () => {
     test("requestSync seals the active syro session before manual sync runs", async () => {
         const plugin = {
             data: { settings: { showSchedulingDebugMessages: false } },
+            guardSyroDataReady: jest.fn(() => true),
             shouldSkipDisabledAutomaticIncrementalSync: jest.fn(() => false),
             shouldSkipAutomaticSync: jest.fn(() => false),
             syncLock: false,
@@ -79,6 +88,7 @@ describe("SRPlugin sync request orchestration", () => {
                     showRuntimeDebugMessages: false,
                 },
             },
+            guardSyroDataReady: jest.fn(() => true),
             shouldSkipDisabledAutomaticIncrementalSync: jest.fn(() => false),
             shouldSkipAutomaticSync: jest.fn(() => false),
             syncLock: false,
@@ -205,6 +215,7 @@ describe("SRPlugin sync request orchestration", () => {
                     trackedNoteToDecks: false,
                 },
             },
+            guardSyroDataReady: jest.fn(() => true),
             logRuntimeDebug: jest.fn(),
             requestSync: jest.fn(async () => ({ status: "executed" })),
             createSrTFile: jest.fn((inputFile) => ({
@@ -484,5 +495,73 @@ describe("SRPlugin sync request orchestration", () => {
         expect(plugin.requestPluginDataSave).toHaveBeenCalledWith({
             domains: ["daily-state"],
         });
+    });
+
+    test("sync merges review overlay before cleaning dirty new items", async () => {
+        (window as Window & { moment?: (value: number) => ReturnType<typeof createMomentStub> }).moment =
+            (value: number) => createMomentStub(value);
+        const callOrder: string[] = [];
+        const plugin: any = {
+            guardSyroDataReady: jest.fn(() => true),
+            syncLock: false,
+            syncEvents: { emit: jest.fn() },
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    enableNoteCachePersistence: false,
+                    showSchedulingDebugMessages: false,
+                },
+                buryDate: "2026-04-16",
+            },
+            getSyncSignature: jest.fn(() => "sig"),
+            shouldShowSyncProgressTip: jest.fn(() => false),
+            store: {
+                ensureReviewOverlayMerged: jest.fn(async () => {
+                    callOrder.push("merge");
+                    return true;
+                }),
+                cleanDirtyNewItems: jest.fn(() => {
+                    callOrder.push("clean");
+                }),
+                suspendSaves: jest.fn(() => () => undefined),
+                flushSaveIfNeeded: jest.fn(async () => undefined),
+                save: jest.fn(async () => undefined),
+            },
+            app: {
+                vault: {
+                    getMarkdownFiles: jest.fn(() => {
+                        callOrder.push("notes");
+                        return [];
+                    }),
+                },
+                metadataCache: {},
+            },
+            linkRank: { readLinks: jest.fn() },
+            questionPostponementList: { clear: jest.fn() },
+            noteCache: new Map(),
+            noteCacheSignature: "",
+            shouldPersistNoteCacheAfterSync: jest.fn(() => false),
+            collectLearningCardsFromStore: jest.fn(),
+            updateStatusBar: jest.fn(),
+            reviewFloatBar: {},
+            logRuntimeDebug: jest.fn(),
+            getCardCaptureSignature: jest.fn(() => "cap"),
+            consumePendingReviewSessionReloadAfterSync: jest.fn(async () => undefined),
+            replayQueuedSyncRequest: jest.fn(),
+            replayPendingRemoteDeltaSyncIfNeeded: jest.fn(),
+            pendingCardCapturePromptSignature: "",
+            lastSuccessfulCardCaptureSignature: "",
+            reviewDecks: {},
+            getReviewQueueView: jest.fn(() => null),
+        };
+
+        await (SRPlugin.prototype.sync as unknown as Function).call(
+            plugin,
+            FlashcardReviewMode.Review,
+            "incremental",
+            { trigger: "manual", force: false },
+        );
+
+        expect(callOrder.slice(0, 3)).toEqual(["merge", "clean", "notes"]);
     });
 });
