@@ -207,7 +207,18 @@ export class RepetitionItem {
                 data.scheduled_days = getFsrsScheduledDays(data);
             }
 
-            if (newItem.nextReview === 0 && data.due && data.due.getTime() > 0) {
+            const shouldRestoreNextReviewFromDue =
+                newItem.queue !== CardQueue.New ||
+                newItem.timesReviewed > 0 ||
+                (newItem.learningStep !== null && newItem.learningStep !== undefined) ||
+                data.state !== State.New;
+
+            if (
+                shouldRestoreNextReviewFromDue &&
+                newItem.nextReview === 0 &&
+                data.due &&
+                data.due.getTime() > 0
+            ) {
                 newItem.nextReview = data.due.getTime();
             }
         } else if (newItem.itemType === RPITEMTYPE.CARD) {

@@ -212,6 +212,7 @@ describe("multi-device review backend flow", () => {
         await harness.bootstrapDesktop();
         await harness.reviewCards("desktop", NOTE_ONE_PATH, 3);
         await harness.sync("desktop", "incremental");
+        jest.setSystemTime(new Date("2026-04-18T08:05:00.000Z"));
         await harness.bootstrapMobileFromDesktop();
 
         const diagnostics = harness.collectDiagnostics(["desktop", "mobile"], TARGET_DECK_PATHS);

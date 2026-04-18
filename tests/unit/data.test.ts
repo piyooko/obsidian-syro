@@ -119,6 +119,66 @@ describe("DataStore algorithm binding", () => {
         expect(item?.data).toHaveProperty("state");
     });
 
+    test("loading untouched new FSRS cards keeps the persisted due timestamp stable", async () => {
+        jest.useFakeTimers().setSystemTime(new Date("2026-04-18T09:14:50.076Z"));
+
+        try {
+            const { adapter, files } = createMockAdapter();
+            const store = createStore(adapter);
+            store.trackFile("card-path.md", RPITEMTYPE.CARD, false);
+
+            const trackedFile = store.getTrackedFile("card-path.md");
+            const trackedItem = new TrackedItem(
+                "card-hash-stable-due",
+                0,
+                "",
+                CardType.SingleLineBasic,
+                {
+                    startOffset: 0,
+                    endOffset: 0,
+                    blockStartOffset: 0,
+                    blockEndOffset: 0,
+                },
+                "c1",
+            );
+            trackedFile.trackedItems.push(trackedItem);
+            store.updateCardItems(trackedFile, trackedItem, "#flashcards", false);
+
+            const item = store.getItembyID(trackedItem.reviewId);
+            expect(item).not.toBeNull();
+            expect(item?.nextReview).toBe(0);
+            expect(item?.queue).toBe(CardQueue.New);
+            const originalDue = ((item?.data as { due?: Date })?.due ?? new Date(0)).toISOString();
+
+            await store.save();
+
+            jest.setSystemTime(new Date("2026-04-18T09:16:26.779Z"));
+
+            const reloadedStore = createStore(adapter);
+            await reloadedStore.load();
+            reloadedStore.cleanDirtyNewItems();
+            await reloadedStore.save();
+
+            const reloadedItem = reloadedStore.getItembyID(trackedItem.reviewId);
+            expect(reloadedItem).not.toBeNull();
+            expect(reloadedItem?.nextReview).toBe(0);
+            expect(reloadedItem?.queue).toBe(CardQueue.New);
+            expect(
+                ((reloadedItem?.data as { due?: Date })?.due ?? new Date(0)).toISOString(),
+            ).toBe(originalDue);
+
+            const saved = JSON.parse(
+                files.get(normalizePath(reloadedStore.dataPath)) ?? "{}",
+            ) as {
+                items?: Array<{ ID: number; data?: { due?: string } }>;
+            };
+            const savedItem = saved.items?.find((entry) => entry.ID === trackedItem.reviewId);
+            expect(savedItem?.data?.due).toBe(originalDue);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
     test("reviewId applies passed preset FSRS settings to card reviews", () => {
         const store = createStore();
         store.trackFile("card-path.md", RPITEMTYPE.CARD, false);
