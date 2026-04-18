@@ -65,6 +65,19 @@ function sessionEventOpIdsForDevice(diagnostics: HarnessStateDiagnostics, device
     return (diagnostics.sessionDigestsByDevice[deviceFolderName] ?? []).map((record) => record.opId);
 }
 
+function dailyStateTargetUuidsForDevice(
+    diagnostics: HarnessStateDiagnostics,
+    deviceFolderName: string,
+): string[] {
+    return (diagnostics.sessionDigestsByDevice[deviceFolderName] ?? [])
+        .filter(
+            (record) =>
+                record.domain === "daily-state" &&
+                record.targetUuid.startsWith("daily-op:"),
+        )
+        .map((record) => record.targetUuid);
+}
+
 describe("multi-device review backend flow", () => {
     const originalCrypto = globalThis.crypto;
 
@@ -206,6 +219,82 @@ describe("multi-device review backend flow", () => {
             comparableDailyState(diagnostics.dailyByClient.desktop),
         ).toEqual(comparableDailyState(diagnostics.dailyByClient.mobile));
         expect(diagnostics.deckCountsByClient.desktop).toEqual(diagnostics.deckCountsByClient.mobile);
+    });
+
+    test("mobile baseline then desktop appends same-day review records and mobile later pulls them into formal state", async () => {
+        const harness = createSyroMultiDeviceHarness();
+        await harness.seedFlashcardNote(NOTE_ONE_PATH, 20, "基线后追加");
+        await harness.seedFlashcardNote(NOTE_TWO_PATH, 20, "对照");
+
+        const desktop = await harness.bootstrapDesktop();
+        const mobile = await harness.bootstrapMobileFromDesktop();
+
+        jest.setSystemTime(new Date("2026-04-18T08:12:00.000Z"));
+        await harness.reviewCards("desktop", NOTE_ONE_PATH, 20);
+        await harness.stagePendingOverlay("desktop");
+        await harness.sync("desktop", "incremental");
+        await harness.sync("mobile", "incremental");
+
+        await harness.restartClient("desktop");
+        await harness.restartClient("mobile");
+        await harness.sync("desktop", "incremental");
+        await harness.sync("mobile", "incremental");
+
+        const diagnostics = harness.collectDiagnostics(["desktop", "mobile"], TARGET_DECK_PATHS);
+        expectDiagnosticsMatch(diagnostics, "desktop", "mobile");
+
+        const desktopFolderName = ((desktop.plugin as any).syroLayout.deviceRoot as string)
+            .split("/")
+            .pop() as string;
+        const mobileFolderName = ((mobile.plugin as any).syroLayout.deviceRoot as string)
+            .split("/")
+            .pop() as string;
+        const desktopSessionPath = `${desktopFolderName}/2026-04-18.session.jsonl`;
+        const desktopLatestOpId = sessionEventOpIdsForDevice(diagnostics, desktopFolderName).at(-1) ?? null;
+        expect(
+            diagnostics.cursorSnapshotsByDevice[mobileFolderName]?.cursors[desktopSessionPath]?.lastOpId ??
+                null,
+        ).toBe(desktopLatestOpId);
+    });
+
+    test("rapid same-day desktop review plus concurrent exit save still converges daily-state on mobile", async () => {
+        const harness = createSyroMultiDeviceHarness();
+        await harness.seedFlashcardNote(NOTE_ONE_PATH, 20, "日志一");
+        await harness.seedFlashcardNote(NOTE_TWO_PATH, 20, "日志二");
+
+        const desktop = await harness.bootstrapDesktop();
+        const mobile = await harness.bootstrapMobileFromDesktop();
+
+        jest.setSystemTime(new Date("2026-04-18T08:20:00.000Z"));
+        await harness.reviewCards("desktop", NOTE_TWO_PATH, 20);
+
+        const desktopClient = harness.getClient("desktop");
+        await Promise.all([
+            desktopClient.plugin.flushReviewPersistence(2500, { notify: false }),
+            (desktopClient.plugin as any).savePluginData({
+                domains: ["daily-state"],
+                source: "test-review-exit",
+            }),
+        ]);
+
+        await harness.sync("desktop", "incremental");
+        await harness.sync("mobile", "incremental");
+        await harness.restartClient("desktop");
+        await harness.restartClient("mobile");
+        await harness.sync("desktop", "incremental");
+        await harness.sync("mobile", "incremental");
+
+        const diagnostics = harness.collectDiagnostics(["desktop", "mobile"], TARGET_DECK_PATHS);
+        expectDiagnosticsMatch(diagnostics, "desktop", "mobile");
+
+        const desktopFolderName = ((desktop.plugin as any).syroLayout.deviceRoot as string)
+            .split("/")
+            .pop() as string;
+        const desktopDailyTargetUuids = dailyStateTargetUuidsForDevice(
+            diagnostics,
+            desktopFolderName,
+        );
+        expect(new Set(desktopDailyTargetUuids).size).toBe(desktopDailyTargetUuids.length);
     });
 
     test("restart recovers cardsReview pending entries when session already exists but cards.json has not been saved yet", async () => {

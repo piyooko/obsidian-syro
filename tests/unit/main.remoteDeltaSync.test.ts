@@ -186,6 +186,7 @@ describe("SRPlugin remote delta sync", () => {
                 },
             })),
             applyLightweightSessionDelta: jest.fn(async () => "applied"),
+            finalizeImportedSyroSessions: jest.fn(async (result) => result),
             updateRemoteDeltaFingerprint: jest.fn(async () => undefined),
         };
 
@@ -197,6 +198,12 @@ describe("SRPlugin remote delta sync", () => {
             reason: "remote-delta:interval",
         });
         expect(plugin.applyLightweightSessionDelta).toHaveBeenCalledTimes(1);
+        expect(plugin.finalizeImportedSyroSessions).toHaveBeenCalledWith(
+            expect.objectContaining({
+                importedSessionIds: ["2026-04-14T04-37-41__dfdd__0001"],
+            }),
+            "remote-delta:interval",
+        );
     });
 
     test("runRemoteDeltaSyncOnce escalates structural remote sessions to the heavy sync path", async () => {
@@ -272,6 +279,7 @@ describe("SRPlugin remote delta sync", () => {
                 },
             })),
             applyLightweightSessionDelta: jest.fn(async () => "applied"),
+            finalizeImportedSyroSessions: jest.fn(async (result) => result),
             updateRemoteDeltaFingerprint: jest.fn(async () => undefined),
         };
 
@@ -282,6 +290,12 @@ describe("SRPlugin remote delta sync", () => {
             reason: "remote-delta:interval",
         });
         expect(plugin.applyLightweightSessionDelta).toHaveBeenCalledTimes(1);
+        expect(plugin.finalizeImportedSyroSessions).toHaveBeenCalledWith(
+            expect.objectContaining({
+                importedSessionIds: ["2026-04-14T00-00-00__91ac__0001"],
+            }),
+            "remote-delta:interval",
+        );
         expect(plugin.requestSync).not.toHaveBeenCalled();
         expect(plugin.updateRemoteDeltaFingerprint).toHaveBeenCalledTimes(1);
     });

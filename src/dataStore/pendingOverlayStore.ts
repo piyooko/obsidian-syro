@@ -264,6 +264,7 @@ export class PendingOverlayStore {
     private path: string;
     private sections: PendingOverlaySections = createEmptySections();
     private loaded = false;
+    private disposed = false;
     private loadPromise: Promise<void> | null = null;
     private pendingWriteVersion = 0;
     private persistedWriteVersion = 0;
@@ -289,6 +290,7 @@ export class PendingOverlayStore {
         this.path = path;
         this.sections = createEmptySections();
         this.loaded = false;
+        this.disposed = false;
         this.loadPromise = null;
         this.pendingWriteVersion = 0;
         this.persistedWriteVersion = 0;
@@ -298,7 +300,18 @@ export class PendingOverlayStore {
         this.writeFailureNotified = false;
     }
 
+    dispose(): void {
+        this.disposed = true;
+        this.clearRetryTimer();
+        this.logDebug("[SR-PendingOverlay] pending-overlay-disposed", {
+            path: this.path,
+        });
+    }
+
     async refreshFromDisk(): Promise<void> {
+        if (this.disposed) {
+            return;
+        }
         if (this.pendingWriteVersion > this.persistedWriteVersion) {
             return;
         }
@@ -336,6 +349,9 @@ export class PendingOverlayStore {
     }
 
     async ensureLoaded(): Promise<void> {
+        if (this.disposed) {
+            return;
+        }
         if (this.loaded) {
             return;
         }
@@ -459,6 +475,9 @@ export class PendingOverlayStore {
     }
 
     private async writeSnapshotToDisk(): Promise<void> {
+        if (this.disposed) {
+            return;
+        }
         await this.ensureLoaded();
         await this.adapter.write(this.path, JSON.stringify(this.normalizeFileSnapshot()));
     }
@@ -481,6 +500,9 @@ export class PendingOverlayStore {
     }
 
     requestFlush(attempt = 0): void {
+        if (this.disposed) {
+            return;
+        }
         if (this.flushPromise !== null) {
             return;
         }
@@ -489,6 +511,10 @@ export class PendingOverlayStore {
         this.flushPromise = (async () => {
             const outcome = await this.flushOnce();
             this.flushPromise = null;
+
+            if (this.disposed) {
+                return outcome;
+            }
 
             if (outcome === "success") {
                 return outcome;
@@ -523,6 +549,9 @@ export class PendingOverlayStore {
     }
 
     async drainFlush(timeoutMs = 1500): Promise<boolean> {
+        if (this.disposed) {
+            return false;
+        }
         this.clearRetryTimer();
         this.requestFlush(0);
 
@@ -542,7 +571,7 @@ export class PendingOverlayStore {
             new Promise<boolean>((resolve) => setTimeout(() => resolve(false), timeoutMs)),
         ]);
 
-        if (!result && this.retryTimer === null) {
+        if (!this.disposed && !result && this.retryTimer === null) {
             this.requestFlush(0);
         }
 

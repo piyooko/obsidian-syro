@@ -764,13 +764,15 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     // Return from card review to the deck list.
     const handleExitReview = useCallback(() => {
         void plugin.flushReviewPersistence(1200);
+        logRuntimeDebug("[SR-DailyState] review-exit-save-skipped", {
+            reason: "flushReviewPersistence-already-covers-plugin-data",
+        });
         clearReviewMobileChromeCover();
         plugin.setSRViewInFocus(false);
         setDirection(-1);
         setView("deck-list");
-        void plugin.savePluginData();
         forceUpdate(); // Refresh deck counts after leaving review.
-    }, [clearReviewMobileChromeCover, plugin, forceUpdate]);
+    }, [clearReviewMobileChromeCover, forceUpdate, logRuntimeDebug, plugin]);
 
     // Submit a review response for the current card.
     const handleAnswer = useCallback(

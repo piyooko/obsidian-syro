@@ -78,12 +78,25 @@ export interface HarnessSessionRecordDigest {
     updatedAt: string;
 }
 
+export interface HarnessCursorSnapshotDigest {
+    updatedAt: string;
+    cursors: Record<
+        string,
+        {
+            offset: number;
+            lastOpId: string | null;
+            updatedAt: string;
+        }
+    >;
+}
+
 export interface HarnessStateDiagnostics {
     cardsByClient: Record<string, HarnessCardsStateEntry[]>;
     dailyByClient: Record<string, HarnessDailyStateSnapshot | null>;
     pendingOverlayByClient: Record<string, PendingOverlayFile | null>;
     deckCountsByClient: Record<string, Record<string, HarnessDeckCounts | null>>;
     sessionDigestsByDevice: Record<string, HarnessSessionRecordDigest[]>;
+    cursorSnapshotsByDevice: Record<string, HarnessCursorSnapshotDigest | null>;
     deviceFolders: HarnessDeviceFolderEntry[];
 }
 
@@ -648,6 +661,56 @@ function collectSessionDigests(shared: SharedFileSystem): Record<string, Harness
     return result;
 }
 
+function collectLatestCursorSnapshots(
+    shared: SharedFileSystem,
+): Record<string, HarnessCursorSnapshotDigest | null> {
+    const result: Record<string, HarnessCursorSnapshotDigest | null> = {};
+    for (const [path, raw] of shared.files.entries()) {
+        if (!path.startsWith(".obsidian/plugins/syro/sessions/") || !path.endsWith(".session.jsonl")) {
+            continue;
+        }
+        const sessionPath = path.replace(".obsidian/plugins/syro/sessions/", "");
+        const deviceFolderName = sessionPath.split("/")[0] ?? "";
+        const snapshots = raw
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0)
+            .map((line) => {
+                try {
+                    return JSON.parse(line) as Record<string, any>;
+                } catch {
+                    return null;
+                }
+            })
+            .filter((line): line is Record<string, any> => !!line)
+            .filter((line) => line.lineType === "cursor-snapshot")
+            .map((line) => ({
+                updatedAt: String(line.updatedAt),
+                cursors: Object.fromEntries(
+                    Object.entries(line.cursors ?? {}).map(([cursorSessionPath, value]) => [
+                        cursorSessionPath,
+                        {
+                            offset: Number((value as Record<string, any>).offset ?? 0),
+                            lastOpId:
+                                typeof (value as Record<string, any>).lastOpId === "string"
+                                    ? String((value as Record<string, any>).lastOpId)
+                                    : null,
+                            updatedAt: String((value as Record<string, any>).updatedAt ?? ""),
+                        },
+                    ]),
+                ),
+            }));
+        for (const snapshot of snapshots) {
+            const current = result[deviceFolderName];
+            if (!current || current.updatedAt.localeCompare(snapshot.updatedAt) < 0) {
+                result[deviceFolderName] = snapshot;
+            }
+        }
+        result[deviceFolderName] ??= null;
+    }
+    return result;
+}
+
 async function initializePluginRuntime(plugin: SRPlugin): Promise<void> {
     plugin.cardAlgorithm = new FsrsAlgorithm();
     plugin.cardAlgorithm.updateSettings(plugin.data.settings.fsrsSettings);
@@ -887,6 +950,7 @@ export function createSyroMultiDeviceHarness(): MultiDeviceHarness {
             clientKeys.map((clientKey) => [clientKey, readDeckCounts(clientKey, deckPaths)]),
         ),
         sessionDigestsByDevice: readSessionDigests(),
+        cursorSnapshotsByDevice: collectLatestCursorSnapshots(shared),
         deviceFolders: readDeviceFolders(),
     });
 

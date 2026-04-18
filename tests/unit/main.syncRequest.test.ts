@@ -2,6 +2,7 @@ import SRPlugin from "src/main";
 import { FlashcardReviewMode } from "src/scheduling";
 import { SR_TAB_VIEW } from "src/constants";
 import { DEFAULT_SETTINGS } from "src/settings";
+import { createEmptySyroSessionReplaySummary } from "src/dataStore/syroSessionImpact";
 import { SyroDeleteValidDeviceModal } from "src/ui/modals/SyroDeleteValidDeviceModal";
 
 function createMomentStub(timestamp: number) {
@@ -1042,6 +1043,156 @@ describe("SRPlugin sync request orchestration", () => {
         );
     });
 
+    test("savePluginData serializes overlapping daily-state saves and avoids duplicate targetUuid appends", async () => {
+        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
+        let currentPendingSection: {
+            version: number;
+            commitId: string;
+            buryDate: string;
+            buryList: string[];
+            dailyDeckStats: {
+                date: string;
+                counts: Record<string, { new: number; review: number }>;
+            };
+            deviceReviewCount: number;
+            committedTargetUuids: string[];
+        } | null = {
+            version: 3,
+            commitId: "daily-state:test-serialized",
+            buryDate: "2026-04-14",
+            buryList: [],
+            dailyDeckStats: {
+                date: "2026-04-14",
+                counts: {
+                    Deck: { new: 0, review: 1 },
+                },
+            },
+            deviceReviewCount: 4,
+            committedTargetUuids: [],
+        };
+        let releaseAppend: (() => void) | null = null;
+        const appendGate = new Promise<void>((resolve) => {
+            releaseAppend = resolve;
+        });
+        let markAppendStarted: (() => void) | null = null;
+        const appendStarted = new Promise<void>((resolve) => {
+            markAppendStarted = resolve;
+        });
+        const pendingOverlayStore = {
+            getDailyStateSection: jest.fn(async () =>
+                currentPendingSection
+                    ? JSON.parse(JSON.stringify(currentPendingSection))
+                    : null,
+            ),
+            stageDailyStateSection: jest.fn((section) => {
+                currentPendingSection = JSON.parse(JSON.stringify(section));
+            }),
+            clearDailyStateSection: jest.fn(() => {
+                currentPendingSection = null;
+            }),
+            requestFlush: jest.fn(),
+            drainFlush: jest.fn(async () => true),
+        };
+        const appendRecord = jest.fn(async () => {
+            markAppendStarted?.();
+            await appendGate;
+            return true;
+        });
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            deckOptionsStore: {
+                getSyncEntities: jest.fn(() => ({})),
+                markSyncEntity: jest.fn(),
+                hasSerializedStateChanged: jest.fn(async () => false),
+                saveSerialized: jest.fn(async () => undefined),
+            },
+            syroSessionManager: {
+                appendRecord,
+                appendDeckOptionsChange: jest.fn(async () => true),
+            },
+            sharedSettingsStore: {
+                save: jest.fn(async () => undefined),
+            },
+            trackingRulesStore: {
+                save: jest.fn(async () => undefined),
+            },
+            dailyStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            deviceStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            licenseStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            saveDataShell,
+            dataShell: null as Record<string, unknown> | null,
+            persistedDailyState: {
+                version: 1,
+                buryDate: "2026-04-14",
+                buryList: [],
+                dailyDeckStats: {
+                    date: "2026-04-14",
+                    counts: {
+                        Deck: { new: 0, review: 0 },
+                    },
+                },
+                deviceReviewCount: 3,
+                appliedOpIds: {},
+            },
+            sharedSettingsUpdatedAtByField: {},
+            trackingRulesUpdatedAtByFolderPath: {},
+            trackingRulesTombstones: {},
+            dailyStateAppliedOpIds: {},
+            currentDeviceReviewCount: 4,
+            pendingDailyStateCommittedTargetUuids: new Set(),
+            pendingOverlayStore,
+            logRuntimeDebug: jest.fn(),
+            saveData: jest.fn(async () => undefined),
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                },
+                buryDate: "2026-04-14",
+                buryList: [] as string[],
+                historyDeck: null as string | null,
+                dailyDeckStats: {
+                    date: "2026-04-14",
+                    counts: {
+                        Deck: { new: 0, review: 1 },
+                    },
+                },
+                folderTrackingRules: {},
+            },
+        });
+
+        const firstSave = (SRPlugin.prototype.savePluginData as unknown as Function).call(plugin, {
+            domains: ["daily-state"],
+            source: "test-first",
+        });
+        await appendStarted;
+        expect(appendRecord).toHaveBeenCalledTimes(1);
+
+        const secondSave = (SRPlugin.prototype.savePluginData as unknown as Function).call(plugin, {
+            domains: ["daily-state"],
+            source: "test-second",
+        });
+        await Promise.resolve();
+        expect(appendRecord).toHaveBeenCalledTimes(1);
+
+        releaseAppend?.();
+        await Promise.all([firstSave, secondSave]);
+
+        expect(appendRecord).toHaveBeenCalledTimes(1);
+        expect(plugin.dailyStateStore.save).toHaveBeenCalledTimes(2);
+        expect(plugin.logRuntimeDebug).toHaveBeenCalledWith(
+            "[SR-DailyState] daily-state-save-serialized",
+            expect.objectContaining({
+                source: "test-second",
+                domains: ["daily-state"],
+            }),
+        );
+    });
+
     test("requestPluginDataSave stages daily-state into pending overlay immediately", () => {
         const plugin = Object.assign(Object.create(SRPlugin.prototype), {
             pendingPluginDataSaveTimer: null,
@@ -1328,6 +1479,71 @@ describe("SRPlugin sync request orchestration", () => {
         );
     });
 
+    test("finalizeImportedSyroSessions skips cursor commit when post-import formal state is still missing", async () => {
+        const stagedResult = {
+            importedSessionIds: ["Desktop--70ad/2026-04-18"],
+            deletedSessionIds: [] as string[],
+            archivedSessionIds: [] as string[],
+            replayImpact: createEmptySyroSessionReplaySummary(),
+        };
+        const receiptMap = new WeakMap<object, Map<string, any>>([
+            [
+                stagedResult,
+                new Map([
+                    [
+                        "Desktop--70ad/2026-04-18",
+                        {
+                            cards: [
+                                {
+                                    targetUuid: "card-item:i_mo1mbzk6_0d95ys",
+                                    updatedAt: "2026-04-18T08:12:00.000Z",
+                                },
+                            ],
+                            dailyStateTargetUuids: ["daily-op:test:0:deck-stats-delta"],
+                        },
+                    ],
+                ]),
+            ],
+        ]);
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            syroSessionManager: {
+                getStagedImportedSessionCursors: jest.fn(() => [
+                    {
+                        sessionId: "Desktop--70ad/2026-04-18",
+                        sessionPath: "Desktop--70ad/2026-04-18.session.jsonl",
+                        sourceDeviceFolderName: "Desktop--70ad",
+                        nextCursor: {
+                            offset: 123,
+                            lastOpId: "remote-op-35",
+                            updatedAt: "2026-04-18T08:12:00.000Z",
+                        },
+                    },
+                ]),
+                finalizeImportedSessions: jest.fn(async () => ({
+                    deletedSessionIds: [],
+                    archivedSessionIds: [],
+                })),
+            },
+            store: {
+                getSyncEntities: jest.fn(() => ({})),
+            },
+            dailyStateAppliedOpIds: {},
+            pendingSyroSessionImportReceipts: receiptMap,
+            shouldLogRuntimeDebug: jest.fn(() => false),
+            logRuntimeDebug: jest.fn(),
+        });
+
+        const finalized = await (
+            SRPlugin.prototype as unknown as {
+                finalizeImportedSyroSessions: Function;
+            }
+        ).finalizeImportedSyroSessions.call(plugin, stagedResult, "manual");
+
+        expect(finalized).toBe(stagedResult);
+        expect(plugin.syroSessionManager.finalizeImportedSessions).not.toHaveBeenCalled();
+        expect(stagedResult.deletedSessionIds).toEqual([]);
+    });
+
     test("incrementDailyCounts only requests daily-state persistence", () => {
         const plugin = {
             data: {
@@ -1433,5 +1649,320 @@ describe("SRPlugin sync request orchestration", () => {
         );
 
         expect(callOrder.slice(0, 3)).toEqual(["merge", "clean", "notes"]);
+    });
+    test("onunload skips stale split-state writes when current device metadata is missing", async () => {
+        const pendingOverlayStore = {
+            dispose: jest.fn(),
+        };
+        const flushReviewPersistence = jest.fn(async () => true);
+        const flushActiveSession = jest.fn(async () => null);
+        const runTasks: Promise<unknown>[] = [];
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            syroRuntimeGeneration: 4,
+            syroRuntimeDisposed: false,
+            syroRuntimeTeardownPending: false,
+            syroLayout: {
+                deviceRoot: ".obsidian/plugins/syro/devices/Desktop--70ad",
+                deviceMetaPath: ".obsidian/plugins/syro/devices/Desktop--70ad/device.json",
+            },
+            pendingOverlayStore,
+            flushReviewPersistence,
+            syroSessionManager: {
+                flushActiveSession,
+            },
+            logRuntimeDebug: jest.fn(),
+            app: {
+                vault: {
+                    adapter: {
+                        exists: jest.fn(async () => false),
+                    },
+                },
+                workspace: {
+                    getLeavesOfType: jest.fn(() => []),
+                },
+            },
+            tabViewManager: {
+                closeAllTabViews: jest.fn(),
+            },
+            reviewFloatBar: {
+                close: jest.fn(),
+            },
+            inlineTitleReviewButtonManager: {
+                destroy: jest.fn(),
+            },
+            runAsync: jest.fn((task: Promise<unknown>) => {
+                runTasks.push(task);
+                void task.catch(() => undefined);
+            }),
+        });
+
+        (SRPlugin.prototype.onunload as unknown as Function).call(plugin);
+        await Promise.all(runTasks);
+
+        expect(flushReviewPersistence).not.toHaveBeenCalled();
+        expect(flushActiveSession).not.toHaveBeenCalled();
+        expect(pendingOverlayStore.dispose).toHaveBeenCalledTimes(1);
+        expect(plugin.logRuntimeDebug).toHaveBeenCalledWith(
+            "[SR-StartupGate] stale-runtime-save-skipped",
+            expect.objectContaining({
+                deviceRoot: ".obsidian/plugins/syro/devices/Desktop--70ad",
+                deviceMetaPath: ".obsidian/plugins/syro/devices/Desktop--70ad/device.json",
+                deviceMetaExists: false,
+                runtimeGeneration: 4,
+                teardownPending: true,
+            }),
+        );
+        expect(plugin.syroRuntimeDisposed).toBe(true);
+    });
+
+    test("onunload keeps normal persistence when current device metadata still exists", async () => {
+        const pendingOverlayStore = {
+            dispose: jest.fn(),
+        };
+        const flushReviewPersistence = jest.fn(async () => true);
+        const flushActiveSession = jest.fn(async () => null);
+        const runTasks: Promise<unknown>[] = [];
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            syroRuntimeGeneration: 7,
+            syroRuntimeDisposed: false,
+            syroRuntimeTeardownPending: false,
+            syroLayout: {
+                deviceRoot: ".obsidian/plugins/syro/devices/Desktop--3606",
+                deviceMetaPath: ".obsidian/plugins/syro/devices/Desktop--3606/device.json",
+            },
+            pendingOverlayStore,
+            flushReviewPersistence,
+            syroSessionManager: {
+                flushActiveSession,
+            },
+            logRuntimeDebug: jest.fn(),
+            app: {
+                vault: {
+                    adapter: {
+                        exists: jest.fn(async () => true),
+                    },
+                },
+                workspace: {
+                    getLeavesOfType: jest.fn(() => []),
+                },
+            },
+            tabViewManager: {
+                closeAllTabViews: jest.fn(),
+            },
+            reviewFloatBar: {
+                close: jest.fn(),
+            },
+            inlineTitleReviewButtonManager: {
+                destroy: jest.fn(),
+            },
+            runAsync: jest.fn((task: Promise<unknown>) => {
+                runTasks.push(task);
+                void task.catch(() => undefined);
+            }),
+        });
+
+        (SRPlugin.prototype.onunload as unknown as Function).call(plugin);
+        await Promise.all(runTasks);
+
+        expect(flushReviewPersistence).toHaveBeenCalledWith(1000, { notify: false });
+        expect(flushActiveSession).toHaveBeenCalledWith("unload");
+        expect(pendingOverlayStore.dispose).toHaveBeenCalledTimes(1);
+        expect(plugin.syroRuntimeDisposed).toBe(true);
+    });
+
+    test("resetSyroDataBackedRuntimeState clears pending plugin-data state and disposes pending overlay", () => {
+        const pendingPluginDataSaveTimer = setTimeout(() => undefined, 1000);
+        const pendingCardsStoreSaveTimer = setTimeout(() => undefined, 1000);
+        const pendingOverlayStore = {
+            dispose: jest.fn(),
+        };
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            syroRuntimeGeneration: 2,
+            syroRuntimeDisposed: false,
+            syroRuntimeTeardownPending: false,
+            dataBackedRuntimeInitialized: true,
+            hasPerformedInitialGC: true,
+            store: {},
+            noteReviewStore: {},
+            reviewCommitStore: {},
+            reviewPersistenceCoordinator: {},
+            reviewStateCommitCoordinator: {},
+            syroSessionManager: {},
+            pendingPluginDataSaveTimer,
+            pendingPluginDataSaveRequested: true,
+            pendingPluginDataSaveDomains: new Set(["daily-state", "device-state"]),
+            pendingPluginDataSavePromise: Promise.resolve(true),
+            pluginDataSaveFailureNotified: true,
+            pendingCardsStoreSaveRequested: true,
+            pendingCardsStoreSavePromise: Promise.resolve(true),
+            cardsStoreSaveFailureNotified: true,
+            pendingCardsStoreSaveTimer,
+            pendingDailyStateCommitId: "daily-state:commit",
+            pendingDailyStateCommittedTargetUuids: new Set(["daily-op:test"]),
+            syroLayout: {
+                deviceRoot: ".obsidian/plugins/syro/devices/Desktop--70ad",
+                deviceMetaPath: ".obsidian/plugins/syro/devices/Desktop--70ad/device.json",
+            },
+            syroWorkspace: {},
+            pendingOverlayStore,
+            deckOptionsStore: {},
+            sharedSettingsStore: {},
+            trackingRulesStore: {},
+            dailyStateStore: {},
+            deviceStateStore: {},
+            licenseStateStore: {},
+            persistedSharedSettingsState: {},
+            persistedTrackingRulesState: {},
+            persistedDailyState: {},
+            persistedDeviceState: {},
+            persistedLicenseState: {},
+            sharedSettingsUpdatedAtByField: { a: "1" },
+            trackingRulesUpdatedAtByFolderPath: { a: "1" },
+            trackingRulesTombstones: { a: "1" },
+            dailyStateAppliedOpIds: { a: "1" },
+            currentDeviceReviewCount: 5,
+            pendingDailyStateOverlayFormalization: true,
+            resetBufferedStateRevisionTracking: jest.fn(),
+            remoteDeltaFingerprint: "fingerprint",
+            pendingSyncRequest: { mode: "full" },
+            lastSyncReviewMode: FlashcardReviewMode.Review,
+            reviewDecks: { deck: {} },
+            lastSelectedReviewDeck: "deck",
+            deckTree: { name: "root" },
+            remainingDeckTree: { name: "root" },
+            noteCache: {
+                clear: jest.fn(),
+            },
+            noteCacheSignature: "note-cache",
+            cardStats: { value: 1 },
+            noteStats: { value: 1 },
+            dueNotesCount: 3,
+            dueDatesNotes: { a: ["b"] },
+        });
+
+        (
+            SRPlugin.prototype as unknown as { resetSyroDataBackedRuntimeState: Function }
+        ).resetSyroDataBackedRuntimeState.call(plugin);
+
+        expect(pendingOverlayStore.dispose).toHaveBeenCalledTimes(1);
+        expect(plugin.pendingPluginDataSaveRequested).toBe(false);
+        expect(plugin.pendingPluginDataSaveDomains.size).toBe(0);
+        expect(plugin.pendingPluginDataSavePromise).toBeNull();
+        expect(plugin.pluginDataSaveFailureNotified).toBe(false);
+        expect(plugin.pendingCardsStoreSaveRequested).toBe(false);
+        expect(plugin.pendingCardsStoreSavePromise).toBeNull();
+        expect(plugin.cardsStoreSaveFailureNotified).toBe(false);
+        expect(plugin.pendingPluginDataSaveTimer).toBeNull();
+        expect(plugin.pendingCardsStoreSaveTimer).toBeNull();
+        expect(plugin.syroLayout).toBeNull();
+        expect(plugin.pendingOverlayStore).toBeNull();
+        expect(plugin.pendingDailyStateCommittedTargetUuids.size).toBe(0);
+        expect(plugin.syroRuntimeDisposed).toBe(true);
+        expect(plugin.syroRuntimeTeardownPending).toBe(true);
+        expect(plugin.syroRuntimeGeneration).toBe(3);
+    });
+
+    test("stale in-flight plugin-data save does not reschedule after runtime reset", async () => {
+        let rejectSave: ((reason?: unknown) => void) | null = null;
+        const savePromise = new Promise<never>((_resolve, reject) => {
+            rejectSave = reject;
+        });
+        const pendingOverlayStore = {
+            dispose: jest.fn(),
+        };
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            syroRuntimeGeneration: 9,
+            syroRuntimeDisposed: false,
+            syroRuntimeTeardownPending: false,
+            syroLayout: {
+                deviceRoot: ".obsidian/plugins/syro/devices/Desktop--70ad",
+                deviceMetaPath: ".obsidian/plugins/syro/devices/Desktop--70ad/device.json",
+            },
+            app: {
+                vault: {
+                    adapter: {
+                        exists: jest.fn(async () => true),
+                    },
+                },
+            },
+            pendingPluginDataSaveTimer: null,
+            pendingPluginDataSaveRequested: true,
+            pendingPluginDataSaveDomains: new Set(["daily-state"]),
+            pendingPluginDataSavePromise: null,
+            pluginDataSaveFailureNotified: false,
+            pendingCardsStoreSaveRequested: false,
+            pendingCardsStoreSavePromise: null,
+            cardsStoreSaveFailureNotified: false,
+            pendingCardsStoreSaveTimer: null,
+            pendingDailyStateCommitId: null,
+            pendingDailyStateCommittedTargetUuids: new Set(),
+            pendingOverlayStore,
+            noteCache: {
+                clear: jest.fn(),
+            },
+            resetBufferedStateRevisionTracking: jest.fn(),
+            reviewDecks: {},
+            deckTree: { name: "root" },
+            remainingDeckTree: { name: "root" },
+            cardStats: {},
+            noteStats: {},
+            dueDatesNotes: {},
+            dataBackedRuntimeInitialized: true,
+            hasPerformedInitialGC: true,
+            store: {},
+            noteReviewStore: {},
+            reviewCommitStore: {},
+            reviewPersistenceCoordinator: {},
+            reviewStateCommitCoordinator: {},
+            syroSessionManager: {},
+            syroWorkspace: {},
+            deckOptionsStore: {},
+            sharedSettingsStore: {},
+            trackingRulesStore: {},
+            dailyStateStore: {},
+            deviceStateStore: {},
+            licenseStateStore: {},
+            persistedSharedSettingsState: null,
+            persistedTrackingRulesState: null,
+            persistedDailyState: null,
+            persistedDeviceState: null,
+            persistedLicenseState: null,
+            sharedSettingsUpdatedAtByField: {},
+            trackingRulesUpdatedAtByFolderPath: {},
+            trackingRulesTombstones: {},
+            dailyStateAppliedOpIds: {},
+            currentDeviceReviewCount: 0,
+            pendingDailyStateOverlayFormalization: false,
+            remoteDeltaFingerprint: "",
+            pendingSyncRequest: null,
+            lastSyncReviewMode: null,
+            lastSelectedReviewDeck: "",
+            noteCacheSignature: "",
+            dueNotesCount: 0,
+            savePluginData: jest.fn(() => savePromise),
+            schedulePendingPluginDataSave: jest.fn(),
+            logRuntimeDebug: jest.fn(),
+        });
+
+        const flushTask = (SRPlugin.prototype.flushPendingPluginDataSave as unknown as Function).call(
+            plugin,
+            1500,
+        );
+        (
+            SRPlugin.prototype as unknown as { resetSyroDataBackedRuntimeState: Function }
+        ).resetSyroDataBackedRuntimeState.call(plugin);
+        rejectSave?.(new Error("write aborted"));
+
+        await expect(flushTask).resolves.toBe(false);
+        expect(plugin.schedulePendingPluginDataSave).not.toHaveBeenCalled();
+        expect(plugin.pendingPluginDataSavePromise).toBeNull();
+        expect(plugin.logRuntimeDebug).toHaveBeenCalledWith(
+            "[SR-StartupGate] stale-runtime-plugin-data-flush-aborted",
+            expect.objectContaining({
+                runtimeGeneration: 9,
+                currentRuntimeGeneration: 10,
+                disposed: true,
+            }),
+        );
     });
 });

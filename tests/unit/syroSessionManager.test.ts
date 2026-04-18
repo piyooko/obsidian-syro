@@ -267,7 +267,7 @@ describe("SyroSessionManager", () => {
         expect(sessionRaw).toContain('"domain":"deck-options"');
     });
 
-    test("imports remote records from a still-growing session file and appends a local cursor snapshot", async () => {
+    test("stages remote records from a still-growing session file and appends a local cursor snapshot only after finalize", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);
         const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
@@ -283,10 +283,30 @@ describe("SyroSessionManager", () => {
             expect.objectContaining({ opId: "remote-op-1" }),
         ]);
         expect(result.importedSessionIds).toEqual(["Mobile--91ac/2026-04-13"]);
-        const localSessionRaw = files.get(normalizePath(layout.currentDeviceSessionFilePath)) ?? "";
+        let localSessionRaw = files.get(normalizePath(layout.currentDeviceSessionFilePath)) ?? "";
+        expect(localSessionRaw).not.toContain('"lineType":"cursor-snapshot"');
+
+        await manager.finalizeImportedSessions(result);
+
+        localSessionRaw = files.get(normalizePath(layout.currentDeviceSessionFilePath)) ?? "";
         expect(localSessionRaw).toContain('"lineType":"cursor-snapshot"');
         expect(localSessionRaw).toContain("Mobile--91ac/2026-04-13.session.jsonl");
         expect(files.get(normalizePath(remoteSessionPath))).toContain('"lineType":"event"');
+    });
+
+    test("does not append a cursor snapshot when staged remote imports are not finalized", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        await addSecondaryDevice(adapter, files);
+        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        files.set(normalizePath(remoteSessionPath), `${createSessionEventLine(createRemoteRecord())}\n`);
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+
+        await manager.importPendingSessions(async () => undefined);
+
+        const localSessionRaw = files.get(normalizePath(layout.currentDeviceSessionFilePath)) ?? "";
+        expect(localSessionRaw).not.toContain('"lineType":"cursor-snapshot"');
     });
 
     test("ignores trailing partial lines until they become complete", async () => {
@@ -306,7 +326,8 @@ describe("SyroSessionManager", () => {
         await manager.initialize();
         const replaySession = jest.fn(async () => undefined);
 
-        await manager.importPendingSessions(replaySession);
+        const firstImportResult = await manager.importPendingSessions(replaySession);
+        await manager.finalizeImportedSessions(firstImportResult);
         expect(replaySession).toHaveBeenCalledTimes(1);
         const firstReplayArgs = replaySession.mock.calls[0] as unknown as [
             string,
@@ -563,6 +584,7 @@ describe("SyroSessionManager", () => {
             async () => undefined,
         );
         const result = await manager.importPendingSessions(replaySession);
+        await manager.finalizeImportedSessions(result);
 
         expect(result.importedSessionIds).toEqual(["Tablet--7f3a/2026-04-13"]);
         expect(replaySession).toHaveBeenCalledTimes(1);
@@ -623,6 +645,7 @@ describe("SyroSessionManager", () => {
         const replaySession = jest.fn(async () => undefined);
 
         const result = await manager.importPendingSessions(replaySession);
+        await manager.finalizeImportedSessions(result);
 
         expect(result.deletedSessionIds).toEqual(["Mobile--91ac/2026-04-12"]);
         expect(files.has(normalizePath(remoteSessionPath))).toBe(false);

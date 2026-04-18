@@ -108,6 +108,13 @@ type SyroDeviceEntry = {
     metadata: SyroDeviceMetadata;
 };
 
+export interface SyroStagedSessionCursorAdvance {
+    sessionId: string;
+    sessionPath: string;
+    sourceDeviceFolderName: string;
+    nextCursor: SyroSessionCursorState;
+}
+
 export interface SyroSessionImportResult {
     importedSessionIds: string[];
     deletedSessionIds: string[];
@@ -424,6 +431,10 @@ export class SyroSessionManager {
     private readonly adapter: SessionAdapter;
     private syncReadOnlyReason: string | null = null;
     private readonly sessionCursors = new Map<string, SyroSessionCursorState>();
+    private readonly stagedImportedSessionCursors = new WeakMap<
+        SyroSessionImportResult,
+        SyroStagedSessionCursorAdvance[]
+    >();
     private hasCurrentDeviceCursorSnapshot = false;
 
     constructor(
@@ -441,6 +452,15 @@ export class SyroSessionManager {
 
     hasRestoredCurrentDeviceCursorSnapshot(): boolean {
         return this.hasCurrentDeviceCursorSnapshot;
+    }
+
+    getStagedImportedSessionCursors(
+        result: SyroSessionImportResult | null | undefined,
+    ): readonly SyroStagedSessionCursorAdvance[] {
+        if (!result) {
+            return [];
+        }
+        return this.stagedImportedSessionCursors.get(result) ?? [];
     }
 
     setReadOnly(reason: string | null): void {
@@ -690,40 +710,71 @@ export class SyroSessionManager {
         const deltas = await this.scanPendingSessionFiles();
         const importedSessionIds: string[] = [];
         let replayImpact = createEmptySyroSessionReplaySummary();
-        let cursorSnapshotChanged = false;
+        const stagedCursorAdvances: SyroStagedSessionCursorAdvance[] = [];
 
-        try {
-            for (const delta of deltas) {
-                if (!delta.cursorAdvanced) {
-                    continue;
-                }
-
-                if (delta.records.length > 0) {
-                    const sessionReplayImpact = await replaySession(delta.sessionId, delta.records);
-                    if (sessionReplayImpact) {
-                        replayImpact = mergeSyroSessionReplaySummary(
-                            replayImpact,
-                            sessionReplayImpact,
-                        );
-                    }
-                }
-
-                this.sessionCursors.set(delta.sessionPath, delta.nextCursor);
-                importedSessionIds.push(delta.sessionId);
-                cursorSnapshotChanged = true;
+        for (const delta of deltas) {
+            if (!delta.cursorAdvanced) {
+                continue;
             }
-        } finally {
-            if (cursorSnapshotChanged) {
-                await this.appendCurrentCursorSnapshot();
+
+            if (delta.records.length > 0) {
+                const sessionReplayImpact = await replaySession(delta.sessionId, delta.records);
+                if (sessionReplayImpact) {
+                    replayImpact = mergeSyroSessionReplaySummary(
+                        replayImpact,
+                        sessionReplayImpact,
+                    );
+                }
             }
+
+            stagedCursorAdvances.push({
+                sessionId: delta.sessionId,
+                sessionPath: delta.sessionPath,
+                sourceDeviceFolderName: delta.sourceDeviceFolderName,
+                nextCursor: { ...delta.nextCursor },
+            });
+            importedSessionIds.push(delta.sessionId);
         }
 
-        const cleanup = await this.cleanupSessions();
-        return {
+        const result: SyroSessionImportResult = {
             importedSessionIds,
-            deletedSessionIds: cleanup.deletedSessionIds,
+            deletedSessionIds: [],
             archivedSessionIds: [],
             replayImpact,
+        };
+        this.stagedImportedSessionCursors.set(result, stagedCursorAdvances);
+        return result;
+    }
+
+    async finalizeImportedSessions(
+        result: SyroSessionImportResult | null | undefined,
+    ): Promise<{
+        deletedSessionIds: string[];
+        archivedSessionIds: string[];
+    }> {
+        const stagedCursorAdvances = this.getStagedImportedSessionCursors(result);
+        if (stagedCursorAdvances.length === 0) {
+            return {
+                deletedSessionIds: [],
+                archivedSessionIds: [],
+            };
+        }
+
+        for (const stagedCursorAdvance of stagedCursorAdvances) {
+            this.sessionCursors.set(
+                stagedCursorAdvance.sessionPath,
+                stagedCursorAdvance.nextCursor,
+            );
+        }
+        await this.appendCurrentCursorSnapshot();
+        const cleanup = await this.cleanupSessions();
+        if (result) {
+            this.stagedImportedSessionCursors.delete(result);
+            result.deletedSessionIds.push(...cleanup.deletedSessionIds);
+        }
+        return {
+            deletedSessionIds: cleanup.deletedSessionIds,
+            archivedSessionIds: [],
         };
     }
 

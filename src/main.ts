@@ -139,10 +139,15 @@ import {
     type SyroDeviceSessionSummary,
     type SyroSessionImportResult,
     type SyroSessionSealReason,
+    type SyroStagedSessionCursorAdvance,
 } from "./dataStore/syroSessionManager";
 import {
     createEmptySyroSessionReplaySummary,
+    createEmptySyroSessionReplayReceipt,
     hasSyroSessionReplayChanges,
+    hasSyroSessionReplayReceiptEntries,
+    mergeSyroSessionReplayReceipt,
+    type SyroSessionReplayReceipt,
 } from "./dataStore/syroSessionImpact";
 import {
     type SyroUuidAliasGroup,
@@ -314,6 +319,8 @@ interface PluginDataPersistRequest {
 
 interface PluginDataPersistOptions {
     domains?: PluginDataPersistDomain[];
+    runtimeGeneration?: number;
+    source?: string;
 }
 
 const BUFFERED_IMPORT_PROTECTED_DOMAINS = [
@@ -331,6 +338,22 @@ interface BufferedImportBaselineSnapshot {
     sharedSettingsState: PersistedSharedSettingsState;
     trackingRulesState: PersistedTrackingRulesState;
     dailyState: PersistedDailyState;
+}
+
+interface PendingSyroStagedImportReceipt {
+    sessionId: string;
+    sessionPath: string;
+    sourceDeviceFolderName: string;
+    lastOpId: string | null;
+    receipt: SyroSessionReplayReceipt;
+}
+
+interface PendingSyroImportInvariantFailure {
+    sessionPath: string;
+    sourceDeviceFolderName: string;
+    lastOpId: string | null;
+    missingCardTargetUuids: string[];
+    missingDailyTargetUuids: string[];
 }
 
 const AUTO_SYNC_COOLDOWN_MS = 15_000;
@@ -449,8 +472,13 @@ export default class SRPlugin extends Plugin {
     private pendingPluginDataSaveDomains = new Set<PluginDataPersistDomain>();
     private pendingPluginDataSavePromise: Promise<boolean> | null = null;
     private pendingCardsStoreSavePromise: Promise<boolean> | null = null;
+    private pluginDataSaveExecutionTail: Promise<void> = Promise.resolve();
+    private pluginDataSaveInFlight = false;
     private pluginDataSaveFailureNotified = false;
     private cardsStoreSaveFailureNotified = false;
+    private syroRuntimeGeneration = 0;
+    private syroRuntimeDisposed = false;
+    private syroRuntimeTeardownPending = false;
     private bufferedStateDirtyRevisions: BufferedStateRevisionMap = createBufferedStateRevisionMap();
     private bufferedStatePersistedRevisions: BufferedStateRevisionMap =
         createBufferedStateRevisionMap();
@@ -477,6 +505,10 @@ export default class SRPlugin extends Plugin {
     private pendingDailyStateOverlayFormalization = false;
     private pendingDailyStateCommitId: string | null = null;
     private pendingDailyStateCommittedTargetUuids = new Set<string>();
+    private readonly pendingSyroSessionImportReceipts = new WeakMap<
+        SyroSessionImportResult,
+        Map<string, SyroSessionReplayReceipt>
+    >();
     private dataShell: LegacyPluginData | null = null;
     private syroSessionManager: SyroSessionManager | null = null;
     private pendingSyroRecoveryContext: SyroRecoveryModalContext | null = null;
@@ -516,6 +548,84 @@ export default class SRPlugin extends Plugin {
             clearTimeout(this.pendingCardsStoreSaveTimer);
             this.pendingCardsStoreSaveTimer = null;
         }
+    }
+
+    private markSyroRuntimeActive(): number {
+        this.syroRuntimeDisposed = false;
+        this.syroRuntimeTeardownPending = false;
+        return this.syroRuntimeGeneration;
+    }
+
+    private markSyroRuntimeTeardownPending(): number {
+        this.syroRuntimeTeardownPending = true;
+        return this.syroRuntimeGeneration;
+    }
+
+    private invalidateSyroRuntimeState(): number {
+        this.syroRuntimeGeneration += 1;
+        this.syroRuntimeDisposed = true;
+        this.syroRuntimeTeardownPending = true;
+        return this.syroRuntimeGeneration;
+    }
+
+    private buildStaleRuntimeDebugPayload(
+        runtimeGeneration: number,
+        extra: {
+            domains?: readonly PluginDataPersistDomain[] | null;
+            layout?: SyroPersistenceLayout | null;
+            deviceMetaExists?: boolean | null;
+        } = {},
+    ): Record<string, unknown> {
+        const layout = extra.layout ?? this.syroLayout;
+        return {
+            deviceRoot: layout?.deviceRoot,
+            deviceMetaPath: layout?.deviceMetaPath,
+            deviceMetaExists: extra.deviceMetaExists ?? null,
+            runtimeGeneration,
+            currentRuntimeGeneration: this.syroRuntimeGeneration,
+            disposed: this.syroRuntimeDisposed,
+            teardownPending: this.syroRuntimeTeardownPending,
+            domains: extra.domains ? [...extra.domains] : undefined,
+        };
+    }
+
+    private async canWriteCurrentSyroLayout(options: {
+        runtimeGeneration: number;
+        domains?: readonly PluginDataPersistDomain[] | null;
+        logEvent: string;
+    }): Promise<boolean> {
+        if (
+            options.runtimeGeneration !== this.syroRuntimeGeneration ||
+            this.syroRuntimeDisposed
+        ) {
+            this.logRuntimeDebug(
+                options.logEvent,
+                this.buildStaleRuntimeDebugPayload(options.runtimeGeneration, {
+                    domains: options.domains,
+                }),
+            );
+            return false;
+        }
+
+        const layout = this.syroLayout;
+        if (!layout) {
+            return true;
+        }
+
+        const deviceMetaExists = await this.app.vault.adapter.exists(layout.deviceMetaPath);
+        if (!deviceMetaExists) {
+            this.logRuntimeDebug(
+                options.logEvent,
+                this.buildStaleRuntimeDebugPayload(options.runtimeGeneration, {
+                    domains: options.domains,
+                    layout,
+                    deviceMetaExists,
+                }),
+            );
+            return false;
+        }
+
+        return true;
     }
 
     private buildDailyStateSnapshot(): PersistedDailyState {
@@ -697,6 +807,42 @@ export default class SRPlugin extends Plugin {
         return Array.from(new Set(domains));
     }
 
+    private async runSerializedPluginDataSave<T>(
+        options: PluginDataPersistOptions,
+        task: () => Promise<T>,
+    ): Promise<T> {
+        const domains = this.normalizeRequestedPluginDataDomains(options.domains);
+        const source = options.source ?? "direct-save";
+        const existingTail =
+            this.pluginDataSaveExecutionTail instanceof Promise
+                ? this.pluginDataSaveExecutionTail
+                : Promise.resolve();
+        const previousTail = existingTail.catch(() => undefined);
+        let releaseCurrent: (() => void) | null = null;
+        const currentTail = new Promise<void>((resolve) => {
+            releaseCurrent = resolve;
+        });
+        const queuedBehindExistingSave = this.pluginDataSaveInFlight === true;
+        this.pluginDataSaveExecutionTail = previousTail.then(() => currentTail);
+
+        if (queuedBehindExistingSave && domains.includes("daily-state")) {
+            this.logRuntimeDebug("[SR-DailyState] daily-state-save-serialized", {
+                source,
+                domains,
+                runtimeGeneration: options.runtimeGeneration ?? this.syroRuntimeGeneration,
+            });
+        }
+
+        try {
+            await previousTail;
+            this.pluginDataSaveInFlight = true;
+            return await task();
+        } finally {
+            this.pluginDataSaveInFlight = false;
+            releaseCurrent?.();
+        }
+    }
+
     private ensureBufferedStateRevisionTracking(): void {
         if (!this.bufferedStateDirtyRevisions) {
             this.bufferedStateDirtyRevisions = createBufferedStateRevisionMap();
@@ -870,6 +1016,9 @@ export default class SRPlugin extends Plugin {
     }
 
     private schedulePendingPluginDataSave(delayMs = 350): void {
+        if (this.syroRuntimeDisposed || this.syroRuntimeTeardownPending) {
+            return;
+        }
         this.clearPendingPluginDataSaveTimer();
         this.pendingPluginDataSaveTimer = setTimeout(() => {
             this.pendingPluginDataSaveTimer = null;
@@ -878,7 +1027,12 @@ export default class SRPlugin extends Plugin {
     }
 
     public requestCardsStoreSave(delayMs = 1200): void {
-        if (!this.store || this.syroReadOnlyReason) {
+        if (
+            !this.store ||
+            this.syroReadOnlyReason ||
+            this.syroRuntimeDisposed ||
+            this.syroRuntimeTeardownPending
+        ) {
             return;
         }
         this.pendingCardsStoreSaveRequested = true;
@@ -890,15 +1044,23 @@ export default class SRPlugin extends Plugin {
     }
 
     public async flushPendingCardsStoreSave(timeoutMs = 1500): Promise<boolean> {
+        const runtimeGeneration = this.syroRuntimeGeneration;
         this.clearPendingCardsStoreSaveTimer();
         if (!this.pendingCardsStoreSaveRequested && this.pendingCardsStoreSavePromise === null) {
             return true;
         }
 
         if (this.pendingCardsStoreSavePromise === null) {
-            this.pendingCardsStoreSavePromise = (async () => {
+            const currentPromise = (async () => {
                 this.pendingCardsStoreSaveRequested = false;
                 try {
+                    const canWrite = await this.canWriteCurrentSyroLayout({
+                        runtimeGeneration,
+                        logEvent: "[SR-StartupGate] stale-runtime-cards-flush-aborted",
+                    });
+                    if (!canWrite) {
+                        return false;
+                    }
                     const saved = (await this.store?.save()) ?? false;
                     if (!saved) {
                         throw new Error("cards-save-skipped");
@@ -906,6 +1068,16 @@ export default class SRPlugin extends Plugin {
                     this.cardsStoreSaveFailureNotified = false;
                     return true;
                 } catch (error) {
+                    if (
+                        runtimeGeneration !== this.syroRuntimeGeneration ||
+                        this.syroRuntimeDisposed
+                    ) {
+                        this.logRuntimeDebug(
+                            "[SR-StartupGate] stale-runtime-cards-flush-aborted",
+                            this.buildStaleRuntimeDebugPayload(runtimeGeneration),
+                        );
+                        return false;
+                    }
                     console.error("[SR] flush queued cards store failed", error);
                     this.pendingCardsStoreSaveRequested = true;
                     if (!this.cardsStoreSaveFailureNotified) {
@@ -915,8 +1087,13 @@ export default class SRPlugin extends Plugin {
                     this.requestCardsStoreSave(1000);
                     return false;
                 } finally {
-                    this.pendingCardsStoreSavePromise = null;
+                    if (this.pendingCardsStoreSavePromise === currentPromise) {
+                        this.pendingCardsStoreSavePromise = null;
+                    }
                     if (
+                        runtimeGeneration === this.syroRuntimeGeneration &&
+                        !this.syroRuntimeDisposed &&
+                        !this.syroRuntimeTeardownPending &&
                         this.pendingCardsStoreSaveRequested &&
                         this.pendingCardsStoreSaveTimer === null
                     ) {
@@ -924,6 +1101,7 @@ export default class SRPlugin extends Plugin {
                     }
                 }
             })();
+            this.pendingCardsStoreSavePromise = currentPromise;
         }
 
         const result = await Promise.race([
@@ -954,6 +1132,9 @@ export default class SRPlugin extends Plugin {
         request: number | PluginDataPersistRequest = 350,
         options: { markDirty?: boolean } = {},
     ): void {
+        if (this.syroRuntimeDisposed || this.syroRuntimeTeardownPending) {
+            return;
+        }
         const delayMs = typeof request === "number" ? request : (request.delayMs ?? 350);
         const domains = this.normalizeRequestedPluginDataDomains(
             typeof request === "number" ? undefined : request.domains,
@@ -972,6 +1153,7 @@ export default class SRPlugin extends Plugin {
     }
 
     public async flushPendingPluginDataSave(timeoutMs = 1500): Promise<boolean> {
+        const runtimeGeneration = this.syroRuntimeGeneration;
         this.clearPendingPluginDataSaveTimer();
         if (!this.pendingPluginDataSaveRequested && this.pendingPluginDataSavePromise === null) {
             return true;
@@ -979,13 +1161,37 @@ export default class SRPlugin extends Plugin {
 
         if (this.pendingPluginDataSavePromise === null) {
             const pendingDomains = this.consumePendingPluginDataSaveDomains();
-            this.pendingPluginDataSavePromise = (async () => {
+            const currentPromise = (async () => {
                 this.pendingPluginDataSaveRequested = false;
                 try {
-                    await this.savePluginData({ domains: pendingDomains });
+                    const canWrite = await this.canWriteCurrentSyroLayout({
+                        runtimeGeneration,
+                        domains: pendingDomains,
+                        logEvent: "[SR-StartupGate] stale-runtime-plugin-data-flush-aborted",
+                    });
+                    if (!canWrite) {
+                        return false;
+                    }
+                    await this.savePluginData({
+                        domains: pendingDomains,
+                        runtimeGeneration,
+                        source: "queued-flush",
+                    });
                     this.pluginDataSaveFailureNotified = false;
                     return true;
                 } catch (error) {
+                    if (
+                        runtimeGeneration !== this.syroRuntimeGeneration ||
+                        this.syroRuntimeDisposed
+                    ) {
+                        this.logRuntimeDebug(
+                            "[SR-StartupGate] stale-runtime-plugin-data-flush-aborted",
+                            this.buildStaleRuntimeDebugPayload(runtimeGeneration, {
+                                domains: pendingDomains,
+                            }),
+                        );
+                        return false;
+                    }
                     console.error("[SR] flush queued plugin data failed", error);
                     this.pendingPluginDataSaveRequested = true;
                     this.enqueuePendingPluginDataSaveDomains(pendingDomains);
@@ -996,15 +1202,28 @@ export default class SRPlugin extends Plugin {
                     this.schedulePendingPluginDataSave(1000);
                     return false;
                 } finally {
-                    this.pendingPluginDataSavePromise = null;
+                    if (this.pendingPluginDataSavePromise === currentPromise) {
+                        this.pendingPluginDataSavePromise = null;
+                    }
                     if (
+                        runtimeGeneration === this.syroRuntimeGeneration &&
+                        !this.syroRuntimeDisposed &&
+                        !this.syroRuntimeTeardownPending &&
                         this.pendingPluginDataSaveRequested &&
                         this.pendingPluginDataSaveTimer === null
                     ) {
+                        const followupDomains = [...this.pendingPluginDataSaveDomains];
+                        if (followupDomains.includes("daily-state")) {
+                            this.logRuntimeDebug("[SR-DailyState] daily-state-save-followup-queued", {
+                                domains: followupDomains,
+                                runtimeGeneration,
+                            });
+                        }
                         this.schedulePendingPluginDataSave(0);
                     }
                 }
             })();
+            this.pendingPluginDataSavePromise = currentPromise;
         }
 
         const result = await Promise.race([
@@ -1186,6 +1405,7 @@ export default class SRPlugin extends Plugin {
     }
 
     private resetSyroDataBackedRuntimeState(): void {
+        this.invalidateSyroRuntimeState();
         this.dataBackedRuntimeInitialized = false;
         this.hasPerformedInitialGC = false;
         this.store = null;
@@ -1194,6 +1414,11 @@ export default class SRPlugin extends Plugin {
         this.reviewPersistenceCoordinator = null;
         this.reviewStateCommitCoordinator = null;
         this.syroSessionManager = null;
+        this.clearPendingPluginDataSaveTimer();
+        this.pendingPluginDataSaveRequested = false;
+        this.pendingPluginDataSaveDomains.clear();
+        this.pendingPluginDataSavePromise = null;
+        this.pluginDataSaveFailureNotified = false;
         this.pendingCardsStoreSaveRequested = false;
         this.pendingCardsStoreSavePromise = null;
         this.cardsStoreSaveFailureNotified = false;
@@ -1202,6 +1427,7 @@ export default class SRPlugin extends Plugin {
         this.pendingDailyStateCommittedTargetUuids.clear();
         this.syroLayout = null;
         this.syroWorkspace = null;
+        this.pendingOverlayStore?.dispose();
         this.pendingOverlayStore = null;
         this.deckOptionsStore = null;
         this.sharedSettingsStore = null;
@@ -1687,13 +1913,29 @@ export default class SRPlugin extends Plugin {
     }
 
     onunload(): void {
-        this.runAsync(
-            Promise.all([
-                this.flushReviewPersistence(1000),
+        const runtimeGeneration = this.markSyroRuntimeTeardownPending();
+        const pendingOverlayStore = this.pendingOverlayStore;
+        this.clearPendingPluginDataSaveTimer();
+        this.clearPendingCardsStoreSaveTimer();
+        const unloadFlushTask = (async () => {
+            const canWrite = await this.canWriteCurrentSyroLayout({
+                runtimeGeneration,
+                domains: PLUGIN_DATA_PERSIST_DOMAINS,
+                logEvent: "[SR-StartupGate] stale-runtime-save-skipped",
+            });
+            if (!canWrite) {
+                return;
+            }
+
+            await Promise.all([
+                this.flushReviewPersistence(1000, { notify: false }),
                 this.syroSessionManager?.flushActiveSession("unload") ?? Promise.resolve(null),
-            ]),
-            "flush review persistence on unload",
-        );
+            ]);
+        })().finally(() => {
+            pendingOverlayStore?.dispose();
+            this.syroRuntimeDisposed = true;
+        });
+        this.runAsync(unloadFlushTask, "flush review persistence on unload");
         this.app.workspace.getLeavesOfType(REVIEW_QUEUE_VIEW_TYPE).forEach((leaf) => leaf.detach());
         this.tabViewManager.closeAllTabViews();
         this.reviewFloatBar.close();
@@ -2071,18 +2313,23 @@ export default class SRPlugin extends Plugin {
             await this.updateRemoteDeltaFingerprint();
             return;
         }
+        const finalizedImportResult =
+            (await this.finalizeImportedSyroSessions?.(
+                importResult,
+                `remote-delta:${reason}`,
+            )) ?? importResult;
 
         if (
-            importResult &&
+            finalizedImportResult &&
             this.shouldLogRuntimeDebug() &&
-            (importResult.importedSessionIds.length > 0 ||
-                importResult.deletedSessionIds.length > 0 ||
-                importResult.archivedSessionIds.length > 0)
+            (finalizedImportResult.importedSessionIds.length > 0 ||
+                finalizedImportResult.deletedSessionIds.length > 0 ||
+                finalizedImportResult.archivedSessionIds.length > 0)
         ) {
             console.debug("[SR-Syro] Applied remote delta import.", {
                 reason,
                 pendingScan,
-                importResult,
+                importResult: finalizedImportResult,
             });
         }
 
@@ -3450,6 +3697,138 @@ export default class SRPlugin extends Plugin {
         return true;
     }
 
+    private getPendingSyroSessionImportReceipts(
+        result: SyroSessionImportResult | null | undefined,
+    ): Map<string, SyroSessionReplayReceipt> | null {
+        if (!result) {
+            return null;
+        }
+        return this.pendingSyroSessionImportReceipts.get(result) ?? null;
+    }
+
+    private buildPendingSyroStagedImportReceipts(
+        result: SyroSessionImportResult | null | undefined,
+    ): PendingSyroStagedImportReceipt[] {
+        if (!result || !this.syroSessionManager) {
+            return [];
+        }
+
+        const stagedCursorAdvances =
+            this.syroSessionManager.getStagedImportedSessionCursors(result);
+        const receiptsBySessionId = this.getPendingSyroSessionImportReceipts(result);
+        return stagedCursorAdvances.map((stagedCursorAdvance: SyroStagedSessionCursorAdvance) => ({
+            sessionId: stagedCursorAdvance.sessionId,
+            sessionPath: stagedCursorAdvance.sessionPath,
+            sourceDeviceFolderName: stagedCursorAdvance.sourceDeviceFolderName,
+            lastOpId: stagedCursorAdvance.nextCursor.lastOpId,
+            receipt:
+                receiptsBySessionId?.get(stagedCursorAdvance.sessionId) ??
+                createEmptySyroSessionReplayReceipt(),
+        }));
+    }
+
+    private verifyPendingSyroImportFormalization(
+        result: SyroSessionImportResult | null | undefined,
+    ): PendingSyroImportInvariantFailure[] {
+        if (!result || !this.store) {
+            return [];
+        }
+
+        const syncEntities = this.store.getSyncEntities();
+        const failures: PendingSyroImportInvariantFailure[] = [];
+        for (const stagedReceipt of this.buildPendingSyroStagedImportReceipts(result)) {
+            const missingCardTargetUuids = stagedReceipt.receipt.cards
+                .filter((entry) => {
+                    const syncEntity = syncEntities[entry.targetUuid];
+                    return !syncEntity || compareIsoTime(syncEntity.updatedAt, entry.updatedAt) < 0;
+                })
+                .map((entry) => entry.targetUuid);
+            const missingDailyTargetUuids = stagedReceipt.receipt.dailyStateTargetUuids.filter(
+                (targetUuid) => !this.dailyStateAppliedOpIds[targetUuid],
+            );
+            if (missingCardTargetUuids.length === 0 && missingDailyTargetUuids.length === 0) {
+                continue;
+            }
+            failures.push({
+                sessionPath: stagedReceipt.sessionPath,
+                sourceDeviceFolderName: stagedReceipt.sourceDeviceFolderName,
+                lastOpId: stagedReceipt.lastOpId,
+                missingCardTargetUuids,
+                missingDailyTargetUuids,
+            });
+        }
+        return failures;
+    }
+
+    private async finalizeImportedSyroSessions(
+        result: SyroSessionImportResult | null,
+        reason: string,
+    ): Promise<SyroSessionImportResult | null> {
+        if (!result || !this.syroSessionManager) {
+            return result;
+        }
+
+        const stagedReceipts = this.buildPendingSyroStagedImportReceipts(result);
+        if (stagedReceipts.length === 0) {
+            this.pendingSyroSessionImportReceipts.delete(result);
+            return result;
+        }
+
+        if (this.shouldLogRuntimeDebug()) {
+            for (const stagedReceipt of stagedReceipts) {
+                this.logRuntimeDebug("[SR-Syro] remote-import-staged", {
+                    reason,
+                    sessionPath: stagedReceipt.sessionPath,
+                    sourceDeviceFolderName: stagedReceipt.sourceDeviceFolderName,
+                    lastOpId: stagedReceipt.lastOpId,
+                    cardTargets: stagedReceipt.receipt.cards.map((entry) => entry.targetUuid),
+                    dailyTargets: stagedReceipt.receipt.dailyStateTargetUuids,
+                });
+            }
+        }
+
+        const invariantFailures = this.verifyPendingSyroImportFormalization(result);
+        if (invariantFailures.length > 0) {
+            if (this.shouldLogRuntimeDebug()) {
+                for (const failure of invariantFailures) {
+                    this.logRuntimeDebug("[SR-Syro] remote-import-invariant-failed", {
+                        reason,
+                        sessionPath: failure.sessionPath,
+                        sourceDeviceFolderName: failure.sourceDeviceFolderName,
+                        lastOpId: failure.lastOpId,
+                        missingCardTargetUuids: failure.missingCardTargetUuids,
+                        missingDailyTargetUuids: failure.missingDailyTargetUuids,
+                    });
+                }
+                this.logRuntimeDebug("[SR-Syro] remote-import-finalize-skipped", {
+                    reason,
+                    failures: invariantFailures.map((failure) => ({
+                        sessionPath: failure.sessionPath,
+                        sourceDeviceFolderName: failure.sourceDeviceFolderName,
+                        lastOpId: failure.lastOpId,
+                    })),
+                });
+            }
+            return result;
+        }
+
+        await this.syroSessionManager.finalizeImportedSessions(result);
+        this.pendingSyroSessionImportReceipts.delete(result);
+
+        if (this.shouldLogRuntimeDebug()) {
+            for (const stagedReceipt of stagedReceipts) {
+                this.logRuntimeDebug("[SR-Syro] remote-import-finalized", {
+                    reason,
+                    sessionPath: stagedReceipt.sessionPath,
+                    sourceDeviceFolderName: stagedReceipt.sourceDeviceFolderName,
+                    lastOpId: stagedReceipt.lastOpId,
+                });
+            }
+        }
+
+        return result;
+    }
+
     private async importPendingSyroSessions(
         options: {
             sealOwnOpenSession?: boolean;
@@ -3501,6 +3880,7 @@ export default class SRPlugin extends Plugin {
         const validDevicesById = new Map(
             inventory.validDevices.map((entry) => [entry.deviceId, entry] as const),
         );
+        const replayReceiptsBySessionId = new Map<string, SyroSessionReplayReceipt>();
         const importStartSnapshot = this.captureBufferedImportBaselineSnapshot();
         let latestCleanSnapshot = importStartSnapshot;
         const remoteCardsCache = new Map<string, ReturnType<typeof parseTrackedCardsStoreSnapshots>>();
@@ -3567,7 +3947,7 @@ export default class SRPlugin extends Plugin {
         };
 
         const result = await this.syroSessionManager.importPendingSessions(
-            async (_sessionId, records) => {
+            async (sessionId, records) => {
                 const replaySummary = await replaySyroSessionRecords(records, {
                     settings: this.data.settings,
                     data: this.data,
@@ -3586,6 +3966,18 @@ export default class SRPlugin extends Plugin {
                     loadRemoteCardsSnapshots,
                     loadRemoteNotesSnapshots,
                     collectAliasGroups,
+                    collectReplayReceipt: (receipt) => {
+                        if (!hasSyroSessionReplayReceiptEntries(receipt)) {
+                            return;
+                        }
+                        const previousReceipt =
+                            replayReceiptsBySessionId.get(sessionId) ??
+                            createEmptySyroSessionReplayReceipt();
+                        replayReceiptsBySessionId.set(
+                            sessionId,
+                            mergeSyroSessionReplayReceipt(previousReceipt, receipt),
+                        );
+                    },
                     shouldLogDebug: () => this.shouldLogRuntimeDebug(),
                     logDebug: (...args: unknown[]) => this.logRuntimeDebug(...args),
                 });
@@ -3616,6 +4008,9 @@ export default class SRPlugin extends Plugin {
             },
             options,
         );
+        if (replayReceiptsBySessionId.size > 0) {
+            this.pendingSyroSessionImportReceipts.set(result, replayReceiptsBySessionId);
+        }
         for (const domain of ["cards", "notes"] as const) {
             const groups = [...aliasGroupsByDomain[domain].values()];
             if (groups.length === 0) {
@@ -4749,6 +5144,10 @@ export default class SRPlugin extends Plugin {
             trigger: request.trigger,
             force: request.force,
         });
+        await (this.finalizeImportedSyroSessions?.(
+            sessionImportResult ?? null,
+            request.trigger,
+        ) ?? Promise.resolve(sessionImportResult ?? null));
         await this.updateRemoteDeltaFingerprint();
         return { ...request, status: "executed" };
     }
@@ -5795,6 +6194,7 @@ export default class SRPlugin extends Plugin {
 
     async loadPluginData(): Promise<void> {
         this.resetSyroDataBackedRuntimeState();
+        this.markSyroRuntimeActive();
         const loadedDataRaw = (await this.loadData()) as unknown;
         const legacyData = parseLegacyPluginData(loadedDataRaw);
         this.dataShell = legacyData;
@@ -5918,9 +6318,26 @@ export default class SRPlugin extends Plugin {
     }
 
     async savePluginData(options: PluginDataPersistOptions = {}): Promise<void> {
+        return this.runSerializedPluginDataSave(options, async () =>
+            this.savePluginDataInternal(options),
+        );
+    }
+
+    private async savePluginDataInternal(
+        options: PluginDataPersistOptions = {},
+    ): Promise<void> {
+        const runtimeGeneration = options.runtimeGeneration ?? this.syroRuntimeGeneration;
         const requestedDomains = new Set(
             this.normalizeRequestedPluginDataDomains(options.domains),
         );
+        const canWrite = await this.canWriteCurrentSyroLayout({
+            runtimeGeneration,
+            domains: [...requestedDomains],
+            logEvent: "[SR-StartupGate] stale-runtime-save-skipped",
+        });
+        if (!canWrite) {
+            return;
+        }
         this.ensureBufferedPluginStateMarkedDirtyForSave(options.domains);
         const bufferedRevisionSnapshot = this.getBufferedStateDirtyRevisionSnapshot();
         const persistSharedSettings = requestedDomains.has("shared-settings");
@@ -6099,6 +6516,20 @@ export default class SRPlugin extends Plugin {
             }
             for (const [index, operation] of dailyStateOperations.entries()) {
                 const targetUuid = `daily-op:${dailyStateCommitKey}:${index}:${operation.opType}`;
+                const previouslyAppliedAt = this.dailyStateAppliedOpIds[targetUuid] ?? null;
+                if (previouslyAppliedAt !== null || committedTargetUuids.has(targetUuid)) {
+                    this.logRuntimeDebug(
+                        "[SR-DailyState] daily-state-duplicate-targetUuid-observed",
+                        {
+                            commitId: dailyStateCommitKey,
+                            targetUuid,
+                            updatedAt,
+                            previousUpdatedAt: previouslyAppliedAt,
+                            source: options.source ?? "direct-save",
+                            alreadyCommittedInPending: committedTargetUuids.has(targetUuid),
+                        },
+                    );
+                }
                 if (committedTargetUuids.has(targetUuid)) {
                     this.dailyStateAppliedOpIds[targetUuid] = updatedAt;
                     this.logRuntimeDebug(

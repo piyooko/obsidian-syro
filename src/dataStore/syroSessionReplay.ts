@@ -33,7 +33,9 @@ import { RepetitionItem } from "./repetitionItem";
 import { ReviewCommitStore, type ReviewCommitLog } from "./reviewCommitStore";
 import {
     classifySyroSessionRecordImpact,
+    createEmptySyroSessionReplayReceipt,
     createEmptySyroSessionReplaySummary,
+    type SyroSessionReplayReceipt,
     type SyroSessionReplaySummary,
 } from "./syroSessionImpact";
 import type { SyroSessionRecord } from "./syroSessionManager";
@@ -74,6 +76,7 @@ type ReplayDependencies = {
     loadRemoteCardsSnapshots?: (deviceId: string) => Promise<ParsedTrackedCardsStoreSnapshots | null>;
     loadRemoteNotesSnapshots?: (deviceId: string) => Promise<ParsedNoteReviewStoreSnapshots | null>;
     collectAliasGroups?: (domain: "cards" | "notes", groups: SyroUuidAliasGroup[]) => void;
+    collectReplayReceipt?: (receipt: SyroSessionReplayReceipt) => void;
     shouldLogDebug?: () => boolean;
     logDebug?: (...args: unknown[]) => void;
 };
@@ -481,6 +484,7 @@ export async function replaySyroSessionRecords(
     let timelineChanged = false;
     let cardsChanged = false;
     const replaySummary = createEmptySyroSessionReplaySummary();
+    const replayReceipt = createEmptySyroSessionReplayReceipt();
     const pendingAliasGroups: Record<SyroUuidAliasEntityType, Map<string, SyroUuidAliasGroup>> = {
         "tracked-file": new Map<string, SyroUuidAliasGroup>(),
         "card-item": new Map<string, SyroUuidAliasGroup>(),
@@ -1029,6 +1033,10 @@ export async function replaySyroSessionRecords(
             entityType: "card-item",
             pathHint: workingSnapshot.path,
         });
+        replayReceipt.cards.push({
+            targetUuid: cardTargetUuid,
+            updatedAt: record.updatedAt,
+        });
 
         cardsChanged = true;
         if (classifySyroSessionRecordImpact(record) === "runtime-only") {
@@ -1268,6 +1276,7 @@ export async function replaySyroSessionRecords(
 
                 deps.dailyStateAppliedOpIds[record.opId] = record.updatedAt;
                 deps.dailyStateAppliedOpIds[record.targetUuid] = record.updatedAt;
+                replayReceipt.dailyStateTargetUuids.push(record.targetUuid);
                 dailyStateChanged = true;
                 dailyStateMetadataChanged = true;
                 replaySummary.dailyStateChanged = true;
@@ -1625,5 +1634,6 @@ export async function replaySyroSessionRecords(
         });
     }
 
+    deps.collectReplayReceipt?.(replayReceipt);
     return replaySummary;
 }

@@ -14,6 +14,16 @@ export interface SyroSessionReplaySummary {
     requiresGlobalSync: boolean;
 }
 
+export interface SyroSessionAppliedCardReceipt {
+    targetUuid: string;
+    updatedAt: string;
+}
+
+export interface SyroSessionReplayReceipt {
+    cards: SyroSessionAppliedCardReceipt[];
+    dailyStateTargetUuids: string[];
+}
+
 export function createEmptySyroSessionReplaySummary(): SyroSessionReplaySummary {
     return {
         cardsRuntimeChanged: false,
@@ -21,6 +31,13 @@ export function createEmptySyroSessionReplaySummary(): SyroSessionReplaySummary 
         timelineChanged: false,
         dailyStateChanged: false,
         requiresGlobalSync: false,
+    };
+}
+
+export function createEmptySyroSessionReplayReceipt(): SyroSessionReplayReceipt {
+    return {
+        cards: [],
+        dailyStateTargetUuids: [],
     };
 }
 
@@ -34,6 +51,28 @@ export function mergeSyroSessionReplaySummary(
         timelineChanged: left.timelineChanged || right.timelineChanged,
         dailyStateChanged: left.dailyStateChanged || right.dailyStateChanged,
         requiresGlobalSync: left.requiresGlobalSync || right.requiresGlobalSync,
+    };
+}
+
+export function mergeSyroSessionReplayReceipt(
+    left: SyroSessionReplayReceipt,
+    right: SyroSessionReplayReceipt,
+): SyroSessionReplayReceipt {
+    const cardByTargetUuid = new Map<string, SyroSessionAppliedCardReceipt>();
+    for (const entry of [...left.cards, ...right.cards]) {
+        const existing = cardByTargetUuid.get(entry.targetUuid);
+        if (!existing || existing.updatedAt.localeCompare(entry.updatedAt) < 0) {
+            cardByTargetUuid.set(entry.targetUuid, entry);
+        }
+    }
+
+    return {
+        cards: [...cardByTargetUuid.values()].sort((leftEntry, rightEntry) =>
+            leftEntry.targetUuid.localeCompare(rightEntry.targetUuid),
+        ),
+        dailyStateTargetUuids: Array.from(
+            new Set([...left.dailyStateTargetUuids, ...right.dailyStateTargetUuids]),
+        ).sort((leftEntry, rightEntry) => leftEntry.localeCompare(rightEntry)),
     };
 }
 
@@ -83,4 +122,8 @@ export function hasSyroSessionReplayChanges(summary: SyroSessionReplaySummary): 
         summary.dailyStateChanged ||
         summary.requiresGlobalSync
     );
+}
+
+export function hasSyroSessionReplayReceiptEntries(receipt: SyroSessionReplayReceipt): boolean {
+    return receipt.cards.length > 0 || receipt.dailyStateTargetUuids.length > 0;
 }
