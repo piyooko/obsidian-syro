@@ -1,7 +1,4 @@
-import {
-    createDeckOptionsStoreSnapshot,
-    DeckOptionsStore,
-} from "src/dataStore/deckOptionsStore";
+import { DeckOptionsStore } from "src/dataStore/deckOptionsStore";
 import { Iadapter } from "src/dataStore/adapter";
 import { DataStore } from "src/dataStore/data";
 import { DEFAULT_FOLDER_TRACKING_RULE, type FolderTrackingRule } from "src/folderTracking";
@@ -19,7 +16,11 @@ import {
     SyroJsonStateStore,
 } from "src/dataStore/syroPluginDataStore";
 import { CardType } from "src/Question";
-import { DEFAULT_SETTINGS } from "src/settings";
+import {
+    DEFAULT_SETTINGS,
+    resolveDeckOptionsPreset,
+    type DeckOptionsPreset,
+} from "src/settings";
 import { TrackedItem } from "src/dataStore/trackedFile";
 
 function normalizePath(path: string): string {
@@ -154,6 +155,93 @@ function createReplayDependencies(
     };
 }
 
+function createDeckOptionsPresetRecord(
+    preset: DeckOptionsPreset,
+    overrides: Partial<{
+        opId: string;
+        deviceId: string;
+        deviceName: string;
+        createdAt: string;
+        updatedAt: string;
+    }> = {},
+) {
+    return {
+        version: 1 as const,
+        sessionId: "2026-04-13T12-00-00__91ac__0001",
+        opId: overrides.opId ?? `op-${preset.uuid}`,
+        deviceId: overrides.deviceId ?? "91ac",
+        deviceName: overrides.deviceName ?? "Mobile",
+        domain: "deck-options" as const,
+        entityType: "deck-options-preset" as const,
+        opType: "upsert" as const,
+        targetUuid: `deck-preset:${preset.uuid}`,
+        createdAt: overrides.createdAt ?? "2026-04-13T12:02:00.000Z",
+        updatedAt: overrides.updatedAt ?? "2026-04-13T12:02:00.000Z",
+        payload: preset,
+        pathHint: "syro/devices/Desktop--d84f/deck-options.json",
+    };
+}
+
+function createDeckOptionsPresetDeleteRecord(
+    presetUuid: string,
+    overrides: Partial<{
+        opId: string;
+        deviceId: string;
+        deviceName: string;
+        createdAt: string;
+        updatedAt: string;
+    }> = {},
+) {
+    return {
+        version: 1 as const,
+        sessionId: "2026-04-13T12-00-00__91ac__0001",
+        opId: overrides.opId ?? `op-delete-${presetUuid}`,
+        deviceId: overrides.deviceId ?? "91ac",
+        deviceName: overrides.deviceName ?? "Mobile",
+        domain: "deck-options" as const,
+        entityType: "deck-options-preset" as const,
+        opType: "delete" as const,
+        targetUuid: `deck-preset:${presetUuid}`,
+        createdAt: overrides.createdAt ?? "2026-04-13T12:02:30.000Z",
+        updatedAt: overrides.updatedAt ?? "2026-04-13T12:02:30.000Z",
+        payload: {
+            uuid: presetUuid,
+        },
+        pathHint: "syro/devices/Desktop--d84f/deck-options.json",
+    };
+}
+
+function createDeckOptionsAssignmentRecord(
+    deckPath: string,
+    presetUuid: string,
+    overrides: Partial<{
+        opId: string;
+        deviceId: string;
+        deviceName: string;
+        createdAt: string;
+        updatedAt: string;
+    }> = {},
+) {
+    return {
+        version: 1 as const,
+        sessionId: "2026-04-13T12-00-00__91ac__0001",
+        opId: overrides.opId ?? `op-assign-${deckPath}`,
+        deviceId: overrides.deviceId ?? "91ac",
+        deviceName: overrides.deviceName ?? "Mobile",
+        domain: "deck-options" as const,
+        entityType: "deck-options-assignment" as const,
+        opType: "assign" as const,
+        targetUuid: `deck-assignment:${deckPath}`,
+        createdAt: overrides.createdAt ?? "2026-04-13T12:03:00.000Z",
+        updatedAt: overrides.updatedAt ?? "2026-04-13T12:03:00.000Z",
+        payload: {
+            deckPath,
+            presetUuid,
+        },
+        pathHint: "syro/devices/Desktop--d84f/deck-options.json",
+    };
+}
+
 describe("replaySyroSessionRecords", () => {
     beforeEach(() => {
         jest.useFakeTimers().setSystemTime(new Date("2026-04-13T12:34:56.000Z"));
@@ -173,23 +261,16 @@ describe("replaySyroSessionRecords", () => {
             currentInterval: 1,
         });
         noteItem.uuid = "note-1";
-        const deckSettings = {
-            ...settings,
-            fsrsSettings: {
-                ...settings.fsrsSettings,
+        const readingPreset: DeckOptionsPreset = {
+            ...settings.deckOptionsPresets[0],
+            uuid: "deck-preset-reading",
+            createdAt: "2026-04-13T12:01:30.000Z",
+            name: "Reading",
+            fsrs: {
+                ...settings.deckOptionsPresets[0].fsrs,
                 enable_fuzz: false,
             },
-            deckOptionsPresets: settings.deckOptionsPresets.map(
-                (preset: (typeof settings.deckOptionsPresets)[number]) => ({
-                    ...preset,
-                    fsrs: {
-                        ...preset.fsrs,
-                        enable_fuzz: false,
-                    },
-                }),
-            ),
         };
-        const deckOptionsState = createDeckOptionsStoreSnapshot(deckSettings).state;
 
         const summary = await replaySyroSessionRecords(
             [
@@ -236,19 +317,14 @@ describe("replaySyroSessionRecords", () => {
                     pathHint: "notes/A.md",
                 },
                 {
-                    version: 1,
-                    sessionId: "2026-04-13T12-00-00__91ac__0001",
-                    opId: "op-deck",
-                    deviceId: "91ac",
-                    deviceName: "Mobile",
-                    domain: "deck-options",
-                    entityType: "deck-options",
-                    opType: "replace",
-                    targetUuid: "deck-options:global",
-                    createdAt: "2026-04-13T12:02:00.000Z",
-                    updatedAt: "2026-04-13T12:02:00.000Z",
-                    payload: deckOptionsState,
-                    pathHint: "syro/devices/Desktop--d84f/deck-options.json",
+                    ...createDeckOptionsPresetRecord(readingPreset, {
+                        opId: "op-deck-preset",
+                    }),
+                },
+                {
+                    ...createDeckOptionsAssignmentRecord("Reading", readingPreset.uuid, {
+                        opId: "op-deck-assignment",
+                    }),
                 },
             ],
             deps,
@@ -265,17 +341,197 @@ describe("replaySyroSessionRecords", () => {
         expect(deps.reviewCommitStore.getCommit("notes/A.md", "commit-1")).toEqual(
             expect.objectContaining({ id: "commit-1", message: "hello" }),
         );
-        expect(settings.fsrsSettings.enable_fuzz).toBe(false);
+        expect(resolveDeckOptionsPreset(settings, "Reading").uuid).toBe(readingPreset.uuid);
+        expect(resolveDeckOptionsPreset(settings, "Reading").fsrs?.enable_fuzz).toBe(false);
         expect(files.get("syro/devices/Desktop--d84f/notes.json")).toContain('"syncEntities"');
         expect(files.get("syro/devices/Desktop--d84f/timeline.json")).toContain(
             '"timeline-entry:commit-1"',
         );
         expect(files.get("syro/devices/Desktop--d84f/deck-options.json")).toContain(
-            '"enable_fuzz": false',
+            '"deck-preset-reading"',
         );
         expect(files.get("syro/devices/Desktop--d84f/deck-options.json")).toContain(
             '"syncEntities"',
         );
+    });
+
+    test("keeps both presets when two devices independently add deck-options presets", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+        const alphaPreset: DeckOptionsPreset = {
+            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+            uuid: "deck-preset-alpha",
+            createdAt: "2026-04-13T12:00:10.000Z",
+            name: "Alpha",
+        };
+        const betaPreset: DeckOptionsPreset = {
+            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+            uuid: "deck-preset-beta",
+            createdAt: "2026-04-13T12:00:20.000Z",
+            name: "Beta",
+        };
+
+        await replaySyroSessionRecords(
+            [
+                createDeckOptionsPresetRecord(alphaPreset, {
+                    opId: "op-alpha",
+                    deviceId: "desktop-a",
+                    deviceName: "Desktop A",
+                    updatedAt: "2026-04-13T12:10:00.000Z",
+                }),
+                createDeckOptionsAssignmentRecord("Deck/A", alphaPreset.uuid, {
+                    opId: "op-alpha-assign",
+                    deviceId: "desktop-a",
+                    deviceName: "Desktop A",
+                    updatedAt: "2026-04-13T12:10:00.000Z",
+                }),
+                createDeckOptionsPresetRecord(betaPreset, {
+                    opId: "op-beta",
+                    deviceId: "mobile-b",
+                    deviceName: "Mobile B",
+                    updatedAt: "2026-04-13T12:11:00.000Z",
+                }),
+                createDeckOptionsAssignmentRecord("Deck/B", betaPreset.uuid, {
+                    opId: "op-beta-assign",
+                    deviceId: "mobile-b",
+                    deviceName: "Mobile B",
+                    updatedAt: "2026-04-13T12:11:00.000Z",
+                }),
+            ],
+            deps,
+        );
+
+        expect(settings.deckOptionsPresets.map((preset: DeckOptionsPreset) => preset.uuid)).toEqual([
+            DEFAULT_SETTINGS.deckOptionsPresets[0].uuid,
+            alphaPreset.uuid,
+            betaPreset.uuid,
+        ]);
+        expect(settings.deckPresetAssignment).toEqual({
+            "Deck/A": alphaPreset.uuid,
+            "Deck/B": betaPreset.uuid,
+        });
+    });
+
+    test("uses the latest updatedAt when the same preset UUID is edited on two devices", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+        const presetUuid = "deck-preset-shared";
+
+        await replaySyroSessionRecords(
+            [
+                createDeckOptionsPresetRecord({
+                    ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                    uuid: presetUuid,
+                    createdAt: "2026-04-13T12:00:10.000Z",
+                    name: "Shared v1",
+                    maxNewCards: 5,
+                }),
+                createDeckOptionsPresetRecord(
+                    {
+                        ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                        uuid: presetUuid,
+                        createdAt: "2026-04-13T12:00:10.000Z",
+                        name: "Shared v2",
+                        maxNewCards: 9,
+                    },
+                    {
+                        opId: "op-shared-newer",
+                        updatedAt: "2026-04-13T12:05:00.000Z",
+                    },
+                ),
+            ],
+            deps,
+        );
+
+        const preset = settings.deckOptionsPresets.find(
+            (entry: DeckOptionsPreset) => entry.uuid === presetUuid,
+        );
+        expect(preset).toEqual(
+            expect.objectContaining({
+                name: "Shared v2",
+                maxNewCards: 9,
+            }),
+        );
+    });
+
+    test("keeps a preset deleted when a later delete conflicts with another device edit", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+        const presetUuid = "deck-preset-zombie";
+
+        await replaySyroSessionRecords(
+            [
+                createDeckOptionsPresetRecord({
+                    ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                    uuid: presetUuid,
+                    createdAt: "2026-04-13T12:00:10.000Z",
+                    name: "Zombie",
+                }),
+                createDeckOptionsPresetRecord(
+                    {
+                        ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                        uuid: presetUuid,
+                        createdAt: "2026-04-13T12:00:10.000Z",
+                        name: "Zombie edited",
+                    },
+                    {
+                        opId: "op-zombie-edit",
+                        updatedAt: "2026-04-13T12:05:00.000Z",
+                    },
+                ),
+                createDeckOptionsPresetDeleteRecord(presetUuid, {
+                    opId: "op-zombie-delete",
+                    updatedAt: "2026-04-13T12:06:00.000Z",
+                }),
+            ],
+            deps,
+        );
+
+        expect(
+            settings.deckOptionsPresets.some(
+                (preset: DeckOptionsPreset) => preset.uuid === presetUuid,
+            ),
+        ).toBe(false);
+    });
+
+    test("uses the latest updatedAt for conflicting deck preset assignments", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+        const alphaPreset: DeckOptionsPreset = {
+            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+            uuid: "deck-preset-alpha",
+            createdAt: "2026-04-13T12:00:10.000Z",
+            name: "Alpha",
+        };
+        const betaPreset: DeckOptionsPreset = {
+            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+            uuid: "deck-preset-beta",
+            createdAt: "2026-04-13T12:00:20.000Z",
+            name: "Beta",
+        };
+
+        await replaySyroSessionRecords(
+            [
+                createDeckOptionsPresetRecord(alphaPreset, { opId: "op-alpha-preset" }),
+                createDeckOptionsPresetRecord(betaPreset, { opId: "op-beta-preset" }),
+                createDeckOptionsAssignmentRecord("Deck/A", alphaPreset.uuid, {
+                    opId: "op-assign-alpha",
+                    updatedAt: "2026-04-13T12:04:00.000Z",
+                }),
+                createDeckOptionsAssignmentRecord("Deck/A", betaPreset.uuid, {
+                    opId: "op-assign-beta",
+                    updatedAt: "2026-04-13T12:05:00.000Z",
+                }),
+            ],
+            deps,
+        );
+
+        expect(settings.deckPresetAssignment["Deck/A"]).toBe(betaPreset.uuid);
+        expect(resolveDeckOptionsPreset(settings, "Deck/A").uuid).toBe(betaPreset.uuid);
     });
 
     test("replays split plugin domains into settings, tracking rules, and daily state stores", async () => {

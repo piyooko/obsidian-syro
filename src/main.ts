@@ -14,6 +14,7 @@ import {
 import graph from "pagerank.js";
 
 import {
+    DEFAULT_DECK_OPTIONS_PRESET,
     DEFAULT_SETTINGS,
     DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
     FsrsSettings,
@@ -67,8 +68,14 @@ import {
     type TrackedCardsFileSnapshot,
 } from "./dataStore/data";
 import {
+    buildDeckOptionsAssignmentTargetUuid,
+    buildDeckOptionsPresetTargetUuid,
     createDeckOptionsStoreSnapshot,
     DeckOptionsStore,
+    DECK_OPTIONS_ASSIGNMENT_ENTITY_TYPE,
+    DECK_OPTIONS_PRESET_ENTITY_TYPE,
+    diffDeckOptionsState,
+    type DeckOptionsStoreFile,
 } from "./dataStore/deckOptionsStore";
 import { DataLocation } from "./dataStore/dataLocation";
 import {
@@ -466,6 +473,7 @@ export default class SRPlugin extends Plugin {
     private pendingCardCapturePromptSignature = "";
     private pendingReviewSessionReloadAfterFullSync = false;
     private pendingSyncRequest: NormalizedSyncRequest | null = null;
+    private pendingSyncPersistDomains = new Set<PluginDataPersistDomain>();
     private lastSemanticChangeAt = 0;
     private noteReviewRefreshLock = false;
     private noteReviewRefreshPending = false;
@@ -523,6 +531,7 @@ export default class SRPlugin extends Plugin {
     private persistedSharedSettingsState: PersistedSharedSettingsState | null = null;
     private persistedTrackingRulesState: PersistedTrackingRulesState | null = null;
     private persistedDailyState: PersistedDailyState | null = null;
+    private persistedDeckOptionsState: DeckOptionsStoreFile | null = null;
     private persistedDeviceState: PersistedDeviceState | null = null;
     private persistedLicenseState: PersistedLicenseState | null = null;
     private sharedSettingsUpdatedAtByField: Record<string, string> = {};
@@ -1463,6 +1472,7 @@ export default class SRPlugin extends Plugin {
         this.dailyStateStore = null;
         this.deviceStateStore = null;
         this.licenseStateStore = null;
+        this.persistedDeckOptionsState = null;
         this.persistedSharedSettingsState = null;
         this.persistedTrackingRulesState = null;
         this.persistedDailyState = null;
@@ -1477,6 +1487,7 @@ export default class SRPlugin extends Plugin {
         this.resetBufferedStateRevisionTracking();
         this.remoteDeltaFingerprint = "";
         this.pendingSyncRequest = null;
+        this.pendingSyncPersistDomains.clear();
         this.lastSyncReviewMode = null;
         this.reviewDecks = {};
         this.lastSelectedReviewDeck = "";
@@ -2187,16 +2198,25 @@ export default class SRPlugin extends Plugin {
         return true;
     }
 
-    private queueSyncRequest(request: NormalizedSyncRequest): NormalizedSyncRequest {
+    private queueSyncRequest(
+        request: NormalizedSyncRequest,
+        persistBeforeSyncDomains: PluginDataPersistDomain[] = [],
+    ): NormalizedSyncRequest {
         const previousRequest = this.pendingSyncRequest;
         const nextRequest = mergeQueuedSyncRequest(previousRequest, request);
         this.pendingSyncRequest = nextRequest;
+        for (const domain of persistBeforeSyncDomains) {
+            this.pendingSyncPersistDomains.add(domain);
+        }
 
         this.logRuntimeDebug(
             "[SR-SyncQueue] queued sync request",
             previousRequest,
             "=>",
             nextRequest,
+            {
+                persistBeforeSyncDomains: [...this.pendingSyncPersistDomains],
+            },
         );
 
         return nextRequest;
@@ -2208,15 +2228,25 @@ export default class SRPlugin extends Plugin {
         return request;
     }
 
+    private takePendingSyncPersistDomains(): PluginDataPersistDomain[] {
+        const domains = [...this.pendingSyncPersistDomains];
+        this.pendingSyncPersistDomains.clear();
+        return domains;
+    }
+
     private replayQueuedSyncRequest(): void {
         const request = this.takePendingSyncRequest();
         if (!request) {
             return;
         }
+        const persistBeforeSyncDomains = this.takePendingSyncPersistDomains();
 
         this.logRuntimeDebug("[SR-SyncQueue] replaying queued sync request", request);
         this.runAsync(
-            this.requestSync({ ...request, force: true }),
+            this.executeSyncRequest(
+                normalizeSyncRequest({ ...request, force: true }),
+                persistBeforeSyncDomains,
+            ),
             `replay queued ${request.mode} sync`,
         );
     }
@@ -3151,6 +3181,7 @@ export default class SRPlugin extends Plugin {
                 this.deckOptionsStore.getSyncEntities(),
             );
             await this.deckOptionsStore.saveSerialized(snapshot.serialized);
+            this.persistedDeckOptionsState = this.deckOptionsStore.rememberPersistedState(snapshot.state);
         }
         if (sharedSettingsChanged && this.sharedSettingsStore) {
             await this.sharedSettingsStore.save(
@@ -3335,6 +3366,7 @@ export default class SRPlugin extends Plugin {
                 this.deckOptionsStore.getSyncEntities(),
             );
             await this.deckOptionsStore.saveSerialized(snapshot.serialized);
+            this.persistedDeckOptionsState = this.deckOptionsStore.rememberPersistedState(snapshot.state);
         }
         if (sharedSettingsChanged) {
             await this.sharedSettingsStore.save(
@@ -4620,6 +4652,9 @@ export default class SRPlugin extends Plugin {
                 domains: requeueDomains,
             });
         }
+        this.persistedDeckOptionsState = this.deckOptionsStore.rememberPersistedState(
+            this.data.settings,
+        );
         await this.pruneSyroInlineSyncMetadata();
         return result;
     }
@@ -5619,14 +5654,12 @@ export default class SRPlugin extends Plugin {
         this.syncEvents.emit("note-review-updated");
     }
 
-    async requestSync({
-        reviewMode = FlashcardReviewMode.Review,
-        mode = "incremental",
-        trigger = "manual",
-        force = false,
-    }: SyncRequestOptions = {}): Promise<SyncRequestResult> {
-        const request = normalizeSyncRequest({ reviewMode, mode, trigger, force });
-        const shouldNotifyNotReady = trigger === "manual" || trigger === "review-entry";
+    private async executeSyncRequest(
+        request: NormalizedSyncRequest,
+        persistBeforeSyncDomains: PluginDataPersistDomain[] = [],
+    ): Promise<SyncRequestResult> {
+        const shouldNotifyNotReady =
+            request.trigger === "manual" || request.trigger === "review-entry";
 
         if (!this.guardSyroDataReady("sync", { notify: shouldNotifyNotReady })) {
             return { ...request, status: "skipped", reason: "not-ready" };
@@ -5657,7 +5690,7 @@ export default class SRPlugin extends Plugin {
         }
 
         if (this.syncLock) {
-            const queuedRequest = this.queueSyncRequest(request);
+            const queuedRequest = this.queueSyncRequest(request, persistBeforeSyncDomains);
             return { ...queuedRequest, status: "queued", reason: "busy" };
         }
 
@@ -5701,6 +5734,13 @@ export default class SRPlugin extends Plugin {
             });
         }
 
+        if (persistBeforeSyncDomains.length > 0) {
+            await this.savePluginData({
+                domains: persistBeforeSyncDomains,
+                source: `pre-sync:${request.trigger}`,
+            });
+        }
+
         await this.sync(request.reviewMode, request.mode, {
             trigger: request.trigger,
             force: request.force,
@@ -5711,6 +5751,21 @@ export default class SRPlugin extends Plugin {
         ) ?? Promise.resolve(sessionImportResult ?? null));
         await this.updateRemoteDeltaFingerprint();
         return { ...request, status: "executed" };
+    }
+
+    async requestSync({
+        reviewMode = FlashcardReviewMode.Review,
+        mode = "incremental",
+        trigger = "manual",
+        force = false,
+    }: SyncRequestOptions = {}): Promise<SyncRequestResult> {
+        return this.executeSyncRequest(normalizeSyncRequest({ reviewMode, mode, trigger, force }));
+    }
+
+    async saveDeckOptionsAndRequestSync(): Promise<SyncRequestResult> {
+        return this.executeSyncRequest(normalizeSyncRequest({ trigger: "manual" }), [
+            "deck-options",
+        ]);
     }
 
     // @logExecutionTime()
@@ -6823,6 +6878,7 @@ export default class SRPlugin extends Plugin {
         }
         this.applySyroReadOnlyState();
         await this.deckOptionsStore.loadIntoSettings(this.data.settings);
+        this.persistedDeckOptionsState = this.deckOptionsStore.getPersistedState();
         this.store = new DataStore(this.data.settings, {
             cardsPath: this.syroLayout.cardsPath,
             pendingOverlayPath: this.syroLayout.pendingOverlayPath,
@@ -7134,27 +7190,99 @@ export default class SRPlugin extends Plugin {
         }
 
         if (persistDeckOptions) {
-            const deckOptionsSnapshot = createDeckOptionsStoreSnapshot(
-                this.data.settings,
-                this.deckOptionsStore.getSyncEntities(),
-            );
-            const deckOptionsChanged = await this.deckOptionsStore.hasSerializedStateChanged(
-                deckOptionsSnapshot.serialized,
-            );
-            if (deckOptionsChanged) {
+            const previousDeckOptionsState =
+                this.persistedDeckOptionsState ??
+                this.deckOptionsStore.getPersistedState() ??
+                createDeckOptionsStoreSnapshot(
+                    {
+                        fsrsSettings: this.data.settings.fsrsSettings,
+                        deckOptionsPresets: [],
+                        deckPresetAssignment: {},
+                    },
+                    this.deckOptionsStore.getSyncEntities(),
+                ).state;
+            const deckOptionsDiff = diffDeckOptionsState(previousDeckOptionsState, this.data.settings);
+            for (const preset of deckOptionsDiff.presetUpserts) {
                 const appended =
-                    (await this.syroSessionManager?.appendDeckOptionsChange(
-                        deckOptionsSnapshot.state,
+                    (await this.syroSessionManager?.appendDeckOptionsPresetChange(
+                        preset,
+                        "upsert",
                         updatedAt,
                     )) ?? false;
                 if (appended) {
                     this.deckOptionsStore.markSyncEntity({
-                        targetUuid: "deck-options:global",
+                        targetUuid: buildDeckOptionsPresetTargetUuid(preset.uuid),
                         updatedAt,
                         deleted: false,
-                        entityType: "deck-options",
+                        entityType: DECK_OPTIONS_PRESET_ENTITY_TYPE,
                         pathHint: this.syroLayout?.deckOptionsPath,
                     });
+                }
+            }
+            for (const preset of deckOptionsDiff.presetRemovals) {
+                const appended =
+                    (await this.syroSessionManager?.appendDeckOptionsPresetChange(
+                        {
+                            ...(this.data.settings.deckOptionsPresets[0] ??
+                                DEFAULT_DECK_OPTIONS_PRESET),
+                            uuid: preset.presetUuid,
+                            createdAt: updatedAt,
+                        },
+                        "delete",
+                        updatedAt,
+                    )) ?? false;
+                if (appended) {
+                    this.deckOptionsStore.markSyncEntity(
+                        {
+                            targetUuid: buildDeckOptionsPresetTargetUuid(preset.presetUuid),
+                            updatedAt,
+                            deleted: true,
+                            entityType: DECK_OPTIONS_PRESET_ENTITY_TYPE,
+                            pathHint: this.syroLayout?.deckOptionsPath,
+                        },
+                        {
+                            preferDeleteOnEqual: true,
+                        },
+                    );
+                }
+            }
+            for (const assignment of deckOptionsDiff.assignmentUpserts) {
+                const appended =
+                    (await this.syroSessionManager?.appendDeckOptionsAssignmentChange(
+                        assignment,
+                        "assign",
+                        updatedAt,
+                    )) ?? false;
+                if (appended) {
+                    this.deckOptionsStore.markSyncEntity({
+                        targetUuid: buildDeckOptionsAssignmentTargetUuid(assignment.deckPath),
+                        updatedAt,
+                        deleted: false,
+                        entityType: DECK_OPTIONS_ASSIGNMENT_ENTITY_TYPE,
+                        pathHint: this.syroLayout?.deckOptionsPath,
+                    });
+                }
+            }
+            for (const assignment of deckOptionsDiff.assignmentRemovals) {
+                const appended =
+                    (await this.syroSessionManager?.appendDeckOptionsAssignmentChange(
+                        assignment,
+                        "unassign",
+                        updatedAt,
+                    )) ?? false;
+                if (appended) {
+                    this.deckOptionsStore.markSyncEntity(
+                        {
+                            targetUuid: buildDeckOptionsAssignmentTargetUuid(assignment.deckPath),
+                            updatedAt,
+                            deleted: true,
+                            entityType: DECK_OPTIONS_ASSIGNMENT_ENTITY_TYPE,
+                            pathHint: this.syroLayout?.deckOptionsPath,
+                        },
+                        {
+                            preferDeleteOnEqual: true,
+                        },
+                    );
                 }
             }
         }
@@ -7222,6 +7350,8 @@ export default class SRPlugin extends Plugin {
                 this.deckOptionsStore.getSyncEntities(),
             );
             await this.deckOptionsStore.saveSerialized(finalDeckOptionsSnapshot.serialized);
+            this.persistedDeckOptionsState =
+                this.deckOptionsStore.rememberPersistedState(finalDeckOptionsSnapshot.state);
         }
 
         await this.saveDataShell();

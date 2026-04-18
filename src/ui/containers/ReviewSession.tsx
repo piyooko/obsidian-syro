@@ -33,6 +33,7 @@ import { ReviewResponse, textInterval } from "src/scheduling";
 import { CardType } from "src/Question";
 import { CardFrontBackUtil, type CardReviewTarget } from "src/question-type";
 import type { QuestionContextBreadcrumb } from "src/SRFile";
+import { resolveDeckOptionsPreset } from "src/settings";
 import {
     applyReviewMobileHeaderCover,
     applyReviewMobileNavbarCover,
@@ -1332,8 +1333,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
 
     // Read the active deck preset to decide auto-advance timing.
     const deckPath = deck.getTopicPath().path.join("/") || deck.deckName;
-    const presetIndex = settings.deckPresetAssignment[deckPath] ?? 0;
-    const preset = settings.deckOptionsPresets[presetIndex] || settings.deckOptionsPresets[0];
+    const preset = resolveDeckOptionsPreset(settings, deckPath);
     const autoAdvanceSeconds = preset?.autoAdvance ? preset.autoAdvanceSeconds || 10 : 0;
     const showAutoAdvanceProgressBar = preset?.showProgressBar ?? true;
     const progressBarStyle = settings.progressBarStyle;

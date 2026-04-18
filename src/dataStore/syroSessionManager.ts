@@ -1,5 +1,13 @@
 import { App, DataAdapter } from "obsidian";
-import type { DeckOptionsStoreFile } from "./deckOptionsStore";
+import {
+    buildDeckOptionsAssignmentTargetUuid,
+    buildDeckOptionsPresetTargetUuid,
+    DECK_OPTIONS_ASSIGNMENT_ENTITY_TYPE,
+    DECK_OPTIONS_PRESET_ENTITY_TYPE,
+    type DeckOptionsAssignmentPayload,
+    type DeckOptionsPresetRemovalPayload,
+} from "./deckOptionsStore";
+import type { DeckOptionsPreset } from "src/settings";
 import {
     classifySyroSessionRecordImpact,
     createEmptySyroSessionReplaySummary,
@@ -623,16 +631,40 @@ export class SyroSessionManager {
         }
     }
 
-    async appendDeckOptionsChange(
-        state: DeckOptionsStoreFile,
+    async appendDeckOptionsPresetChange(
+        preset: DeckOptionsPreset,
+        opType: "upsert" | "delete",
+        updatedAt?: string,
+    ): Promise<boolean> {
+        const payload =
+            opType === "delete"
+                ? ({
+                      uuid: preset.uuid,
+                  } satisfies DeckOptionsPresetRemovalPayload)
+                : preset;
+
+        return this.appendRecord({
+            domain: "deck-options",
+            entityType: DECK_OPTIONS_PRESET_ENTITY_TYPE,
+            opType,
+            targetUuid: buildDeckOptionsPresetTargetUuid(preset.uuid),
+            payload,
+            pathHint: this.layout.deckOptionsPath,
+            ...(updatedAt ? { updatedAt } : {}),
+        });
+    }
+
+    async appendDeckOptionsAssignmentChange(
+        input: DeckOptionsAssignmentPayload,
+        opType: "assign" | "unassign",
         updatedAt?: string,
     ): Promise<boolean> {
         return this.appendRecord({
             domain: "deck-options",
-            entityType: "deck-options",
-            opType: "replace",
-            targetUuid: "deck-options:global",
-            payload: state,
+            entityType: DECK_OPTIONS_ASSIGNMENT_ENTITY_TYPE,
+            opType,
+            targetUuid: buildDeckOptionsAssignmentTargetUuid(input.deckPath),
+            payload: input,
             pathHint: this.layout.deckOptionsPath,
             ...(updatedAt ? { updatedAt } : {}),
         });

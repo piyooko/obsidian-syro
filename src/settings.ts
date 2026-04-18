@@ -34,6 +34,8 @@ export const DEFAULT_SYNC_PROGRESS_DISPLAY_MODE: SyncProgressDisplayMode = "full
 // ============ Deck Option Presets ===========
 // Per-preset configuration.
 export interface DeckOptionsPreset {
+    uuid: string; // Stable preset identity used for sync and deck assignment
+    createdAt: string; // Stable creation timestamp used to preserve display order
     name: string; // Preset name
     autoAdvance: boolean; // Whether cards auto-advance
     autoAdvanceSeconds: number; // Delay before auto-advance
@@ -105,6 +107,10 @@ export const DEFAULT_NOTE_RESPONSE_TEXTS: ReviewResponseTexts = {
 };
 
 const FSRS_STEP_PATTERN = /^\d+(?:\.\d+)?[mhd]$/i;
+const LEGACY_DECK_OPTIONS_CREATED_AT_BASE_MS = Date.parse("1970-01-02T00:00:00.000Z");
+
+export const DEFAULT_DECK_OPTIONS_PRESET_UUID = "deck-preset-default";
+export const DEFAULT_DECK_OPTIONS_PRESET_CREATED_AT = "1970-01-01T00:00:00.000Z";
 
 function isFsrsStepUnit(value: unknown): value is tsfsrs.StepUnit {
     return typeof value === "string" && FSRS_STEP_PATTERN.test(value.trim());
@@ -272,7 +278,70 @@ export const DEFAULT_WEIGHTED_MULTIPLIER_SETTINGS: WeightedMultiplierSettings = 
     easyFactor: 2.0,
 };
 
+function hashDeckOptionsSeed(seed: string): string {
+    let hash = 2166136261;
+    for (let index = 0; index < seed.length; index++) {
+        hash ^= seed.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function createLegacyDeckOptionsPresetCreatedAt(index: number, uuid: string): string {
+    if (index >= 0) {
+        return new Date(LEGACY_DECK_OPTIONS_CREATED_AT_BASE_MS + index).toISOString();
+    }
+
+    const offset = parseInt(hashDeckOptionsSeed(uuid).slice(0, 6), 16);
+    return new Date(LEGACY_DECK_OPTIONS_CREATED_AT_BASE_MS + 10_000 + offset).toISOString();
+}
+
+function buildLegacyDeckOptionsPresetSeed(
+    preset: Omit<DeckOptionsPreset, "uuid" | "createdAt">,
+    legacyIndex: number,
+): string {
+    return JSON.stringify({
+        legacyIndex,
+        name: preset.name.trim(),
+        autoAdvance: preset.autoAdvance,
+        autoAdvanceSeconds: preset.autoAdvanceSeconds,
+        showProgressBar: preset.showProgressBar,
+        maxNewCards: preset.maxNewCards,
+        maxReviews: preset.maxReviews,
+        learningSteps: preset.learningSteps,
+        lapseSteps: preset.lapseSteps,
+        fsrs: preset.fsrs
+            ? {
+                  ...preset.fsrs,
+                  revlog_tags: [...preset.fsrs.revlog_tags],
+                  w: [...preset.fsrs.w],
+                  learning_steps: [...preset.fsrs.learning_steps],
+                  relearning_steps: [...preset.fsrs.relearning_steps],
+              }
+            : null,
+    });
+}
+
+function createLegacyDeckOptionsPresetUuid(
+    preset: Omit<DeckOptionsPreset, "uuid" | "createdAt">,
+    legacyIndex: number,
+): string {
+    return `deck-preset-legacy-${legacyIndex}-${hashDeckOptionsSeed(
+        buildLegacyDeckOptionsPresetSeed(preset, legacyIndex),
+    )}`;
+}
+
+export function generateDeckOptionsPresetUuid(): string {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return `deck-preset-${crypto.randomUUID()}`;
+    }
+
+    return `deck-preset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export const DEFAULT_DECK_OPTIONS_PRESET: DeckOptionsPreset = {
+    uuid: DEFAULT_DECK_OPTIONS_PRESET_UUID,
+    createdAt: DEFAULT_DECK_OPTIONS_PRESET_CREATED_AT,
     name: "\u9ed8\u8ba4\u65b9\u6848",
     autoAdvance: true,
     autoAdvanceSeconds: 10,
@@ -314,17 +383,59 @@ export function cloneDeckOptionsPreset(preset: DeckOptionsPreset): DeckOptionsPr
     };
 }
 
+function dedupeDeckOptionsPresets(presets: DeckOptionsPreset[]): DeckOptionsPreset[] {
+    const deduped = new Map<string, DeckOptionsPreset>();
+    for (const preset of presets) {
+        const existing = deduped.get(preset.uuid);
+        if (!existing || existing.createdAt.localeCompare(preset.createdAt) <= 0) {
+            deduped.set(preset.uuid, preset);
+        }
+    }
+    return [...deduped.values()];
+}
+
+function sortDeckOptionsPresets(
+    presets: DeckOptionsPreset[],
+    fallbackFsrs?: FsrsSettings,
+): DeckOptionsPreset[] {
+    const deduped = dedupeDeckOptionsPresets(presets);
+    const defaultPreset =
+        deduped.find((preset) => preset.uuid === DEFAULT_DECK_OPTIONS_PRESET_UUID) ??
+        createDefaultDeckOptionsPreset(fallbackFsrs);
+    const nonDefaultPresets = deduped
+        .filter((preset) => preset.uuid !== DEFAULT_DECK_OPTIONS_PRESET_UUID)
+        .sort((left, right) => {
+            const createdAtCompare = left.createdAt.localeCompare(right.createdAt);
+            return createdAtCompare !== 0
+                ? createdAtCompare
+                : left.uuid.localeCompare(right.uuid);
+        });
+
+    return [
+        {
+            ...defaultPreset,
+            uuid: DEFAULT_DECK_OPTIONS_PRESET_UUID,
+            createdAt: DEFAULT_DECK_OPTIONS_PRESET_CREATED_AT,
+        },
+        ...nonDefaultPresets,
+    ];
+}
+
 export function normalizeDeckOptionsPreset(
     preset: unknown,
     fallbackFsrs?: FsrsSettings,
+    options: {
+        legacyIndex?: number;
+    } = {},
 ): DeckOptionsPreset {
     const defaultFsrs = fallbackFsrs
         ? cloneFsrsSettings(fallbackFsrs)
         : createDefaultFsrsSettings();
     const rawPreset = isRecord(preset) ? preset : {};
     const rawPresetFsrs = isRecord(rawPreset.fsrs) ? rawPreset.fsrs : undefined;
+    const legacyIndex = typeof options.legacyIndex === "number" ? options.legacyIndex : -1;
 
-    const normalizedPreset: DeckOptionsPreset = {
+    const normalizedPreset = {
         name: getStringProp(rawPreset, "name") ?? DEFAULT_DECK_OPTIONS_PRESET.name,
         autoAdvance:
             getBooleanProp(rawPreset, "autoAdvance") ?? DEFAULT_DECK_OPTIONS_PRESET.autoAdvance,
@@ -343,7 +454,7 @@ export function normalizeDeckOptionsPreset(
         lapseSteps:
             getStringProp(rawPreset, "lapseSteps") ?? DEFAULT_DECK_OPTIONS_PRESET.lapseSteps,
         fsrs: normalizeFsrsSettings(rawPresetFsrs ?? defaultFsrs, defaultFsrs),
-    };
+    } satisfies Omit<DeckOptionsPreset, "uuid" | "createdAt">;
 
     if (!rawPresetFsrs || !Object.prototype.hasOwnProperty.call(rawPresetFsrs, "learning_steps")) {
         normalizedPreset.fsrs.learning_steps = parseLegacyFsrsSteps(
@@ -362,11 +473,62 @@ export function normalizeDeckOptionsPreset(
         );
     }
 
-    return syncDeckOptionsPresetStepFields(normalizedPreset);
+    const rawUuid = getStringProp(rawPreset, "uuid")?.trim();
+    const isLegacyDefaultPreset = !rawUuid && legacyIndex === 0;
+    const uuid =
+        rawUuid && rawUuid.length > 0
+            ? rawUuid
+            : isLegacyDefaultPreset
+              ? DEFAULT_DECK_OPTIONS_PRESET_UUID
+              : createLegacyDeckOptionsPresetUuid(normalizedPreset, legacyIndex);
+    const rawCreatedAt = getStringProp(rawPreset, "createdAt")?.trim();
+
+    return syncDeckOptionsPresetStepFields({
+        ...normalizedPreset,
+        uuid,
+        createdAt:
+            rawCreatedAt && rawCreatedAt.length > 0
+                ? rawCreatedAt
+                : uuid === DEFAULT_DECK_OPTIONS_PRESET_UUID
+                  ? DEFAULT_DECK_OPTIONS_PRESET_CREATED_AT
+                  : createLegacyDeckOptionsPresetCreatedAt(legacyIndex, uuid),
+    });
 }
 
 export function createDefaultDeckOptionsPreset(fallbackFsrs?: FsrsSettings): DeckOptionsPreset {
-    return normalizeDeckOptionsPreset(undefined, fallbackFsrs);
+    return normalizeDeckOptionsPreset(
+        {
+            ...DEFAULT_DECK_OPTIONS_PRESET,
+            uuid: DEFAULT_DECK_OPTIONS_PRESET_UUID,
+            createdAt: DEFAULT_DECK_OPTIONS_PRESET_CREATED_AT,
+        },
+        fallbackFsrs,
+        {
+            legacyIndex: 0,
+        },
+    );
+}
+
+export function createNewDeckOptionsPreset(
+    fallbackFsrs?: FsrsSettings,
+    overrides: Partial<DeckOptionsPreset> = {},
+): DeckOptionsPreset {
+    const createdAt = overrides.createdAt?.trim() || new Date().toISOString();
+    const uuid =
+        overrides.uuid?.trim() ||
+        (createdAt === DEFAULT_DECK_OPTIONS_PRESET_CREATED_AT
+            ? DEFAULT_DECK_OPTIONS_PRESET_UUID
+            : generateDeckOptionsPresetUuid());
+
+    return normalizeDeckOptionsPreset(
+        {
+            ...DEFAULT_DECK_OPTIONS_PRESET,
+            ...overrides,
+            uuid,
+            createdAt,
+        },
+        fallbackFsrs,
+    );
 }
 
 export function formatFsrsStepList(steps: readonly tsfsrs.StepUnit[]): string {
@@ -419,26 +581,86 @@ export function normalizeDeckOptionsPresets(
         return [createDefaultDeckOptionsPreset(fallbackFsrs)];
     }
 
-    return presets.map((preset) => normalizeDeckOptionsPreset(preset, fallbackFsrs));
+    return sortDeckOptionsPresets(
+        presets.map((preset, index) =>
+            normalizeDeckOptionsPreset(preset, fallbackFsrs, { legacyIndex: index }),
+        ),
+        fallbackFsrs,
+    );
+}
+
+export function normalizeDeckPresetAssignment(
+    assignment: unknown,
+    presets: readonly DeckOptionsPreset[],
+): Record<string, string> {
+    if (!isRecord(assignment)) {
+        return {};
+    }
+
+    const presetByUuid = new Map(presets.map((preset) => [preset.uuid, preset] as const));
+    const normalizedAssignment: Record<string, string> = {};
+
+    for (const [deckPath, value] of Object.entries(assignment)) {
+        if (typeof deckPath !== "string" || deckPath.trim().length === 0) {
+            continue;
+        }
+
+        let presetUuid = "";
+        if (typeof value === "string") {
+            presetUuid = value.trim();
+        } else if (typeof value === "number" && Number.isFinite(value)) {
+            const legacyPreset = presets[Math.trunc(value)] ?? null;
+            presetUuid = legacyPreset?.uuid ?? "";
+        }
+
+        if (
+            !presetUuid ||
+            presetUuid === DEFAULT_DECK_OPTIONS_PRESET_UUID ||
+            !presetByUuid.has(presetUuid)
+        ) {
+            continue;
+        }
+
+        normalizedAssignment[deckPath] = presetUuid;
+    }
+
+    return normalizedAssignment;
+}
+
+export function resolveDeckOptionsPresetUuid(
+    settings: Pick<SRSettings, "deckOptionsPresets" | "deckPresetAssignment" | "fsrsSettings">,
+    deckPath?: string | null,
+): string {
+    const fallbackFsrs = normalizeFsrsSettings(settings.fsrsSettings);
+    const presets = normalizeDeckOptionsPresets(settings.deckOptionsPresets, fallbackFsrs);
+    if (!deckPath) {
+        return DEFAULT_DECK_OPTIONS_PRESET_UUID;
+    }
+
+    return (
+        normalizeDeckPresetAssignment(settings.deckPresetAssignment, presets)[deckPath] ??
+        DEFAULT_DECK_OPTIONS_PRESET_UUID
+    );
+}
+
+export function findDeckOptionsPresetIndexByUuid(
+    presets: readonly DeckOptionsPreset[],
+    presetUuid: string,
+): number {
+    const index = presets.findIndex((preset) => preset.uuid === presetUuid);
+    return index >= 0 ? index : 0;
 }
 
 export function resolveDeckOptionsPresetIndex(
     settings: Pick<SRSettings, "deckOptionsPresets" | "deckPresetAssignment" | "fsrsSettings">,
     deckPath?: string | null,
 ): number {
-    const presetCount = settings.deckOptionsPresets?.length ?? 0;
-    if (presetCount <= 1) {
-        return 0;
-    }
-
-    if (!deckPath) {
-        return 0;
-    }
-
-    const assignedIndex = settings.deckPresetAssignment?.[deckPath];
-    return typeof assignedIndex === "number" && assignedIndex >= 0 && assignedIndex < presetCount
-        ? assignedIndex
-        : 0;
+    const fallbackFsrs = normalizeFsrsSettings(settings.fsrsSettings);
+    const presets = normalizeDeckOptionsPresets(settings.deckOptionsPresets, fallbackFsrs);
+    return findDeckOptionsPresetIndexByUuid(
+        presets,
+        resolveDeckOptionsPresetUuid(settings, deckPath),
+    );
 }
 
 export function resolveDeckOptionsPreset(
@@ -447,7 +669,7 @@ export function resolveDeckOptionsPreset(
 ): DeckOptionsPreset {
     const fallbackFsrs = normalizeFsrsSettings(settings.fsrsSettings);
     const presets = normalizeDeckOptionsPresets(settings.deckOptionsPresets, fallbackFsrs);
-    const presetIndex = resolveDeckOptionsPresetIndex(
+    const presetUuid = resolveDeckOptionsPresetUuid(
         {
             deckOptionsPresets: presets,
             deckPresetAssignment: settings.deckPresetAssignment,
@@ -455,8 +677,9 @@ export function resolveDeckOptionsPreset(
         },
         deckPath,
     );
+    const presetIndex = findDeckOptionsPresetIndexByUuid(presets, presetUuid);
 
-    return cloneDeckOptionsPreset(presets[presetIndex] ?? presets[0]);
+    return cloneDeckOptionsPreset(presets[presetIndex] ?? presets[0] ?? createDefaultDeckOptionsPreset());
 }
 
 export function resolveDeckFsrsSettings(
@@ -470,9 +693,10 @@ export function resolveDeckFsrsSettings(
 
 export function syncFsrsSettingsCompatibilityMirror(settings: SRSettings): void {
     const normalizedFsrsSettings = normalizeFsrsSettings(settings.fsrsSettings);
-    settings.deckOptionsPresets = normalizeDeckOptionsPresets(
+    settings.deckOptionsPresets = normalizeDeckOptionsPresets(settings.deckOptionsPresets, normalizedFsrsSettings);
+    settings.deckPresetAssignment = normalizeDeckPresetAssignment(
+        settings.deckPresetAssignment,
         settings.deckOptionsPresets,
-        normalizedFsrsSettings,
     );
     settings.fsrsSettings = resolveDeckFsrsSettings(settings);
 }
@@ -619,7 +843,7 @@ export interface SRSettings {
 
     // Deck option presets
     deckOptionsPresets: DeckOptionsPreset[]; // All presets, where index 0 is the default preset
-    deckPresetAssignment: Record<string, number>; // Deck path -> preset index
+    deckPresetAssignment: Record<string, string>; // Deck path -> preset uuid
     progressBarStyle: ProgressBarStyle; // Shared progress bar styling
 
     // Daily rollover settings

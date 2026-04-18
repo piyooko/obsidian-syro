@@ -1,8 +1,17 @@
 import {
-    applyDeckOptionsStateToSettings,
+    assignDeckOptionsPresetToDeck,
+    buildDeckOptionsAssignmentTargetUuid,
+    buildDeckOptionsPresetTargetUuid,
     createDeckOptionsStoreSnapshot,
     DeckOptionsStore,
-    type DeckOptionsStoreFile,
+    DECK_OPTIONS_ASSIGNMENT_ENTITY_TYPE,
+    DECK_OPTIONS_PRESET_ENTITY_TYPE,
+    parseDeckOptionsAssignmentPathFromTarget,
+    parseDeckOptionsPresetUuidFromTarget,
+    removeDeckOptionsPresetFromSettings,
+    upsertDeckOptionsPresetInSettings,
+    type DeckOptionsAssignmentPayload,
+    type DeckOptionsPresetRemovalPayload,
 } from "./deckOptionsStore";
 import {
     extractDailyStateWithMetadata,
@@ -40,7 +49,7 @@ import {
     type SyroSessionReplaySummary,
 } from "./syroSessionImpact";
 import type { SyroSessionRecord } from "./syroSessionManager";
-import type { SRSettings } from "src/settings";
+import type { DeckOptionsPreset, SRSettings } from "src/settings";
 import type { FolderTrackingRule } from "src/folderTracking";
 import { getArrayProp, getStringProp, isRecord } from "src/util/typeGuards";
 import { compareIsoTime } from "./syroSyncMeta";
@@ -53,6 +62,7 @@ import {
     type SyroUuidAliasEvidence,
     type SyroUuidAliasGroup,
 } from "./syroUuidAlias";
+import { DEFAULT_DECK_OPTIONS_PRESET_UUID, normalizeDeckOptionsPreset } from "src/settings";
 
 type ReplayDependencies = {
     settings: SRSettings;
@@ -184,12 +194,40 @@ function buildTrackedFileTargetUuid(fileUuid: string): string {
     return fileUuid;
 }
 
-function parseDeckOptionsPayload(payload: unknown): DeckOptionsStoreFile | null {
+function parseDeckOptionsPresetPayload(payload: unknown): DeckOptionsPreset | null {
     if (!isRecord(payload)) {
         return null;
     }
 
-    return payload as unknown as DeckOptionsStoreFile;
+    return normalizeDeckOptionsPreset(payload);
+}
+
+function parseDeckOptionsPresetRemovalPayload(
+    payload: unknown,
+): DeckOptionsPresetRemovalPayload | null {
+    if (!isRecord(payload)) {
+        return null;
+    }
+
+    const uuid = getStringProp(payload, "uuid")?.trim();
+    return uuid ? { uuid } : null;
+}
+
+function parseDeckOptionsAssignmentPayload(payload: unknown): DeckOptionsAssignmentPayload | null {
+    if (!isRecord(payload)) {
+        return null;
+    }
+
+    const deckPath = getStringProp(payload, "deckPath")?.trim();
+    const presetUuid = getStringProp(payload, "presetUuid")?.trim();
+    if (!deckPath) {
+        return null;
+    }
+
+    return {
+        deckPath,
+        ...(presetUuid ? { presetUuid } : {}),
+    };
 }
 
 function parseNoteSnapshotPayload(payload: unknown): NoteReviewEntrySnapshot | null {
@@ -1385,25 +1423,99 @@ export async function replaySyroSessionRecords(
             }
 
             case "deck-options": {
-                if (!deps.deckOptionsStore.shouldApplySyncEntity(record.targetUuid, record.updatedAt)) {
-                    continue;
+                if (record.entityType === DECK_OPTIONS_PRESET_ENTITY_TYPE) {
+                    const removalPayload = parseDeckOptionsPresetRemovalPayload(record.payload);
+                    const preset = record.opType === "delete" ? null : parseDeckOptionsPresetPayload(record.payload);
+                    const presetUuid =
+                        parseDeckOptionsPresetUuidFromTarget(record.targetUuid) ||
+                        removalPayload?.uuid ||
+                        preset?.uuid ||
+                        "";
+                    if (!presetUuid) {
+                        continue;
+                    }
+
+                    if (
+                        !deps.deckOptionsStore.shouldApplySyncEntity(record.targetUuid, record.updatedAt, {
+                            deleted: record.opType === "delete",
+                            preferDeleteOnEqual: true,
+                        })
+                    ) {
+                        continue;
+                    }
+
+                    if (record.opType === "delete") {
+                        removeDeckOptionsPresetFromSettings(deps.settings, presetUuid);
+                    } else {
+                        if (!preset || preset.uuid !== presetUuid) {
+                            continue;
+                        }
+                        upsertDeckOptionsPresetInSettings(deps.settings, preset);
+                    }
+
+                    deps.deckOptionsStore.markSyncEntity(
+                        {
+                            targetUuid: buildDeckOptionsPresetTargetUuid(presetUuid),
+                            updatedAt: record.updatedAt,
+                            deleted: record.opType === "delete",
+                            entityType: DECK_OPTIONS_PRESET_ENTITY_TYPE,
+                            pathHint: record.pathHint,
+                        },
+                        {
+                            preferDeleteOnEqual: true,
+                        },
+                    );
+                    deckOptionsChanged = true;
+                    replaySummary.requiresGlobalSync = true;
+                    break;
                 }
 
-                const state = parseDeckOptionsPayload(record.payload);
-                if (!state) {
-                    continue;
-                }
+                if (record.entityType === DECK_OPTIONS_ASSIGNMENT_ENTITY_TYPE) {
+                    const payload = parseDeckOptionsAssignmentPayload(record.payload);
+                    const deckPath =
+                        payload?.deckPath || parseDeckOptionsAssignmentPathFromTarget(record.targetUuid);
+                    if (!deckPath) {
+                        continue;
+                    }
 
-                applyDeckOptionsStateToSettings(deps.settings, state);
-                deps.deckOptionsStore.markSyncEntity({
-                    targetUuid: record.targetUuid,
-                    updatedAt: record.updatedAt,
-                    deleted: false,
-                    entityType: record.entityType,
-                    pathHint: record.pathHint,
-                });
-                deckOptionsChanged = true;
-                replaySummary.requiresGlobalSync = true;
+                    if (
+                        !deps.deckOptionsStore.shouldApplySyncEntity(record.targetUuid, record.updatedAt, {
+                            deleted: record.opType === "unassign",
+                            preferDeleteOnEqual: true,
+                        })
+                    ) {
+                        continue;
+                    }
+
+                    if (record.opType === "assign") {
+                        assignDeckOptionsPresetToDeck(
+                            deps.settings,
+                            deckPath,
+                            payload?.presetUuid ?? DEFAULT_DECK_OPTIONS_PRESET_UUID,
+                        );
+                    } else {
+                        assignDeckOptionsPresetToDeck(
+                            deps.settings,
+                            deckPath,
+                            DEFAULT_DECK_OPTIONS_PRESET_UUID,
+                        );
+                    }
+
+                    deps.deckOptionsStore.markSyncEntity(
+                        {
+                            targetUuid: buildDeckOptionsAssignmentTargetUuid(deckPath),
+                            updatedAt: record.updatedAt,
+                            deleted: record.opType === "unassign",
+                            entityType: DECK_OPTIONS_ASSIGNMENT_ENTITY_TYPE,
+                            pathHint: record.pathHint,
+                        },
+                        {
+                            preferDeleteOnEqual: true,
+                        },
+                    );
+                    deckOptionsChanged = true;
+                    replaySummary.requiresGlobalSync = true;
+                }
                 break;
             }
 

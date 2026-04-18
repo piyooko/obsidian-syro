@@ -9,9 +9,13 @@ import SRPlugin from "src/main";
 import { t } from "src/lang/helpers";
 import {
     createDefaultDeckOptionsPreset,
+    createNewDeckOptionsPreset,
     DeckOptionsPreset,
+    DEFAULT_DECK_OPTIONS_PRESET_UUID,
+    findDeckOptionsPresetIndexByUuid,
     getDeckOptionsPresetDisplayName,
     normalizeDeckOptionsPreset,
+    normalizeDeckOptionsPresets,
     syncFsrsSettingsCompatibilityMirror,
     updateDeckOptionsPresetStepProxy,
 } from "src/settings";
@@ -19,7 +23,7 @@ import {
 export class DeckOptionsModal extends Modal {
     private plugin: SRPlugin;
     private deckName: string;
-    private currentPresetIndex: number;
+    private currentPresetUuid: string;
     private onSaveCallback?: () => void;
 
     constructor(app: App, plugin: SRPlugin, deckName: string, onSaveCallback?: () => void) {
@@ -27,7 +31,9 @@ export class DeckOptionsModal extends Modal {
         this.plugin = plugin;
         this.deckName = deckName;
         this.onSaveCallback = onSaveCallback;
-        this.currentPresetIndex = this.plugin.data.settings.deckPresetAssignment[deckName] ?? 0;
+        this.currentPresetUuid =
+            this.plugin.data.settings.deckPresetAssignment[deckName] ??
+            DEFAULT_DECK_OPTIONS_PRESET_UUID;
     }
 
     onOpen() {
@@ -79,7 +85,7 @@ export class DeckOptionsModal extends Modal {
             cls: "sr-deck-options-subtitle",
             text: `${t("DECK_OPTIONS_EDIT_PRESET")}: ${getDeckOptionsPresetDisplayName(
                 preset,
-                this.currentPresetIndex,
+                this.getCurrentPresetIndex(),
             )}`,
         });
     }
@@ -93,16 +99,17 @@ export class DeckOptionsModal extends Modal {
             .setDesc(t("DECK_OPTIONS_PRESET_SELECT_DESC"))
             .addDropdown((dropdown) => {
                 presets.forEach((preset, index) => {
-                    dropdown.addOption(
-                        index.toString(),
-                        getDeckOptionsPresetDisplayName(preset, index),
-                    );
+                    dropdown.addOption(preset.uuid, getDeckOptionsPresetDisplayName(preset, index));
                 });
-                dropdown.setValue(this.currentPresetIndex.toString());
+                dropdown.setValue(this.currentPresetUuid);
                 dropdown.onChange(async (value) => {
-                    this.currentPresetIndex = parseInt(value, 10);
-                    this.plugin.data.settings.deckPresetAssignment[this.deckName] =
-                        this.currentPresetIndex;
+                    this.currentPresetUuid = value || DEFAULT_DECK_OPTIONS_PRESET_UUID;
+                    if (this.currentPresetUuid === DEFAULT_DECK_OPTIONS_PRESET_UUID) {
+                        delete this.plugin.data.settings.deckPresetAssignment[this.deckName];
+                    } else {
+                        this.plugin.data.settings.deckPresetAssignment[this.deckName] =
+                            this.currentPresetUuid;
+                    }
                     await this.saveSettings();
                     this.render();
                 });
@@ -122,7 +129,7 @@ export class DeckOptionsModal extends Modal {
 
         new Setting(itemsEl).setName(t("DECK_OPTIONS_PRESET_NAME")).addText((text) =>
             text
-                .setValue(getDeckOptionsPresetDisplayName(preset, this.currentPresetIndex))
+                .setValue(getDeckOptionsPresetDisplayName(preset, this.getCurrentPresetIndex()))
                 .onChange(async (value) => {
                     const nextName = value.trim();
                     if (!nextName) return;
@@ -252,7 +259,7 @@ export class DeckOptionsModal extends Modal {
     }
 
     private renderDangerSection(parent: HTMLElement) {
-        if (this.currentPresetIndex <= 0) return;
+        if (this.currentPresetUuid === DEFAULT_DECK_OPTIONS_PRESET_UUID) return;
 
         const itemsEl = this.createSection(parent, t("DECK_OPTIONS_DELETE_PRESET"));
         new Setting(itemsEl)
@@ -288,8 +295,7 @@ export class DeckOptionsModal extends Modal {
         });
         saveBtn.addEventListener("click", () => {
             void (async () => {
-                await this.saveSettings();
-                await this.plugin.sync();
+                await this.plugin.saveDeckOptionsAndRequestSync();
                 this.onSaveCallback?.();
                 new Notice(`${t("DECK_OPTIONS_TITLE")} ${t("DECK_OPTIONS_BTN_SAVE")}`);
                 this.close();
@@ -310,7 +316,10 @@ export class DeckOptionsModal extends Modal {
             ];
         }
         this.plugin.data.settings.deckOptionsPresets =
-            this.plugin.data.settings.deckOptionsPresets.map((preset) =>
+            normalizeDeckOptionsPresets(
+                this.plugin.data.settings.deckOptionsPresets,
+                this.plugin.data.settings.fsrsSettings,
+            ).map((preset) =>
                 normalizeDeckOptionsPreset(preset, this.plugin.data.settings.fsrsSettings),
             );
         syncFsrsSettingsCompatibilityMirror(this.plugin.data.settings);
@@ -319,51 +328,58 @@ export class DeckOptionsModal extends Modal {
 
     private getCurrentPreset() {
         const presets = this.getPresets();
-        const safeIndex =
-            this.currentPresetIndex >= 0 && this.currentPresetIndex < presets.length
-                ? this.currentPresetIndex
-                : 0;
-        if (safeIndex !== this.currentPresetIndex) {
-            this.currentPresetIndex = safeIndex;
-            this.plugin.data.settings.deckPresetAssignment[this.deckName] = safeIndex;
+        const safeIndex = this.getCurrentPresetIndex();
+        const safePreset = presets[safeIndex] ?? presets[0];
+        if (safePreset && safePreset.uuid !== this.currentPresetUuid) {
+            this.currentPresetUuid = safePreset.uuid;
+            if (safePreset.uuid === DEFAULT_DECK_OPTIONS_PRESET_UUID) {
+                delete this.plugin.data.settings.deckPresetAssignment[this.deckName];
+            } else {
+                this.plugin.data.settings.deckPresetAssignment[this.deckName] = safePreset.uuid;
+            }
         }
-        return presets[safeIndex];
+        return safePreset;
+    }
+
+    private getCurrentPresetIndex() {
+        return findDeckOptionsPresetIndexByUuid(this.getPresets(), this.currentPresetUuid);
     }
 
     private async createNewPreset() {
         const presets = this.getPresets();
-        const newPreset: DeckOptionsPreset = {
-            ...createDefaultDeckOptionsPreset(this.plugin.data.settings.fsrsSettings),
-            name: `${t("DECK_OPTIONS_DEFAULT_PRESET_NAME")} ${presets.length}`,
-        };
+        const newPreset: DeckOptionsPreset = createNewDeckOptionsPreset(
+            this.plugin.data.settings.fsrsSettings,
+            {
+                name: `${t("DECK_OPTIONS_DEFAULT_PRESET_NAME")} ${presets.length}`,
+            },
+        );
         presets.push(newPreset);
-        this.currentPresetIndex = presets.length - 1;
-        this.plugin.data.settings.deckPresetAssignment[this.deckName] = this.currentPresetIndex;
+        this.currentPresetUuid = newPreset.uuid;
+        this.plugin.data.settings.deckPresetAssignment[this.deckName] = this.currentPresetUuid;
         await this.saveSettings();
         this.render();
     }
 
     private async deleteCurrentPreset() {
         const presets = this.getPresets();
-        const deletedIndex = this.currentPresetIndex;
+        const deletedPresetUuid = this.currentPresetUuid;
+        const deletedIndex = this.getCurrentPresetIndex();
         presets.splice(deletedIndex, 1);
 
         const assignment = this.plugin.data.settings.deckPresetAssignment;
         for (const deck in assignment) {
-            if (assignment[deck] === deletedIndex) {
+            if (assignment[deck] === deletedPresetUuid) {
                 delete assignment[deck];
-            } else if (assignment[deck] > deletedIndex) {
-                assignment[deck]--;
             }
         }
 
-        this.currentPresetIndex = 0;
+        this.currentPresetUuid = DEFAULT_DECK_OPTIONS_PRESET_UUID;
         await this.saveSettings();
         this.render();
     }
 
     private async saveSettings() {
         syncFsrsSettingsCompatibilityMirror(this.plugin.data.settings);
-        await this.plugin.savePluginData();
+        await Promise.resolve();
     }
 }

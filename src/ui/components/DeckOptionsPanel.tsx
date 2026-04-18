@@ -15,8 +15,11 @@ import { t } from "src/lang/helpers";
 import { Deck } from "src/Deck";
 import {
     createDefaultDeckOptionsPreset,
+    createNewDeckOptionsPreset,
     DeckOptionsPreset,
+    DEFAULT_DECK_OPTIONS_PRESET_UUID,
     DEFAULT_DECK_OPTIONS_PRESET,
+    findDeckOptionsPresetIndexByUuid,
     getDeckOptionsPresetDisplayName,
     normalizeDeckOptionsPreset,
     parseDeckOptionsStepInput,
@@ -37,8 +40,8 @@ interface DeckOptionsPanelProps {
 
 interface DeckOptionsDraft {
     presets: DeckOptionsPreset[];
-    assignment: Record<string, number>;
-    currentPresetIndex: number;
+    assignment: Record<string, string>;
+    currentPresetUuid: string;
 }
 
 interface PanelLayout {
@@ -62,14 +65,15 @@ function createDraft(plugin: SRPlugin, deckPath: string): DeckOptionsDraft {
               )
             : [createDefaultDeckOptionsPreset(plugin.data.settings.fsrsSettings)];
     const assignment = { ...plugin.data.settings.deckPresetAssignment };
-    const currentPresetIndex = assignment[deckPath] ?? 0;
-    const safePresetIndex =
-        currentPresetIndex >= 0 && currentPresetIndex < presets.length ? currentPresetIndex : 0;
+    const assignedPresetUuid = assignment[deckPath] ?? DEFAULT_DECK_OPTIONS_PRESET_UUID;
+    const safePresetUuid = presets.some((preset) => preset.uuid === assignedPresetUuid)
+        ? assignedPresetUuid
+        : DEFAULT_DECK_OPTIONS_PRESET_UUID;
 
     return {
         presets,
         assignment,
-        currentPresetIndex: safePresetIndex,
+        currentPresetUuid: safePresetUuid,
     };
 }
 
@@ -114,30 +118,42 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
         setDraft(createDraft(plugin, deckPath));
     }, [plugin, deckPath]);
 
+    const currentPresetIndex = useMemo(
+        () => findDeckOptionsPresetIndexByUuid(draft.presets, draft.currentPresetUuid),
+        [draft.currentPresetUuid, draft.presets],
+    );
     const currentPreset = useMemo(
-        () => draft.presets[draft.currentPresetIndex] ?? draft.presets[0],
-        [draft.currentPresetIndex, draft.presets],
+        () => draft.presets[currentPresetIndex] ?? draft.presets[0],
+        [currentPresetIndex, draft.presets],
     );
     const currentPresetDisplayName = useMemo(
-        () => getDeckOptionsPresetDisplayName(currentPreset, draft.currentPresetIndex),
-        [currentPreset, draft.currentPresetIndex],
+        () => getDeckOptionsPresetDisplayName(currentPreset, currentPresetIndex),
+        [currentPreset, currentPresetIndex],
     );
     const presetUsageCounts = useMemo(() => {
         const deckPaths = collectDeckPaths(plugin.deckTree);
         return draft.presets.map(
             (_, index) =>
-                deckPaths.filter((path) => (draft.assignment[path] ?? 0) === index).length,
+                deckPaths.filter(
+                    (path) =>
+                        (draft.assignment[path] ?? DEFAULT_DECK_OPTIONS_PRESET_UUID) ===
+                        draft.presets[index]?.uuid,
+                ).length,
         );
-    }, [draft.assignment, draft.currentPresetIndex, plugin.deckTree]);
+    }, [draft.assignment, draft.presets, plugin.deckTree]);
 
     const updateCurrentPreset = useCallback(
         (updater: (preset: DeckOptionsPreset) => DeckOptionsPreset) => {
             setDraft((prev) => {
                 const presets = [...prev.presets];
+                const currentPresetIndex = findDeckOptionsPresetIndexByUuid(
+                    presets,
+                    prev.currentPresetUuid,
+                );
                 const currentDraftPreset =
-                    presets[prev.currentPresetIndex] ??
+                    presets[currentPresetIndex] ??
                     createDefaultDeckOptionsPreset(plugin.data.settings.fsrsSettings);
-                presets[prev.currentPresetIndex] = updater({ ...currentDraftPreset });
+                presets[currentPresetIndex] = updater({ ...currentDraftPreset });
                 return { ...prev, presets };
             });
         },
@@ -191,7 +207,7 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
 
     useLayoutEffect(() => {
         recalculateLayout();
-    }, [recalculateLayout, draft.currentPresetIndex, currentPreset.autoAdvance]);
+    }, [currentPreset.autoAdvance, currentPresetIndex, recalculateLayout]);
 
     useEffect(() => {
         if (!containerElement) return;
@@ -216,13 +232,17 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
         };
     }, [containerElement, onClose, recalculateLayout]);
 
-    const handlePresetIndexChange = useCallback(
+    const handlePresetUuidChange = useCallback(
         (value: string) => {
-            const nextIndex = Number(value);
             setDraft((prev) => ({
                 ...prev,
-                currentPresetIndex: nextIndex,
-                assignment: { ...prev.assignment, [deckPath]: nextIndex },
+                currentPresetUuid: value || DEFAULT_DECK_OPTIONS_PRESET_UUID,
+                assignment:
+                    value && value !== DEFAULT_DECK_OPTIONS_PRESET_UUID
+                        ? { ...prev.assignment, [deckPath]: value }
+                        : Object.fromEntries(
+                              Object.entries(prev.assignment).filter(([path]) => path !== deckPath),
+                          ),
             }));
         },
         [deckPath],
@@ -230,41 +250,32 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
 
     const handleCreatePreset = useCallback(() => {
         setDraft((prev) => {
-            const nextPreset: DeckOptionsPreset = {
-                ...createDefaultDeckOptionsPreset(plugin.data.settings.fsrsSettings),
+            const nextPreset = createNewDeckOptionsPreset(plugin.data.settings.fsrsSettings, {
                 name: `${t("DECK_OPTIONS_DEFAULT_PRESET_NAME")} ${prev.presets.length}`,
-            };
+            });
             const presets = [...prev.presets, nextPreset];
-            const currentPresetIndex = presets.length - 1;
 
             return {
                 presets,
-                currentPresetIndex,
-                assignment: { ...prev.assignment, [deckPath]: currentPresetIndex },
+                currentPresetUuid: nextPreset.uuid,
+                assignment: { ...prev.assignment, [deckPath]: nextPreset.uuid },
             };
         });
-    }, [deckPath]);
+    }, [deckPath, plugin.data.settings.fsrsSettings]);
 
     const handleDeletePreset = useCallback(() => {
         setDraft((prev) => {
-            if (prev.currentPresetIndex <= 0) return prev;
+            if (prev.currentPresetUuid === DEFAULT_DECK_OPTIONS_PRESET_UUID) return prev;
 
-            const deletedIndex = prev.currentPresetIndex;
-            const presets = prev.presets.filter((_, index) => index !== deletedIndex);
-            const assignment = { ...prev.assignment };
-
-            Object.keys(assignment).forEach((path) => {
-                if (assignment[path] === deletedIndex) {
-                    delete assignment[path];
-                } else if (assignment[path] > deletedIndex) {
-                    assignment[path]--;
-                }
-            });
+            const presets = prev.presets.filter((preset) => preset.uuid !== prev.currentPresetUuid);
+            const assignment = Object.fromEntries(
+                Object.entries(prev.assignment).filter(([, presetUuid]) => presetUuid !== prev.currentPresetUuid),
+            );
 
             return {
                 presets,
                 assignment,
-                currentPresetIndex: 0,
+                currentPresetUuid: DEFAULT_DECK_OPTIONS_PRESET_UUID,
             };
         });
     }, []);
@@ -311,15 +322,10 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
         plugin.data.settings.deckPresetAssignment = { ...draft.assignment };
         syncFsrsSettingsCompatibilityMirror(plugin.data.settings);
 
-        if ((plugin.data.settings.deckPresetAssignment[deckPath] ?? 0) === 0) {
-            delete plugin.data.settings.deckPresetAssignment[deckPath];
-        }
-
-        await plugin.savePluginData();
-        await plugin.sync();
+        await plugin.saveDeckOptionsAndRequestSync();
         onSaved?.();
         onClose();
-    }, [deckPath, draft.assignment, draft.presets, onClose, onSaved, plugin]);
+    }, [draft.assignment, draft.presets, onClose, onSaved, plugin]);
 
     return (
         <div
@@ -364,9 +370,9 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                         >
                             <div className="sr-deck-options-select-control">
                                 <select
-                                    value={String(draft.currentPresetIndex)}
+                                    value={draft.currentPresetUuid}
                                     onChange={(event) =>
-                                        handlePresetIndexChange(event.target.value)
+                                        handlePresetUuidChange(event.target.value)
                                     }
                                     className="dropdown"
                                 >
@@ -378,7 +384,7 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                                                 : "DECK_OPTIONS_PRESET_USAGE_COUNT_PLURAL";
 
                                         return (
-                                            <option key={`${preset.name}-${index}`} value={index}>
+                                            <option key={preset.uuid} value={preset.uuid}>
                                                 {t(usageLabelKey, {
                                                     presetName: getDeckOptionsPresetDisplayName(
                                                         preset,
@@ -491,7 +497,7 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                         )}
                     </Section>
 
-                    {draft.currentPresetIndex > 0 && (
+                    {draft.currentPresetUuid !== DEFAULT_DECK_OPTIONS_PRESET_UUID && (
                         <Section title={t("DECK_OPTIONS_DELETE_PRESET")}>
                             <BaseComponent
                                 label={t("DECK_OPTIONS_DELETE_PRESET")}

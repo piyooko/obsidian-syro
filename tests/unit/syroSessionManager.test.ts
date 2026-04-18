@@ -1,6 +1,5 @@
 import { createHash } from "crypto";
 import { DEFAULT_SETTINGS } from "src/settings";
-import { createDeckOptionsStoreSnapshot } from "src/dataStore/deckOptionsStore";
 import type { SyroSessionRecord } from "src/dataStore/syroSessionManager";
 import { SyroSessionManager } from "src/dataStore/syroSessionManager";
 import { SyroWorkspace } from "src/dataStore/syroWorkspace";
@@ -254,17 +253,42 @@ describe("SyroSessionManager", () => {
         );
     }
 
-    test("appends new records to the current device daily session file", async () => {
+    test("appends deck-options preset upserts as entity-scoped session records", async () => {
         const { app, files, layout } = await createWorkspaceContext();
         const manager = new SyroSessionManager(app, layout);
         await manager.initialize();
 
-        const deckOptionsState = createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state;
-        await expect(manager.appendDeckOptionsChange(deckOptionsState)).resolves.toBe(true);
+        await expect(
+            manager.appendDeckOptionsPresetChange(DEFAULT_SETTINGS.deckOptionsPresets[0], "upsert"),
+        ).resolves.toBe(true);
 
         const sessionRaw = files.get(normalizePath(layout.currentDeviceSessionFilePath)) ?? "";
         expect(sessionRaw).toContain('"lineType":"event"');
         expect(sessionRaw).toContain('"domain":"deck-options"');
+        expect(sessionRaw).toContain('"entityType":"deck-options-preset"');
+        expect(sessionRaw).toContain('"targetUuid":"deck-preset:deck-preset-default"');
+    });
+
+    test("appends deck-options assignments as entity-scoped session records", async () => {
+        const { app, files, layout } = await createWorkspaceContext();
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+
+        await expect(
+            manager.appendDeckOptionsAssignmentChange(
+                {
+                    deckPath: "Reading",
+                    presetUuid: "deck-preset-reading",
+                },
+                "assign",
+            ),
+        ).resolves.toBe(true);
+
+        const sessionRaw = files.get(normalizePath(layout.currentDeviceSessionFilePath)) ?? "";
+        expect(sessionRaw).toContain('"lineType":"event"');
+        expect(sessionRaw).toContain('"domain":"deck-options"');
+        expect(sessionRaw).toContain('"entityType":"deck-options-assignment"');
+        expect(sessionRaw).toContain('"targetUuid":"deck-assignment:Reading"');
     });
 
     test("stages remote records from a still-growing session file and appends a local cursor snapshot only after finalize", async () => {

@@ -278,24 +278,27 @@ describe("sync progress display defaults", () => {
     });
 
     test("preset-level FSRS resolution ignores legacy step strings and uses preset fsrs truth", () => {
+        const alphaPreset = {
+            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+            uuid: "deck-preset-alpha",
+            createdAt: "2026-04-18T00:00:00.000Z",
+            name: "Alpha preset",
+            learningSteps: "99m",
+            lapseSteps: "88m",
+            fsrs: {
+                ...cloneFsrsSettings(DEFAULT_SETTINGS.fsrsSettings),
+                learning_steps: ["2m", "20m"],
+                relearning_steps: ["15m"],
+            },
+        };
         const settings = {
             ...DEFAULT_SETTINGS,
             deckPresetAssignment: {
-                alpha: 1,
+                alpha: alphaPreset.uuid,
             },
             deckOptionsPresets: [
                 DEFAULT_SETTINGS.deckOptionsPresets[0],
-                {
-                    ...DEFAULT_SETTINGS.deckOptionsPresets[0],
-                    name: "Alpha preset",
-                    learningSteps: "99m",
-                    lapseSteps: "88m",
-                    fsrs: {
-                        ...cloneFsrsSettings(DEFAULT_SETTINGS.fsrsSettings),
-                        learning_steps: ["2m", "20m"],
-                        relearning_steps: ["15m"],
-                    },
-                },
+                alphaPreset,
             ],
         } as SRSettings;
 

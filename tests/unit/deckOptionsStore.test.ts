@@ -4,7 +4,7 @@ import {
     DeckOptionsStore,
 } from "src/dataStore/deckOptionsStore";
 import { Iadapter } from "src/dataStore/adapter";
-import { DEFAULT_SETTINGS } from "src/settings";
+import { DEFAULT_DECK_OPTIONS_PRESET_UUID, DEFAULT_SETTINGS } from "src/settings";
 
 interface AdapterSingleton {
     _instance: {
@@ -18,6 +18,14 @@ interface AdapterSingleton {
 
 function cloneSettings() {
     return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+}
+
+function createLegacyPreset(overrides: Record<string, unknown> = {}) {
+    const { uuid: _uuid, createdAt: _createdAt, ...preset } = DEFAULT_SETTINGS.deckOptionsPresets[0];
+    return {
+        ...preset,
+        ...overrides,
+    };
 }
 
 describe("deckOptionsStore", () => {
@@ -46,22 +54,20 @@ describe("deckOptionsStore", () => {
                     enable_fuzz: false,
                 },
                 deckOptionsPresets: [
-                    {
-                        ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                    createLegacyPreset({
                         fsrs: {
                             ...DEFAULT_SETTINGS.deckOptionsPresets[0].fsrs,
                             enable_fuzz: false,
                         },
-                    },
-                    {
-                        ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                    }),
+                    createLegacyPreset({
                         name: "Reading",
                         maxNewCards: 7,
                         fsrs: {
                             ...DEFAULT_SETTINGS.deckOptionsPresets[0].fsrs,
                             enable_fuzz: false,
                         },
-                    },
+                    }),
                 ],
                 deckPresetAssignment: {
                     Reading: 1,
@@ -80,12 +86,57 @@ describe("deckOptionsStore", () => {
 
         expect(settings.fsrsSettings.enable_fuzz).toBe(false);
         expect(settings.deckOptionsPresets).toHaveLength(2);
+        expect(settings.deckOptionsPresets[0].uuid).toBe(DEFAULT_DECK_OPTIONS_PRESET_UUID);
         expect(settings.deckOptionsPresets[1].name).toBe("Reading");
-        expect(settings.deckPresetAssignment).toEqual({ Reading: 1 });
+        expect(settings.deckPresetAssignment).toEqual({
+            Reading: settings.deckOptionsPresets[1].uuid,
+        });
+    });
+
+    it("migrates the same legacy deck-options payload to stable preset UUIDs", async () => {
+        const legacyPath = ".obsidian/plugins/syro/devices/Desktop--d84f/deck-options.json";
+        files.set(
+            legacyPath,
+            JSON.stringify({
+                version: 1,
+                fsrsSettings: DEFAULT_SETTINGS.fsrsSettings,
+                deckOptionsPresets: [
+                    createLegacyPreset(),
+                    createLegacyPreset({
+                        name: "Reading",
+                    }),
+                ],
+                deckPresetAssignment: {
+                    Reading: 1,
+                },
+            }),
+        );
+
+        const firstSettings = cloneSettings();
+        const secondSettings = cloneSettings();
+        const firstStore = new DeckOptionsStore(legacyPath);
+        const secondStore = new DeckOptionsStore(legacyPath);
+
+        await firstStore.loadIntoSettings(firstSettings);
+        await secondStore.loadIntoSettings(secondSettings);
+
+        expect(firstSettings.deckOptionsPresets[1].uuid).toBe(secondSettings.deckOptionsPresets[1].uuid);
+        expect(firstSettings.deckPresetAssignment).toEqual(secondSettings.deckPresetAssignment);
     });
 
     it("creates deck-options.json from current settings when the file is missing", async () => {
         const settings = cloneSettings();
+        const sprintPreset = {
+            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+            uuid: "deck-preset-sprint",
+            createdAt: "2026-04-18T00:00:00.000Z",
+            name: "Sprint",
+            maxReviews: 33,
+            fsrs: {
+                ...DEFAULT_SETTINGS.deckOptionsPresets[0].fsrs,
+                enable_fuzz: false,
+            },
+        };
         settings.fsrsSettings.enable_fuzz = false;
         settings.deckOptionsPresets = [
             {
@@ -95,18 +146,10 @@ describe("deckOptionsStore", () => {
                     enable_fuzz: false,
                 },
             },
-            {
-                ...DEFAULT_SETTINGS.deckOptionsPresets[0],
-                name: "Sprint",
-                maxReviews: 33,
-                fsrs: {
-                    ...DEFAULT_SETTINGS.deckOptionsPresets[0].fsrs,
-                    enable_fuzz: false,
-                },
-            },
+            sprintPreset,
         ];
         settings.deckPresetAssignment = {
-            Sprint: 1,
+            Sprint: sprintPreset.uuid,
         };
 
         const store = new DeckOptionsStore(
@@ -118,9 +161,12 @@ describe("deckOptionsStore", () => {
             files.get(".obsidian/plugins/syro/devices/Desktop--d84f/deck-options.json") ??
                 "{}",
         );
+        expect(saved.version).toBe(2);
         expect(saved.fsrsSettings.enable_fuzz).toBe(false);
         expect(saved.deckOptionsPresets[1].name).toBe("Sprint");
-        expect(saved.deckPresetAssignment).toEqual({ Sprint: 1 });
+        expect(saved.deckPresetAssignment).toEqual({
+            Sprint: saved.deckOptionsPresets[1].uuid,
+        });
     });
 
     it("creates a plugin-data snapshot without deck-options fields", () => {
@@ -135,6 +181,16 @@ describe("deckOptionsStore", () => {
 
     it("normalizes loaded state onto a settings object", () => {
         const settings = cloneSettings();
+        const focusedPreset = {
+            ...createLegacyPreset(),
+            uuid: "deck-preset-focused",
+            createdAt: "2026-04-18T00:00:00.000Z",
+            name: "Focused",
+            fsrs: {
+                ...DEFAULT_SETTINGS.deckOptionsPresets[0].fsrs,
+                enable_fuzz: false,
+            },
+        };
         applyDeckOptionsStateToSettings(settings, {
             fsrsSettings: {
                 ...DEFAULT_SETTINGS.fsrsSettings,
@@ -149,21 +205,18 @@ describe("deckOptionsStore", () => {
                     },
                 },
                 {
-                    ...DEFAULT_SETTINGS.deckOptionsPresets[0],
-                    name: "Focused",
-                    fsrs: {
-                        ...DEFAULT_SETTINGS.deckOptionsPresets[0].fsrs,
-                        enable_fuzz: false,
-                    },
+                    ...focusedPreset,
                 },
             ],
             deckPresetAssignment: {
-                Focused: 1,
-                Default: 0,
+                Focused: focusedPreset.uuid,
+                Default: DEFAULT_DECK_OPTIONS_PRESET_UUID,
             },
         });
 
         expect(settings.fsrsSettings.enable_fuzz).toBe(false);
-        expect(settings.deckPresetAssignment).toEqual({ Focused: 1 });
+        expect(settings.deckPresetAssignment).toEqual({
+            Focused: settings.deckOptionsPresets[1].uuid,
+        });
     });
 });

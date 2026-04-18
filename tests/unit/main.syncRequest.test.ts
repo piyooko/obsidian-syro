@@ -12,9 +12,29 @@ function createMomentStub(timestamp: number) {
     };
 }
 
+function createDeckOptionsStoreMock(overrides: Record<string, unknown> = {}) {
+    return {
+        getSyncEntities: jest.fn(() => ({})),
+        getPersistedState: jest.fn(() => null),
+        rememberPersistedState: jest.fn((state) => state),
+        markSyncEntity: jest.fn(),
+        saveSerialized: jest.fn(async () => undefined),
+        ...overrides,
+    };
+}
+
+function createDeckOptionsSessionManagerMock(overrides: Record<string, unknown> = {}) {
+    return {
+        appendRecord: jest.fn(async () => true),
+        appendDeckOptionsPresetChange: jest.fn(async () => true),
+        appendDeckOptionsAssignmentChange: jest.fn(async () => true),
+        ...overrides,
+    };
+}
+
 describe("SRPlugin sync request orchestration", () => {
     test("requestSync queues a rebuild instead of dropping it while a sync is running", async () => {
-        const plugin = {
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
             data: { settings: { showSchedulingDebugMessages: false } },
             guardSyroDataReady: jest.fn(() => true),
             shouldSkipDisabledAutomaticIncrementalSync: jest.fn(() => false),
@@ -22,7 +42,7 @@ describe("SRPlugin sync request orchestration", () => {
             syncLock: true,
             queueSyncRequest: jest.fn((request) => request),
             sync: jest.fn(async () => undefined),
-        };
+        });
 
         const result = await (SRPlugin.prototype.requestSync as unknown as Function).call(plugin, {
             reviewMode: FlashcardReviewMode.Review,
@@ -30,12 +50,15 @@ describe("SRPlugin sync request orchestration", () => {
             trigger: "manual",
         });
 
-        expect(plugin.queueSyncRequest).toHaveBeenCalledWith({
-            reviewMode: FlashcardReviewMode.Review,
-            mode: "full",
-            trigger: "manual",
-            force: false,
-        });
+        expect(plugin.queueSyncRequest).toHaveBeenCalledWith(
+            {
+                reviewMode: FlashcardReviewMode.Review,
+                mode: "full",
+                trigger: "manual",
+                force: false,
+            },
+            [],
+        );
         expect(plugin.sync).not.toHaveBeenCalled();
         expect(result).toEqual({
             reviewMode: FlashcardReviewMode.Review,
@@ -48,7 +71,7 @@ describe("SRPlugin sync request orchestration", () => {
     });
 
     test("requestSync seals the active syro session before manual sync runs", async () => {
-        const plugin = {
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
             data: { settings: { showSchedulingDebugMessages: false } },
             guardSyroDataReady: jest.fn(() => true),
             shouldSkipDisabledAutomaticIncrementalSync: jest.fn(() => false),
@@ -61,7 +84,7 @@ describe("SRPlugin sync request orchestration", () => {
             importPendingSyroSessions: jest.fn(async () => null),
             sync: jest.fn(async () => undefined),
             updateRemoteDeltaFingerprint: jest.fn(async () => undefined),
-        };
+        });
 
         const result = await (SRPlugin.prototype.requestSync as unknown as Function).call(plugin, {
             reviewMode: FlashcardReviewMode.Review,
@@ -81,6 +104,57 @@ describe("SRPlugin sync request orchestration", () => {
             force: false,
             status: "executed",
         });
+    });
+
+    test("saveDeckOptionsAndRequestSync imports remote sessions before persisting deck options", async () => {
+        const order: string[] = [];
+        const plugin: any = Object.assign(Object.create(SRPlugin.prototype), {
+            data: {
+                settings: {
+                    showSchedulingDebugMessages: false,
+                },
+            },
+            guardSyroDataReady: jest.fn(() => true),
+            shouldSkipDisabledAutomaticIncrementalSync: jest.fn(() => false),
+            shouldSkipAutomaticSync: jest.fn(() => false),
+            syncLock: false,
+            syroReadOnlyReason: null,
+            flushReviewPersistence: jest.fn(async () => true),
+            syroSessionManager: {
+                flushActiveSession: jest.fn(async () => {
+                    order.push("flush");
+                    return "2026-04-13T12-00-00__d84f__0001";
+                }),
+            },
+            importPendingSyroSessions: jest.fn(async () => {
+                order.push("import");
+                return null;
+            }),
+            savePluginData: jest.fn(async () => {
+                order.push("save");
+            }),
+            sync: jest.fn(async () => {
+                order.push("sync");
+            }),
+            finalizeImportedSyroSessions: jest.fn(async () => undefined),
+            updateRemoteDeltaFingerprint: jest.fn(async () => undefined),
+        });
+
+        const result = await (
+            SRPlugin.prototype as unknown as { saveDeckOptionsAndRequestSync: Function }
+        ).saveDeckOptionsAndRequestSync.call(plugin);
+
+        expect(order).toEqual(["flush", "import", "save", "sync"]);
+        expect(plugin.savePluginData).toHaveBeenCalledWith({
+            domains: ["deck-options"],
+            source: "pre-sync:manual",
+        });
+        expect(result).toEqual(
+            expect.objectContaining({
+                trigger: "manual",
+                status: "executed",
+            }),
+        );
     });
 
     test("pullSyroDeviceToCurrent aligns only the copied source device sessions after overwrite", async () => {
@@ -178,7 +252,7 @@ describe("SRPlugin sync request orchestration", () => {
                     ],
                 })),
             },
-            deckOptionsStore: {},
+            deckOptionsStore: createDeckOptionsStoreMock(),
             sharedSettingsStore: {},
             trackingRulesStore: {},
             dailyStateStore: {},
@@ -269,7 +343,7 @@ describe("SRPlugin sync request orchestration", () => {
                     validDevices: [],
                 })),
             },
-            deckOptionsStore: {},
+            deckOptionsStore: createDeckOptionsStoreMock(),
             sharedSettingsStore: {},
             trackingRulesStore: {},
             dailyStateStore: {},
@@ -436,7 +510,7 @@ describe("SRPlugin sync request orchestration", () => {
     });
 
     test("requestSync skips active session sealing during remote-poll and imports without sealing its own buffer", async () => {
-        const plugin: any = {
+        const plugin: any = Object.assign(Object.create(SRPlugin.prototype), {
             data: {
                 settings: {
                     showSchedulingDebugMessages: false,
@@ -455,7 +529,7 @@ describe("SRPlugin sync request orchestration", () => {
             importPendingSyroSessions: jest.fn(async () => null),
             sync: jest.fn(async () => undefined),
             updateRemoteDeltaFingerprint: jest.fn(async () => undefined),
-        };
+        });
 
         await (SRPlugin.prototype.requestSync as unknown as Function).call(plugin, {
             reviewMode: FlashcardReviewMode.Review,
@@ -484,8 +558,9 @@ describe("SRPlugin sync request orchestration", () => {
         };
         const plugin = {
             takePendingSyncRequest: jest.fn(() => pendingRequest),
+            takePendingSyncPersistDomains: jest.fn(() => ["deck-options"]),
             logRuntimeDebug: jest.fn(),
-            requestSync: jest.fn(() => Promise.resolve({ status: "executed" })),
+            executeSyncRequest: jest.fn(() => Promise.resolve({ status: "executed" })),
             runAsync: jest.fn(),
         };
 
@@ -493,10 +568,13 @@ describe("SRPlugin sync request orchestration", () => {
             SRPlugin.prototype as unknown as { replayQueuedSyncRequest: Function }
         ).replayQueuedSyncRequest.call(plugin);
 
-        expect(plugin.requestSync).toHaveBeenCalledWith({
+        expect(plugin.executeSyncRequest).toHaveBeenCalledWith(
+            {
             ...pendingRequest,
             force: true,
-        });
+            },
+            ["deck-options"],
+        );
         expect(plugin.runAsync).toHaveBeenCalledTimes(1);
     });
 
@@ -600,17 +678,15 @@ describe("SRPlugin sync request orchestration", () => {
 
     test("savePluginData persists split state files, deck options, and a shell-only data.json", async () => {
         const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
+        const readingPreset = {
+            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+            uuid: "deck-preset-reading",
+            createdAt: "2026-04-16T00:00:00.000Z",
+            name: "Reading",
+        };
         const plugin = Object.assign(Object.create(SRPlugin.prototype), {
-            deckOptionsStore: {
-                getSyncEntities: jest.fn(() => ({})),
-                markSyncEntity: jest.fn(),
-                hasSerializedStateChanged: jest.fn(async () => true),
-                saveSerialized: jest.fn(async () => undefined),
-            },
-            syroSessionManager: {
-                appendRecord: jest.fn(async () => true),
-                appendDeckOptionsChange: jest.fn(async () => true),
-            },
+            deckOptionsStore: createDeckOptionsStoreMock(),
+            syroSessionManager: createDeckOptionsSessionManagerMock(),
             sharedSettingsStore: {
                 save: jest.fn(async () => undefined),
             },
@@ -637,12 +713,9 @@ describe("SRPlugin sync request orchestration", () => {
                     },
                     deckOptionsPresets: [
                         ...DEFAULT_SETTINGS.deckOptionsPresets,
-                        {
-                            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
-                            name: "Reading",
-                        },
+                        readingPreset,
                     ],
-                    deckPresetAssignment: { Reading: 1 },
+                    deckPresetAssignment: { Reading: readingPreset.uuid },
                 },
                 buryDate: "",
                 buryList: [] as string[],
@@ -662,16 +735,21 @@ describe("SRPlugin sync request orchestration", () => {
 
         await (SRPlugin.prototype.savePluginData as unknown as Function).call(plugin);
 
-        expect(plugin.deckOptionsStore.hasSerializedStateChanged).toHaveBeenCalledWith(
+        expect(plugin.syroSessionManager.appendDeckOptionsPresetChange).toHaveBeenCalledTimes(1);
+        expect(plugin.syroSessionManager.appendDeckOptionsPresetChange).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({
+                uuid: readingPreset.uuid,
+            }),
+            "upsert",
             expect.any(String),
         );
-        expect(plugin.syroSessionManager.appendDeckOptionsChange).toHaveBeenCalledWith(
-            expect.objectContaining({
-                version: 1,
-                fsrsSettings: expect.anything(),
-                deckOptionsPresets: expect.anything(),
-                deckPresetAssignment: expect.anything(),
-            }),
+        expect(plugin.syroSessionManager.appendDeckOptionsAssignmentChange).toHaveBeenCalledWith(
+            {
+                deckPath: "Reading",
+                presetUuid: readingPreset.uuid,
+            },
+            "assign",
             expect.any(String),
         );
         expect(plugin.sharedSettingsStore.save).toHaveBeenCalledTimes(1);
@@ -716,16 +794,8 @@ describe("SRPlugin sync request orchestration", () => {
             drainFlush: jest.fn(async () => true),
         };
         const plugin = Object.assign(Object.create(SRPlugin.prototype), {
-            deckOptionsStore: {
-                getSyncEntities: jest.fn(() => ({})),
-                markSyncEntity: jest.fn(),
-                hasSerializedStateChanged: jest.fn(async () => true),
-                saveSerialized: jest.fn(async () => undefined),
-            },
-            syroSessionManager: {
-                appendRecord: jest.fn(async () => true),
-                appendDeckOptionsChange: jest.fn(async () => true),
-            },
+            deckOptionsStore: createDeckOptionsStoreMock(),
+            syroSessionManager: createDeckOptionsSessionManagerMock(),
             sharedSettingsStore: {
                 save: jest.fn(async () => undefined),
             },
@@ -799,7 +869,8 @@ describe("SRPlugin sync request orchestration", () => {
         expect(plugin.deviceStateStore.save).not.toHaveBeenCalled();
         expect(plugin.licenseStateStore.save).not.toHaveBeenCalled();
         expect(plugin.deckOptionsStore.saveSerialized).not.toHaveBeenCalled();
-        expect(plugin.syroSessionManager.appendDeckOptionsChange).not.toHaveBeenCalled();
+        expect(plugin.syroSessionManager.appendDeckOptionsPresetChange).not.toHaveBeenCalled();
+        expect(plugin.syroSessionManager.appendDeckOptionsAssignmentChange).not.toHaveBeenCalled();
         expect(plugin.syroSessionManager.appendRecord).toHaveBeenCalled();
         expect(
             plugin.syroSessionManager.appendRecord.mock.calls.every(
@@ -847,16 +918,10 @@ describe("SRPlugin sync request orchestration", () => {
             drainFlush: jest.fn(async () => true),
         };
         const plugin = Object.assign(Object.create(SRPlugin.prototype), {
-            deckOptionsStore: {
-                getSyncEntities: jest.fn(() => ({})),
-                markSyncEntity: jest.fn(),
-                hasSerializedStateChanged: jest.fn(async () => true),
-                saveSerialized: jest.fn(async () => undefined),
-            },
-            syroSessionManager: {
+            deckOptionsStore: createDeckOptionsStoreMock(),
+            syroSessionManager: createDeckOptionsSessionManagerMock({
                 appendRecord: jest.fn(async () => false),
-                appendDeckOptionsChange: jest.fn(async () => true),
-            },
+            }),
             sharedSettingsStore: {
                 save: jest.fn(async () => undefined),
             },
@@ -947,16 +1012,8 @@ describe("SRPlugin sync request orchestration", () => {
             drainFlush: jest.fn(async () => true),
         };
         const plugin = Object.assign(Object.create(SRPlugin.prototype), {
-            deckOptionsStore: {
-                getSyncEntities: jest.fn(() => ({})),
-                markSyncEntity: jest.fn(),
-                hasSerializedStateChanged: jest.fn(async () => false),
-                saveSerialized: jest.fn(async () => undefined),
-            },
-            syroSessionManager: {
-                appendRecord: jest.fn(async () => true),
-                appendDeckOptionsChange: jest.fn(async () => true),
-            },
+            deckOptionsStore: createDeckOptionsStoreMock(),
+            syroSessionManager: createDeckOptionsSessionManagerMock(),
             sharedSettingsStore: {
                 save: jest.fn(async () => undefined),
             },
@@ -1099,16 +1156,10 @@ describe("SRPlugin sync request orchestration", () => {
             return true;
         });
         const plugin = Object.assign(Object.create(SRPlugin.prototype), {
-            deckOptionsStore: {
-                getSyncEntities: jest.fn(() => ({})),
-                markSyncEntity: jest.fn(),
-                hasSerializedStateChanged: jest.fn(async () => false),
-                saveSerialized: jest.fn(async () => undefined),
-            },
-            syroSessionManager: {
+            deckOptionsStore: createDeckOptionsStoreMock(),
+            syroSessionManager: createDeckOptionsSessionManagerMock({
                 appendRecord,
-                appendDeckOptionsChange: jest.fn(async () => true),
-            },
+            }),
             sharedSettingsStore: {
                 save: jest.fn(async () => undefined),
             },
@@ -1300,7 +1351,7 @@ describe("SRPlugin sync request orchestration", () => {
                     validDevices: [],
                 })),
             },
-            deckOptionsStore: {},
+            deckOptionsStore: createDeckOptionsStoreMock(),
             sharedSettingsStore: {},
             trackingRulesStore: {},
             dailyStateStore: {},
@@ -1411,7 +1462,7 @@ describe("SRPlugin sync request orchestration", () => {
                     validDevices: [],
                 })),
             },
-            deckOptionsStore: {},
+            deckOptionsStore: createDeckOptionsStoreMock(),
             sharedSettingsStore: {},
             trackingRulesStore: {},
             dailyStateStore: {},
@@ -1679,7 +1730,7 @@ describe("SRPlugin sync request orchestration", () => {
                     validDevices: [],
                 })),
             },
-            deckOptionsStore: {},
+            deckOptionsStore: createDeckOptionsStoreMock(),
             sharedSettingsStore: {},
             trackingRulesStore: {},
             dailyStateStore: {},
@@ -2005,7 +2056,7 @@ describe("SRPlugin sync request orchestration", () => {
             },
             syroWorkspace: {},
             pendingOverlayStore,
-            deckOptionsStore: {},
+            deckOptionsStore: createDeckOptionsStoreMock(),
             sharedSettingsStore: {},
             trackingRulesStore: {},
             dailyStateStore: {},
@@ -2025,6 +2076,7 @@ describe("SRPlugin sync request orchestration", () => {
             resetBufferedStateRevisionTracking: jest.fn(),
             remoteDeltaFingerprint: "fingerprint",
             pendingSyncRequest: { mode: "full" },
+            pendingSyncPersistDomains: new Set(["deck-options"]),
             lastSyncReviewMode: FlashcardReviewMode.Review,
             reviewDecks: { deck: {} },
             lastSelectedReviewDeck: "deck",
@@ -2116,7 +2168,7 @@ describe("SRPlugin sync request orchestration", () => {
             reviewStateCommitCoordinator: {},
             syroSessionManager: {},
             syroWorkspace: {},
-            deckOptionsStore: {},
+            deckOptionsStore: createDeckOptionsStoreMock(),
             sharedSettingsStore: {},
             trackingRulesStore: {},
             dailyStateStore: {},
@@ -2135,6 +2187,7 @@ describe("SRPlugin sync request orchestration", () => {
             pendingDailyStateOverlayFormalization: false,
             remoteDeltaFingerprint: "",
             pendingSyncRequest: null,
+            pendingSyncPersistDomains: new Set(["deck-options"]),
             lastSyncReviewMode: null,
             lastSelectedReviewDeck: "",
             noteCacheSignature: "",

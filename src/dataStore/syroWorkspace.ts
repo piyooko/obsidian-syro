@@ -531,9 +531,10 @@ function validateTimelineStoreFile(raw: string): boolean {
 
 function validateDeckOptionsStoreFile(raw: string): boolean {
     const parsed = parseJsonUnknown(raw);
+    const version = isRecord(parsed) ? getNumberProp(parsed, "version") : undefined;
     return (
         isRecord(parsed) &&
-        getNumberProp(parsed, "version") === 1 &&
+        (version === 1 || version === 2) &&
         isObjectLike(parsed["fsrsSettings"]) &&
         Array.isArray(parsed["deckOptionsPresets"]) &&
         isObjectLike(parsed["deckPresetAssignment"])

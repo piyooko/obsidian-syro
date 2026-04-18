@@ -118,8 +118,9 @@ function createPlugin(): SRPlugin {
                 deckPresetAssignment: {},
             },
         },
-        savePluginData: jest.fn(async () => {}),
-        sync: jest.fn(async () => {}),
+        saveDeckOptionsAndRequestSync: jest.fn(async () => ({
+            status: "executed",
+        })),
     } as unknown as SRPlugin;
 }
 
@@ -252,8 +253,7 @@ describe("DeckOptionsPanel", () => {
             await clickButton(findButtonByText(view.container, t("DECK_OPTIONS_BTN_SAVE")));
 
             expect(mockNotice).toHaveBeenCalledWith(t("DECK_OPTIONS_INVALID_STEP_FORMAT"));
-            expect(view.plugin.savePluginData).not.toHaveBeenCalled();
-            expect(view.plugin.sync).not.toHaveBeenCalled();
+            expect(view.plugin.saveDeckOptionsAndRequestSync).not.toHaveBeenCalled();
             expect(view.onClose).not.toHaveBeenCalled();
             expect(learningStepsInput.value).toBe("1m 10");
         } finally {
@@ -276,8 +276,7 @@ describe("DeckOptionsPanel", () => {
             changeInputValue(learningStepsInput, "2m 20m");
             await clickButton(findButtonByText(view.container, t("DECK_OPTIONS_BTN_SAVE")));
 
-            expect(view.plugin.savePluginData).toHaveBeenCalledTimes(1);
-            expect(view.plugin.sync).toHaveBeenCalledTimes(1);
+            expect(view.plugin.saveDeckOptionsAndRequestSync).toHaveBeenCalledTimes(1);
             expect(view.onSaved).toHaveBeenCalledTimes(1);
             expect(view.onClose).toHaveBeenCalledTimes(1);
             expect(view.plugin.data.settings.deckOptionsPresets[0]?.learningSteps).toBe("2m 20m");
