@@ -3,9 +3,9 @@ import type { DailyDeckStats } from "./syroPluginDataStore";
 import { parseDailyState } from "./syroPluginDataStore";
 import { getArrayProp, getNumberProp, isRecord, parseJsonUnknown } from "src/util/typeGuards";
 
-export const PENDING_OVERLAY_VERSION = 2;
+export const PENDING_OVERLAY_VERSION = 3;
 export const PENDING_CARDS_REVIEW_SECTION_VERSION = 2;
-export const PENDING_DAILY_STATE_SECTION_VERSION = 2;
+export const PENDING_DAILY_STATE_SECTION_VERSION = 3;
 
 export interface ReviewItemDelta {
     id: number;
@@ -37,6 +37,7 @@ export interface PendingDailyStateSection {
     buryList: string[];
     dailyDeckStats: DailyDeckStats;
     deviceReviewCount?: number;
+    committedTargetUuids: string[];
 }
 
 export interface PendingOverlaySections {
@@ -114,6 +115,7 @@ export function createPendingDailyStateSection(input: {
     buryList: string[];
     dailyDeckStats: DailyDeckStats;
     deviceReviewCount?: number;
+    committedTargetUuids?: readonly string[];
 }): PendingDailyStateSection {
     return {
         version: PENDING_DAILY_STATE_SECTION_VERSION,
@@ -122,6 +124,13 @@ export function createPendingDailyStateSection(input: {
         buryList: [...input.buryList],
         dailyDeckStats: cloneJson(input.dailyDeckStats),
         deviceReviewCount: input.deviceReviewCount,
+        committedTargetUuids: Array.from(
+            new Set(
+                (input.committedTargetUuids ?? []).filter(
+                    (value) => typeof value === "string" && value.trim().length > 0,
+                ),
+            ),
+        ),
     };
 }
 
@@ -182,6 +191,17 @@ function parseDailyStateSection(value: unknown): PendingDailyStateSection | null
         buryList: [...parsed.buryList],
         dailyDeckStats: cloneJson(parsed.dailyDeckStats),
         deviceReviewCount: parsed.deviceReviewCount,
+        committedTargetUuids: Array.from(
+            new Set(
+                getArrayProp(value, "committedTargetUuids")
+                    ?.filter(
+                        (entry): entry is string =>
+                            typeof entry === "string" && entry.length > 0,
+                    )
+                    .map((entry) => entry.trim())
+                    .filter((entry) => entry.length > 0) ?? [],
+            ),
+        ),
     };
 }
 

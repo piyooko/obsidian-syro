@@ -381,7 +381,7 @@ describe("DataStore algorithm binding", () => {
         expect(item.timesReviewed).toBe(1);
         expect(item.nextReview).toBe(123456789);
         expect(JSON.parse(files.get(normalizePath(overlayPath)) ?? "{}")).toEqual({
-            version: 2,
+            version: 3,
             sections: {
                 cardsReview: {
                     version: 2,
@@ -449,7 +449,7 @@ describe("DataStore algorithm binding", () => {
         expect(await store.save()).toBe(true);
 
         expect(JSON.parse(files.get(normalizePath("./pending.overlay.json")) ?? "{}")).toEqual({
-            version: 2,
+            version: 3,
             sections: {
                 cardsReview: {
                     version: 2,
@@ -471,7 +471,7 @@ describe("DataStore algorithm binding", () => {
         expect(store.markPendingReviewSessionCommitted(item.ID, "card-review:test-1")).toBe(true);
         expect(await store.save()).toBe(true);
         expect(JSON.parse(files.get(normalizePath("./pending.overlay.json")) ?? "{}")).toEqual({
-            version: 2,
+            version: 3,
             sections: {},
         });
     });

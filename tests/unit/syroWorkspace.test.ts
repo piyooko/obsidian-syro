@@ -481,7 +481,7 @@ describe("SyroWorkspace", () => {
         expect(files.get(layout.notesPath)).toBe(createValidNotesPayload());
         expect(files.get(layout.timelinePath)).toBe('{"note.md":[{"id":"1"}]}');
         expect(JSON.parse(files.get(layout.pendingOverlayPath) ?? "{}")).toEqual({
-            version: 2,
+            version: 3,
             sections: {
                 cardsReview: {
                     version: 2,
@@ -604,7 +604,7 @@ describe("SyroWorkspace", () => {
 
         expect(startup.startupDecision).toBe("ready");
         expect(JSON.parse(files.get(layout.pendingOverlayPath) ?? "{}")).toEqual({
-            version: 2,
+            version: 3,
             sections: {
                 cardsReview: {
                     version: 2,

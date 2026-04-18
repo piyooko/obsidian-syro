@@ -476,6 +476,7 @@ export default class SRPlugin extends Plugin {
     private currentDeviceReviewCount = 0;
     private pendingDailyStateOverlayFormalization = false;
     private pendingDailyStateCommitId: string | null = null;
+    private pendingDailyStateCommittedTargetUuids = new Set<string>();
     private dataShell: LegacyPluginData | null = null;
     private syroSessionManager: SyroSessionManager | null = null;
     private pendingSyroRecoveryContext: SyroRecoveryModalContext | null = null;
@@ -547,7 +548,19 @@ export default class SRPlugin extends Plugin {
             buryList: this.data.buryList,
             dailyDeckStats: this.data.dailyDeckStats,
             deviceReviewCount: this.currentDeviceReviewCount,
+            committedTargetUuids: [...this.pendingDailyStateCommittedTargetUuids],
         });
+    }
+
+    private setPendingDailyStateCommittedTargetUuids(
+        values: readonly string[] | null | undefined,
+    ): void {
+        this.pendingDailyStateCommittedTargetUuids = new Set(
+            (values ?? [])
+                .filter((value) => typeof value === "string")
+                .map((value) => value.trim())
+                .filter((value) => value.length > 0),
+        );
     }
 
     private buildDailyStateSnapshotFromPendingSection(
@@ -577,6 +590,9 @@ export default class SRPlugin extends Plugin {
             options.preserveCommitId && this.pendingDailyStateCommitId
                 ? this.pendingDailyStateCommitId
                 : createPendingOverlayCommitId("daily-state");
+        if (!(options.preserveCommitId && this.pendingDailyStateCommitId)) {
+            this.pendingDailyStateCommittedTargetUuids.clear();
+        }
         this.pendingDailyStateCommitId = nextCommitId;
         this.pendingOverlayStore.stageDailyStateSection(
             this.buildPendingDailyStateSection(nextCommitId),
@@ -613,6 +629,7 @@ export default class SRPlugin extends Plugin {
         this.data.dailyDeckStats = nextDailyDeckStats;
         this.currentDeviceReviewCount = normalizeDeviceReviewCount(section.deviceReviewCount);
         this.pendingDailyStateCommitId = section.commitId;
+        this.setPendingDailyStateCommittedTargetUuids(section.committedTargetUuids);
         this.pendingDailyStateOverlayFormalization = true;
         this.markBufferedPluginStateDirty(["daily-state"]);
         this.logRuntimeDebug("[SR-PendingOverlay] section-applied", {
@@ -621,6 +638,53 @@ export default class SRPlugin extends Plugin {
             path: this.syroLayout?.pendingOverlayPath,
         });
         return true;
+    }
+
+    private async markPendingDailyStateTargetCommitted(
+        targetUuid: string,
+        updatedAt: string,
+    ): Promise<void> {
+        const normalizedTargetUuid = targetUuid.trim();
+        if (normalizedTargetUuid.length === 0) {
+            return;
+        }
+
+        this.pendingDailyStateCommittedTargetUuids.add(normalizedTargetUuid);
+        this.dailyStateAppliedOpIds[normalizedTargetUuid] = updatedAt;
+
+        if (!this.pendingOverlayStore || !this.pendingDailyStateCommitId) {
+            this.logRuntimeDebug("[SR-DailyState] local targetUuid marked applied", {
+                targetUuid: normalizedTargetUuid,
+                commitId: this.pendingDailyStateCommitId,
+                persistedInPendingOverlay: false,
+            });
+            return;
+        }
+
+        this.pendingOverlayStore.stageDailyStateSection(
+            this.buildPendingDailyStateSection(this.pendingDailyStateCommitId),
+        );
+        this.pendingOverlayStore.requestFlush();
+        const flushed = await this.pendingOverlayStore.drainFlush();
+        if (!flushed) {
+            this.logRuntimeDebug(
+                "[SR-PendingOverlay] section-retained-due-to-incomplete-commit",
+                {
+                    section: "dailyState",
+                    reason: "committed-target-flush-failed",
+                    targetUuid: normalizedTargetUuid,
+                },
+            );
+            throw new Error(
+                `[SR-PendingOverlay] Failed to persist committed daily-state targetUuid: ${normalizedTargetUuid}`,
+            );
+        }
+
+        this.logRuntimeDebug("[SR-DailyState] local targetUuid marked applied", {
+            targetUuid: normalizedTargetUuid,
+            commitId: this.pendingDailyStateCommitId,
+            persistedInPendingOverlay: true,
+        });
     }
 
     private normalizeRequestedPluginDataDomains(
@@ -1081,6 +1145,46 @@ export default class SRPlugin extends Plugin {
         return true;
     }
 
+    private async alignFreshBaselineSourceSessionsBeforeFirstImport(
+        reason: string,
+    ): Promise<boolean> {
+        const baselineSourceDeviceId = this.syroLayout?.device.baselineFromDeviceId;
+        if (!baselineSourceDeviceId || !this.syroSessionManager || !this.syroWorkspace) {
+            return true;
+        }
+
+        if (this.syroSessionManager.hasRestoredCurrentDeviceCursorSnapshot()) {
+            return true;
+        }
+
+        const inventory = await this.syroWorkspace.listDeviceInventory();
+        const sourceDevice = inventory.validDevices.find(
+            (entry) => entry.deviceId === baselineSourceDeviceId,
+        );
+        if (!sourceDevice) {
+            this.logRuntimeDebug(
+                "[SR-Syro] fresh-baseline source alignment skipped before first import",
+                {
+                    reason,
+                    baselineSourceDeviceId,
+                    status: "missing-source-device",
+                },
+            );
+            return false;
+        }
+
+        await this.syroSessionManager.alignRemoteDeviceSessionsToEof(sourceDevice.deviceFolderName);
+        this.logRuntimeDebug(
+            "[SR-Syro] fresh-baseline source sessions aligned to EOF before first import",
+            {
+                reason,
+                baselineSourceDeviceId,
+                sourceDeviceFolderName: sourceDevice.deviceFolderName,
+            },
+        );
+        return true;
+    }
+
     private resetSyroDataBackedRuntimeState(): void {
         this.dataBackedRuntimeInitialized = false;
         this.hasPerformedInitialGC = false;
@@ -1095,6 +1199,7 @@ export default class SRPlugin extends Plugin {
         this.cardsStoreSaveFailureNotified = false;
         this.clearPendingCardsStoreSaveTimer();
         this.pendingDailyStateCommitId = null;
+        this.pendingDailyStateCommittedTargetUuids.clear();
         this.syroLayout = null;
         this.syroWorkspace = null;
         this.pendingOverlayStore = null;
@@ -3381,6 +3486,17 @@ export default class SRPlugin extends Plugin {
             };
         }
 
+        const freshBaselineReady =
+            await this.alignFreshBaselineSourceSessionsBeforeFirstImport(importReason);
+        if (!freshBaselineReady) {
+            return {
+                importedSessionIds: [],
+                deletedSessionIds: [],
+                archivedSessionIds: [],
+                replayImpact: createEmptySyroSessionReplaySummary(),
+            };
+        }
+
         const inventory = await this.syroWorkspace.listDeviceInventory();
         const validDevicesById = new Map(
             inventory.validDevices.map((entry) => [entry.deviceId, entry] as const),
@@ -5624,6 +5740,7 @@ export default class SRPlugin extends Plugin {
             );
             this.persistedDailyState = dailyState;
             this.dailyStateAppliedOpIds = { ...dailyState.appliedOpIds };
+            this.pendingDailyStateCommittedTargetUuids.clear();
         } else if (this.dailyStateStore.lastLoadError) {
             return this.dailyStateStore.lastLoadError;
         } else {
@@ -5631,6 +5748,7 @@ export default class SRPlugin extends Plugin {
             const nextState = this.buildDailyStateSnapshot();
             this.persistedDailyState = nextState;
             this.dailyStateAppliedOpIds = {};
+            this.pendingDailyStateCommittedTargetUuids.clear();
             if (!this.syroReadOnlyReason) {
                 await this.dailyStateStore.save(nextState);
             }
@@ -5862,6 +5980,9 @@ export default class SRPlugin extends Plugin {
             : null;
         if (pendingDailyStateSection) {
             this.pendingDailyStateCommitId = pendingDailyStateSection.commitId;
+            this.setPendingDailyStateCommittedTargetUuids(
+                pendingDailyStateSection.committedTargetUuids,
+            );
         }
         const dailyState = persistDailyState
             ? pendingDailyStateSection
@@ -5969,11 +6090,26 @@ export default class SRPlugin extends Plugin {
                 pendingDailyStateSection?.commitId ??
                 this.pendingDailyStateCommitId ??
                 updatedAt;
+            const committedTargetUuids = new Set(
+                pendingDailyStateSection?.committedTargetUuids ??
+                    [...this.pendingDailyStateCommittedTargetUuids],
+            );
             if (dailyStateOperations.length === 0) {
                 dailyStateSessionCommitted = true;
             }
             for (const [index, operation] of dailyStateOperations.entries()) {
                 const targetUuid = `daily-op:${dailyStateCommitKey}:${index}:${operation.opType}`;
+                if (committedTargetUuids.has(targetUuid)) {
+                    this.dailyStateAppliedOpIds[targetUuid] = updatedAt;
+                    this.logRuntimeDebug(
+                        "[SR-DailyState] session append skipped as already committed",
+                        {
+                            targetUuid,
+                            commitId: dailyStateCommitKey,
+                        },
+                    );
+                    continue;
+                }
                 const appended =
                     (await this.syroSessionManager?.appendRecord({
                         domain: "daily-state",
@@ -5997,6 +6133,8 @@ export default class SRPlugin extends Plugin {
                         `[SR-PendingOverlay] Failed to append daily-state session record: ${targetUuid}`,
                     );
                 }
+                committedTargetUuids.add(targetUuid);
+                await this.markPendingDailyStateTargetCommitted(targetUuid, updatedAt);
             }
             if (dailyStateOperations.length > 0) {
                 dailyStateSessionCommitted = true;
@@ -6070,6 +6208,7 @@ export default class SRPlugin extends Plugin {
             }
             if (dailyStateSessionCommitted) {
                 this.pendingDailyStateCommitId = null;
+                this.pendingDailyStateCommittedTargetUuids.clear();
             }
             this.pendingDailyStateOverlayFormalization = false;
             this.markBufferedPluginStatePersisted(["daily-state"], bufferedRevisionSnapshot);

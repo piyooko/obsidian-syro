@@ -424,6 +424,7 @@ export class SyroSessionManager {
     private readonly adapter: SessionAdapter;
     private syncReadOnlyReason: string | null = null;
     private readonly sessionCursors = new Map<string, SyroSessionCursorState>();
+    private hasCurrentDeviceCursorSnapshot = false;
 
     constructor(
         private readonly app: App,
@@ -436,6 +437,10 @@ export class SyroSessionManager {
     async initialize(): Promise<void> {
         await ensureDirectory(this.adapter, this.layout.currentDeviceSessionsRoot);
         await this.restoreCurrentDeviceCursorSnapshot();
+    }
+
+    hasRestoredCurrentDeviceCursorSnapshot(): boolean {
+        return this.hasCurrentDeviceCursorSnapshot;
     }
 
     setReadOnly(reason: string | null): void {
@@ -791,10 +796,12 @@ export class SyroSessionManager {
         const sessionFilePath = await this.ensureCurrentSessionFilePath();
         const line = buildCursorSnapshotLine(this.layout, this.sessionCursors);
         await this.appendText(sessionFilePath, `${JSON.stringify(line)}\n`);
+        this.hasCurrentDeviceCursorSnapshot = true;
     }
 
     private async restoreCurrentDeviceCursorSnapshot(): Promise<void> {
         this.sessionCursors.clear();
+        this.hasCurrentDeviceCursorSnapshot = false;
         const latestSnapshot = await this.loadLatestCursorSnapshot(this.getCurrentDeviceFolderName());
         if (!latestSnapshot) {
             return;
@@ -803,6 +810,7 @@ export class SyroSessionManager {
         for (const [sessionPath, cursor] of Object.entries(latestSnapshot.cursors)) {
             this.sessionCursors.set(sessionPath, cursor);
         }
+        this.hasCurrentDeviceCursorSnapshot = true;
     }
 
     private async clearCurrentDeviceSessionFiles(): Promise<void> {
