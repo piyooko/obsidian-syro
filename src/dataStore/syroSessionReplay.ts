@@ -32,6 +32,7 @@ import {
 import { RepetitionItem } from "./repetitionItem";
 import { ReviewCommitStore, type ReviewCommitLog } from "./reviewCommitStore";
 import {
+    buildSyroSessionCardFormalStateDigest,
     classifySyroSessionRecordImpact,
     createEmptySyroSessionReplayReceipt,
     createEmptySyroSessionReplaySummary,
@@ -112,6 +113,59 @@ type DeferredReplayRecord =
 
 function cloneUnknown<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function getCardReviewWatermark(item: RepetitionItem | null | undefined): number {
+    if (!item) {
+        return 0;
+    }
+
+    const scheduleData = isRecord(item.data) ? item.data : null;
+    const lastReviewValue = scheduleData?.["last_review"];
+    const parsedLastReview =
+        lastReviewValue instanceof Date
+            ? lastReviewValue.getTime()
+            : typeof lastReviewValue === "string"
+              ? Date.parse(lastReviewValue)
+              : Number.NaN;
+    if (Number.isFinite(parsedLastReview)) {
+        return parsedLastReview;
+    }
+    if (item.timesReviewed > 0 && Number.isFinite(item.nextReview) && item.nextReview > 0) {
+        return item.nextReview;
+    }
+    return 0;
+}
+
+function isSemanticallyNewerCardState(
+    remoteItem: RepetitionItem,
+    localItem: RepetitionItem | null | undefined,
+): boolean {
+    if (!localItem) {
+        return true;
+    }
+
+    if (remoteItem.timesReviewed !== localItem.timesReviewed) {
+        return remoteItem.timesReviewed > localItem.timesReviewed;
+    }
+    if (remoteItem.timesCorrect !== localItem.timesCorrect) {
+        return remoteItem.timesCorrect > localItem.timesCorrect;
+    }
+    if (remoteItem.errorStreak !== localItem.errorStreak) {
+        return remoteItem.errorStreak < localItem.errorStreak;
+    }
+
+    const remoteWatermark = getCardReviewWatermark(remoteItem);
+    const localWatermark = getCardReviewWatermark(localItem);
+    if (remoteWatermark !== localWatermark) {
+        return remoteWatermark > localWatermark;
+    }
+
+    if (remoteItem.nextReview !== localItem.nextReview) {
+        return remoteItem.nextReview > localItem.nextReview;
+    }
+
+    return false;
 }
 
 function isNoteReviewSource(value: unknown): value is NoteReviewSource {
@@ -424,7 +478,7 @@ function buildNegativeCacheKey(record: SyroSessionRecord): string {
 function ensureDailyStateDate(
     data: ReplayDependencies["data"],
     date: string,
-): "applied" | "stale" {
+): "applied" | "same-day" | "stale" {
     if (!date) {
         return "stale";
     }
@@ -433,6 +487,10 @@ function ensureDailyStateDate(
     if (currentDate && currentDate > date) {
         return "stale";
     }
+
+    const sameDay =
+        data.buryDate === date &&
+        data.dailyDeckStats.date === date;
 
     if (data.buryDate !== date) {
         data.buryDate = date;
@@ -446,7 +504,7 @@ function ensureDailyStateDate(
         };
     }
 
-    return "applied";
+    return sameDay ? "same-day" : "applied";
 }
 
 function hasNewerOrEqualTimestamp(current: string | null | undefined, next: string): boolean {
@@ -1017,8 +1075,29 @@ export async function replaySyroSessionRecords(
         }
 
         const cardTargetUuid = buildCardTargetUuid(workingSnapshot.item.uuid);
-        if (!deps.store.shouldApplySyncEntity(cardTargetUuid, record.updatedAt)) {
+        const currentItemBeforeApply =
+            cardResolution?.kind === "card-item"
+                ? deps.store.getItembyID(cardResolution.itemId)
+                : deps.store.findItemByUuidOrAlias(workingSnapshot.item.uuid);
+        const shouldApplyByTimestamp = deps.store.shouldApplySyncEntity(
+            cardTargetUuid,
+            record.updatedAt,
+        );
+        const shouldApplyBySemanticProgress =
+            !shouldApplyByTimestamp &&
+            isSemanticallyNewerCardState(workingSnapshot.item, currentItemBeforeApply);
+        if (!shouldApplyByTimestamp && !shouldApplyBySemanticProgress) {
             return "skipped";
+        }
+        if (shouldApplyBySemanticProgress) {
+            deps.logDebug?.("[SR-Syro] card replay accepted semantically newer state", {
+                targetUuid: cardTargetUuid,
+                recordUpdatedAt: record.updatedAt,
+                localTimesReviewed: currentItemBeforeApply?.timesReviewed ?? 0,
+                remoteTimesReviewed: workingSnapshot.item.timesReviewed,
+                localNextReview: currentItemBeforeApply?.nextReview ?? 0,
+                remoteNextReview: workingSnapshot.item.nextReview,
+            });
         }
 
         if (record.opType === "remove") {
@@ -1033,9 +1112,24 @@ export async function replaySyroSessionRecords(
             entityType: "card-item",
             pathHint: workingSnapshot.path,
         });
+        const currentItem = deps.store.findItemByUuidOrAlias(cardTargetUuid);
+        const currentSnapshot =
+            currentItem && currentItem.ID >= 0
+                ? deps.store.getCardSnapshot(currentItem.ID)
+                : null;
         replayReceipt.cards.push({
             targetUuid: cardTargetUuid,
             updatedAt: record.updatedAt,
+            pathHint: workingSnapshot.path,
+            stateDigest: buildSyroSessionCardFormalStateDigest(
+                currentSnapshot ?? {
+                    path: workingSnapshot.path,
+                    trackedFileUuid: workingSnapshot.trackedFileUuid,
+                    trackedFileAliases: [...(workingSnapshot.trackedFileAliases ?? [])],
+                    trackedItem: workingSnapshot.trackedItem ?? null,
+                    item: workingSnapshot.item,
+                },
+            ),
         });
 
         cardsChanged = true;
@@ -1213,15 +1307,18 @@ export async function replaySyroSessionRecords(
 
                 const date = getStringProp(payload, "date")?.trim() ?? "";
                 if (record.opType === "rollover-reset") {
-                    if (ensureDailyStateDate(deps.data, date) === "stale") {
+                    const ensureResult = ensureDailyStateDate(deps.data, date);
+                    if (ensureResult === "stale") {
                         dailyStateReplayStats.skippedStaleDate++;
                         continue;
                     }
-                    deps.data.buryList.splice(0, deps.data.buryList.length);
-                    deps.data.dailyDeckStats = {
-                        date,
-                        counts: {},
-                    };
+                    if (ensureResult !== "same-day") {
+                        deps.data.buryList.splice(0, deps.data.buryList.length);
+                        deps.data.dailyDeckStats = {
+                            date,
+                            counts: {},
+                        };
+                    }
                 } else if (record.opType === "bury-add") {
                     if (ensureDailyStateDate(deps.data, date) === "stale") {
                         dailyStateReplayStats.skippedStaleDate++;
@@ -1267,6 +1364,9 @@ export async function replaySyroSessionRecords(
                             0,
                             currentCounts.review + (Number.isFinite(reviewDelta) ? reviewDelta : 0),
                         ),
+                    };
+                    replayReceipt.dailyStateDeckCounts[deckName] = {
+                        ...deps.data.dailyDeckStats.counts[deckName],
                     };
                     dailyStateReplayStats.affectedDeckLineages.add(deckName);
                 } else {

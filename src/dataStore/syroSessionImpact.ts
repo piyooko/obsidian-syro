@@ -17,11 +17,70 @@ export interface SyroSessionReplaySummary {
 export interface SyroSessionAppliedCardReceipt {
     targetUuid: string;
     updatedAt: string;
+    pathHint?: string;
+    stateDigest: string;
 }
 
 export interface SyroSessionReplayReceipt {
     cards: SyroSessionAppliedCardReceipt[];
     dailyStateTargetUuids: string[];
+    dailyStateDeckCounts: Record<
+        string,
+        {
+            new: number;
+            review: number;
+        }
+    >;
+}
+
+export function buildSyroSessionCardFormalStateDigest(input: {
+    path: string;
+    trackedFileUuid: string;
+    trackedFileAliases?: readonly string[] | null;
+    trackedItem?:
+        | {
+              fingerprint?: string | null;
+              lineNo?: number | null;
+              clozeId?: string | number | null;
+          }
+        | null;
+    item: {
+        aliases?: readonly string[] | null;
+        queue: unknown;
+        nextReview: unknown;
+        learningStep: unknown;
+        timesReviewed: unknown;
+        timesCorrect: unknown;
+        errorStreak: unknown;
+        data: unknown;
+    };
+}): string {
+    return JSON.stringify({
+        path: input.path,
+        trackedFileUuid: input.trackedFileUuid,
+        trackedFileAliases: Array.from(new Set(input.trackedFileAliases ?? [])).sort((left, right) =>
+            left.localeCompare(right),
+        ),
+        trackedItem: input.trackedItem
+            ? {
+                  fingerprint: input.trackedItem.fingerprint ?? null,
+                  lineNo: input.trackedItem.lineNo ?? null,
+                  clozeId: input.trackedItem.clozeId ?? null,
+              }
+            : null,
+        item: {
+            aliases: Array.from(new Set(input.item.aliases ?? [])).sort((left, right) =>
+                left.localeCompare(right),
+            ),
+            queue: input.item.queue,
+            nextReview: input.item.nextReview,
+            learningStep: input.item.learningStep ?? null,
+            timesReviewed: input.item.timesReviewed,
+            timesCorrect: input.item.timesCorrect,
+            errorStreak: input.item.errorStreak,
+            data: input.item.data ?? null,
+        },
+    });
 }
 
 export function createEmptySyroSessionReplaySummary(): SyroSessionReplaySummary {
@@ -38,6 +97,7 @@ export function createEmptySyroSessionReplayReceipt(): SyroSessionReplayReceipt 
     return {
         cards: [],
         dailyStateTargetUuids: [],
+        dailyStateDeckCounts: {},
     };
 }
 
@@ -61,7 +121,7 @@ export function mergeSyroSessionReplayReceipt(
     const cardByTargetUuid = new Map<string, SyroSessionAppliedCardReceipt>();
     for (const entry of [...left.cards, ...right.cards]) {
         const existing = cardByTargetUuid.get(entry.targetUuid);
-        if (!existing || existing.updatedAt.localeCompare(entry.updatedAt) < 0) {
+        if (!existing || existing.updatedAt.localeCompare(entry.updatedAt) <= 0) {
             cardByTargetUuid.set(entry.targetUuid, entry);
         }
     }
@@ -73,6 +133,10 @@ export function mergeSyroSessionReplayReceipt(
         dailyStateTargetUuids: Array.from(
             new Set([...left.dailyStateTargetUuids, ...right.dailyStateTargetUuids]),
         ).sort((leftEntry, rightEntry) => leftEntry.localeCompare(rightEntry)),
+        dailyStateDeckCounts: {
+            ...left.dailyStateDeckCounts,
+            ...right.dailyStateDeckCounts,
+        },
     };
 }
 
@@ -125,5 +189,9 @@ export function hasSyroSessionReplayChanges(summary: SyroSessionReplaySummary): 
 }
 
 export function hasSyroSessionReplayReceiptEntries(receipt: SyroSessionReplayReceipt): boolean {
-    return receipt.cards.length > 0 || receipt.dailyStateTargetUuids.length > 0;
+    return (
+        receipt.cards.length > 0 ||
+        receipt.dailyStateTargetUuids.length > 0 ||
+        Object.keys(receipt.dailyStateDeckCounts).length > 0
+    );
 }

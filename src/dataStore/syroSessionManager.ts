@@ -1194,10 +1194,7 @@ export class SyroSessionManager {
             const completeText = raw.slice(0, getLastCompleteOffset(raw));
             for (const { rawLine } of this.iterateCompleteLines(completeText, 0)) {
                 const parsedLine = parseSessionLine(rawLine);
-                if (
-                    parsedLine?.lineType === "cursor-snapshot" &&
-                    isIsoTimeNewer(parsedLine.updatedAt, latestSnapshot?.updatedAt ?? null)
-                ) {
+                if (parsedLine?.lineType === "cursor-snapshot") {
                     latestSnapshot = parsedLine;
                 }
             }

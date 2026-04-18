@@ -142,6 +142,7 @@ import {
     type SyroStagedSessionCursorAdvance,
 } from "./dataStore/syroSessionManager";
 import {
+    buildSyroSessionCardFormalStateDigest,
     createEmptySyroSessionReplaySummary,
     createEmptySyroSessionReplayReceipt,
     hasSyroSessionReplayChanges,
@@ -355,7 +356,9 @@ interface PendingSyroImportInvariantFailure {
     sourceDeviceFolderName: string;
     lastOpId: string | null;
     missingCardTargetUuids: string[];
+    mismatchedCardTargetUuids: string[];
     missingDailyTargetUuids: string[];
+    mismatchedDailyDeckNames: string[];
 }
 
 interface FirstMeetingCardOverlapStats {
@@ -372,7 +375,13 @@ interface FirstMeetingCardsReconcileResult {
     mergedFiles: number;
     matchedCards: number;
     mergedCards: number;
+    adoptedRemoteCardStates: number;
     aliasGroups: SyroUuidAliasGroup[];
+}
+
+interface FirstMeetingImportPreparationResult {
+    replayImpact: SyroSessionReplaySummary;
+    formalized: boolean;
 }
 
 const AUTO_SYNC_COOLDOWN_MS = 15_000;
@@ -3753,6 +3762,116 @@ export default class SRPlugin extends Plugin {
         return `${group.entityType}:${normalized.join("|")}`;
     }
 
+    private getFirstMeetingReviewWatermark(item: RepetitionItem): number {
+        const scheduleData = isRecord(item.data) ? item.data : null;
+        const lastReviewValue = scheduleData?.["last_review"];
+        const parsedLastReview =
+            lastReviewValue instanceof Date
+                ? lastReviewValue.getTime()
+                : typeof lastReviewValue === "string"
+                  ? Date.parse(lastReviewValue)
+                  : Number.NaN;
+        if (Number.isFinite(parsedLastReview)) {
+            return parsedLastReview;
+        }
+        if (item.timesReviewed > 0 && Number.isFinite(item.nextReview) && item.nextReview > 0) {
+            return item.nextReview;
+        }
+        return 0;
+    }
+
+    private shouldAdoptRemoteFirstMeetingCardState(
+        localItem: RepetitionItem,
+        remoteItem: RepetitionItem,
+    ): boolean {
+        const localWatermark = this.getFirstMeetingReviewWatermark(localItem);
+        const remoteWatermark = this.getFirstMeetingReviewWatermark(remoteItem);
+        if (remoteWatermark !== localWatermark) {
+            return remoteWatermark > localWatermark;
+        }
+        if (remoteItem.timesReviewed !== localItem.timesReviewed) {
+            return remoteItem.timesReviewed > localItem.timesReviewed;
+        }
+        if (remoteItem.timesCorrect !== localItem.timesCorrect) {
+            return remoteItem.timesCorrect > localItem.timesCorrect;
+        }
+        if (remoteItem.errorStreak !== localItem.errorStreak) {
+            return remoteItem.errorStreak < localItem.errorStreak;
+        }
+        return remoteItem.nextReview > localItem.nextReview;
+    }
+
+    private buildCurrentCardFormalStateDigest(targetUuid: string): string | null {
+        if (!this.store) {
+            return null;
+        }
+
+        const item = this.store.findItemByUuidOrAlias(targetUuid);
+        if (!item) {
+            return null;
+        }
+
+        const snapshot = this.store.getCardSnapshot(item.ID);
+        if (!snapshot) {
+            return null;
+        }
+
+        return buildSyroSessionCardFormalStateDigest(snapshot);
+    }
+
+    private async persistImportedSyroFormalState(
+        result: SyroSessionImportResult | null,
+        reason: string,
+    ): Promise<boolean> {
+        const stagedReceipts = this.buildPendingSyroStagedImportReceipts(result);
+        if (stagedReceipts.length === 0) {
+            return true;
+        }
+
+        const hasCardReceipts = stagedReceipts.some((entry) => entry.receipt.cards.length > 0);
+        const hasDailyReceipts = stagedReceipts.some(
+            (entry) =>
+                entry.receipt.dailyStateTargetUuids.length > 0 ||
+                Object.keys(entry.receipt.dailyStateDeckCounts).length > 0,
+        );
+
+        try {
+            if (hasCardReceipts) {
+                const cardsSaved = (await this.store?.save()) ?? false;
+                if (!cardsSaved) {
+                    this.logRuntimeDebug("[SR-Syro] remote-import-finalize-skipped", {
+                        reason,
+                        phase: "persist-cards-formal",
+                    });
+                    return false;
+                }
+            }
+
+            if (hasDailyReceipts) {
+                if (!this.dailyStateStore) {
+                    this.logRuntimeDebug("[SR-Syro] remote-import-finalize-skipped", {
+                        reason,
+                        phase: "persist-daily-formal-missing-store",
+                    });
+                    return false;
+                }
+
+                const finalDailyState = this.buildDailyStateSnapshotWithMetadata();
+                await this.dailyStateStore.save(finalDailyState);
+                this.persistedDailyState = finalDailyState;
+            }
+
+            return true;
+        } catch (error) {
+            this.logRuntimeDebug("[SR-Syro] remote-import-finalize-skipped", {
+                reason,
+                phase: "persist-formal-threw",
+                error: String(error),
+            });
+            return false;
+        }
+    }
+
     private measureFirstMeetingCardOverlap(
         remoteSnapshots: ReturnType<typeof parseTrackedCardsStoreSnapshots>,
     ): FirstMeetingCardOverlapStats {
@@ -3826,6 +3945,7 @@ export default class SRPlugin extends Plugin {
                 mergedFiles: 0,
                 matchedCards: 0,
                 mergedCards: 0,
+                adoptedRemoteCardStates: 0,
                 aliasGroups: [],
             };
         }
@@ -3888,6 +4008,7 @@ export default class SRPlugin extends Plugin {
 
         let matchedCards = 0;
         let mergedCards = 0;
+        let adoptedRemoteCardStates = 0;
         for (const snapshot of remoteSnapshots.cards) {
             const exactItem = this.store.findItemByUuid(snapshot.item.uuid);
             const aliasItem =
@@ -3912,14 +4033,42 @@ export default class SRPlugin extends Plugin {
                 ...(snapshot.item.aliases ?? []),
             ]);
             const afterUuids = this.store.getItemEquivalentUuids(matchedItem.ID);
-            if (afterUuids.length <= beforeUuids.length) {
+            const localTrackedFile =
+                matchedItem.fileID ? this.store.getFileByID(matchedItem.fileID) : null;
+            const adoptedRemoteState =
+                !!localTrackedFile &&
+                this.shouldAdoptRemoteFirstMeetingCardState(
+                    matchedItem,
+                    RepetitionItem.create(snapshot.item),
+                );
+            if (adoptedRemoteState && localTrackedFile) {
+                this.store.upsertCardSnapshot({
+                    path: localTrackedFile.path,
+                    trackedFileUuid: localTrackedFile.uuid,
+                    trackedFileAliases: [...(localTrackedFile.aliases ?? [])],
+                    trackedFileTags: [...(localTrackedFile.tags ?? [])],
+                    trackedItem: snapshot.trackedItem
+                        ? (JSON.parse(JSON.stringify(snapshot.trackedItem)) as typeof snapshot.trackedItem)
+                        : null,
+                    item: RepetitionItem.create({
+                        ...snapshot.item,
+                        uuid: matchedItem.uuid,
+                        aliases: afterUuids.filter((uuid) => uuid !== matchedItem.uuid),
+                    } as RepetitionItem),
+                });
+                adoptedRemoteCardStates++;
+            }
+
+            if (afterUuids.length <= beforeUuids.length && !adoptedRemoteState) {
                 continue;
             }
 
-            mergedCards++;
+            if (afterUuids.length > beforeUuids.length) {
+                mergedCards++;
+            }
             const fingerprintUnique = snapshot.trackedItem
                 ? this.store.isTrackedFingerprintUnique(
-                      snapshot.path,
+                    snapshot.path,
                       snapshot.trackedItem.fingerprint,
                   )
                 : undefined;
@@ -3956,11 +4105,13 @@ export default class SRPlugin extends Plugin {
         }
 
         return {
-            changed: mergedFiles > 0 || mergedCards > 0,
+            changed:
+                mergedFiles > 0 || mergedCards > 0 || adoptedRemoteCardStates > 0,
             matchedFiles,
             mergedFiles,
             matchedCards,
             mergedCards,
+            adoptedRemoteCardStates,
             aliasGroups: [...aliasGroups.values()],
         };
     }
@@ -3972,14 +4123,17 @@ export default class SRPlugin extends Plugin {
         ) => Promise<ReturnType<typeof parseTrackedCardsStoreSnapshots> | null>,
         collectAliasGroups: (domain: "cards" | "notes", groups: SyroUuidAliasGroup[]) => void,
         reason: string,
-    ): Promise<SyroSessionReplaySummary> {
+    ): Promise<FirstMeetingImportPreparationResult> {
         if (
             !this.store ||
             !this.syroSessionManager ||
             !this.syroLayout ||
             this.syroLayout.device.baselineFromDeviceId
         ) {
-            return createEmptySyroSessionReplaySummary();
+            return {
+                replayImpact: createEmptySyroSessionReplaySummary(),
+                formalized: true,
+            };
         }
 
         const sessionSummaries = await this.syroSessionManager.summarizeDeviceSessions();
@@ -3998,6 +4152,9 @@ export default class SRPlugin extends Plugin {
 
             const sessionSummary = sessionSummaryByFolderName.get(validDevice.deviceFolderName);
             if (!sessionSummary?.hasPendingRemoteChanges) {
+                continue;
+            }
+            if (sessionSummary.lastPulledIntoCurrentAt) {
                 continue;
             }
 
@@ -4034,19 +4191,39 @@ export default class SRPlugin extends Plugin {
                 mergedFiles: reconcileResult.mergedFiles,
                 matchedCards: reconcileResult.matchedCards,
                 mergedCards: reconcileResult.mergedCards,
+                adoptedRemoteCardStates: reconcileResult.adoptedRemoteCardStates,
                 aliasGroups: reconcileResult.aliasGroups.length,
             });
         }
 
-        return cardsChanged
-            ? {
-                  cardsRuntimeChanged: false,
-                  noteReviewChanged: false,
-                  timelineChanged: false,
-                  dailyStateChanged: false,
-                  requiresGlobalSync: true,
-              }
-            : createEmptySyroSessionReplaySummary();
+        if (!cardsChanged) {
+            return {
+                replayImpact: createEmptySyroSessionReplaySummary(),
+                formalized: true,
+            };
+        }
+
+        const saved = await this.store.save();
+        if (!saved) {
+            this.logRuntimeDebug("[SR-FirstMeetingReconcile] formal-save-failed", {
+                reason,
+            });
+            return {
+                replayImpact: createEmptySyroSessionReplaySummary(),
+                formalized: false,
+            };
+        }
+
+        return {
+            replayImpact: {
+                cardsRuntimeChanged: false,
+                noteReviewChanged: false,
+                timelineChanged: false,
+                dailyStateChanged: false,
+                requiresGlobalSync: true,
+            },
+            formalized: true,
+        };
     }
 
     private verifyPendingSyroImportFormalization(
@@ -4056,19 +4233,46 @@ export default class SRPlugin extends Plugin {
             return [];
         }
 
-        const syncEntities = this.store.getSyncEntities();
+        const persistedDailyState =
+            this.persistedDailyState ?? this.buildDailyStateSnapshotWithMetadata();
         const failures: PendingSyroImportInvariantFailure[] = [];
         for (const stagedReceipt of this.buildPendingSyroStagedImportReceipts(result)) {
-            const missingCardTargetUuids = stagedReceipt.receipt.cards
-                .filter((entry) => {
-                    const syncEntity = syncEntities[entry.targetUuid];
-                    return !syncEntity || compareIsoTime(syncEntity.updatedAt, entry.updatedAt) < 0;
-                })
-                .map((entry) => entry.targetUuid);
+            const missingCardTargetUuids: string[] = [];
+            const mismatchedCardTargetUuids: string[] = [];
+            for (const entry of stagedReceipt.receipt.cards) {
+                const currentDigest = this.buildCurrentCardFormalStateDigest(entry.targetUuid);
+                if (!currentDigest) {
+                    missingCardTargetUuids.push(entry.targetUuid);
+                    continue;
+                }
+                if (currentDigest !== entry.stateDigest) {
+                    mismatchedCardTargetUuids.push(entry.targetUuid);
+                }
+            }
             const missingDailyTargetUuids = stagedReceipt.receipt.dailyStateTargetUuids.filter(
                 (targetUuid) => !this.dailyStateAppliedOpIds[targetUuid],
             );
-            if (missingCardTargetUuids.length === 0 && missingDailyTargetUuids.length === 0) {
+            const mismatchedDailyDeckNames = Object.entries(
+                stagedReceipt.receipt.dailyStateDeckCounts,
+            )
+                .filter(([deckName, expectedCounts]) => {
+                    const currentCounts =
+                        persistedDailyState.dailyDeckStats.counts[deckName] ?? {
+                            new: 0,
+                            review: 0,
+                        };
+                    return (
+                        currentCounts.new !== expectedCounts.new ||
+                        currentCounts.review !== expectedCounts.review
+                    );
+                })
+                .map(([deckName]) => deckName);
+            if (
+                missingCardTargetUuids.length === 0 &&
+                mismatchedCardTargetUuids.length === 0 &&
+                missingDailyTargetUuids.length === 0 &&
+                mismatchedDailyDeckNames.length === 0
+            ) {
                 continue;
             }
             failures.push({
@@ -4076,7 +4280,9 @@ export default class SRPlugin extends Plugin {
                 sourceDeviceFolderName: stagedReceipt.sourceDeviceFolderName,
                 lastOpId: stagedReceipt.lastOpId,
                 missingCardTargetUuids,
+                mismatchedCardTargetUuids,
                 missingDailyTargetUuids,
+                mismatchedDailyDeckNames,
             });
         }
         return failures;
@@ -4105,8 +4311,14 @@ export default class SRPlugin extends Plugin {
                     lastOpId: stagedReceipt.lastOpId,
                     cardTargets: stagedReceipt.receipt.cards.map((entry) => entry.targetUuid),
                     dailyTargets: stagedReceipt.receipt.dailyStateTargetUuids,
+                    dailyDeckCounts: stagedReceipt.receipt.dailyStateDeckCounts,
                 });
             }
+        }
+
+        const persisted = await this.persistImportedSyroFormalState(result, reason);
+        if (!persisted) {
+            return result;
         }
 
         const invariantFailures = this.verifyPendingSyroImportFormalization(result);
@@ -4119,7 +4331,9 @@ export default class SRPlugin extends Plugin {
                         sourceDeviceFolderName: failure.sourceDeviceFolderName,
                         lastOpId: failure.lastOpId,
                         missingCardTargetUuids: failure.missingCardTargetUuids,
+                        mismatchedCardTargetUuids: failure.mismatchedCardTargetUuids,
                         missingDailyTargetUuids: failure.missingDailyTargetUuids,
+                        mismatchedDailyDeckNames: failure.mismatchedDailyDeckNames,
                     });
                 }
                 this.logRuntimeDebug("[SR-Syro] remote-import-finalize-skipped", {
@@ -4128,6 +4342,10 @@ export default class SRPlugin extends Plugin {
                         sessionPath: failure.sessionPath,
                         sourceDeviceFolderName: failure.sourceDeviceFolderName,
                         lastOpId: failure.lastOpId,
+                        missingCardTargetUuids: failure.missingCardTargetUuids,
+                        mismatchedCardTargetUuids: failure.mismatchedCardTargetUuids,
+                        missingDailyTargetUuids: failure.missingDailyTargetUuids,
+                        mismatchedDailyDeckNames: failure.mismatchedDailyDeckNames,
                     })),
                 });
             }
@@ -4268,13 +4486,22 @@ export default class SRPlugin extends Plugin {
                 return null;
             }
         };
-        preImportReplayImpact =
+        const firstMeetingPreparation =
             await this.reconcileIndependentFreshRemoteDevicesBeforeImport(
                 validDevicesById,
                 loadRemoteCardsSnapshots,
                 collectAliasGroups,
                 importReason,
             );
+        preImportReplayImpact = firstMeetingPreparation.replayImpact;
+        if (!firstMeetingPreparation.formalized) {
+            return {
+                importedSessionIds: [],
+                deletedSessionIds: [],
+                archivedSessionIds: [],
+                replayImpact: createEmptySyroSessionReplaySummary(),
+            };
+        }
 
         const result = await this.syroSessionManager.importPendingSessions(
             async (sessionId, records) => {

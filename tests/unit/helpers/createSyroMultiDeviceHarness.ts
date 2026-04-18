@@ -725,10 +725,7 @@ function collectLatestCursorSnapshots(
                 ),
             }));
         for (const snapshot of snapshots) {
-            const current = result[deviceFolderName];
-            if (!current || current.updatedAt.localeCompare(snapshot.updatedAt) < 0) {
-                result[deviceFolderName] = snapshot;
-            }
+            result[deviceFolderName] = snapshot;
         }
         result[deviceFolderName] ??= null;
     }

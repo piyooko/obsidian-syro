@@ -309,6 +309,55 @@ describe("SyroSessionManager", () => {
         expect(localSessionRaw).not.toContain('"lineType":"cursor-snapshot"');
     });
 
+    test("restores the last cursor snapshot by append order even if its updatedAt is older", async () => {
+        const { app, adapter, files, layout } = await createWorkspaceContext();
+        await addSecondaryDevice(adapter, files);
+        const remoteSessionPath = normalizePath(
+            ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl",
+        );
+        const firstRemoteLine = `${createSessionEventLine(createRemoteRecord({ opId: "remote-op-early" }))}\n`;
+        const secondRemoteLine = `${createSessionEventLine(createRemoteRecord({ opId: "remote-op-late" }))}\n`;
+        files.set(remoteSessionPath, `${firstRemoteLine}${secondRemoteLine}`);
+
+        const currentSessionPath = normalizePath(layout.currentDeviceSessionFilePath);
+        files.set(
+            currentSessionPath,
+            [
+                createCursorSnapshotLine({
+                    "Mobile--91ac/2026-04-13.session.jsonl": {
+                        offset: firstRemoteLine.length,
+                        lastOpId: "remote-op-early",
+                        updatedAt: "2026-04-13T12:34:57.000Z",
+                    },
+                }),
+                JSON.stringify({
+                    version: 1,
+                    lineType: "cursor-snapshot",
+                    deviceId: "d84f1111-2222-3333-4444-555555555555",
+                    deviceName: "Desktop",
+                    updatedAt: "2026-04-13T12:00:00.000Z",
+                    cursors: {
+                        "Mobile--91ac/2026-04-13.session.jsonl": {
+                            offset: `${firstRemoteLine}${secondRemoteLine}`.length,
+                            lastOpId: "remote-op-late",
+                            updatedAt: "2026-04-13T12:00:00.000Z",
+                        },
+                    },
+                }),
+                "",
+            ].join("\n"),
+        );
+
+        const manager = new SyroSessionManager(app, layout);
+        await manager.initialize();
+        const replaySession = jest.fn(async () => undefined);
+
+        const result = await manager.importPendingSessions(replaySession);
+
+        expect(replaySession).not.toHaveBeenCalled();
+        expect(result.importedSessionIds).toEqual([]);
+    });
+
     test("ignores trailing partial lines until they become complete", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);

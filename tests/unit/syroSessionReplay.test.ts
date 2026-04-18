@@ -459,6 +459,71 @@ describe("replaySyroSessionRecords", () => {
         });
     });
 
+    test("same-day remote rollover-reset does not wipe already accumulated local deck counts", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+        deps.data.buryDate = "2026-04-13";
+        deps.data.dailyDeckStats = {
+            date: "2026-04-13",
+            counts: {
+                default: {
+                    new: 3,
+                    review: 0,
+                },
+            },
+        };
+
+        const summary = await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-same-day-reset",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "daily-state",
+                    entityType: "daily-state-op",
+                    opType: "rollover-reset",
+                    targetUuid: "daily-op:remote:0:rollover-reset",
+                    createdAt: "2026-04-13T12:05:00.000Z",
+                    updatedAt: "2026-04-13T12:05:00.000Z",
+                    payload: {
+                        date: "2026-04-13",
+                    },
+                    pathHint: "syro/devices/Desktop--d84f/daily-state.json",
+                },
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-same-day-delta",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "daily-state",
+                    entityType: "daily-state-op",
+                    opType: "deck-stats-delta",
+                    targetUuid: "daily-op:remote:1:deck-stats-delta",
+                    createdAt: "2026-04-13T12:05:01.000Z",
+                    updatedAt: "2026-04-13T12:05:01.000Z",
+                    payload: {
+                        date: "2026-04-13",
+                        deckName: "default",
+                        newDelta: 2,
+                        reviewDelta: 0,
+                    },
+                    pathHint: "syro/devices/Desktop--d84f/daily-state.json",
+                },
+            ],
+            deps,
+        );
+
+        expect(summary.dailyStateChanged).toBe(true);
+        expect(deps.data.dailyDeckStats.counts.default).toEqual({
+            new: 5,
+            review: 0,
+        });
+    });
+
     test("returns a runtime-only replay summary for pure card review session deltas", async () => {
         const { adapter } = createMockAdapter();
         const settings = createSettings();
@@ -593,6 +658,88 @@ describe("replaySyroSessionRecords", () => {
         const fileId = targetStore.findFileIdByUuid(fileSnapshot.uuid);
         expect(fileId).not.toBe("");
         expect(targetStore.getFileByID(fileId)?.path).toBe("cards/new.md");
+    });
+
+    test("accepts a semantically newer card review even when its updatedAt is older", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const targetStore = createStoreWithAdapter(adapter);
+        targetStore.trackFile("cards/skew.md", RPITEMTYPE.CARD, false);
+        const trackedFile = targetStore.getTrackedFile("cards/skew.md");
+        const trackedItem = new TrackedItem(
+            "hash-skew",
+            0,
+            "context",
+            CardType.SingleLineBasic,
+            {
+                startOffset: 0,
+                endOffset: 1,
+                blockStartOffset: 0,
+                blockEndOffset: 1,
+            },
+            "c1",
+        );
+        trackedFile.trackedItems.push(trackedItem);
+        targetStore.updateCardItems(trackedFile, trackedItem, "#flashcards", false);
+        const localItem = targetStore.getItembyID(trackedItem.reviewId);
+        if (!localItem) {
+            throw new Error("Expected local item");
+        }
+        targetStore.reviewId(localItem.ID, 2, settings.fsrsSettings);
+        const localSnapshot = targetStore.getCardSnapshot(localItem.ID);
+        if (!localSnapshot) {
+            throw new Error("Expected local card snapshot");
+        }
+
+        targetStore.markSyncEntity({
+            targetUuid: localSnapshot.item.uuid,
+            updatedAt: "2026-04-13T12:34:56.000Z",
+            deleted: false,
+            entityType: "card-item",
+            pathHint: "cards/skew.md",
+        });
+
+        const remoteSnapshot = JSON.parse(JSON.stringify(localSnapshot));
+        remoteSnapshot.item.timesReviewed = 2;
+        remoteSnapshot.item.timesCorrect = 2;
+        remoteSnapshot.item.nextReview = Date.parse("2026-04-15T12:00:00.000Z");
+        remoteSnapshot.item.data = {
+            ...remoteSnapshot.item.data,
+            due: "2026-04-15T12:00:00.000Z",
+            last_review: "2026-04-13T12:00:00.000Z",
+            reps: 2,
+            learning_steps: 0,
+            scheduled_days: 2,
+            state: 2,
+        };
+
+        const deps = createReplayDependencies(adapter, settings, targetStore);
+        const summary = await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-card-skew",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "cards",
+                    entityType: "card-item",
+                    opType: "review",
+                    targetUuid: remoteSnapshot.item.uuid,
+                    createdAt: "2026-04-13T12:00:00.000Z",
+                    updatedAt: "2026-04-13T12:00:00.000Z",
+                    payload: remoteSnapshot,
+                    pathHint: "cards/skew.md",
+                },
+            ],
+            deps,
+        );
+
+        expect(summary.cardsRuntimeChanged).toBe(true);
+        const replayedItem = targetStore.findItemByUuid(remoteSnapshot.item.uuid);
+        expect(replayedItem?.timesReviewed).toBe(2);
+        expect(replayedItem?.timesCorrect).toBe(2);
+        expect(replayedItem?.nextReview).toBe(Date.parse("2026-04-15T12:00:00.000Z"));
     });
 
     test("delete-file tombstones block older card upserts from resurrecting removed cards", async () => {

@@ -1495,11 +1495,14 @@ describe("SRPlugin sync request orchestration", () => {
                         {
                             cards: [
                                 {
-                                    targetUuid: "card-item:i_mo1mbzk6_0d95ys",
+                                    targetUuid: "i_mo1mbzk6_0d95ys",
                                     updatedAt: "2026-04-18T08:12:00.000Z",
+                                    pathHint: "归档/Blog Public/日志 10.24--11.21.md",
+                                    stateDigest: "expected-state",
                                 },
                             ],
-                            dailyStateTargetUuids: ["daily-op:test:0:deck-stats-delta"],
+                            dailyStateTargetUuids: [],
+                            dailyStateDeckCounts: {},
                         },
                     ],
                 ]),
@@ -1525,7 +1528,28 @@ describe("SRPlugin sync request orchestration", () => {
                 })),
             },
             store: {
-                getSyncEntities: jest.fn(() => ({})),
+                save: jest.fn(async () => true),
+                findItemByUuidOrAlias: jest.fn(() => null),
+                getCardSnapshot: jest.fn(() => null),
+            },
+            data: {
+                buryDate: "2026-04-18",
+                buryList: [],
+                dailyDeckStats: {
+                    date: "2026-04-18",
+                    counts: {},
+                },
+            },
+            currentDeviceReviewCount: 0,
+            persistedDailyState: {
+                buryDate: "2026-04-18",
+                buryList: [],
+                dailyDeckStats: {
+                    date: "2026-04-18",
+                    counts: {},
+                },
+                appliedOpIds: {},
+                deviceReviewCount: 0,
             },
             dailyStateAppliedOpIds: {},
             pendingSyroSessionImportReceipts: receiptMap,
@@ -1542,6 +1566,182 @@ describe("SRPlugin sync request orchestration", () => {
         expect(finalized).toBe(stagedResult);
         expect(plugin.syroSessionManager.finalizeImportedSessions).not.toHaveBeenCalled();
         expect(stagedResult.deletedSessionIds).toEqual([]);
+    });
+
+    test("finalizeImportedSyroSessions skips cursor commit when formal daily counts still miss imported deltas", async () => {
+        const stagedResult = {
+            importedSessionIds: ["Desktop--70ad/2026-04-18"],
+            deletedSessionIds: [] as string[],
+            archivedSessionIds: [] as string[],
+            replayImpact: createEmptySyroSessionReplaySummary(),
+        };
+        const receiptMap = new WeakMap<object, Map<string, any>>([
+            [
+                stagedResult,
+                new Map([
+                    [
+                        "Desktop--70ad/2026-04-18",
+                        {
+                            cards: [],
+                            dailyStateTargetUuids: ["daily-op:test:0:deck-stats-delta"],
+                            dailyStateDeckCounts: {
+                                "归档/Blog Public/日志 10.24--11.21": {
+                                    new: 27,
+                                    review: 0,
+                                },
+                            },
+                        },
+                    ],
+                ]),
+            ],
+        ]);
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            syroSessionManager: {
+                getStagedImportedSessionCursors: jest.fn(() => [
+                    {
+                        sessionId: "Desktop--70ad/2026-04-18",
+                        sessionPath: "Desktop--70ad/2026-04-18.session.jsonl",
+                        sourceDeviceFolderName: "Desktop--70ad",
+                        nextCursor: {
+                            offset: 123,
+                            lastOpId: "remote-op-35",
+                            updatedAt: "2026-04-18T08:12:00.000Z",
+                        },
+                    },
+                ]),
+                finalizeImportedSessions: jest.fn(async () => ({
+                    deletedSessionIds: [],
+                    archivedSessionIds: [],
+                })),
+            },
+            store: {
+                save: jest.fn(async () => true),
+                findItemByUuidOrAlias: jest.fn(() => null),
+                getCardSnapshot: jest.fn(() => null),
+            },
+            dailyStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            buildDailyStateSnapshotWithMetadata: jest.fn(() => ({
+                buryDate: "2026-04-18",
+                buryList: [],
+                appliedOpIds: ["daily-op:test:0:deck-stats-delta"],
+                dailyDeckStats: {
+                    date: "2026-04-18",
+                    counts: {
+                        "归档/Blog Public/日志 10.24--11.21": {
+                            new: 19,
+                            review: 0,
+                        },
+                    },
+                },
+                deviceReviewCount: 7,
+            })),
+            persistedDailyState: null,
+            dailyStateAppliedOpIds: {
+                "daily-op:test:0:deck-stats-delta": "2026-04-18T08:12:00.000Z",
+            },
+            pendingSyroSessionImportReceipts: receiptMap,
+            shouldLogRuntimeDebug: jest.fn(() => false),
+            logRuntimeDebug: jest.fn(),
+        });
+
+        const finalized = await (
+            SRPlugin.prototype as unknown as {
+                finalizeImportedSyroSessions: Function;
+            }
+        ).finalizeImportedSyroSessions.call(plugin, stagedResult, "manual");
+
+        expect(finalized).toBe(stagedResult);
+        expect(plugin.syroSessionManager.finalizeImportedSessions).not.toHaveBeenCalled();
+        expect(plugin.dailyStateStore.save).toHaveBeenCalledTimes(1);
+    });
+
+    test("importPendingSyroSessions aborts when first-meeting reconcile cannot be formalized", async () => {
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            syroReadOnlyReason: null,
+            syroLayout: {
+                device: {
+                    deviceId: "desktop-id",
+                    baselineFromDeviceId: null,
+                },
+            },
+            syroSessionManager: {
+                importPendingSessions: jest.fn(async () => ({
+                    importedSessionIds: ["Desktop--70ad/2026-04-18"],
+                    deletedSessionIds: [],
+                    archivedSessionIds: [],
+                    replayImpact: createEmptySyroSessionReplaySummary(),
+                })),
+            },
+            syroWorkspace: {
+                listDeviceInventory: jest.fn(async () => ({
+                    validDevices: [],
+                })),
+            },
+            deckOptionsStore: {},
+            sharedSettingsStore: {},
+            trackingRulesStore: {},
+            dailyStateStore: {},
+            store: {
+                hasPendingReviewOverlayEntries: jest.fn(() => false),
+            },
+            noteReviewStore: {},
+            reviewCommitStore: {},
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                },
+                buryDate: "2026-04-18",
+                buryList: [] as string[],
+                historyDeck: null as string | null,
+                dailyDeckStats: {
+                    date: "2026-04-18",
+                    counts: {},
+                },
+                folderTrackingRules: {},
+            },
+            sharedSettingsUpdatedAtByField: {},
+            trackingRulesUpdatedAtByFolderPath: {},
+            trackingRulesTombstones: {},
+            dailyStateAppliedOpIds: {},
+            currentDeviceReviewCount: 0,
+            bufferedStateDirtyRevisions: {
+                "shared-settings": 0,
+                "tracking-rules": 0,
+                "daily-state": 0,
+            },
+            bufferedStatePersistedRevisions: {
+                "shared-settings": 0,
+                "tracking-rules": 0,
+                "daily-state": 0,
+            },
+            reviewStateCommitCoordinator: {
+                hasPendingWork: jest.fn(() => false),
+            },
+            flushPendingPluginDataSave: jest.fn(async () => true),
+            reconcileIndependentFreshRemoteDevicesBeforeImport: jest.fn(async () => ({
+                replayImpact: createEmptySyroSessionReplaySummary(),
+                formalized: false,
+            })),
+            logRuntimeDebug: jest.fn(),
+            pruneSyroInlineSyncMetadata: jest.fn(async () => undefined),
+            requestPluginDataSave: jest.fn(),
+        });
+
+        const result = await (
+            SRPlugin.prototype as unknown as { importPendingSyroSessions: Function }
+        ).importPendingSyroSessions.call(plugin, {
+            reason: "manual",
+        });
+
+        expect(plugin.syroSessionManager.importPendingSessions).not.toHaveBeenCalled();
+        expect(result).toEqual({
+            importedSessionIds: [],
+            deletedSessionIds: [],
+            archivedSessionIds: [],
+            replayImpact: createEmptySyroSessionReplaySummary(),
+        });
     });
 
     test("incrementDailyCounts only requests daily-state persistence", () => {
