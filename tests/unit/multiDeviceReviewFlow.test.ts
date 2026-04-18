@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { type PendingOverlayFile } from "src/dataStore/pendingOverlayStore";
 import { RPITEMTYPE } from "src/dataStore/repetitionItem";
+import { FlashcardReviewMode, ReviewResponse } from "src/scheduling";
 import { createSyroMultiDeviceHarness, type HarnessCardsStateEntry, type HarnessDailyStateSnapshot, type HarnessStateDiagnostics } from "./helpers/createSyroMultiDeviceHarness";
 
 const NOTE_ONE_PATH = "归档/Blog Public/日志 10.24--11.21.md";
@@ -36,7 +37,17 @@ function comparablePendingOverlay(value: PendingOverlayFile | null): PendingOver
 }
 
 function comparableCards(value: HarnessCardsStateEntry[]): HarnessCardsStateEntry[] {
-    return JSON.parse(JSON.stringify(value)) as HarnessCardsStateEntry[];
+    return value.map((entry) => ({
+        ...JSON.parse(JSON.stringify(entry)),
+        aliases: [entry.uuid, ...entry.aliases].sort((left, right) =>
+            left.localeCompare(right),
+        ),
+        trackedFileAliases: [entry.trackedFileUuid, ...entry.trackedFileAliases].sort((left, right) =>
+            left.localeCompare(right),
+        ),
+        uuid: "",
+        trackedFileUuid: "",
+    })) as HarnessCardsStateEntry[];
 }
 
 function expectDiagnosticsMatch(
@@ -76,6 +87,16 @@ function dailyStateTargetUuidsForDevice(
                 record.targetUuid.startsWith("daily-op:"),
         )
         .map((record) => record.targetUuid);
+}
+
+function debugDiagnostics(label: string, diagnostics: HarnessStateDiagnostics): void {
+    if (process.env.SYRO_TEST_DEBUG !== "1") {
+        return;
+    }
+
+    console.log(
+        `[SYRO-TEST-DEBUG] ${label}\n${JSON.stringify(diagnostics, null, 2)}`,
+    );
 }
 
 describe("multi-device review backend flow", () => {
@@ -170,6 +191,7 @@ describe("multi-device review backend flow", () => {
         await harness.sync("mobile", "incremental");
 
         diagnostics = harness.collectDiagnostics(["desktop", "mobile"], TARGET_DECK_PATHS);
+        debugDiagnostics("baseline-roundtrip-final", diagnostics);
         expectDiagnosticsMatch(diagnostics, "desktop", "mobile");
 
         expectOverlaySectionsEmpty(diagnostics.pendingOverlayByClient.desktop);
@@ -222,6 +244,95 @@ describe("multi-device review backend flow", () => {
         expect(diagnostics.deckCountsByClient.desktop).toEqual(diagnostics.deckCountsByClient.mobile);
     });
 
+    test("independent fresh devices reconcile the whole card library before importing first shared review history", async () => {
+        const harness = createSyroMultiDeviceHarness();
+        await harness.seedFlashcardNote(NOTE_ONE_PATH, 20, "双新设备");
+        await harness.seedFlashcardNote(NOTE_TWO_PATH, 20, "对照");
+
+        jest.setSystemTime(new Date("2026-04-18T08:12:00.000Z"));
+        await harness.bootstrapDesktop();
+        await harness.reviewCards("desktop", NOTE_ONE_PATH, 20);
+        await harness.stagePendingOverlay("desktop");
+        await harness.flushLocalPersistence("desktop");
+        await harness.sync("desktop", "incremental");
+
+        await harness.bootstrapMobileIndependently({
+            beforeMerge: async (client) => {
+                const store = client.plugin.store;
+                expect(store).not.toBeNull();
+                const cardIds = store!
+                    .getItemsOfFile(NOTE_ONE_PATH)
+                    .filter((item) => item.itemType === RPITEMTYPE.CARD)
+                    .slice(0, 7)
+                    .map((item) => item.ID);
+                for (const itemId of cardIds) {
+                    const item = store!.getItembyID(itemId);
+                    expect(item).toBeDefined();
+                    const wasNew = item?.isNew ?? false;
+                    store!.reviewId(
+                        itemId,
+                        ReviewResponse.Good,
+                        client.plugin.data.settings.fsrsSettings,
+                    );
+                    client.plugin.reviewStateCommitCoordinator?.queueCardCommit(itemId, "review");
+                    client.plugin.incrementDailyCounts(
+                        NOTE_ONE_PATH.replace(/\.md$/i, ""),
+                        wasNew,
+                    );
+                }
+                await client.plugin.store?.drainReviewOverlayFlush();
+                await (client.plugin as any).pendingOverlayStore?.drainFlush();
+                await client.plugin.flushReviewPersistence(2500, { notify: false });
+                await client.plugin.requestSync({
+                    reviewMode: FlashcardReviewMode.Review,
+                    mode: "incremental",
+                    trigger: "manual",
+                });
+            },
+        });
+
+        await harness.sync("desktop", "incremental");
+        await harness.sync("mobile", "incremental");
+        await harness.restartClient("desktop");
+        await harness.restartClient("mobile");
+        await harness.sync("desktop", "incremental");
+        await harness.sync("mobile", "incremental");
+
+        const diagnostics = harness.collectDiagnostics(["desktop", "mobile"], TARGET_DECK_PATHS);
+        debugDiagnostics("first-meeting-final", diagnostics);
+        expectDiagnosticsMatch(diagnostics, "desktop", "mobile");
+
+        expect(
+            diagnostics.cardsByClient.desktop.every(
+                (entry) => entry.aliases.length > 0 && entry.trackedFileAliases.length > 0,
+            ),
+        ).toBe(true);
+        expect(
+            diagnostics.cardsByClient.mobile.every(
+                (entry) => entry.aliases.length > 0 && entry.trackedFileAliases.length > 0,
+            ),
+        ).toBe(true);
+
+        const reviewedDesktopCards = diagnostics.cardsByClient.desktop.filter(
+            (entry) => entry.path === NOTE_ONE_PATH && entry.timesReviewed > 0,
+        );
+        const reviewedMobileCards = diagnostics.cardsByClient.mobile.filter(
+            (entry) => entry.path === NOTE_ONE_PATH && entry.timesReviewed > 0,
+        );
+        expect(reviewedDesktopCards).toHaveLength(20);
+        expect(reviewedMobileCards).toHaveLength(20);
+
+        const expectedDailyNewCount = 27;
+        expect(
+            diagnostics.dailyByClient.desktop?.dailyDeckStats.counts["归档/Blog Public/日志 10.24--11.21"]
+                ?.new ?? 0,
+        ).toBe(expectedDailyNewCount);
+        expect(
+            diagnostics.dailyByClient.mobile?.dailyDeckStats.counts["归档/Blog Public/日志 10.24--11.21"]
+                ?.new ?? 0,
+        ).toBe(expectedDailyNewCount);
+    });
+
     test("mobile baseline then desktop appends same-day review records and mobile later pulls them into formal state", async () => {
         const harness = createSyroMultiDeviceHarness();
         await harness.seedFlashcardNote(NOTE_ONE_PATH, 20, "基线后追加");
@@ -242,6 +353,7 @@ describe("multi-device review backend flow", () => {
         await harness.sync("mobile", "incremental");
 
         const diagnostics = harness.collectDiagnostics(["desktop", "mobile"], TARGET_DECK_PATHS);
+        debugDiagnostics("baseline-append-final", diagnostics);
         expectDiagnosticsMatch(diagnostics, "desktop", "mobile");
 
         const desktopFolderName = ((desktop.plugin as any).syroLayout.deviceRoot as string)

@@ -146,7 +146,9 @@ import {
     createEmptySyroSessionReplayReceipt,
     hasSyroSessionReplayChanges,
     hasSyroSessionReplayReceiptEntries,
+    mergeSyroSessionReplaySummary,
     mergeSyroSessionReplayReceipt,
+    type SyroSessionReplaySummary,
     type SyroSessionReplayReceipt,
 } from "./dataStore/syroSessionImpact";
 import {
@@ -354,6 +356,23 @@ interface PendingSyroImportInvariantFailure {
     lastOpId: string | null;
     missingCardTargetUuids: string[];
     missingDailyTargetUuids: string[];
+}
+
+interface FirstMeetingCardOverlapStats {
+    totalFiles: number;
+    matchedFilesByPath: number;
+    totalCards: number;
+    matchedCardsBySemantic: number;
+    matchedCardsByUuid: number;
+}
+
+interface FirstMeetingCardsReconcileResult {
+    changed: boolean;
+    matchedFiles: number;
+    mergedFiles: number;
+    matchedCards: number;
+    mergedCards: number;
+    aliasGroups: SyroUuidAliasGroup[];
 }
 
 const AUTO_SYNC_COOLDOWN_MS = 15_000;
@@ -3727,6 +3746,309 @@ export default class SRPlugin extends Plugin {
         }));
     }
 
+    private buildFirstMeetingAliasGroupKey(group: SyroUuidAliasGroup): string {
+        const normalized = Array.from(new Set(group.equivalentUuids))
+            .filter((uuid) => typeof uuid === "string" && uuid.trim().length > 0)
+            .sort((left, right) => left.localeCompare(right));
+        return `${group.entityType}:${normalized.join("|")}`;
+    }
+
+    private measureFirstMeetingCardOverlap(
+        remoteSnapshots: ReturnType<typeof parseTrackedCardsStoreSnapshots>,
+    ): FirstMeetingCardOverlapStats {
+        if (!this.store || !remoteSnapshots) {
+            return {
+                totalFiles: 0,
+                matchedFilesByPath: 0,
+                totalCards: 0,
+                matchedCardsBySemantic: 0,
+                matchedCardsByUuid: 0,
+            };
+        }
+
+        let matchedFilesByPath = 0;
+        for (const snapshot of remoteSnapshots.files) {
+            if (this.store.getFileID(snapshot.path)) {
+                matchedFilesByPath++;
+            }
+        }
+
+        let matchedCardsBySemantic = 0;
+        let matchedCardsByUuid = 0;
+        for (const snapshot of remoteSnapshots.cards) {
+            const uuidHit =
+                this.store.findItemByUuid(snapshot.item.uuid) ??
+                this.store.findItemByUuidOrAlias(snapshot.item.uuid);
+            if (uuidHit) {
+                matchedCardsByUuid++;
+                matchedCardsBySemantic++;
+                continue;
+            }
+
+            if (this.store.findMatchingItemByTrackedSnapshot(snapshot)) {
+                matchedCardsBySemantic++;
+            }
+        }
+
+        return {
+            totalFiles: remoteSnapshots.files.length,
+            matchedFilesByPath,
+            totalCards: remoteSnapshots.cards.length,
+            matchedCardsBySemantic,
+            matchedCardsByUuid,
+        };
+    }
+
+    private isFirstMeetingCardsReconcileCandidate(stats: FirstMeetingCardOverlapStats): boolean {
+        if (stats.totalCards === 0 || stats.matchedFilesByPath === 0) {
+            return false;
+        }
+
+        const requiredSemanticMatches = Math.min(
+            stats.totalCards,
+            Math.max(1, Math.ceil(stats.totalCards * 0.6)),
+        );
+        const maxUuidMatches = Math.floor(stats.totalCards * 0.2);
+        return (
+            stats.matchedCardsBySemantic >= requiredSemanticMatches &&
+            stats.matchedCardsByUuid <= maxUuidMatches
+        );
+    }
+
+    private reconcileFirstMeetingCardsFromSnapshots(
+        sourceDeviceId: string,
+        remoteSnapshots: ReturnType<typeof parseTrackedCardsStoreSnapshots>,
+    ): FirstMeetingCardsReconcileResult {
+        if (!this.store || !remoteSnapshots) {
+            return {
+                changed: false,
+                matchedFiles: 0,
+                mergedFiles: 0,
+                matchedCards: 0,
+                mergedCards: 0,
+                aliasGroups: [],
+            };
+        }
+
+        const aliasGroups = new Map<string, SyroUuidAliasGroup>();
+        let mergedFiles = 0;
+        let matchedFiles = 0;
+        for (const snapshot of remoteSnapshots.files) {
+            const exactFileId = this.store.findFileIdByUuid(snapshot.uuid);
+            const aliasFileId = exactFileId ? "" : this.store.findFileIdByUuidOrAlias(snapshot.uuid);
+            const pathFileId =
+                exactFileId || aliasFileId ? "" : this.store.getFileID(snapshot.path);
+            const resolvedFileId = exactFileId || aliasFileId || pathFileId;
+            if (!resolvedFileId) {
+                continue;
+            }
+
+            matchedFiles++;
+            const matchedBy = exactFileId
+                ? "canonical-hit"
+                : aliasFileId
+                  ? "alias-hit"
+                  : "snapshot-reconcile";
+            const beforeUuids = this.store.getFileEquivalentUuids(resolvedFileId);
+            this.store.mergeFileUuidEquivalence(resolvedFileId, [
+                snapshot.uuid,
+                ...(snapshot.aliases ?? []),
+            ]);
+            const afterUuids = this.store.getFileEquivalentUuids(resolvedFileId);
+            if (afterUuids.length <= beforeUuids.length) {
+                continue;
+            }
+
+            mergedFiles++;
+            aliasGroups.set(
+                this.buildFirstMeetingAliasGroupKey({
+                    entityType: "tracked-file",
+                    equivalentUuids: afterUuids,
+                    pathHint: snapshot.path,
+                    emitterPrimaryUuid: afterUuids[0],
+                    evidence: {
+                        sourceDeviceId,
+                        sourcePath: snapshot.path,
+                        matchedBy,
+                    },
+                }),
+                {
+                    entityType: "tracked-file",
+                    equivalentUuids: afterUuids,
+                    pathHint: snapshot.path,
+                    emitterPrimaryUuid: afterUuids[0],
+                    evidence: {
+                        sourceDeviceId,
+                        sourcePath: snapshot.path,
+                        matchedBy,
+                    },
+                },
+            );
+        }
+
+        let matchedCards = 0;
+        let mergedCards = 0;
+        for (const snapshot of remoteSnapshots.cards) {
+            const exactItem = this.store.findItemByUuid(snapshot.item.uuid);
+            const aliasItem =
+                exactItem ?? this.store.findItemByUuidOrAlias(snapshot.item.uuid);
+            const matchedItem =
+                aliasItem ?? this.store.findMatchingItemByTrackedSnapshot(snapshot);
+            if (!matchedItem) {
+                continue;
+            }
+
+            matchedCards++;
+            const matchedBy = exactItem
+                ? "canonical-hit"
+                : aliasItem && aliasItem.uuid !== snapshot.item.uuid
+                  ? "alias-hit"
+                  : aliasItem
+                    ? "canonical-hit"
+                    : "tracked-file-match";
+            const beforeUuids = this.store.getItemEquivalentUuids(matchedItem.ID);
+            this.store.mergeItemUuidEquivalence(matchedItem.ID, [
+                snapshot.item.uuid,
+                ...(snapshot.item.aliases ?? []),
+            ]);
+            const afterUuids = this.store.getItemEquivalentUuids(matchedItem.ID);
+            if (afterUuids.length <= beforeUuids.length) {
+                continue;
+            }
+
+            mergedCards++;
+            const fingerprintUnique = snapshot.trackedItem
+                ? this.store.isTrackedFingerprintUnique(
+                      snapshot.path,
+                      snapshot.trackedItem.fingerprint,
+                  )
+                : undefined;
+            aliasGroups.set(
+                this.buildFirstMeetingAliasGroupKey({
+                    entityType: "card-item",
+                    equivalentUuids: afterUuids,
+                    pathHint: snapshot.path,
+                    emitterPrimaryUuid: afterUuids[0],
+                    evidence: {
+                        sourceDeviceId,
+                        sourcePath: snapshot.path,
+                        matchedBy,
+                        lineNo: snapshot.trackedItem?.lineNo,
+                        clozeId: snapshot.trackedItem?.clozeId,
+                        fingerprintUnique,
+                    },
+                }),
+                {
+                    entityType: "card-item",
+                    equivalentUuids: afterUuids,
+                    pathHint: snapshot.path,
+                    emitterPrimaryUuid: afterUuids[0],
+                    evidence: {
+                        sourceDeviceId,
+                        sourcePath: snapshot.path,
+                        matchedBy,
+                        lineNo: snapshot.trackedItem?.lineNo,
+                        clozeId: snapshot.trackedItem?.clozeId,
+                        fingerprintUnique,
+                    },
+                },
+            );
+        }
+
+        return {
+            changed: mergedFiles > 0 || mergedCards > 0,
+            matchedFiles,
+            mergedFiles,
+            matchedCards,
+            mergedCards,
+            aliasGroups: [...aliasGroups.values()],
+        };
+    }
+
+    private async reconcileIndependentFreshRemoteDevicesBeforeImport(
+        validDevicesById: Map<string, SyroValidDeviceEntry>,
+        loadRemoteCardsSnapshots: (
+            deviceId: string,
+        ) => Promise<ReturnType<typeof parseTrackedCardsStoreSnapshots> | null>,
+        collectAliasGroups: (domain: "cards" | "notes", groups: SyroUuidAliasGroup[]) => void,
+        reason: string,
+    ): Promise<SyroSessionReplaySummary> {
+        if (
+            !this.store ||
+            !this.syroSessionManager ||
+            !this.syroLayout ||
+            this.syroLayout.device.baselineFromDeviceId
+        ) {
+            return createEmptySyroSessionReplaySummary();
+        }
+
+        const sessionSummaries = await this.syroSessionManager.summarizeDeviceSessions();
+        const sessionSummaryByFolderName = new Map<string, SyroDeviceSessionSummary>(
+            sessionSummaries.map((summary) => [summary.deviceFolderName, summary]),
+        );
+        let cardsChanged = false;
+
+        for (const validDevice of validDevicesById.values()) {
+            if (validDevice.deviceId === this.syroLayout.device.deviceId) {
+                continue;
+            }
+            if (validDevice.baselineFromDeviceId) {
+                continue;
+            }
+
+            const sessionSummary = sessionSummaryByFolderName.get(validDevice.deviceFolderName);
+            if (!sessionSummary?.hasPendingRemoteChanges) {
+                continue;
+            }
+
+            const remoteSnapshots = await loadRemoteCardsSnapshots(validDevice.deviceId);
+            if (!remoteSnapshots) {
+                continue;
+            }
+
+            const overlap = this.measureFirstMeetingCardOverlap(remoteSnapshots);
+            if (!this.isFirstMeetingCardsReconcileCandidate(overlap)) {
+                this.logRuntimeDebug("[SR-FirstMeetingReconcile] skipped", {
+                    reason,
+                    sourceDeviceId: validDevice.deviceId,
+                    sourceDeviceFolderName: validDevice.deviceFolderName,
+                    overlap,
+                });
+                continue;
+            }
+
+            const reconcileResult = this.reconcileFirstMeetingCardsFromSnapshots(
+                validDevice.deviceId,
+                remoteSnapshots,
+            );
+            if (reconcileResult.aliasGroups.length > 0) {
+                collectAliasGroups("cards", reconcileResult.aliasGroups);
+            }
+            cardsChanged = cardsChanged || reconcileResult.changed;
+            this.logRuntimeDebug("[SR-FirstMeetingReconcile] completed", {
+                reason,
+                sourceDeviceId: validDevice.deviceId,
+                sourceDeviceFolderName: validDevice.deviceFolderName,
+                overlap,
+                matchedFiles: reconcileResult.matchedFiles,
+                mergedFiles: reconcileResult.mergedFiles,
+                matchedCards: reconcileResult.matchedCards,
+                mergedCards: reconcileResult.mergedCards,
+                aliasGroups: reconcileResult.aliasGroups.length,
+            });
+        }
+
+        return cardsChanged
+            ? {
+                  cardsRuntimeChanged: false,
+                  noteReviewChanged: false,
+                  timelineChanged: false,
+                  dailyStateChanged: false,
+                  requiresGlobalSync: true,
+              }
+            : createEmptySyroSessionReplaySummary();
+    }
+
     private verifyPendingSyroImportFormalization(
         result: SyroSessionImportResult | null | undefined,
     ): PendingSyroImportInvariantFailure[] {
@@ -3889,6 +4211,7 @@ export default class SRPlugin extends Plugin {
             cards: new Map<string, SyroUuidAliasGroup>(),
             notes: new Map<string, SyroUuidAliasGroup>(),
         };
+        let preImportReplayImpact = createEmptySyroSessionReplaySummary();
         const buildAliasGroupKey = (group: SyroUuidAliasGroup): string => {
             const normalized = Array.from(new Set(group.equivalentUuids))
                 .filter((uuid) => typeof uuid === "string" && uuid.trim().length > 0)
@@ -3945,6 +4268,13 @@ export default class SRPlugin extends Plugin {
                 return null;
             }
         };
+        preImportReplayImpact =
+            await this.reconcileIndependentFreshRemoteDevicesBeforeImport(
+                validDevicesById,
+                loadRemoteCardsSnapshots,
+                collectAliasGroups,
+                importReason,
+            );
 
         const result = await this.syroSessionManager.importPendingSessions(
             async (sessionId, records) => {
@@ -4011,6 +4341,10 @@ export default class SRPlugin extends Plugin {
         if (replayReceiptsBySessionId.size > 0) {
             this.pendingSyroSessionImportReceipts.set(result, replayReceiptsBySessionId);
         }
+        result.replayImpact = mergeSyroSessionReplaySummary(
+            result.replayImpact,
+            preImportReplayImpact,
+        );
         for (const domain of ["cards", "notes"] as const) {
             const groups = [...aliasGroupsByDomain[domain].values()];
             if (groups.length === 0) {

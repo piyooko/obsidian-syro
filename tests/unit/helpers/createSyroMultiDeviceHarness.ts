@@ -105,6 +105,9 @@ export interface MultiDeviceHarness {
     seedFlashcardNote(path: string, count: number, prefix?: string): Promise<void>;
     bootstrapDesktop(): Promise<HarnessClient>;
     bootstrapMobileFromDesktop(): Promise<HarnessClient>;
+    bootstrapMobileIndependently(options?: {
+        beforeMerge?: (client: HarnessClient) => Promise<void>;
+    }): Promise<HarnessClient>;
     restartClient(clientKey: string): Promise<HarnessClient>;
     activateClient(clientKey: string): Promise<HarnessClient>;
     reviewCards(clientKey: string, notePath: string, count: number): Promise<number[]>;
@@ -259,6 +262,27 @@ function moveSharedPath(shared: SharedFileSystem, fromPath: string, toPath: stri
         const nextPath = normalizedTo + filePath.slice(normalizedFrom.length);
         shared.files.set(nextPath, value);
         shared.mtimes.set(nextPath, bumpMtime(shared));
+    }
+}
+
+function copySharedFiles(
+    source: SharedFileSystem,
+    target: SharedFileSystem,
+    shouldCopy: (path: string) => boolean,
+): void {
+    for (const directory of source.directories) {
+        if (!shouldCopy(directory)) {
+            continue;
+        }
+        ensureParentDirectories(target, `${directory}/child`);
+        target.directories.add(directory);
+    }
+
+    for (const [path, value] of source.files.entries()) {
+        if (!shouldCopy(path)) {
+            continue;
+        }
+        writeSharedFile(target, path, value);
     }
 }
 
@@ -734,7 +758,7 @@ async function initializePluginRuntime(plugin: SRPlugin): Promise<void> {
     (plugin as any).logRuntimeDebug = jest.fn();
     (plugin as any).shouldLogRuntimeDebug = jest.fn(() => false);
     plugin.data.settings.showSchedulingDebugMessages = false;
-    plugin.data.settings.showRuntimeDebugMessages = false;
+    plugin.data.settings.showRuntimeDebugMessages = process.env.SYRO_TEST_DEBUG === "1";
     plugin.data.settings.showStatusBar = false;
     await (plugin as any).initializeSyroDataBackedRuntimeIfReady("startup");
 }
@@ -793,6 +817,38 @@ export function createSyroMultiDeviceHarness(): MultiDeviceHarness {
     const pluginDataStore = createPluginDataShellStore();
     const clients = new Map<string, HarnessClient>();
 
+    async function reviewCardsOnClient(
+        client: HarnessClient,
+        notePath: string,
+        count: number,
+    ): Promise<number[]> {
+        (SRPlugin as any)._instance = client.plugin;
+        Iadapter.create(client.app);
+        if (!client.plugin.store || !client.plugin.reviewStateCommitCoordinator) {
+            throw new Error(`Client ${client.key} is not ready for review.`);
+        }
+
+        const store = client.plugin.store;
+        const cardIds = store
+            .getItemsOfFile(notePath)
+            .filter((item) => item.itemType === RPITEMTYPE.CARD)
+            .slice(0, count)
+            .map((item) => item.ID);
+
+        for (const itemId of cardIds) {
+            const item = store.getItembyID(itemId);
+            if (!item) {
+                throw new Error(`Missing item ${itemId} for ${notePath}`);
+            }
+            const wasNew = item.isNew;
+            store.reviewId(itemId, ReviewResponse.Good, client.plugin.data.settings.fsrsSettings);
+            client.plugin.reviewStateCommitCoordinator.queueCardCommit(itemId, "review");
+            client.plugin.incrementDailyCounts(noteDeckPath(notePath), wasNew);
+        }
+
+        return cardIds;
+    }
+
     async function activateClient(clientKey: string): Promise<HarnessClient> {
         const client = clients.get(clientKey);
         if (!client) {
@@ -850,6 +906,56 @@ export function createSyroMultiDeviceHarness(): MultiDeviceHarness {
             mode: "full",
             trigger: "manual",
         });
+        return client;
+    }
+
+    async function bootstrapMobileIndependently(options?: {
+        beforeMerge?: (client: HarnessClient) => Promise<void>;
+    }): Promise<HarnessClient> {
+        const isolatedShared = createSharedFileSystem();
+        copySharedFiles(
+            shared,
+            isolatedShared,
+            (path) =>
+                !path.startsWith(".obsidian/plugins/syro/devices/") &&
+                !path.startsWith(".obsidian/plugins/syro/sessions/"),
+        );
+        const isolatedPluginDataStore = createPluginDataShellStore();
+        const isolatedMobile = await createPluginClient(
+            isolatedShared,
+            isolatedPluginDataStore,
+            "mobile-isolated",
+            "C:/Vaults/Syro/Mobile",
+        );
+        await isolatedMobile.plugin.requestSync({
+            reviewMode: FlashcardReviewMode.Review,
+            mode: "full",
+            trigger: "manual",
+        });
+        if (options?.beforeMerge) {
+            await options.beforeMerge(isolatedMobile);
+        }
+
+        const isolatedLayout = getLayout(isolatedMobile.plugin);
+        const isolatedDeviceFolderName = basename(isolatedLayout.deviceRoot);
+        copySharedFiles(
+            isolatedShared,
+            shared,
+            (path) =>
+                path === `.obsidian/plugins/syro/devices/${isolatedDeviceFolderName}` ||
+                path.startsWith(`.obsidian/plugins/syro/devices/${isolatedDeviceFolderName}/`) ||
+                path === `.obsidian/plugins/syro/sessions/${isolatedDeviceFolderName}` ||
+                path.startsWith(`.obsidian/plugins/syro/sessions/${isolatedDeviceFolderName}/`),
+        );
+
+        const client = await createPluginClient(
+            shared,
+            pluginDataStore,
+            "mobile",
+            "C:/Vaults/Syro/Mobile",
+        );
+        clients.set("mobile", client);
+        await activateClient("mobile");
         return client;
     }
 
@@ -971,35 +1077,15 @@ export function createSyroMultiDeviceHarness(): MultiDeviceHarness {
 
         bootstrapMobileFromDesktop,
 
+        bootstrapMobileIndependently,
+
         restartClient,
 
         activateClient,
 
         async reviewCards(clientKey: string, notePath: string, count: number): Promise<number[]> {
             const client = await activateClient(clientKey);
-            const store = client.plugin.store;
-            if (!store || !client.plugin.reviewStateCommitCoordinator) {
-                throw new Error(`Client ${clientKey} is not ready for review.`);
-            }
-
-            const cardIds = store
-                .getItemsOfFile(notePath)
-                .filter((item) => item.itemType === RPITEMTYPE.CARD)
-                .slice(0, count)
-                .map((item) => item.ID);
-
-            for (const itemId of cardIds) {
-                const item = store.getItembyID(itemId);
-                if (!item) {
-                    throw new Error(`Missing item ${itemId} for ${notePath}`);
-                }
-                const wasNew = item.isNew;
-                store.reviewId(itemId, ReviewResponse.Good, client.plugin.data.settings.fsrsSettings);
-                client.plugin.reviewStateCommitCoordinator.queueCardCommit(itemId, "review");
-                client.plugin.incrementDailyCounts(noteDeckPath(notePath), wasNew);
-            }
-
-            return cardIds;
+            return reviewCardsOnClient(client, notePath, count);
         },
 
         async stagePendingOverlay(clientKey: string): Promise<void> {
