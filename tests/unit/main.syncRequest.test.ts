@@ -23,6 +23,17 @@ function createDeckOptionsStoreMock(overrides: Record<string, unknown> = {}) {
     };
 }
 
+function createFileIdentityStoreMock(overrides: Record<string, unknown> = {}) {
+    return {
+        getByUuid: jest.fn(() => null),
+        shouldApplySyncEntity: jest.fn(() => true),
+        upsert: jest.fn((identity) => identity),
+        markSyncEntity: jest.fn(() => true),
+        save: jest.fn(async () => undefined),
+        ...overrides,
+    };
+}
+
 function createDeckOptionsSessionManagerMock(overrides: Record<string, unknown> = {}) {
     return {
         appendRecord: jest.fn(async () => true),
@@ -253,6 +264,7 @@ describe("SRPlugin sync request orchestration", () => {
                 })),
             },
             deckOptionsStore: createDeckOptionsStoreMock(),
+            fileIdentityStore: createFileIdentityStoreMock(),
             sharedSettingsStore: {},
             trackingRulesStore: {},
             dailyStateStore: {},
@@ -344,6 +356,7 @@ describe("SRPlugin sync request orchestration", () => {
                 })),
             },
             deckOptionsStore: createDeckOptionsStoreMock(),
+            fileIdentityStore: createFileIdentityStoreMock(),
             sharedSettingsStore: {},
             trackingRulesStore: {},
             dailyStateStore: {},
@@ -752,6 +765,13 @@ describe("SRPlugin sync request orchestration", () => {
             "assign",
             expect.any(String),
         );
+        expect(
+            plugin.syroSessionManager.appendRecord.mock.calls.every(
+                ([record]: [{ domain?: string; targetUuid?: string }]) =>
+                    record.domain !== "deck-options" &&
+                    record.targetUuid !== "deck-options:global",
+            ),
+        ).toBe(true);
         expect(plugin.sharedSettingsStore.save).toHaveBeenCalledTimes(1);
         expect(plugin.trackingRulesStore.save).toHaveBeenCalledTimes(1);
         expect(plugin.dailyStateStore.save).toHaveBeenCalledTimes(1);
@@ -893,6 +913,162 @@ describe("SRPlugin sync request orchestration", () => {
         expect(pendingOverlayStore.requestFlush).toHaveBeenCalledTimes(2);
         expect(pendingOverlayStore.drainFlush).toHaveBeenCalledTimes(2);
         expect(plugin.saveData).toHaveBeenCalledTimes(1);
+    });
+
+    test("savePluginData with device-state only persists local device state without shared session records", async () => {
+        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            deckOptionsStore: createDeckOptionsStoreMock(),
+            syroSessionManager: createDeckOptionsSessionManagerMock(),
+            sharedSettingsStore: {
+                save: jest.fn(async () => undefined),
+            },
+            trackingRulesStore: {
+                save: jest.fn(async () => undefined),
+            },
+            dailyStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            deviceStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            licenseStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            saveDataShell,
+            dataShell: null as Record<string, unknown> | null,
+            trackingRulesTombstones: {},
+            dailyStateAppliedOpIds: {},
+            currentDeviceReviewCount: 0,
+            pendingDailyStateCommittedTargetUuids: new Set(),
+            saveData: jest.fn(async () => undefined),
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    showStatusBar: false,
+                    reactDeckTreeWidth: 420,
+                },
+                buryDate: "",
+                buryList: [] as string[],
+                historyDeck: "Desktop/Deck" as string | null,
+                dailyDeckStats: {
+                    date: "",
+                    counts: {},
+                },
+                folderTrackingRules: {},
+            },
+        });
+
+        await (SRPlugin.prototype.savePluginData as unknown as Function).call(plugin, {
+            domains: ["device-state"],
+        });
+
+        expect(plugin.deviceStateStore.save).toHaveBeenCalledWith(
+            expect.objectContaining({
+                historyDeck: "Desktop/Deck",
+                settings: expect.objectContaining({
+                    showStatusBar: false,
+                    reactDeckTreeWidth: 420,
+                }),
+            }),
+        );
+        expect(plugin.sharedSettingsStore.save).not.toHaveBeenCalled();
+        expect(plugin.trackingRulesStore.save).not.toHaveBeenCalled();
+        expect(plugin.dailyStateStore.save).not.toHaveBeenCalled();
+        expect(plugin.licenseStateStore.save).not.toHaveBeenCalled();
+        expect(plugin.deckOptionsStore.saveSerialized).not.toHaveBeenCalled();
+        expect(plugin.syroSessionManager.appendRecord).not.toHaveBeenCalled();
+        expect(plugin.syroSessionManager.appendDeckOptionsPresetChange).not.toHaveBeenCalled();
+        expect(plugin.syroSessionManager.appendDeckOptionsAssignmentChange).not.toHaveBeenCalled();
+        expect(plugin.saveData).toHaveBeenCalledTimes(1);
+    });
+
+    test("savePluginData with tracking-rules only appends folderPath-keyed rule records", async () => {
+        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            deckOptionsStore: createDeckOptionsStoreMock(),
+            syroSessionManager: createDeckOptionsSessionManagerMock(),
+            sharedSettingsStore: {
+                save: jest.fn(async () => undefined),
+            },
+            trackingRulesStore: {
+                save: jest.fn(async () => undefined),
+            },
+            dailyStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            deviceStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            licenseStateStore: {
+                save: jest.fn(async () => undefined),
+            },
+            saveDataShell,
+            dataShell: null as Record<string, unknown> | null,
+            trackingRulesUpdatedAtByFolderPath: {},
+            trackingRulesTombstones: {},
+            dailyStateAppliedOpIds: {},
+            currentDeviceReviewCount: 0,
+            pendingDailyStateCommittedTargetUuids: new Set(),
+            saveData: jest.fn(async () => undefined),
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                },
+                buryDate: "",
+                buryList: [] as string[],
+                historyDeck: null as string | null,
+                dailyDeckStats: {
+                    date: "",
+                    counts: {},
+                },
+                folderTrackingRules: {
+                    Projects: {
+                        track: true,
+                        autoTag: true,
+                        tags: ["#project"],
+                        ownedTagsByPath: {},
+                        excludedPaths: [],
+                    },
+                },
+            },
+        });
+
+        await (SRPlugin.prototype.savePluginData as unknown as Function).call(plugin, {
+            domains: ["tracking-rules"],
+        });
+
+        expect(plugin.trackingRulesStore.save).toHaveBeenCalledTimes(1);
+        expect(plugin.syroSessionManager.appendRecord).toHaveBeenCalledWith(
+            expect.objectContaining({
+                domain: "tracking-rules",
+                entityType: "folder-tracking-rule",
+                opType: "upsert-rule",
+                targetUuid: "tracking-rule:Projects",
+                payload: {
+                    folderPath: "Projects",
+                    rule: {
+                        track: true,
+                        autoTag: true,
+                        tags: ["#project"],
+                        ownedTagsByPath: {},
+                        excludedPaths: [],
+                    },
+                },
+            }),
+        );
+        expect(
+            plugin.syroSessionManager.appendRecord.mock.calls.every(
+                ([record]: [{ domain: string; targetUuid: string }]) =>
+                    record.domain === "tracking-rules" &&
+                    record.targetUuid.startsWith("tracking-rule:"),
+            ),
+        ).toBe(true);
+        expect(plugin.sharedSettingsStore.save).not.toHaveBeenCalled();
+        expect(plugin.dailyStateStore.save).not.toHaveBeenCalled();
+        expect(plugin.deviceStateStore.save).not.toHaveBeenCalled();
+        expect(plugin.licenseStateStore.save).not.toHaveBeenCalled();
+        expect(plugin.deckOptionsStore.saveSerialized).not.toHaveBeenCalled();
     });
 
     test("savePluginData retains daily-state overlay when session append fails", async () => {
@@ -1352,6 +1528,7 @@ describe("SRPlugin sync request orchestration", () => {
                 })),
             },
             deckOptionsStore: createDeckOptionsStoreMock(),
+            fileIdentityStore: createFileIdentityStoreMock(),
             sharedSettingsStore: {},
             trackingRulesStore: {},
             dailyStateStore: {},
@@ -1463,6 +1640,7 @@ describe("SRPlugin sync request orchestration", () => {
                 })),
             },
             deckOptionsStore: createDeckOptionsStoreMock(),
+            fileIdentityStore: createFileIdentityStoreMock(),
             sharedSettingsStore: {},
             trackingRulesStore: {},
             dailyStateStore: {},
@@ -1731,6 +1909,7 @@ describe("SRPlugin sync request orchestration", () => {
                 })),
             },
             deckOptionsStore: createDeckOptionsStoreMock(),
+            fileIdentityStore: createFileIdentityStoreMock(),
             sharedSettingsStore: {},
             trackingRulesStore: {},
             dailyStateStore: {},

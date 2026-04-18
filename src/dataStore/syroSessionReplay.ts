@@ -14,6 +14,12 @@ import {
     type DeckOptionsPresetRemovalPayload,
 } from "./deckOptionsStore";
 import {
+    buildFileIdentityTargetUuid,
+    createDeterministicFileIdentityUuid,
+    parseFileIdentityUuidFromTarget,
+    SyroFileIdentityStore,
+} from "./syroFileIdentityStore";
+import {
     extractDailyStateWithMetadata,
     extractSharedSettingsWithMetadata,
     extractTrackingRules,
@@ -73,6 +79,7 @@ type ReplayDependencies = {
         folderTrackingRules: Record<string, FolderTrackingRule>;
     };
     store: DataStore;
+    fileIdentityStore: SyroFileIdentityStore;
     noteReviewStore: NoteReviewStore;
     reviewCommitStore: ReviewCommitStore;
     deckOptionsStore: DeckOptionsStore;
@@ -186,12 +193,22 @@ function buildTimelineEntryTargetUuid(commitId: string): string {
     return `timeline-entry:${commitId}`;
 }
 
+function buildTimelineFileTargetUuid(fileUuid: string): string {
+    return `timeline-file:${fileUuid}`;
+}
+
+function parseTimelineFileUuidFromTarget(targetUuid: string): string {
+    return targetUuid.startsWith("timeline-file:")
+        ? targetUuid.substring("timeline-file:".length)
+        : "";
+}
+
 function buildCardTargetUuid(itemUuid: string): string {
     return itemUuid;
 }
 
 function buildTrackedFileTargetUuid(fileUuid: string): string {
-    return fileUuid;
+    return `tracked-file:${fileUuid}`;
 }
 
 function parseDeckOptionsPresetPayload(payload: unknown): DeckOptionsPreset | null {
@@ -230,6 +247,33 @@ function parseDeckOptionsAssignmentPayload(payload: unknown): DeckOptionsAssignm
     };
 }
 
+function parseFileIdentityPayload(
+    payload: unknown,
+): {
+    uuid: string;
+    createdAt?: string;
+    path?: string;
+    aliases: string[];
+} | null {
+    if (!isRecord(payload)) {
+        return null;
+    }
+
+    const uuid = getStringProp(payload, "uuid")?.trim();
+    if (!uuid) {
+        return null;
+    }
+
+    return {
+        uuid,
+        createdAt: getStringProp(payload, "createdAt")?.trim(),
+        path: getStringProp(payload, "path")?.trim(),
+        aliases: getArrayProp(payload, "aliases").filter(
+            (alias): alias is string => typeof alias === "string",
+        ),
+    };
+}
+
 function parseNoteSnapshotPayload(payload: unknown): NoteReviewEntrySnapshot | null {
     if (!isRecord(payload)) {
         return null;
@@ -255,6 +299,7 @@ function parseTimelineEntryPayload(
     payload: unknown,
 ): {
     notePath: string;
+    fileUuid?: string;
     commit: ReviewCommitLog;
 } | null {
     if (!isRecord(payload)) {
@@ -268,6 +313,7 @@ function parseTimelineEntryPayload(
 
     return {
         notePath,
+        fileUuid: getStringProp(payload, "fileUuid")?.trim(),
         commit: cloneUnknown(payload["commit"] as unknown as ReviewCommitLog),
     };
 }
@@ -275,6 +321,7 @@ function parseTimelineEntryPayload(
 function parseTimelineFilePayload(
     payload: unknown,
 ): {
+    fileUuid?: string;
     oldPath?: string;
     newPath?: string;
     notePath?: string;
@@ -289,6 +336,7 @@ function parseTimelineFilePayload(
         .map((commit) => cloneUnknown(commit));
 
     return {
+        fileUuid: getStringProp(payload, "fileUuid")?.trim(),
         oldPath: getStringProp(payload, "oldPath")?.trim(),
         newPath: getStringProp(payload, "newPath")?.trim(),
         notePath: getStringProp(payload, "notePath")?.trim(),
@@ -302,7 +350,9 @@ function parseCardSnapshotPayload(payload: unknown): TrackedCardSnapshot | null 
     }
 
     const path = getStringProp(payload, "path")?.trim();
-    const trackedFileUuid = getStringProp(payload, "trackedFileUuid")?.trim();
+    const fileUuid =
+        getStringProp(payload, "fileUuid")?.trim() ||
+        getStringProp(payload, "trackedFileUuid")?.trim();
     const trackedFileAliases = getArrayProp(payload, "trackedFileAliases").filter(
         (tag): tag is string => typeof tag === "string",
     );
@@ -310,13 +360,14 @@ function parseCardSnapshotPayload(payload: unknown): TrackedCardSnapshot | null 
         (tag): tag is string => typeof tag === "string",
     );
 
-    if (!path || !trackedFileUuid || !isRecord(payload["item"])) {
+    if (!path || !fileUuid || !isRecord(payload["item"])) {
         return null;
     }
 
     return {
         path,
-        trackedFileUuid,
+        fileUuid,
+        trackedFileUuid: fileUuid,
         trackedFileAliases,
         trackedFileTags,
         trackedItem: isRecord(payload["trackedItem"])
@@ -571,6 +622,7 @@ export async function replaySyroSessionRecords(
     deps: ReplayDependencies,
 ): Promise<SyroSessionReplaySummary> {
     const sharedSettingsFields = new Set<string>(SHARED_SETTINGS_FIELDS as readonly string[]);
+    let fileIdentitiesChanged = false;
     let deckOptionsChanged = false;
     let sharedSettingsChanged = false;
     let trackingRulesChanged = false;
@@ -645,19 +697,48 @@ export async function replaySyroSessionRecords(
     const resolveTrackedFileSnapshot = (
         snapshot: Pick<TrackedCardsFileSnapshot, "uuid" | "path">,
     ): ReplayEntityResolution | null => {
-        const exactFileId = deps.store.findFileIdByUuid(snapshot.uuid);
+        const fileIdentity =
+            deps.fileIdentityStore.getByUuidOrAlias(snapshot.uuid) ??
+            deps.fileIdentityStore.getByPath(snapshot.path);
+        const canonicalUuid = fileIdentity?.uuid || snapshot.uuid;
+        const canonicalPath = fileIdentity?.path || snapshot.path;
+
+        const exactFileId = deps.store.findFileIdByUuid(canonicalUuid);
         if (exactFileId) {
-            return { kind: "tracked-file", fileID: exactFileId, matchedBy: "canonical-hit" };
+            return {
+                kind: "tracked-file",
+                fileID: exactFileId,
+                matchedBy:
+                    canonicalUuid !== snapshot.uuid || canonicalPath !== snapshot.path
+                        ? "file-identity"
+                        : "canonical-hit",
+            };
         }
 
-        const aliasFileId = deps.store.findFileIdByUuidOrAlias(snapshot.uuid);
+        const aliasFileId =
+            deps.store.findFileIdByUuidOrAlias(canonicalUuid) ||
+            deps.store.findFileIdByUuidOrAlias(snapshot.uuid);
         if (aliasFileId) {
-            return { kind: "tracked-file", fileID: aliasFileId, matchedBy: "alias-hit" };
+            return {
+                kind: "tracked-file",
+                fileID: aliasFileId,
+                matchedBy:
+                    canonicalUuid !== snapshot.uuid || canonicalPath !== snapshot.path
+                        ? "file-identity"
+                        : "alias-hit",
+            };
         }
 
-        const pathFileId = deps.store.getFileID(snapshot.path);
+        const pathFileId = deps.store.getFileID(canonicalPath) || deps.store.getFileID(snapshot.path);
         if (pathFileId) {
-            return { kind: "tracked-file", fileID: pathFileId, matchedBy: "snapshot-reconcile" };
+            return {
+                kind: "tracked-file",
+                fileID: pathFileId,
+                matchedBy:
+                    canonicalUuid !== snapshot.uuid || canonicalPath !== snapshot.path
+                        ? "file-identity"
+                        : "snapshot-reconcile",
+            };
         }
 
         return null;
@@ -700,6 +781,64 @@ export async function replaySyroSessionRecords(
         }
 
         return null;
+    };
+
+    const resolveTimelineFileIdentity = (input: {
+        path: string;
+        fileUuid?: string;
+        updatedAt: string;
+    }): { fileUuid: string; path: string } | null => {
+        const candidatePath = input.path.trim();
+        const candidateFileUuid = input.fileUuid?.trim() ?? "";
+        if (!candidatePath && !candidateFileUuid) {
+            return null;
+        }
+
+        const existingIdentityByUuid = candidateFileUuid
+            ? deps.fileIdentityStore.getByUuidOrAlias(candidateFileUuid)
+            : null;
+        const existingIdentityByPath = deps.fileIdentityStore.getByPath(candidatePath);
+        const existingIdentity = existingIdentityByUuid ?? existingIdentityByPath;
+        const trackedFileUuid = deps.store.getTrackedFile(candidatePath)?.uuid?.trim() ?? "";
+        const noteFileUuid = deps.noteReviewStore.getEntry(candidatePath)?.item.uuid?.trim() ?? "";
+        const canonicalFileUuid =
+            existingIdentity?.uuid ||
+            trackedFileUuid ||
+            noteFileUuid ||
+            candidateFileUuid ||
+            createDeterministicFileIdentityUuid(candidatePath);
+        const shouldRefreshIdentity =
+            !!candidatePath &&
+            (!existingIdentity ||
+                (!existingIdentityByUuid &&
+                    compareIsoTime(existingIdentity.updatedAt, input.updatedAt) <= 0));
+        if (shouldRefreshIdentity) {
+            deps.fileIdentityStore.upsert({
+                uuid: canonicalFileUuid,
+                createdAt: existingIdentity?.createdAt ?? input.updatedAt,
+                updatedAt: input.updatedAt,
+                path: candidatePath,
+                aliases: [
+                    ...(existingIdentity?.aliases ?? []),
+                    ...[candidateFileUuid, trackedFileUuid, noteFileUuid].filter(
+                        (value): value is string =>
+                            typeof value === "string" &&
+                            value.trim().length > 0 &&
+                            value.trim() !== canonicalFileUuid,
+                    ),
+                ],
+                deleted: false,
+            });
+        }
+
+        return {
+            fileUuid: canonicalFileUuid,
+            path: existingIdentityByUuid?.path
+                ? existingIdentityByUuid.path
+                : shouldRefreshIdentity || !existingIdentity?.path
+                  ? candidatePath
+                  : existingIdentity.path,
+        };
     };
 
     const maybeRecordAliasGroup = (
@@ -1039,6 +1178,7 @@ export async function replaySyroSessionRecords(
     ): Promise<"applied" | "deferred" | "skipped"> => {
         let workingSnapshot: TrackedCardSnapshot = {
             ...snapshot,
+            fileUuid: snapshot.fileUuid ?? snapshot.trackedFileUuid,
             trackedFileAliases: [...(snapshot.trackedFileAliases ?? [])],
             trackedFileTags: [...snapshot.trackedFileTags],
             trackedItem: snapshot.trackedItem ? cloneUnknown(snapshot.trackedItem) : null,
@@ -1046,7 +1186,7 @@ export async function replaySyroSessionRecords(
         };
 
         let fileResolution = resolveTrackedFileSnapshot({
-            uuid: workingSnapshot.trackedFileUuid,
+            uuid: workingSnapshot.fileUuid ?? workingSnapshot.trackedFileUuid,
             path: workingSnapshot.path,
         });
         if (!fileResolution && allowRemoteFetch) {
@@ -1054,7 +1194,7 @@ export async function replaySyroSessionRecords(
             if (remoteSnapshot) {
                 workingSnapshot = remoteSnapshot;
                 fileResolution = resolveTrackedFileSnapshot({
-                    uuid: workingSnapshot.trackedFileUuid,
+                    uuid: workingSnapshot.fileUuid ?? workingSnapshot.trackedFileUuid,
                     path: workingSnapshot.path,
                 });
             }
@@ -1072,7 +1212,10 @@ export async function replaySyroSessionRecords(
         const fileEvidence = buildEvidence(record, fileResolution.matchedBy, workingSnapshot.path);
         mergeTrackedFileAliases(
             fileResolution.fileID,
-            [workingSnapshot.trackedFileUuid, ...(workingSnapshot.trackedFileAliases ?? [])],
+            [
+                workingSnapshot.fileUuid ?? workingSnapshot.trackedFileUuid,
+                ...(workingSnapshot.trackedFileAliases ?? []),
+            ],
             fileEvidence,
             workingSnapshot.path,
         );
@@ -1081,6 +1224,7 @@ export async function replaySyroSessionRecords(
             return allowRemoteFetch ? "skipped" : "deferred";
         }
 
+        workingSnapshot.fileUuid = resolvedFile.uuid;
         workingSnapshot.trackedFileUuid = resolvedFile.uuid;
         workingSnapshot.trackedFileAliases = [...(resolvedFile.aliases ?? [])];
         workingSnapshot.path = resolvedFile.path;
@@ -1196,11 +1340,62 @@ export async function replaySyroSessionRecords(
             item: RepetitionItem.create(snapshot.item),
         };
 
+        const trackedFileUuid = deps.store.getTrackedFile(workingSnapshot.path)?.uuid?.trim() ?? "";
+        const existingFileIdentity =
+            deps.fileIdentityStore.getByUuidOrAlias(workingSnapshot.item.uuid) ??
+            deps.fileIdentityStore.getByPath(workingSnapshot.path);
+        const canonicalFileUuid =
+            existingFileIdentity?.uuid ||
+            trackedFileUuid ||
+            workingSnapshot.item.uuid ||
+            createDeterministicFileIdentityUuid(workingSnapshot.path);
+        const mergedNoteAliases = mergeEquivalentUuids(canonicalFileUuid, workingSnapshot.item.aliases, [
+            workingSnapshot.item.uuid,
+            ...(existingFileIdentity?.aliases ?? []),
+        ]);
+        const shouldRefreshFileIdentity =
+            !existingFileIdentity ||
+            compareIsoTime(existingFileIdentity.updatedAt, record.updatedAt) <= 0;
+        if (shouldRefreshFileIdentity) {
+            deps.fileIdentityStore.upsert({
+                uuid: canonicalFileUuid,
+                createdAt: existingFileIdentity?.createdAt ?? record.createdAt,
+                updatedAt: record.updatedAt,
+                path: workingSnapshot.path,
+                aliases: mergedNoteAliases,
+                deleted: false,
+            });
+        } else if (existingFileIdentity?.path) {
+            workingSnapshot.path = existingFileIdentity.path;
+        }
+        workingSnapshot.item.uuid = canonicalFileUuid;
+        workingSnapshot.item.aliases = mergedNoteAliases;
+        workingSnapshot.item.setTracked(workingSnapshot.path);
+        workingSnapshot.item.updateDeckName(workingSnapshot.deckName, false);
+
         let noteResolution = resolveNoteSnapshot(workingSnapshot);
         if (!noteResolution && allowRemoteFetch) {
             const remoteSnapshot = await loadRemoteNoteSnapshot(record, workingSnapshot);
             if (remoteSnapshot) {
                 workingSnapshot = remoteSnapshot;
+                const remoteTrackedFileUuid =
+                    deps.store.getTrackedFile(workingSnapshot.path)?.uuid?.trim() ?? "";
+                const remoteExistingFileIdentity =
+                    deps.fileIdentityStore.getByUuidOrAlias(workingSnapshot.item.uuid) ??
+                    deps.fileIdentityStore.getByPath(workingSnapshot.path);
+                const remoteCanonicalFileUuid =
+                    remoteExistingFileIdentity?.uuid ||
+                    remoteTrackedFileUuid ||
+                    workingSnapshot.item.uuid ||
+                    createDeterministicFileIdentityUuid(workingSnapshot.path);
+                workingSnapshot.item.aliases = mergeEquivalentUuids(
+                    remoteCanonicalFileUuid,
+                    workingSnapshot.item.aliases,
+                    [workingSnapshot.item.uuid, ...(remoteExistingFileIdentity?.aliases ?? [])],
+                );
+                workingSnapshot.item.uuid = remoteCanonicalFileUuid;
+                workingSnapshot.item.setTracked(workingSnapshot.path);
+                workingSnapshot.item.updateDeckName(workingSnapshot.deckName, false);
                 noteResolution = resolveNoteSnapshot(workingSnapshot);
             }
         }
@@ -1253,6 +1448,63 @@ export async function replaySyroSessionRecords(
     };
 
     for (const record of records) {
+        if (record.domain !== "file-identities" || record.entityType !== "file-identity") {
+            continue;
+        }
+
+        const payload = parseFileIdentityPayload(record.payload);
+        const fileUuid = parseFileIdentityUuidFromTarget(record.targetUuid) || payload?.uuid || "";
+        const path = payload?.path?.trim() || record.pathHint?.trim() || "";
+        if (!fileUuid || !path) {
+            continue;
+        }
+
+        const targetUuid = buildFileIdentityTargetUuid(fileUuid);
+        if (!deps.fileIdentityStore.shouldApplySyncEntity(targetUuid, record.updatedAt)) {
+            continue;
+        }
+
+        if (record.opType === "delete") {
+            deps.fileIdentityStore.upsert({
+                uuid: fileUuid,
+                createdAt: payload?.createdAt || record.createdAt,
+                updatedAt: record.updatedAt,
+                path,
+                aliases: payload?.aliases ?? [],
+                deleted: true,
+            });
+            deps.fileIdentityStore.markSyncEntity({
+                targetUuid,
+                updatedAt: record.updatedAt,
+                deleted: true,
+                entityType: "file-identity",
+                pathHint: path,
+            });
+        } else if (record.opType === "upsert") {
+            deps.fileIdentityStore.upsert({
+                uuid: fileUuid,
+                createdAt: payload?.createdAt || record.createdAt,
+                updatedAt: record.updatedAt,
+                path,
+                aliases: payload?.aliases ?? [],
+                deleted: false,
+            });
+            deps.fileIdentityStore.markSyncEntity({
+                targetUuid,
+                updatedAt: record.updatedAt,
+                deleted: false,
+                entityType: "file-identity",
+                pathHint: path,
+            });
+        } else {
+            continue;
+        }
+
+        fileIdentitiesChanged = true;
+        replaySummary.requiresGlobalSync = true;
+    }
+
+    for (const record of records) {
         if (record.entityType === "uuid-alias-batch") {
             const batchPayload = parseUuidAliasBatchPayload(record.payload);
             if (!batchPayload) {
@@ -1267,6 +1519,9 @@ export async function replaySyroSessionRecords(
 
     for (const record of records) {
         switch (record.domain) {
+            case "file-identities":
+                break;
+
             case "settings": {
                 const patch = parseSharedSettingsPatch(record.payload);
                 if (!patch) {
@@ -1538,6 +1793,13 @@ export async function replaySyroSessionRecords(
                         continue;
                     }
 
+                    const resolvedTimelineFile = resolveTimelineFileIdentity({
+                        path: payload.notePath,
+                        fileUuid: payload.fileUuid,
+                        updatedAt: record.updatedAt,
+                    });
+                    const canonicalPath = resolvedTimelineFile?.path ?? payload.notePath;
+
                     const childTargetUuid = buildTimelineEntryTargetUuid(payload.commit.id);
                     if (
                         !deps.reviewCommitStore.shouldApplySyncEntity(
@@ -1549,16 +1811,16 @@ export async function replaySyroSessionRecords(
                     }
 
                     if (record.opType === "delete") {
-                        deps.reviewCommitStore.removeCommitById(payload.commit.id, payload.notePath);
+                        deps.reviewCommitStore.removeCommitById(payload.commit.id, canonicalPath);
                     } else {
-                        deps.reviewCommitStore.upsertCommitSnapshot(payload.notePath, payload.commit);
+                        deps.reviewCommitStore.upsertCommitSnapshot(canonicalPath, payload.commit);
                     }
                     deps.reviewCommitStore.markSyncEntity({
                         targetUuid: childTargetUuid,
                         updatedAt: record.updatedAt,
                         deleted: record.opType === "delete",
                         entityType: "timeline-entry",
-                        pathHint: payload.notePath,
+                        pathHint: canonicalPath,
                     });
 
                     timelineChanged = true;
@@ -1571,11 +1833,25 @@ export async function replaySyroSessionRecords(
                     continue;
                 }
 
-                if (!deps.reviewCommitStore.shouldApplySyncEntity(record.targetUuid, record.updatedAt)) {
+                const resolvedTimelineFile = resolveTimelineFileIdentity({
+                    path: payload.newPath ?? payload.notePath ?? payload.oldPath ?? record.pathHint ?? "",
+                    fileUuid: payload.fileUuid,
+                    updatedAt: record.updatedAt,
+                });
+                const timelineFileUuid =
+                    resolvedTimelineFile?.fileUuid ||
+                    payload.fileUuid ||
+                    parseTimelineFileUuidFromTarget(record.targetUuid) ||
+                    createDeterministicFileIdentityUuid(
+                        payload.newPath ?? payload.notePath ?? payload.oldPath ?? record.pathHint ?? "",
+                    );
+                const fileTargetUuid = buildTimelineFileTargetUuid(timelineFileUuid);
+                if (!deps.reviewCommitStore.shouldApplySyncEntity(fileTargetUuid, record.updatedAt)) {
                     continue;
                 }
 
                 if (record.opType === "rename-file" && payload.newPath) {
+                    const targetPath = resolvedTimelineFile?.path ?? payload.newPath;
                     for (const commit of payload.commits) {
                         const childTargetUuid = buildTimelineEntryTargetUuid(commit.id);
                         if (
@@ -1587,25 +1863,25 @@ export async function replaySyroSessionRecords(
                             continue;
                         }
 
-                        deps.reviewCommitStore.upsertCommitSnapshot(payload.newPath, commit);
+                        deps.reviewCommitStore.upsertCommitSnapshot(targetPath, commit);
                         deps.reviewCommitStore.markSyncEntity({
                             targetUuid: childTargetUuid,
                             updatedAt: record.updatedAt,
                             deleted: false,
                             entityType: "timeline-entry",
-                            pathHint: payload.newPath,
+                            pathHint: targetPath,
                         });
                     }
 
-                    if (payload.oldPath && payload.oldPath !== payload.newPath) {
+                    if (payload.oldPath && payload.oldPath !== targetPath) {
                         deps.reviewCommitStore.deleteFile(payload.oldPath);
                     }
                     deps.reviewCommitStore.markSyncEntity({
-                        targetUuid: record.targetUuid,
+                        targetUuid: fileTargetUuid,
                         updatedAt: record.updatedAt,
                         deleted: false,
                         entityType: "timeline-file",
-                        pathHint: payload.newPath,
+                        pathHint: targetPath,
                     });
                     timelineChanged = true;
                     replaySummary.requiresGlobalSync = true;
@@ -1613,7 +1889,8 @@ export async function replaySyroSessionRecords(
                 }
 
                 if (record.opType === "delete-file") {
-                    const targetPath = payload.notePath ?? payload.oldPath;
+                    const targetPath =
+                        resolvedTimelineFile?.path ?? payload.notePath ?? payload.oldPath ?? "";
                     for (const commit of payload.commits) {
                         const childTargetUuid = buildTimelineEntryTargetUuid(commit.id);
                         if (
@@ -1636,7 +1913,7 @@ export async function replaySyroSessionRecords(
                     }
 
                     deps.reviewCommitStore.markSyncEntity({
-                        targetUuid: record.targetUuid,
+                        targetUuid: fileTargetUuid,
                         updatedAt: record.updatedAt,
                         deleted: true,
                         entityType: "timeline-file",
@@ -1774,6 +2051,9 @@ export async function replaySyroSessionRecords(
         }
     }
 
+    if (fileIdentitiesChanged) {
+        await deps.fileIdentityStore.save();
+    }
     if (cardsChanged) {
         await deps.store.save();
     }

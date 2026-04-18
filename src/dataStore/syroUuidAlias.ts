@@ -3,6 +3,7 @@ export type SyroUuidAliasEntityType = "tracked-file" | "card-item" | "note-revie
 export type SyroUuidAliasMatchedBy =
     | "canonical-hit"
     | "alias-hit"
+    | "file-identity"
     | "tracked-file-match"
     | "note-path"
     | "snapshot-reconcile";

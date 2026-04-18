@@ -103,9 +103,9 @@ describe("multi-device review backend flow", () => {
     const originalCrypto = globalThis.crypto;
 
     beforeEach(() => {
+        jest.restoreAllMocks();
         jest.useFakeTimers().setSystemTime(new Date("2026-04-18T08:00:00.000Z"));
         jest.clearAllTimers();
-        jest.restoreAllMocks();
         window.localStorage.clear();
 
         let uuidCounter = 0;
@@ -138,9 +138,10 @@ describe("multi-device review backend flow", () => {
                                 digest.byteOffset + digest.byteLength,
                             );
                         },
-                    },
+                },
             },
         });
+        jest.setSystemTime(new Date("2026-04-18T08:00:00.000Z"));
     });
 
     afterEach(() => {

@@ -115,6 +115,7 @@ export const DEFAULT_SRS_DATA: SrsData = {
 
 export interface TrackedCardSnapshot {
     path: string;
+    fileUuid?: string;
     trackedFileUuid: string;
     trackedFileAliases: string[];
     trackedFileTags: string[];
@@ -229,6 +230,7 @@ export function parseTrackedCardsStoreSnapshots(
 
             cards.push({
                 path: trackedFile.path,
+                fileUuid: trackedFile.uuid,
                 trackedFileUuid: trackedFile.uuid,
                 trackedFileAliases: [...(trackedFile.aliases ?? [])],
                 trackedFileTags: [...(trackedFile.tags ?? [])],
@@ -1050,6 +1052,7 @@ export class DataStore {
 
         return {
             path: trackedFile.path,
+            fileUuid: trackedFile.uuid,
             trackedFileUuid: trackedFile.uuid,
             trackedFileAliases: [...(trackedFile.aliases ?? [])],
             trackedFileTags: [...(trackedFile.tags ?? [])],
@@ -1177,7 +1180,10 @@ export class DataStore {
             return null;
         }
 
-        const trackedFile = this.getTrackedFile(snapshot.path);
+        const trackedFileId =
+            this.findFileIdByUuidOrAlias(snapshot.fileUuid || snapshot.trackedFileUuid) ||
+            this.getFileID(snapshot.path);
+        const trackedFile = trackedFileId ? this.getFileByID(trackedFileId) : null;
         const localTrackedItems = trackedFile?.trackedItems ?? [];
         if (!trackedFile || localTrackedItems.length === 0) {
             return null;
@@ -1206,7 +1212,7 @@ export class DataStore {
 
     upsertCardSnapshot(snapshot: TrackedCardSnapshot): void {
         const { fileID, trackedFile } = this.ensureTrackedFileRecord({
-            uuid: snapshot.trackedFileUuid,
+            uuid: snapshot.fileUuid || snapshot.trackedFileUuid,
             path: snapshot.path,
             tags: snapshot.trackedFileTags,
             aliases: snapshot.trackedFileAliases,

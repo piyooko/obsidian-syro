@@ -1,4 +1,5 @@
 import { registerTrackFileEvents } from "src/Events/trackFileEvents";
+import { createDeterministicFileIdentityUuid } from "src/dataStore/syroFileIdentityStore";
 
 jest.mock("src/lang/helpers", () => ({
     t: (key: string) => key,
@@ -34,6 +35,7 @@ describe("trackFileEvents syro session hooks", () => {
     }
 
     test("rename emits note and timeline rename sessions before refreshing note review", async () => {
+        const emitted: string[] = [];
         const noteSnapshot = {
             path: "archive/renamed.md",
             source: "manual",
@@ -82,6 +84,10 @@ describe("trackFileEvents syro session hooks", () => {
                 renamePathPrefixWithSnapshots: jest.fn(() => []),
                 save: jest.fn(async () => undefined),
             },
+            getSyroFileIdentity: jest.fn((uuid: string) => ({
+                uuid,
+                createdAt: "2026-04-18T08:00:00.000Z",
+            })),
             appendSyroNoteRename: jest.fn(async () => true),
             appendSyroTimelineRenameFile: jest.fn(async () => true),
             renameFolderTrackingPaths: jest.fn(() => false),
@@ -91,7 +97,15 @@ describe("trackFileEvents syro session hooks", () => {
                 renamePathPrefixWithSnapshots: jest.fn(() => [cardSnapshot]),
                 save: jest.fn(async () => undefined),
             },
-            appendSyroCardsRenameFile: jest.fn(async () => true),
+            appendSyroFileIdentityUpsert: jest.fn(async () => {
+                emitted.push("file-identity-upsert");
+                return true;
+            }),
+            appendSyroCardsRenameFile: jest.fn(async () => {
+                emitted.push("cards-rename");
+                return true;
+            }),
+            guardSyroDataReady: jest.fn(() => true),
             markSyncDirty: jest.fn(),
             refreshNoteReview: jest.fn(async () => undefined),
             requestSync: jest.fn(async () => undefined),
@@ -117,10 +131,48 @@ describe("trackFileEvents syro session hooks", () => {
             "archive/renamed.md",
             timelineSnapshot.commits,
         );
+        expect(plugin.appendSyroFileIdentityUpsert.mock.calls).toEqual([
+            [
+                expect.objectContaining({
+                    uuid: "note-1",
+                    path: "archive/renamed.md",
+                    deleted: false,
+                }),
+            ],
+            [
+                expect.objectContaining({
+                    uuid: createDeterministicFileIdentityUuid("folder/original.md"),
+                    path: "archive/renamed.md",
+                    deleted: false,
+                }),
+            ],
+            [
+                expect.objectContaining({
+                    uuid: "tracked-file-1",
+                    path: "archive/renamed.md",
+                    deleted: false,
+                }),
+            ],
+        ]);
         expect(plugin.appendSyroCardsRenameFile).toHaveBeenCalledWith(
             "folder/original.md",
             cardSnapshot.file,
         );
+        expect(plugin.appendSyroFileIdentityUpsert.mock.invocationCallOrder[0]).toBeLessThan(
+            plugin.appendSyroNoteRename.mock.invocationCallOrder[0],
+        );
+        expect(plugin.appendSyroFileIdentityUpsert.mock.invocationCallOrder[1]).toBeLessThan(
+            plugin.appendSyroTimelineRenameFile.mock.invocationCallOrder[0],
+        );
+        expect(plugin.appendSyroNoteRename.mock.invocationCallOrder[0]).toBeLessThan(
+            plugin.appendSyroCardsRenameFile.mock.invocationCallOrder[0],
+        );
+        expect(emitted).toEqual([
+            "file-identity-upsert",
+            "file-identity-upsert",
+            "file-identity-upsert",
+            "cards-rename",
+        ]);
         expect(plugin.store.save).toHaveBeenCalled();
         expect(plugin.markSyncDirty).toHaveBeenCalled();
         expect(plugin.requestSync).toHaveBeenCalledWith({ trigger: "file-event" });
@@ -128,6 +180,7 @@ describe("trackFileEvents syro session hooks", () => {
     });
 
     test("delete emits note and timeline delete sessions before refreshing note review", async () => {
+        const emitted: string[] = [];
         const noteSnapshot = {
             path: "archive/deleted.md",
             source: "manual",
@@ -170,6 +223,10 @@ describe("trackFileEvents syro session hooks", () => {
                 deletePathPrefixWithSnapshots: jest.fn(() => []),
                 save: jest.fn(async () => undefined),
             },
+            getSyroFileIdentity: jest.fn((uuid: string) => ({
+                uuid,
+                createdAt: "2026-04-18T08:00:00.000Z",
+            })),
             appendSyroNoteRemove: jest.fn(async () => true),
             appendSyroTimelineDeleteFile: jest.fn(async () => true),
             removeFolderTrackingPaths: jest.fn(() => false),
@@ -177,7 +234,15 @@ describe("trackFileEvents syro session hooks", () => {
                 untrackPathPrefixWithSnapshots: jest.fn(() => [cardSnapshot]),
                 save: jest.fn(async () => undefined),
             },
-            appendSyroCardsDeleteFile: jest.fn(async () => true),
+            appendSyroFileIdentityDelete: jest.fn(async () => {
+                emitted.push("file-identity-delete");
+                return true;
+            }),
+            appendSyroCardsDeleteFile: jest.fn(async () => {
+                emitted.push("cards-delete");
+                return true;
+            }),
+            guardSyroDataReady: jest.fn(() => true),
             markSyncDirty: jest.fn(),
             refreshNoteReview: jest.fn(async () => undefined),
             requestSync: jest.fn(async () => undefined),
@@ -202,7 +267,45 @@ describe("trackFileEvents syro session hooks", () => {
             "archive/deleted.md",
             timelineSnapshot.commits,
         );
+        expect(plugin.appendSyroFileIdentityDelete.mock.calls).toEqual([
+            [
+                expect.objectContaining({
+                    uuid: "note-1",
+                    path: "archive/deleted.md",
+                    deleted: true,
+                }),
+            ],
+            [
+                expect.objectContaining({
+                    uuid: createDeterministicFileIdentityUuid("archive/deleted.md"),
+                    path: "archive/deleted.md",
+                    deleted: true,
+                }),
+            ],
+            [
+                expect.objectContaining({
+                    uuid: "tracked-file-1",
+                    path: "archive/deleted.md",
+                    deleted: true,
+                }),
+            ],
+        ]);
         expect(plugin.appendSyroCardsDeleteFile).toHaveBeenCalledWith(cardSnapshot);
+        expect(plugin.appendSyroFileIdentityDelete.mock.invocationCallOrder[0]).toBeLessThan(
+            plugin.appendSyroNoteRemove.mock.invocationCallOrder[0],
+        );
+        expect(plugin.appendSyroFileIdentityDelete.mock.invocationCallOrder[1]).toBeLessThan(
+            plugin.appendSyroTimelineDeleteFile.mock.invocationCallOrder[0],
+        );
+        expect(plugin.appendSyroNoteRemove.mock.invocationCallOrder[0]).toBeLessThan(
+            plugin.appendSyroCardsDeleteFile.mock.invocationCallOrder[0],
+        );
+        expect(emitted).toEqual([
+            "file-identity-delete",
+            "file-identity-delete",
+            "file-identity-delete",
+            "cards-delete",
+        ]);
         expect(plugin.store.save).toHaveBeenCalled();
         expect(plugin.markSyncDirty).toHaveBeenCalled();
         expect(plugin.requestSync).toHaveBeenCalledWith({ trigger: "file-event" });

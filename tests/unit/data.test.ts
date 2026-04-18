@@ -250,6 +250,7 @@ describe("DataStore algorithm binding", () => {
 
         expect(snapshot).not.toBeNull();
         expect(snapshot?.path).toBe("card-path.md");
+        expect(snapshot?.fileUuid).toBe(trackedFile.uuid);
         expect(snapshot?.trackedFileUuid).toBe(trackedFile.uuid);
         expect(snapshot?.trackedItem).not.toBe(trackedItem);
         expect(snapshot?.item).not.toBe(item);

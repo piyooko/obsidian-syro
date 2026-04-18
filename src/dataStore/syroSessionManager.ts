@@ -7,6 +7,10 @@ import {
     type DeckOptionsAssignmentPayload,
     type DeckOptionsPresetRemovalPayload,
 } from "./deckOptionsStore";
+import {
+    buildFileIdentityTargetUuid,
+    type SyroFileIdentity,
+} from "./syroFileIdentityStore";
 import type { DeckOptionsPreset } from "src/settings";
 import {
     classifySyroSessionRecordImpact,
@@ -41,6 +45,7 @@ type SessionAdapter = Pick<
 
 export type SyroSessionDomain =
     | "cards"
+    | "file-identities"
     | "notes"
     | "timeline"
     | "deck-options"
@@ -202,6 +207,14 @@ function createUniqueId(): string {
     }
 
     return `syro-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getCurrentDate(): Date {
+    return new Date(Date.now());
+}
+
+function getCurrentIsoTimestamp(): string {
+    return getCurrentDate().toISOString();
 }
 
 function isSessionFilePath(path: string): boolean {
@@ -428,7 +441,7 @@ function buildCursorSnapshotLine(
         lineType: "cursor-snapshot",
         deviceId: layout.device.deviceId,
         deviceName: layout.device.deviceName,
-        updatedAt: new Date().toISOString(),
+        updatedAt: getCurrentIsoTimestamp(),
         cursors: Object.fromEntries(
             sortedEntries.map(([sessionPath, cursor]) => [sessionPath, { ...cursor }]),
         ),
@@ -550,7 +563,7 @@ export class SyroSessionManager {
         this.sessionCursors.clear();
 
         const remoteSessionFiles = await this.listRemoteSessionFiles();
-        const updatedAt = new Date().toISOString();
+        const updatedAt = getCurrentIsoTimestamp();
         const alignedSessionPaths: string[] = [];
 
         for (const fileInfo of remoteSessionFiles) {
@@ -586,7 +599,7 @@ export class SyroSessionManager {
         }
 
         const remoteSessionFiles = await this.listRemoteSessionFiles();
-        const updatedAt = new Date().toISOString();
+        const updatedAt = getCurrentIsoTimestamp();
         const alignedSessionPaths: string[] = [];
 
         for (const fileInfo of remoteSessionFiles) {
@@ -670,6 +683,27 @@ export class SyroSessionManager {
         });
     }
 
+    async appendFileIdentityChange(
+        identity: SyroFileIdentity,
+        opType: "upsert" | "delete",
+        updatedAt?: string,
+    ): Promise<boolean> {
+        return this.appendRecord({
+            domain: "file-identities",
+            entityType: "file-identity",
+            opType,
+            targetUuid: buildFileIdentityTargetUuid(identity.uuid),
+            payload: {
+                uuid: identity.uuid,
+                createdAt: identity.createdAt,
+                path: identity.path,
+                aliases: identity.aliases,
+            },
+            pathHint: identity.path,
+            ...(updatedAt ? { updatedAt } : {}),
+        });
+    }
+
     async appendRecord(
         input: Omit<
             SyroSessionRecord,
@@ -685,7 +719,7 @@ export class SyroSessionManager {
 
         const sessionFilePath = await this.ensureCurrentSessionFilePath();
         const sessionPath = getRelativeSessionPath(this.layout.sessionsRoot, sessionFilePath);
-        const now = new Date().toISOString();
+        const now = getCurrentIsoTimestamp();
         const record: SyroSessionRecord = {
             version: SYRO_SESSION_RECORD_VERSION,
             sessionId: getSessionIdFromRelativePath(sessionPath),
@@ -844,7 +878,7 @@ export class SyroSessionManager {
         };
     }
 
-    private async ensureCurrentSessionFilePath(date: Date = new Date()): Promise<string> {
+    private async ensureCurrentSessionFilePath(date: Date = getCurrentDate()): Promise<string> {
         const currentDeviceFolderName = this.getCurrentDeviceFolderName();
         const sessionFilePath = buildCurrentDeviceSessionFilePath(
             this.layout.sessionsRoot,
@@ -1045,7 +1079,7 @@ export class SyroSessionManager {
             nextCursor: {
                 offset: lastProcessedOffset,
                 lastOpId,
-                updatedAt: new Date().toISOString(),
+                updatedAt: getCurrentIsoTimestamp(),
             },
             cursorAdvanced,
         };

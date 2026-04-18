@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import type { SyroFileIdentity } from "src/dataStore/syroFileIdentityStore";
 import { DEFAULT_SETTINGS } from "src/settings";
 import type { SyroSessionRecord } from "src/dataStore/syroSessionManager";
 import { SyroSessionManager } from "src/dataStore/syroSessionManager";
@@ -267,6 +268,28 @@ describe("SyroSessionManager", () => {
         expect(sessionRaw).toContain('"domain":"deck-options"');
         expect(sessionRaw).toContain('"entityType":"deck-options-preset"');
         expect(sessionRaw).toContain('"targetUuid":"deck-preset:deck-preset-default"');
+    });
+
+    test("appends file-identity upserts as entity-scoped session records", async () => {
+        const { app, files, layout } = await createWorkspaceContext();
+        const manager = new SyroSessionManager(app, layout);
+        const identity: SyroFileIdentity = {
+            uuid: "file-note-1",
+            createdAt: "2026-04-13T12:01:00.000Z",
+            updatedAt: "2026-04-13T12:02:00.000Z",
+            path: "folder/note.md",
+            aliases: ["legacy-note-1"],
+            deleted: false,
+        };
+        await manager.initialize();
+
+        await expect(manager.appendFileIdentityChange(identity, "upsert")).resolves.toBe(true);
+
+        const sessionRaw = files.get(normalizePath(layout.currentDeviceSessionFilePath)) ?? "";
+        expect(sessionRaw).toContain('"lineType":"event"');
+        expect(sessionRaw).toContain('"domain":"file-identities"');
+        expect(sessionRaw).toContain('"entityType":"file-identity"');
+        expect(sessionRaw).toContain('"targetUuid":"file:file-note-1"');
     });
 
     test("appends deck-options assignments as entity-scoped session records", async () => {

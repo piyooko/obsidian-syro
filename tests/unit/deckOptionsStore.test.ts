@@ -2,6 +2,8 @@ import {
     applyDeckOptionsStateToSettings,
     createPersistableSettingsSnapshot,
     DeckOptionsStore,
+    diffDeckOptionsState,
+    removeDeckOptionsPresetFromSettings,
 } from "src/dataStore/deckOptionsStore";
 import { Iadapter } from "src/dataStore/adapter";
 import { DEFAULT_DECK_OPTIONS_PRESET_UUID, DEFAULT_SETTINGS } from "src/settings";
@@ -218,5 +220,75 @@ describe("deckOptionsStore", () => {
         expect(settings.deckPresetAssignment).toEqual({
             Focused: settings.deckOptionsPresets[1].uuid,
         });
+    });
+
+    it("diffs presets and assignments by preset uuid instead of array position", () => {
+        const previousSettings = cloneSettings();
+        const nextSettings = cloneSettings();
+        const readingPreset = {
+            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+            uuid: "deck-preset-reading",
+            createdAt: "2026-04-18T00:00:00.000Z",
+            name: "Reading",
+        };
+        const focusPreset = {
+            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+            uuid: "deck-preset-focus",
+            createdAt: "2026-04-18T00:00:01.000Z",
+            name: "Focus",
+        };
+
+        previousSettings.deckOptionsPresets = [
+            previousSettings.deckOptionsPresets[0],
+            readingPreset,
+        ];
+        previousSettings.deckPresetAssignment = {
+            Reading: readingPreset.uuid,
+        };
+
+        nextSettings.deckOptionsPresets = [
+            nextSettings.deckOptionsPresets[0],
+            focusPreset,
+        ];
+        nextSettings.deckPresetAssignment = {
+            Reading: focusPreset.uuid,
+        };
+
+        const diff = diffDeckOptionsState(previousSettings, nextSettings);
+
+        expect(diff.presetUpserts).toEqual([
+            expect.objectContaining({
+                uuid: focusPreset.uuid,
+            }),
+        ]);
+        expect(diff.presetRemovals).toEqual([{ presetUuid: readingPreset.uuid }]);
+        expect(diff.assignmentUpserts).toEqual([
+            {
+                deckPath: "Reading",
+                presetUuid: focusPreset.uuid,
+            },
+        ]);
+        expect(diff.assignmentRemovals).toEqual([]);
+    });
+
+    it("removes deleted preset uuid assignments from settings", () => {
+        const settings = cloneSettings();
+        const readingPreset = {
+            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+            uuid: "deck-preset-reading",
+            createdAt: "2026-04-18T00:00:00.000Z",
+            name: "Reading",
+        };
+
+        settings.deckOptionsPresets = [settings.deckOptionsPresets[0], readingPreset];
+        settings.deckPresetAssignment = {
+            Reading: readingPreset.uuid,
+        };
+
+        removeDeckOptionsPresetFromSettings(settings, readingPreset.uuid);
+
+        expect(settings.deckOptionsPresets).toHaveLength(1);
+        expect(settings.deckOptionsPresets[0].uuid).toBe(DEFAULT_DECK_OPTIONS_PRESET_UUID);
+        expect(settings.deckPresetAssignment).toEqual({});
     });
 });

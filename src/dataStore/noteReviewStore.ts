@@ -68,6 +68,10 @@ function cloneItem(item: RepetitionItem): RepetitionItem {
     return RepetitionItem.create(cloned);
 }
 
+function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
+    return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 export function parseNoteReviewStoreSnapshots(raw: string): ParsedNoteReviewStoreSnapshots | null {
     const parsed = parseJsonUnknown(raw) as NoteReviewStoreFile | null;
     if (!parsed || parsed.version !== NOTE_REVIEW_STORE_VERSION || typeof parsed.items !== "object") {
@@ -296,6 +300,30 @@ export class NoteReviewStore {
         return Object.keys(this.data);
     }
 
+    assignCanonicalUuid(
+        path: string,
+        canonicalUuid: string,
+        extraAliases: readonly string[] = [],
+    ): boolean {
+        const entry = this.data[path];
+        const normalizedUuid = canonicalUuid.trim();
+        if (!entry || !normalizedUuid) {
+            return false;
+        }
+
+        const nextAliases = mergeEquivalentUuids(
+            normalizedUuid,
+            entry.item.aliases,
+            [entry.item.uuid, ...extraAliases],
+        );
+        const changed =
+            entry.item.uuid !== normalizedUuid || !arraysEqual(entry.item.aliases, nextAliases);
+        entry.item.uuid = normalizedUuid;
+        entry.item.aliases = nextAliases;
+        entry.item.setTracked(path);
+        return changed;
+    }
+
     ensureTracked(
         path: string,
         deckName: string,
@@ -418,20 +446,19 @@ export class NoteReviewStore {
 
     upsertSnapshot(snapshot: NoteReviewEntrySnapshot): void {
         const existingPath = this.findPathByUuidOrAlias(snapshot.item.uuid);
+        const existingEntry = existingPath ? this.data[existingPath] : null;
         if (existingPath && existingPath !== snapshot.path) {
             delete this.data[existingPath];
         }
 
         const item = cloneItem(snapshot.item);
         const pathEntry = this.data[snapshot.path];
-        if (pathEntry) {
-            item.aliases = mergeEquivalentUuids(
-                pathEntry.item.uuid,
-                pathEntry.item.aliases,
-                [item.uuid, ...(item.aliases ?? [])],
-            );
-            item.uuid = pathEntry.item.uuid;
-        }
+        item.aliases = mergeEquivalentUuids(item.uuid, item.aliases, [
+            ...(existingEntry
+                ? [existingEntry.item.uuid, ...(existingEntry.item.aliases ?? [])]
+                : []),
+            ...(pathEntry ? [pathEntry.item.uuid, ...(pathEntry.item.aliases ?? [])] : []),
+        ]);
         item.setTracked(snapshot.path);
         item.updateDeckName(snapshot.deckName, false);
         this.data[snapshot.path] = {
@@ -521,6 +548,10 @@ export class NoteReviewStore {
             const migratedItem = cloneItem(item);
             migratedItem.setTracked(trackedFile.path);
             migratedItem.updateDeckName(deckName, false);
+            migratedItem.aliases = mergeEquivalentUuids(trackedFile.uuid, migratedItem.aliases, [
+                migratedItem.uuid,
+            ]);
+            migratedItem.uuid = trackedFile.uuid;
 
             this.data[trackedFile.path] = {
                 source,

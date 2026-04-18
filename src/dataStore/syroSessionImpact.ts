@@ -143,6 +143,10 @@ export function mergeSyroSessionReplayReceipt(
 export function classifySyroSessionRecordImpact(
     record: SyroSessionRecordLike,
 ): SyroPendingSessionImpact {
+    if (record.domain === "file-identities") {
+        return "requires-global-sync";
+    }
+
     if (record.domain === "daily-state") {
         return "runtime-only";
     }

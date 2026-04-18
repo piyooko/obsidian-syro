@@ -4,6 +4,7 @@ import { createDefaultSrsData } from "./data";
 import { createDeckOptionsStoreSnapshot } from "./deckOptionsStore";
 import type { PendingOverlayStore } from "./pendingOverlayStore";
 import { wrapLegacyCardsReviewOverlay } from "./pendingOverlayStore";
+import { createDefaultFileIdentityStoreFile, parseFileIdentityStoreFile } from "./syroFileIdentityStore";
 import {
     createDefaultDailyState,
     createDefaultDeviceState,
@@ -50,6 +51,10 @@ export interface ReviewCommitStorePathConfig {
 
 export interface DeckOptionsStorePathConfig {
     deckOptionsPath: string;
+}
+
+export interface FileIdentityStorePathConfig {
+    fileIdentitiesPath: string;
 }
 
 export interface SyroDeviceMetadata {
@@ -178,6 +183,7 @@ export interface SyroPersistenceLayout {
     notesPath: string;
     timelinePath: string;
     deckOptionsPath: string;
+    fileIdentitiesPath: string;
     settingsPath: string;
     trackingRulesPath: string;
     dailyStatePath: string;
@@ -539,6 +545,10 @@ function validateDeckOptionsStoreFile(raw: string): boolean {
         Array.isArray(parsed["deckOptionsPresets"]) &&
         isObjectLike(parsed["deckPresetAssignment"])
     );
+}
+
+function validateFileIdentityStoreFile(raw: string): boolean {
+    return parseFileIdentityStoreFile(parseJsonUnknown(raw)) !== null;
 }
 
 function createDefaultNoteReviewStoreFile(): {
@@ -1002,6 +1012,7 @@ export class SyroWorkspace {
         | "deviceRoot"
         | "deviceMetaPath"
         | "cardsPath"
+        | "fileIdentitiesPath"
         | "notesPath"
         | "timelinePath"
         | "deckOptionsPath"
@@ -1641,6 +1652,9 @@ export class SyroWorkspace {
             const snapshot = createDeckOptionsStoreSnapshot(this.settings);
             await this.writeJson(layout.deckOptionsPath, snapshot.state);
         }
+        if (!(await this.adapter.exists(layout.fileIdentitiesPath))) {
+            await this.writeJson(layout.fileIdentitiesPath, createDefaultFileIdentityStoreFile());
+        }
 
         await this.migrateCompatibilityLayout(layout);
         await this.migrateLegacyCardsOverlay(
@@ -1659,6 +1673,7 @@ export class SyroWorkspace {
             | "notesPath"
             | "timelinePath"
             | "deckOptionsPath"
+            | "fileIdentitiesPath"
             | "settingsPath"
             | "trackingRulesPath"
             | "dailyStatePath"
@@ -1683,6 +1698,7 @@ export class SyroWorkspace {
             notesPath: joinPath(deviceRoot, "notes.json"),
             timelinePath: joinPath(deviceRoot, "timeline.json"),
             deckOptionsPath: joinPath(deviceRoot, "deck-options.json"),
+            fileIdentitiesPath: joinPath(deviceRoot, "file-identities.json"),
             settingsPath: joinPath(deviceRoot, "settings.json"),
             trackingRulesPath: joinPath(deviceRoot, "tracking-rules.json"),
             dailyStatePath: joinPath(deviceRoot, "daily-state.json"),
@@ -1708,6 +1724,7 @@ export class SyroWorkspace {
             | "notesPath"
             | "timelinePath"
             | "deckOptionsPath"
+            | "fileIdentitiesPath"
             | "settingsPath"
             | "trackingRulesPath"
             | "dailyStatePath"
@@ -1849,6 +1866,7 @@ export class SyroWorkspace {
             [layout.notesPath, validateNotesStoreFile, requireDomainSnapshots],
             [layout.timelinePath, validateTimelineStoreFile, requireDomainSnapshots],
             [layout.deckOptionsPath, validateDeckOptionsStoreFile, requireDomainSnapshots],
+            [layout.fileIdentitiesPath, validateFileIdentityStoreFile, requireDomainSnapshots],
             [layout.settingsPath, (raw) => isRecord(parseJsonUnknown(raw)), requireDomainSnapshots],
             [
                 layout.trackingRulesPath,
@@ -1935,6 +1953,11 @@ export class SyroWorkspace {
             "deck-options-default",
         );
         await this.writeJsonIfMissing(
+            layout.fileIdentitiesPath,
+            createDefaultFileIdentityStoreFile(),
+            "file-identities-default",
+        );
+        await this.writeJsonIfMissing(
             layout.settingsPath,
             createDefaultSharedSettingsState(),
             "shared-settings-default",
@@ -1987,6 +2010,11 @@ export class SyroWorkspace {
             this.adapter,
             joinPath(sourceRoot, "deck-options.json"),
             targetLayout.deckOptionsPath,
+        );
+        await copyFile(
+            this.adapter,
+            joinPath(sourceRoot, "file-identities.json"),
+            targetLayout.fileIdentitiesPath,
         );
         await copyFile(
             this.adapter,
@@ -2043,6 +2071,11 @@ export class SyroWorkspace {
             this.adapter,
             joinPath(sourceRoot, "deck-options.json"),
             targetLayout.deckOptionsPath,
+        );
+        await replaceFileFromSource(
+            this.adapter,
+            joinPath(sourceRoot, "file-identities.json"),
+            targetLayout.fileIdentitiesPath,
         );
         await replaceFileFromSource(
             this.adapter,

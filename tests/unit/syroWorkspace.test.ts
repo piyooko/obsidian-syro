@@ -175,6 +175,23 @@ function createValidDeckOptionsPayload(): string {
     return JSON.stringify(createDeckOptionsStoreSnapshot(DEFAULT_SETTINGS).state);
 }
 
+function createValidFileIdentitiesPayload(): string {
+    return JSON.stringify({
+        version: 1,
+        entries: {
+            "file-91acnote": {
+                uuid: "file-91acnote",
+                createdAt: "2026-04-12T00:00:00.000Z",
+                updatedAt: "2026-04-13T00:00:00.000Z",
+                path: "note.md",
+                aliases: [],
+                deleted: false,
+            },
+        },
+        syncEntities: {},
+    });
+}
+
 function createValidDeviceMetadata(options: {
     deviceId: string;
     deviceName: string;
@@ -234,6 +251,7 @@ async function addSourceDevice(
         }),
     );
     files.set(`${sourceRoot}/cards.json`, '{"items":[{"uuid":"card-1"}]}');
+    files.set(`${sourceRoot}/file-identities.json`, createValidFileIdentitiesPayload());
     files.set(`${sourceRoot}/notes.json`, createValidNotesPayload());
     files.set(`${sourceRoot}/timeline.json`, '{"note.md":[{"id":"1"}]}');
     files.set(`${sourceRoot}/deck-options.json`, createValidDeckOptionsPayload());
@@ -377,6 +395,9 @@ describe("SyroWorkspace", () => {
         expect(layout.device.shortDeviceId).toBe("d84f");
         expect(layout.deviceRoot).toBe(".obsidian/plugins/syro/devices/Desktop--d84f");
         expect(layout.cardsPath).toBe(".obsidian/plugins/syro/devices/Desktop--d84f/cards.json");
+        expect(layout.fileIdentitiesPath).toBe(
+            ".obsidian/plugins/syro/devices/Desktop--d84f/file-identities.json",
+        );
         expect(layout.pendingOverlayPath).toBe(
             ".obsidian/plugins/syro/devices/Desktop--d84f/pending.overlay.json",
         );
@@ -395,6 +416,11 @@ describe("SyroWorkspace", () => {
             items: [],
             trackedFiles: {},
             fileOrder: [],
+        });
+        expect(JSON.parse(files.get(layout.fileIdentitiesPath) ?? "{}")).toEqual({
+            version: 1,
+            entries: {},
+            syncEntities: {},
         });
         expect(JSON.parse(files.get(layout.notesPath) ?? "{}")).toEqual({
             version: 1,
@@ -478,6 +504,17 @@ describe("SyroWorkspace", () => {
 
         expect(startup.startupDecision).toBe("ready");
         expect(files.get(layout.cardsPath)).toBe('{"items":[]}');
+        expect(files.get(layout.fileIdentitiesPath)).toBe(
+            JSON.stringify(
+                {
+                    version: 1,
+                    entries: {},
+                    syncEntities: {},
+                },
+                null,
+                2,
+            ),
+        );
         expect(files.get(layout.notesPath)).toBe(createValidNotesPayload());
         expect(files.get(layout.timelinePath)).toBe('{"note.md":[{"id":"1"}]}');
         expect(JSON.parse(files.get(layout.pendingOverlayPath) ?? "{}")).toEqual({
@@ -919,6 +956,9 @@ describe("SyroWorkspace", () => {
         expect(layout.device.importedSessionIds).toBeUndefined();
         expect(layout.device.importedSessionRetentionUntil).toBeUndefined();
         expect(files.get(layout.cardsPath)).toBe('{"items":[{"uuid":"card-1"}]}');
+        expect(JSON.parse(files.get(layout.fileIdentitiesPath) ?? "{}")).toEqual(
+            JSON.parse(createValidFileIdentitiesPayload()),
+        );
         expect(JSON.parse(files.get(layout.deckOptionsPath) ?? "{}")).toEqual(
             JSON.parse(createValidDeckOptionsPayload()),
         );
@@ -1155,6 +1195,9 @@ describe("SyroWorkspace", () => {
         );
         expect(overwritten.device.baselineBuiltAt).toBeTruthy();
         expect(files.get(normalizePath(overwritten.cardsPath))).toBe('{"items":[{"uuid":"card-1"}]}');
+        expect(JSON.parse(files.get(normalizePath(overwritten.fileIdentitiesPath)) ?? "{}")).toEqual(
+            JSON.parse(createValidFileIdentitiesPayload()),
+        );
         expect(files.get(normalizePath(overwritten.timelinePath))).toBe('{"note.md":[{"id":"1"}]}');
         expect(files.get(normalizePath(overwritten.noteCachePath))).toContain('"path":"note.md"');
         expect(overwrittenMeta.deviceId).toBe(startup.layout.device.deviceId);

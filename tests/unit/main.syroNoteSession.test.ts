@@ -21,7 +21,9 @@ describe("SRPlugin syro note and timeline session hooks", () => {
             item: { uuid: "note-1" },
         };
         const plugin = {
+            guardSyroDataReady: jest.fn(() => true),
             clearFolderTrackingExclusion: jest.fn(),
+            canonicalizeNoteReviewEntryPath: jest.fn(() => false),
             noteAlgorithm: {},
             noteReviewStore: {
                 ensureTracked: jest.fn(),
@@ -54,7 +56,9 @@ describe("SRPlugin syro note and timeline session hooks", () => {
             item: { uuid: "note-1" },
         };
         const plugin = {
+            guardSyroDataReady: jest.fn(() => true),
             getResolvedFolderTrackingRule: jest.fn(() => null),
+            canonicalizeNoteReviewEntryPath: jest.fn(() => false),
             noteReviewStore: {
                 removeWithSnapshot: jest.fn(() => snapshot),
                 save: jest.fn(async () => undefined),
@@ -116,6 +120,7 @@ describe("SRPlugin syro note and timeline session hooks", () => {
         jest.mocked(autoCommitReviewResponseToTimeline).mockResolvedValue(timelineCommit as never);
 
         const plugin = {
+            guardSyroDataReady: jest.fn(() => true),
             data: {
                 settings: {
                     ...DEFAULT_SETTINGS,
@@ -130,6 +135,7 @@ describe("SRPlugin syro note and timeline session hooks", () => {
                 deckName: DEFAULT_DECKNAME,
                 source: "manual",
             })),
+            canonicalizeNoteReviewEntryPath: jest.fn(() => false),
             noteReviewStore: {
                 ensureTracked: jest.fn(() => item),
                 save: jest.fn(async () => undefined),
@@ -201,6 +207,7 @@ describe("SRPlugin syro note and timeline session hooks", () => {
         jest.mocked(autoCommitReviewResponseToTimeline).mockResolvedValue(null as never);
 
         const plugin = {
+            guardSyroDataReady: jest.fn(() => true),
             data: {
                 settings: {
                     ...DEFAULT_SETTINGS,
@@ -215,6 +222,7 @@ describe("SRPlugin syro note and timeline session hooks", () => {
                 deckName: DEFAULT_DECKNAME,
                 source: "manual",
             })),
+            canonicalizeNoteReviewEntryPath: jest.fn(() => false),
             noteReviewStore: {
                 ensureTracked: jest.fn(() => item),
                 save: jest.fn(async () => undefined),

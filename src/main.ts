@@ -77,6 +77,13 @@ import {
     diffDeckOptionsState,
     type DeckOptionsStoreFile,
 } from "./dataStore/deckOptionsStore";
+import {
+    buildFileIdentityTargetUuid,
+    createDeterministicFileIdentityUuid,
+    normalizeFileIdentityAliases,
+    type SyroFileIdentity,
+    SyroFileIdentityStore,
+} from "./dataStore/syroFileIdentityStore";
 import { DataLocation } from "./dataStore/dataLocation";
 import {
     NoteReviewStore,
@@ -333,6 +340,9 @@ interface PluginDataPersistOptions {
     source?: string;
 }
 
+// These domains can be re-saved after import if local edits landed mid-flight, but they
+// keep their existing sync semantics: shared-settings by field timestamp, tracking-rules
+// by folderPath, and daily-state by operation targetUuid.
 const BUFFERED_IMPORT_PROTECTED_DOMAINS = [
     "shared-settings",
     "tracking-rules",
@@ -417,6 +427,18 @@ function isBufferedImportProtectedDomain(
     return BUFFERED_IMPORT_PROTECTED_DOMAINS.includes(
         domain as BufferedImportProtectedDomain,
     );
+}
+
+function getCurrentDate(): Date {
+    return new Date(Date.now());
+}
+
+function getCurrentIsoTimestamp(): string {
+    return getCurrentDate().toISOString();
+}
+
+function areOrderedStringArraysEqual(left: readonly string[], right: readonly string[]): boolean {
+    return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 // export interface SchedNote {
@@ -523,6 +545,7 @@ export default class SRPlugin extends Plugin {
     private syroLayout: SyroPersistenceLayout | null = null;
     private pendingOverlayStore: PendingOverlayStore | null = null;
     private deckOptionsStore: DeckOptionsStore | null = null;
+    private fileIdentityStore: SyroFileIdentityStore | null = null;
     private sharedSettingsStore: SyroJsonStateStore<PersistedSharedSettingsState> | null = null;
     private trackingRulesStore: SyroJsonStateStore<PersistedTrackingRulesState> | null = null;
     private dailyStateStore: SyroJsonStateStore<PersistedDailyState> | null = null;
@@ -1467,6 +1490,7 @@ export default class SRPlugin extends Plugin {
         this.pendingOverlayStore?.dispose();
         this.pendingOverlayStore = null;
         this.deckOptionsStore = null;
+        this.fileIdentityStore = null;
         this.sharedSettingsStore = null;
         this.trackingRulesStore = null;
         this.dailyStateStore = null;
@@ -2017,7 +2041,7 @@ export default class SRPlugin extends Plugin {
 
     public getRolloverDate(): string {
         return window
-            .moment()
+            .moment(Date.now())
             .subtract(this.data.settings.rolloverHour, "hours")
             .format("YYYY-MM-DD");
     }
@@ -2939,6 +2963,7 @@ export default class SRPlugin extends Plugin {
         this.noteReviewStore?.setReadOnly(this.syroReadOnlyReason);
         this.reviewCommitStore?.setReadOnly(this.syroReadOnlyReason);
         this.deckOptionsStore?.setReadOnly(this.syroReadOnlyReason);
+        this.fileIdentityStore?.setReadOnly(this.syroReadOnlyReason);
         this.syroSessionManager?.setReadOnly(this.syroReadOnlyReason);
     }
 
@@ -3143,6 +3168,7 @@ export default class SRPlugin extends Plugin {
 
         const retentionMs = SYRO_SYNC_RETENTION_WINDOW_MS;
         const cardsChanged = this.store?.pruneSyncEntities(retentionMs) ?? false;
+        const fileIdentitiesChanged = this.fileIdentityStore?.pruneSyncEntities(retentionMs) ?? false;
         const notesChanged = this.noteReviewStore?.pruneSyncEntities(retentionMs) ?? false;
         const timelineChanged = this.reviewCommitStore?.pruneSyncEntities(retentionMs) ?? false;
         const deckOptionsChanged = this.deckOptionsStore?.pruneSyncEntities(retentionMs) ?? false;
@@ -3168,6 +3194,9 @@ export default class SRPlugin extends Plugin {
 
         if (cardsChanged) {
             await this.store?.save();
+        }
+        if (fileIdentitiesChanged) {
+            await this.fileIdentityStore?.save();
         }
         if (notesChanged) {
             await this.noteReviewStore?.save();
@@ -4076,6 +4105,7 @@ export default class SRPlugin extends Plugin {
             if (adoptedRemoteState && localTrackedFile) {
                 this.store.upsertCardSnapshot({
                     path: localTrackedFile.path,
+                    fileUuid: localTrackedFile.uuid,
                     trackedFileUuid: localTrackedFile.uuid,
                     trackedFileAliases: [...(localTrackedFile.aliases ?? [])],
                     trackedFileTags: [...(localTrackedFile.tags ?? [])],
@@ -4414,6 +4444,7 @@ export default class SRPlugin extends Plugin {
         if (
             !this.syroSessionManager ||
             !this.syroWorkspace ||
+            !this.fileIdentityStore ||
             !this.deckOptionsStore ||
             !this.sharedSettingsStore ||
             !this.trackingRulesStore ||
@@ -4541,6 +4572,7 @@ export default class SRPlugin extends Plugin {
                     settings: this.data.settings,
                     data: this.data,
                     store: this.store,
+                    fileIdentityStore: this.fileIdentityStore,
                     noteReviewStore: this.noteReviewStore,
                     reviewCommitStore: this.reviewCommitStore,
                     deckOptionsStore: this.deckOptionsStore,
@@ -4659,6 +4691,216 @@ export default class SRPlugin extends Plugin {
         return result;
     }
 
+    private async appendSyroFileIdentityChange(
+        identity: SyroFileIdentity,
+        opType: "upsert" | "delete",
+        updatedAt?: string,
+    ): Promise<boolean> {
+        if (this.syroReadOnlyReason) {
+            return false;
+        }
+
+        const appliedUpdatedAt = updatedAt ?? identity.updatedAt ?? getCurrentIsoTimestamp();
+        const existingIdentity =
+            this.fileIdentityStore?.getByUuidOrAlias(identity.uuid) ??
+            this.fileIdentityStore?.getByPath(identity.path) ??
+            null;
+        const storedIdentity =
+            this.fileIdentityStore?.upsert({
+                uuid: identity.uuid,
+                createdAt: identity.createdAt || existingIdentity?.createdAt || appliedUpdatedAt,
+                updatedAt: appliedUpdatedAt,
+                path: identity.path,
+                aliases: normalizeFileIdentityAliases(identity.uuid, [
+                    ...(existingIdentity?.aliases ?? []),
+                    ...(identity.aliases ?? []),
+                ]),
+                deleted: opType === "delete",
+            }) ?? {
+                ...identity,
+                createdAt: identity.createdAt || existingIdentity?.createdAt || appliedUpdatedAt,
+                updatedAt: appliedUpdatedAt,
+                aliases: normalizeFileIdentityAliases(identity.uuid, [
+                    ...(existingIdentity?.aliases ?? []),
+                    ...(identity.aliases ?? []),
+                ]),
+                deleted: opType === "delete",
+            };
+        const appended =
+            (await this.syroSessionManager?.appendFileIdentityChange(
+                storedIdentity,
+                opType,
+                appliedUpdatedAt,
+            )) ?? false;
+        if (appended) {
+            await this.fileIdentityStore?.save();
+            this.fileIdentityStore?.markSyncEntity({
+                targetUuid: buildFileIdentityTargetUuid(storedIdentity.uuid),
+                updatedAt: appliedUpdatedAt,
+                deleted: opType === "delete",
+                entityType: "file-identity",
+                pathHint: storedIdentity.path,
+            });
+        }
+        return appended;
+    }
+
+    public async appendSyroFileIdentityUpsert(identity: SyroFileIdentity): Promise<boolean> {
+        return this.appendSyroFileIdentityChange(identity, "upsert");
+    }
+
+    public async appendSyroFileIdentityDelete(identity: SyroFileIdentity): Promise<boolean> {
+        return this.appendSyroFileIdentityChange(identity, "delete");
+    }
+
+    public getSyroFileIdentity(uuid: string): SyroFileIdentity | null {
+        return this.fileIdentityStore?.getByUuid(uuid) ?? null;
+    }
+
+    public getSyroFileIdentityByPath(path: string): SyroFileIdentity | null {
+        return this.fileIdentityStore?.getByPath(path) ?? null;
+    }
+
+    private ensureSyroFileIdentityForPath(
+        path: string,
+        aliases: readonly string[] = [],
+    ): SyroFileIdentity | null {
+        if (!this.fileIdentityStore) {
+            return null;
+        }
+
+        const trackedFileUuid = this.store?.getTrackedFile(path)?.uuid?.trim() ?? "";
+        const candidateAliases = aliases
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0);
+        let existingIdentity =
+            this.fileIdentityStore.getByPath(path) ??
+            (trackedFileUuid ? this.fileIdentityStore.getByUuidOrAlias(trackedFileUuid) : null);
+        if (!existingIdentity) {
+            for (const candidate of candidateAliases) {
+                existingIdentity = this.fileIdentityStore.getByUuidOrAlias(candidate);
+                if (existingIdentity) {
+                    break;
+                }
+            }
+        }
+
+        const canonicalUuid =
+            existingIdentity?.uuid ||
+            trackedFileUuid ||
+            createDeterministicFileIdentityUuid(path);
+        const mergedAliases = normalizeFileIdentityAliases(canonicalUuid, [
+            ...(existingIdentity?.aliases ?? []),
+            ...candidateAliases,
+            ...(trackedFileUuid && trackedFileUuid !== canonicalUuid ? [trackedFileUuid] : []),
+        ]);
+        if (
+            existingIdentity &&
+            existingIdentity.path === path &&
+            existingIdentity.deleted !== true &&
+            areOrderedStringArraysEqual(existingIdentity.aliases, mergedAliases)
+        ) {
+            return existingIdentity;
+        }
+
+        return this.fileIdentityStore.upsert({
+            uuid: canonicalUuid,
+            createdAt: existingIdentity?.createdAt ?? getCurrentIsoTimestamp(),
+            updatedAt: getCurrentIsoTimestamp(),
+            path,
+            aliases: mergedAliases,
+            deleted: false,
+        });
+    }
+
+    private canonicalizeNoteReviewEntryPath(path: string): boolean {
+        const entry = this.noteReviewStore?.getEntry(path);
+        if (!entry) {
+            return false;
+        }
+
+        const previousIdentity =
+            this.fileIdentityStore?.getByPath(path) ??
+            this.fileIdentityStore?.getByUuidOrAlias(entry.item.uuid) ??
+            null;
+        const identity = this.ensureSyroFileIdentityForPath(path, [
+            entry.item.uuid,
+            ...(entry.item.aliases ?? []),
+        ]);
+        if (!identity || !this.noteReviewStore) {
+            return false;
+        }
+
+        const identityChanged =
+            !previousIdentity ||
+            previousIdentity.uuid !== identity.uuid ||
+            previousIdentity.path !== identity.path ||
+            previousIdentity.deleted !== identity.deleted ||
+            !areOrderedStringArraysEqual(previousIdentity.aliases, identity.aliases);
+        return (
+            this.noteReviewStore.assignCanonicalUuid(path, identity.uuid, identity.aliases) ||
+            identityChanged
+        );
+    }
+
+    private normalizeSyroNoteSnapshot(snapshot: NoteReviewEntrySnapshot): NoteReviewEntrySnapshot {
+        const item = RepetitionItem.create(snapshot.item);
+        const identity = this.ensureSyroFileIdentityForPath(snapshot.path, [
+            item.uuid,
+            ...(item.aliases ?? []),
+        ]);
+        if (identity) {
+            item.aliases = normalizeFileIdentityAliases(identity.uuid, [
+                ...identity.aliases,
+                item.uuid,
+                ...(item.aliases ?? []),
+            ]);
+            item.uuid = identity.uuid;
+        }
+        item.setTracked(snapshot.path);
+        item.updateDeckName(snapshot.deckName, false);
+        return {
+            path: snapshot.path,
+            source: snapshot.source,
+            deckName: snapshot.deckName,
+            item,
+        };
+    }
+
+    private ensureSyroFileIdentityForRename(
+        oldPath: string,
+        newPath: string,
+        aliases: readonly string[] = [],
+    ): SyroFileIdentity | null {
+        const existingIdentity =
+            this.fileIdentityStore?.getByPath(oldPath) ?? this.fileIdentityStore?.getByPath(newPath) ?? null;
+        if (!existingIdentity || !this.fileIdentityStore) {
+            return this.ensureSyroFileIdentityForPath(newPath, aliases);
+        }
+
+        const mergedAliases = normalizeFileIdentityAliases(existingIdentity.uuid, [
+            ...existingIdentity.aliases,
+            ...aliases,
+        ]);
+        if (
+            existingIdentity.path === newPath &&
+            existingIdentity.deleted !== true &&
+            areOrderedStringArraysEqual(existingIdentity.aliases, mergedAliases)
+        ) {
+            return existingIdentity;
+        }
+
+        return this.fileIdentityStore.upsert({
+            uuid: existingIdentity.uuid,
+            createdAt: existingIdentity.createdAt,
+            updatedAt: getCurrentIsoTimestamp(),
+            path: newPath,
+            aliases: mergedAliases,
+            deleted: false,
+        });
+    }
+
     private async appendSyroNoteSnapshot(
         opType: string,
         snapshot: NoteReviewEntrySnapshot,
@@ -4668,8 +4910,9 @@ export default class SRPlugin extends Plugin {
             return false;
         }
 
-        const targetUuid = snapshot.item.uuid || `note:${snapshot.path}`;
-        const updatedAt = new Date().toISOString();
+        const normalizedSnapshot = this.normalizeSyroNoteSnapshot(snapshot);
+        const targetUuid = `note-review:${normalizedSnapshot.item.uuid}`;
+        const updatedAt = getCurrentIsoTimestamp();
         const appended =
             (await this.syroSessionManager?.appendRecord({
                 domain: "notes",
@@ -4677,13 +4920,13 @@ export default class SRPlugin extends Plugin {
                 opType,
                 targetUuid,
                 payload: {
-                    path: snapshot.path,
-                    source: snapshot.source,
-                    deckName: snapshot.deckName,
-                    item: snapshot.item,
+                    path: normalizedSnapshot.path,
+                    source: normalizedSnapshot.source,
+                    deckName: normalizedSnapshot.deckName,
+                    item: normalizedSnapshot.item,
                     ...extraPayload,
                 },
-                pathHint: snapshot.path,
+                pathHint: normalizedSnapshot.path,
                 updatedAt,
             })) ?? false;
         if (appended) {
@@ -4692,7 +4935,7 @@ export default class SRPlugin extends Plugin {
                 updatedAt,
                 deleted: opType === "remove",
                 entityType: "note-review",
-                pathHint: snapshot.path,
+                pathHint: normalizedSnapshot.path,
             });
         }
         return appended;
@@ -4707,8 +4950,11 @@ export default class SRPlugin extends Plugin {
             return false;
         }
 
+        const fileIdentity = this.ensureSyroFileIdentityForPath(notePath);
+        const canonicalPath = fileIdentity?.path ?? notePath;
+        const fileUuid = fileIdentity?.uuid ?? createDeterministicFileIdentityUuid(notePath);
         const targetUuid = `timeline-entry:${commit.id}`;
-        const updatedAt = new Date().toISOString();
+        const updatedAt = getCurrentIsoTimestamp();
         const appended =
             (await this.syroSessionManager?.appendRecord({
                 domain: "timeline",
@@ -4716,19 +4962,21 @@ export default class SRPlugin extends Plugin {
                 opType,
                 targetUuid,
                 payload: {
-                    notePath,
+                    notePath: canonicalPath,
+                    fileUuid,
                     commit,
                 },
-                pathHint: notePath,
+                pathHint: canonicalPath,
                 updatedAt,
             })) ?? false;
         if (appended) {
+            await this.fileIdentityStore?.save();
             this.reviewCommitStore?.markSyncEntity({
                 targetUuid,
                 updatedAt,
                 deleted: opType === "delete",
                 entityType: "timeline-entry",
-                pathHint: notePath,
+                pathHint: canonicalPath,
             });
         }
         return appended;
@@ -4745,7 +4993,7 @@ export default class SRPlugin extends Plugin {
 
         const targetUuid =
             snapshot.item.uuid || `card:${snapshot.path}:${snapshot.trackedItem?.reviewId ?? snapshot.item.ID}`;
-        const updatedAt = new Date().toISOString();
+        const updatedAt = getCurrentIsoTimestamp();
         const appended =
             (await this.syroSessionManager?.appendRecord({
                 domain: "cards",
@@ -4754,7 +5002,7 @@ export default class SRPlugin extends Plugin {
                 targetUuid,
                 payload: {
                     path: snapshot.path,
-                    trackedFileUuid: snapshot.trackedFileUuid,
+                    fileUuid: snapshot.fileUuid ?? snapshot.trackedFileUuid,
                     trackedFileAliases: snapshot.trackedFileAliases,
                     trackedFileTags: snapshot.trackedFileTags,
                     trackedItem: snapshot.trackedItem,
@@ -4785,8 +5033,8 @@ export default class SRPlugin extends Plugin {
             return false;
         }
 
-        const targetUuid = snapshot.uuid || `tracked-file:${snapshot.path}`;
-        const updatedAt = new Date().toISOString();
+        const targetUuid = `tracked-file:${snapshot.uuid}`;
+        const updatedAt = getCurrentIsoTimestamp();
         const appended =
             (await this.syroSessionManager?.appendRecord({
                 domain: "cards",
@@ -4835,7 +5083,7 @@ export default class SRPlugin extends Plugin {
             return false;
         }
 
-        const updatedAt = new Date().toISOString();
+        const updatedAt = getCurrentIsoTimestamp();
         return (
             (await this.syroSessionManager?.appendRecord({
                 domain,
@@ -4975,14 +5223,18 @@ export default class SRPlugin extends Plugin {
             return false;
         }
 
-        const updatedAt = new Date().toISOString();
+        const fileIdentity = this.ensureSyroFileIdentityForRename(oldPath, newPath);
+        const fileUuid = fileIdentity?.uuid ?? createDeterministicFileIdentityUuid(newPath);
+        const updatedAt = getCurrentIsoTimestamp();
         const appended =
             (await this.syroSessionManager?.appendRecord({
                 domain: "timeline",
                 entityType: "timeline-file",
                 opType: "rename-file",
-                targetUuid: `timeline-file:${oldPath}`,
+                targetUuid: `timeline-file:${fileUuid}`,
                 payload: {
+                    fileUuid,
+                    notePath: newPath,
                     oldPath,
                     newPath,
                     commits,
@@ -4991,8 +5243,9 @@ export default class SRPlugin extends Plugin {
                 updatedAt,
             })) ?? false;
         if (appended) {
+            await this.fileIdentityStore?.save();
             this.reviewCommitStore?.markSyncEntity({
-                targetUuid: `timeline-file:${oldPath}`,
+                targetUuid: `timeline-file:${fileUuid}`,
                 updatedAt,
                 deleted: false,
                 entityType: "timeline-file",
@@ -5019,14 +5272,18 @@ export default class SRPlugin extends Plugin {
             return false;
         }
 
-        const updatedAt = new Date().toISOString();
+        const existingIdentity =
+            this.fileIdentityStore?.getByPath(notePath) ?? this.ensureSyroFileIdentityForPath(notePath);
+        const fileUuid = existingIdentity?.uuid ?? createDeterministicFileIdentityUuid(notePath);
+        const updatedAt = getCurrentIsoTimestamp();
         const appended =
             (await this.syroSessionManager?.appendRecord({
                 domain: "timeline",
                 entityType: "timeline-file",
                 opType: "delete-file",
-                targetUuid: `timeline-file:${notePath}`,
+                targetUuid: `timeline-file:${fileUuid}`,
                 payload: {
+                    fileUuid,
                     notePath,
                     commits,
                 },
@@ -5034,8 +5291,9 @@ export default class SRPlugin extends Plugin {
                 updatedAt,
             })) ?? false;
         if (appended) {
+            await this.fileIdentityStore?.save();
             this.reviewCommitStore?.markSyncEntity({
-                targetUuid: `timeline-file:${notePath}`,
+                targetUuid: `timeline-file:${fileUuid}`,
                 updatedAt,
                 deleted: true,
                 entityType: "timeline-file",
@@ -5428,7 +5686,9 @@ export default class SRPlugin extends Plugin {
         this.clearFolderTrackingExclusion(file.path);
 
         noteReviewStore.ensureTracked(file.path, DEFAULT_DECKNAME, "manual", this.noteAlgorithm);
+        this.canonicalizeNoteReviewEntryPath(file.path);
         await noteReviewStore.save();
+        await this.fileIdentityStore?.save();
         await this.appendSyroNoteUpsert(noteReviewStore.getEntrySnapshot(file.path), "track");
         await this.refreshNoteReview({ trigger: "manual" });
     }
@@ -5522,6 +5782,7 @@ export default class SRPlugin extends Plugin {
                 "manual",
                 this.noteAlgorithm,
             );
+            this.canonicalizeNoteReviewEntryPath(tutorialFile.path);
         } catch (error) {
             console.warn(
                 "[SR-FirstRunTutorial] Failed to track tutorial note:",
@@ -5533,6 +5794,7 @@ export default class SRPlugin extends Plugin {
 
         try {
             await this.noteReviewStore.save();
+            await this.fileIdentityStore?.save();
         } catch (error) {
             console.warn(
                 "[SR-FirstRunTutorial] Failed to save tutorial note review state:",
@@ -5626,11 +5888,13 @@ export default class SRPlugin extends Plugin {
                 tracking.source,
                 this.noteAlgorithm,
             );
+            const canonicalized = this.canonicalizeNoteReviewEntryPath(note.path);
 
             if (
                 !existing ||
                 previousDeckName !== tracking.deckName ||
-                previousSource !== tracking.source
+                previousSource !== tracking.source ||
+                canonicalized
             ) {
                 changed = true;
             }
@@ -5649,6 +5913,7 @@ export default class SRPlugin extends Plugin {
 
         if (changed) {
             await noteReviewStore.save();
+            await this.fileIdentityStore?.save();
         }
 
         this.syncEvents.emit("note-review-updated");
@@ -6281,6 +6546,7 @@ export default class SRPlugin extends Plugin {
             tracking.source,
             this.noteAlgorithm,
         );
+        this.canonicalizeNoteReviewEntryPath(note.path);
 
         let ease: number;
         if (item.isNew) {
@@ -6334,6 +6600,7 @@ export default class SRPlugin extends Plugin {
         }
 
         await noteReviewStore.save();
+        await this.fileIdentityStore?.save();
         await this.appendSyroNoteUpsert(noteReviewStore.getEntrySnapshot(note.path), "review");
         try {
             const timelineCommit = await autoCommitReviewResponseToTimeline({
@@ -6627,7 +6894,7 @@ export default class SRPlugin extends Plugin {
             existingCompletedAt = getStringProp(syro012Migration, "completedAt") ?? null;
         }
         const shell = createSyro012DataShell(
-            completedAt ?? existingCompletedAt ?? new Date().toISOString(),
+            completedAt ?? existingCompletedAt ?? getCurrentIsoTimestamp(),
         );
         if (JSON.stringify(this.dataShell) === JSON.stringify(shell)) {
             return;
@@ -6691,7 +6958,7 @@ export default class SRPlugin extends Plugin {
             return validationError;
         }
 
-        await this.saveDataShell(new Date().toISOString());
+        await this.saveDataShell(getCurrentIsoTimestamp());
         return null;
     }
 
@@ -6860,6 +7127,9 @@ export default class SRPlugin extends Plugin {
         this.deckOptionsStore = new DeckOptionsStore({
             deckOptionsPath: this.syroLayout.deckOptionsPath,
         });
+        this.fileIdentityStore = new SyroFileIdentityStore({
+            fileIdentitiesPath: this.syroLayout.fileIdentitiesPath,
+        });
         this.syroSessionManager = new SyroSessionManager(this.app, this.syroLayout, {
             logDebug: (...args: unknown[]) => this.logRuntimeDebug(...args),
         });
@@ -6879,6 +7149,8 @@ export default class SRPlugin extends Plugin {
         this.applySyroReadOnlyState();
         await this.deckOptionsStore.loadIntoSettings(this.data.settings);
         this.persistedDeckOptionsState = this.deckOptionsStore.getPersistedState();
+        this.applySyroReadOnlyState();
+        await this.fileIdentityStore.load();
         this.store = new DataStore(this.data.settings, {
             cardsPath: this.syroLayout.cardsPath,
             pendingOverlayPath: this.syroLayout.pendingOverlayPath,
@@ -6901,7 +7173,17 @@ export default class SRPlugin extends Plugin {
         });
         this.applySyroReadOnlyState();
         await this.noteReviewStore.load();
-        await this.noteReviewStore.migrateFromLegacyStore(this.store);
+        const noteReviewMigratedFromLegacy = await this.noteReviewStore.migrateFromLegacyStore(
+            this.store,
+        );
+        let noteReviewCanonicalized = false;
+        for (const path of this.noteReviewStore.listPaths()) {
+            noteReviewCanonicalized = this.canonicalizeNoteReviewEntryPath(path) || noteReviewCanonicalized;
+        }
+        if (noteReviewMigratedFromLegacy || noteReviewCanonicalized) {
+            await this.noteReviewStore.save();
+            await this.fileIdentityStore?.save();
+        }
         this.reviewCommitStore = new ReviewCommitStore(this.data.settings, {
             timelinePath: this.syroLayout.timelinePath,
         });
@@ -6910,6 +7192,7 @@ export default class SRPlugin extends Plugin {
         const syroLoadError =
             this.syroReadOnlyReason ??
             this.deckOptionsStore.lastLoadError ??
+            this.fileIdentityStore.lastLoadError ??
             this.store.lastLoadError ??
             this.noteReviewStore.lastLoadError ??
             this.reviewCommitStore.lastLoadError;
@@ -6957,6 +7240,8 @@ export default class SRPlugin extends Plugin {
         }
         this.ensureBufferedPluginStateMarkedDirtyForSave(options.domains);
         const bufferedRevisionSnapshot = this.getBufferedStateDirtyRevisionSnapshot();
+        // Preserve domain boundaries: device/license stay local-only, tracking-rules keeps
+        // folderPath as its natural key, and daily-state stays op-based rather than UUID-diffed.
         const persistSharedSettings = requestedDomains.has("shared-settings");
         const persistTrackingRules = requestedDomains.has("tracking-rules");
         const persistDailyState = requestedDomains.has("daily-state");
@@ -7038,7 +7323,7 @@ export default class SRPlugin extends Plugin {
             return;
         }
 
-        const updatedAt = new Date().toISOString();
+        const updatedAt = getCurrentIsoTimestamp();
         if (persistSharedSettings && sharedSettingsState && previousSharedSettingsState) {
             const sharedSettingsDiff = diffSharedSettings(
                 previousSharedSettingsState,

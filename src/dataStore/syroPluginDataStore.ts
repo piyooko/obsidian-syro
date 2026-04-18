@@ -139,6 +139,8 @@ export type DailyStateDiffOperation =
           reviewDelta: number;
       };
 
+// Only cross-device behavior belongs here. Device-local UI/runtime state is kept in
+// DEVICE_STATE_FIELDS so it never leaks into shared-settings session patches.
 export const SHARED_SETTINGS_FIELDS = [
     "flashcardResponseTexts",
     "flashcardTags",
@@ -233,6 +235,8 @@ export const SHARED_SETTINGS_FIELDS = [
     "timelineEnableDurationPrefixSyntax",
 ] as const satisfies readonly (keyof SRSettings)[];
 
+// Device state is persisted locally per device and must never be emitted through
+// shared-settings session diffs.
 export const DEVICE_STATE_FIELDS = [
     "enableNoteCachePersistence",
     "autoIncrementalSync",
@@ -510,6 +514,8 @@ export function extractTrackingRules(
     updatedAtByFolderPath: Record<string, string> = {},
     tombstones: Record<string, PersistedTrackingRulesTombstone> = {},
 ): PersistedTrackingRulesState {
+    // Folder tracking intentionally uses folderPath as its natural sync key.
+    // This domain should not be rewritten through file UUID identity.
     return {
         version: SYRO_TRACKING_RULES_VERSION,
         rules: Object.fromEntries(
@@ -611,6 +617,7 @@ export function extractDailyState(input: {
     dailyDeckStats: DailyDeckStats;
     deviceReviewCount?: number;
 }): PersistedDailyState {
+    // Daily state is synchronized as per-op deltas/tombstones, not as UUID-keyed entities.
     return {
         version: SYRO_DAILY_STATE_VERSION,
         buryDate: input.buryDate ?? "",

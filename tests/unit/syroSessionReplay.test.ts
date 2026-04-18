@@ -1,6 +1,7 @@
 import { DeckOptionsStore } from "src/dataStore/deckOptionsStore";
 import { Iadapter } from "src/dataStore/adapter";
 import { DataStore } from "src/dataStore/data";
+import { SyroFileIdentityStore } from "src/dataStore/syroFileIdentityStore";
 import { DEFAULT_FOLDER_TRACKING_RULE, type FolderTrackingRule } from "src/folderTracking";
 import { NoteReviewStore } from "src/dataStore/noteReviewStore";
 import { Queue } from "src/dataStore/queue";
@@ -109,6 +110,9 @@ function createReplayDependencies(
     store?: DataStore,
 ) {
     const currentStore = store ?? createStoreWithAdapter(adapter);
+    const fileIdentityStore = new SyroFileIdentityStore({
+        fileIdentitiesPath: "syro/devices/Desktop--d84f/file-identities.json",
+    });
     const noteReviewStore = new NoteReviewStore(settings, {
         notesPath: "syro/devices/Desktop--d84f/notes.json",
     });
@@ -141,6 +145,7 @@ function createReplayDependencies(
         settings,
         data,
         store: currentStore,
+        fileIdentityStore,
         noteReviewStore,
         reviewCommitStore,
         deckOptionsStore,
@@ -242,6 +247,43 @@ function createDeckOptionsAssignmentRecord(
     };
 }
 
+function createFileIdentityRecord(
+    overrides: Partial<{
+        uuid: string;
+        opId: string;
+        deviceId: string;
+        deviceName: string;
+        createdAt: string;
+        updatedAt: string;
+        path: string;
+        aliases: string[];
+        opType: "upsert" | "delete";
+    }> = {},
+) {
+    const uuid = overrides.uuid ?? "file-note-1";
+    const path = overrides.path ?? "folder/note.md";
+    return {
+        version: 1 as const,
+        sessionId: "2026-04-13T12-00-00__91ac__0001",
+        opId: overrides.opId ?? `op-file-${uuid}`,
+        deviceId: overrides.deviceId ?? "91ac",
+        deviceName: overrides.deviceName ?? "Mobile",
+        domain: "file-identities" as const,
+        entityType: "file-identity" as const,
+        opType: overrides.opType ?? ("upsert" as const),
+        targetUuid: `file:${uuid}`,
+        createdAt: overrides.createdAt ?? "2026-04-13T12:01:00.000Z",
+        updatedAt: overrides.updatedAt ?? "2026-04-13T12:01:00.000Z",
+        payload: {
+            uuid,
+            createdAt: overrides.createdAt ?? "2026-04-13T12:01:00.000Z",
+            path,
+            aliases: overrides.aliases ?? [],
+        },
+        pathHint: "syro/devices/Desktop--d84f/file-identities.json",
+    };
+}
+
 describe("replaySyroSessionRecords", () => {
     beforeEach(() => {
         jest.useFakeTimers().setSystemTime(new Date("2026-04-13T12:34:56.000Z"));
@@ -250,6 +292,80 @@ describe("replaySyroSessionRecords", () => {
     afterEach(() => {
         jest.useRealTimers();
         jest.restoreAllMocks();
+    });
+
+    test("replays file-identity records before other domains and persists tombstones", async () => {
+        const { adapter, files } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+
+        const summary = await replaySyroSessionRecords(
+            [
+                createFileIdentityRecord({
+                    uuid: "file-note-1",
+                    path: "folder/note.md",
+                    aliases: ["legacy-note-1"],
+                    updatedAt: "2026-04-13T12:01:00.000Z",
+                }),
+                createFileIdentityRecord({
+                    uuid: "file-note-1",
+                    path: "folder-renamed/note.md",
+                    aliases: ["legacy-note-1"],
+                    opType: "delete",
+                    updatedAt: "2026-04-13T12:02:00.000Z",
+                }),
+            ],
+            deps,
+        );
+
+        expect(summary.requiresGlobalSync).toBe(true);
+        expect(deps.fileIdentityStore.getByUuid("file-note-1")).toMatchObject({
+            uuid: "file-note-1",
+            path: "folder-renamed/note.md",
+            aliases: ["legacy-note-1"],
+            deleted: true,
+            updatedAt: "2026-04-13T12:02:00.000Z",
+        });
+        expect(
+            JSON.parse(files.get("syro/devices/Desktop--d84f/file-identities.json") ?? "{}"),
+        ).toMatchObject({
+            version: 1,
+            entries: {
+                "file-note-1": {
+                    deleted: true,
+                    path: "folder-renamed/note.md",
+                },
+            },
+        });
+    });
+
+    test("ignores stale file-identity upserts after a newer tombstone", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+
+        await replaySyroSessionRecords(
+            [
+                createFileIdentityRecord({
+                    uuid: "file-note-1",
+                    path: "folder/note.md",
+                    updatedAt: "2026-04-13T12:05:00.000Z",
+                    opType: "delete",
+                }),
+                createFileIdentityRecord({
+                    uuid: "file-note-1",
+                    path: "folder/note.md",
+                    updatedAt: "2026-04-13T12:01:00.000Z",
+                }),
+            ],
+            deps,
+        );
+
+        expect(deps.fileIdentityStore.getByUuid("file-note-1")).toMatchObject({
+            uuid: "file-note-1",
+            deleted: true,
+            updatedAt: "2026-04-13T12:05:00.000Z",
+        });
     });
 
     test("replays note, timeline, and deck-options records into formal stores", async () => {
@@ -283,7 +399,7 @@ describe("replaySyroSessionRecords", () => {
                     domain: "notes",
                     entityType: "note-review",
                     opType: "review",
-                    targetUuid: "note-1",
+                    targetUuid: "note-review:note-1",
                     createdAt: "2026-04-13T12:00:00.000Z",
                     updatedAt: "2026-04-13T12:00:00.000Z",
                     payload: {
@@ -338,6 +454,11 @@ describe("replaySyroSessionRecords", () => {
             requiresGlobalSync: true,
         });
         expect(deps.noteReviewStore.getEntry("notes/A.md")?.item.uuid).toBe("note-1");
+        expect(deps.fileIdentityStore.getByUuid("note-1")).toMatchObject({
+            uuid: "note-1",
+            path: "notes/A.md",
+            deleted: false,
+        });
         expect(deps.reviewCommitStore.getCommit("notes/A.md", "commit-1")).toEqual(
             expect.objectContaining({ id: "commit-1", message: "hello" }),
         );
@@ -353,6 +474,318 @@ describe("replaySyroSessionRecords", () => {
         expect(files.get("syro/devices/Desktop--d84f/deck-options.json")).toContain(
             '"syncEntities"',
         );
+    });
+
+    test("replays note rename records against canonical file identities without duplicating entries", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+        const existingNote = new RepetitionItem(1, "", RPITEMTYPE.NOTE, "default", {
+            currentInterval: 1,
+        });
+        existingNote.uuid = "file-note-rename";
+        deps.noteReviewStore.upsertSnapshot({
+            path: "notes/Original.md",
+            source: "manual",
+            deckName: "default",
+            item: existingNote,
+        });
+
+        const renamedNote = new RepetitionItem(1, "", RPITEMTYPE.NOTE, "default", {
+            currentInterval: 2,
+        });
+        renamedNote.uuid = "note-legacy-rename";
+
+        const summary = await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-note-identity",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "file-identities",
+                    entityType: "file-identity",
+                    opType: "upsert",
+                    targetUuid: "file:file-note-rename",
+                    createdAt: "2026-04-13T12:04:00.000Z",
+                    updatedAt: "2026-04-13T12:04:00.000Z",
+                    payload: {
+                        uuid: "file-note-rename",
+                        createdAt: "2026-04-13T12:04:00.000Z",
+                        path: "notes/Renamed.md",
+                        aliases: ["note-legacy-rename"],
+                    },
+                    pathHint: "notes/Renamed.md",
+                },
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-note-rename",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "notes",
+                    entityType: "note-review",
+                    opType: "rename",
+                    targetUuid: "note-review:file-note-rename",
+                    createdAt: "2026-04-13T12:05:00.000Z",
+                    updatedAt: "2026-04-13T12:05:00.000Z",
+                    payload: {
+                        path: "notes/Renamed.md",
+                        oldPath: "notes/Original.md",
+                        newPath: "notes/Renamed.md",
+                        source: "manual",
+                        deckName: "default",
+                        item: renamedNote,
+                    },
+                    pathHint: "notes/Renamed.md",
+                },
+            ],
+            deps,
+        );
+
+        expect(summary.requiresGlobalSync).toBe(true);
+        expect(deps.noteReviewStore.getEntry("notes/Original.md")).toBeNull();
+        expect(deps.noteReviewStore.getEntry("notes/Renamed.md")?.item.uuid).toBe(
+            "file-note-rename",
+        );
+        expect(deps.noteReviewStore.getEntry("notes/Renamed.md")?.item.aliases).toContain(
+            "note-legacy-rename",
+        );
+    });
+
+    test("removes canonical note entries by file uuid without leaving the old path behind", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+        const noteItem = new RepetitionItem(1, "", RPITEMTYPE.NOTE, "default", {
+            currentInterval: 1,
+        });
+        noteItem.uuid = "file-note-delete";
+        deps.noteReviewStore.upsertSnapshot({
+            path: "notes/Delete.md",
+            source: "manual",
+            deckName: "default",
+            item: noteItem,
+        });
+
+        const summary = await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-note-remove",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "notes",
+                    entityType: "note-review",
+                    opType: "remove",
+                    targetUuid: "note-review:file-note-delete",
+                    createdAt: "2026-04-13T12:06:00.000Z",
+                    updatedAt: "2026-04-13T12:06:00.000Z",
+                    payload: {
+                        path: "notes/Delete.md",
+                        source: "manual",
+                        deckName: "default",
+                        item: {
+                            ...noteItem,
+                        },
+                    },
+                    pathHint: "notes/Delete.md",
+                },
+            ],
+            deps,
+        );
+
+        expect(summary.requiresGlobalSync).toBe(true);
+        expect(deps.noteReviewStore.getEntry("notes/Delete.md")).toBeNull();
+    });
+
+    test("replays timeline entries onto the canonical file path resolved by file uuid", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+
+        deps.fileIdentityStore.upsert({
+            uuid: "file-timeline-entry",
+            createdAt: "2026-04-13T12:04:00.000Z",
+            updatedAt: "2026-04-13T12:04:00.000Z",
+            path: "notes/Renamed.md",
+            aliases: ["legacy-timeline-entry"],
+            deleted: false,
+        });
+
+        const summary = await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-timeline-entry-canonical",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "timeline",
+                    entityType: "timeline-entry",
+                    opType: "add",
+                    targetUuid: "timeline-entry:commit-canonical",
+                    createdAt: "2026-04-13T12:05:00.000Z",
+                    updatedAt: "2026-04-13T12:05:00.000Z",
+                    payload: {
+                        notePath: "notes/Legacy.md",
+                        fileUuid: "file-timeline-entry",
+                        commit: {
+                            id: "commit-canonical",
+                            message: "hello",
+                            timestamp: 1,
+                        },
+                    },
+                    pathHint: "notes/Legacy.md",
+                },
+            ],
+            deps,
+        );
+
+        expect(summary.timelineChanged).toBe(true);
+        expect(deps.reviewCommitStore.getCommits("notes/Legacy.md")).toHaveLength(0);
+        expect(deps.reviewCommitStore.getCommit("notes/Renamed.md", "commit-canonical")).toEqual(
+            expect.objectContaining({
+                id: "commit-canonical",
+                message: "hello",
+            }),
+        );
+    });
+
+    test("replays timeline rename-file records against canonical file uuids without leaving old paths behind", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+        const commit = {
+            id: "commit-rename",
+            message: "moved",
+            timestamp: 1,
+        };
+
+        deps.fileIdentityStore.upsert({
+            uuid: "file-timeline-rename",
+            createdAt: "2026-04-13T12:05:00.000Z",
+            updatedAt: "2026-04-13T12:05:00.000Z",
+            path: "notes/Original.md",
+            aliases: [],
+            deleted: false,
+        });
+        deps.reviewCommitStore.upsertCommitSnapshot("notes/Original.md", {
+            ...commit,
+            message: "before-rename",
+        });
+
+        const summary = await replaySyroSessionRecords(
+            [
+                createFileIdentityRecord({
+                    uuid: "file-timeline-rename",
+                    path: "notes/Renamed.md",
+                    updatedAt: "2026-04-13T12:06:00.000Z",
+                }),
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-timeline-rename",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "timeline",
+                    entityType: "timeline-file",
+                    opType: "rename-file",
+                    targetUuid: "timeline-file:file-timeline-rename",
+                    createdAt: "2026-04-13T12:06:30.000Z",
+                    updatedAt: "2026-04-13T12:06:30.000Z",
+                    payload: {
+                        fileUuid: "file-timeline-rename",
+                        oldPath: "notes/Original.md",
+                        newPath: "notes/Renamed.md",
+                        notePath: "notes/Renamed.md",
+                        commits: [commit],
+                    },
+                    pathHint: "notes/Renamed.md",
+                },
+            ],
+            deps,
+        );
+
+        expect(summary.requiresGlobalSync).toBe(true);
+        expect(deps.reviewCommitStore.getCommits("notes/Original.md")).toHaveLength(0);
+        expect(deps.reviewCommitStore.getCommit("notes/Renamed.md", "commit-rename")).toEqual(
+            expect.objectContaining({
+                id: "commit-rename",
+                message: "moved",
+            }),
+        );
+    });
+
+    test("timeline delete-file tombstones block older timeline entry replays from reviving deleted commits", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+        const commit = {
+            id: "commit-delete",
+            message: "gone",
+            timestamp: 1,
+        };
+
+        deps.fileIdentityStore.upsert({
+            uuid: "file-timeline-delete",
+            createdAt: "2026-04-13T12:06:00.000Z",
+            updatedAt: "2026-04-13T12:06:00.000Z",
+            path: "notes/Deleted.md",
+            aliases: ["legacy-timeline-delete"],
+            deleted: false,
+        });
+        deps.reviewCommitStore.upsertCommitSnapshot("notes/Deleted.md", commit);
+
+        const summary = await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-timeline-delete-file",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "timeline",
+                    entityType: "timeline-file",
+                    opType: "delete-file",
+                    targetUuid: "timeline-file:file-timeline-delete",
+                    createdAt: "2026-04-13T12:07:00.000Z",
+                    updatedAt: "2026-04-13T12:07:00.000Z",
+                    payload: {
+                        fileUuid: "file-timeline-delete",
+                        notePath: "notes/LegacyDeleted.md",
+                        commits: [commit],
+                    },
+                    pathHint: "notes/LegacyDeleted.md",
+                },
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-timeline-entry-old",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "timeline",
+                    entityType: "timeline-entry",
+                    opType: "add",
+                    targetUuid: "timeline-entry:commit-delete",
+                    createdAt: "2026-04-13T12:06:30.000Z",
+                    updatedAt: "2026-04-13T12:06:30.000Z",
+                    payload: {
+                        notePath: "notes/LegacyDeleted.md",
+                        fileUuid: "file-timeline-delete",
+                        commit,
+                    },
+                    pathHint: "notes/LegacyDeleted.md",
+                },
+            ],
+            deps,
+        );
+
+        expect(summary.requiresGlobalSync).toBe(true);
+        expect(deps.reviewCommitStore.getCommits("notes/Deleted.md")).toHaveLength(0);
+        expect(deps.reviewCommitStore.getCommits("notes/LegacyDeleted.md")).toHaveLength(0);
     });
 
     test("keeps both presets when two devices independently add deck-options presets", async () => {
