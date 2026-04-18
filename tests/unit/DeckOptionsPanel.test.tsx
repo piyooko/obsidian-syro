@@ -292,4 +292,58 @@ describe("DeckOptionsPanel", () => {
             view.cleanup();
         }
     });
+
+    it("creates a preset with a stable uuid and assigns the current deck to it on save", async () => {
+        const view = renderPanel();
+
+        try {
+            await clickButton(findButtonByText(view.container, "+"));
+            const presetNameInput = findInputByLabel(
+                view.container,
+                t("DECK_OPTIONS_PRESET_NAME"),
+            );
+            changeInputValue(presetNameInput, "Focused");
+
+            await clickButton(findButtonByText(view.container, t("DECK_OPTIONS_BTN_SAVE")));
+
+            expect(view.plugin.saveDeckOptionsAndRequestSync).toHaveBeenCalledTimes(1);
+            expect(view.plugin.data.settings.deckOptionsPresets).toHaveLength(2);
+            const createdPreset = view.plugin.data.settings.deckOptionsPresets.find(
+                (preset) => preset.uuid !== DEFAULT_SETTINGS.deckOptionsPresets[0]?.uuid,
+            );
+            expect(createdPreset).toEqual(
+                expect.objectContaining({
+                    uuid: expect.any(String),
+                    createdAt: expect.any(String),
+                    name: "Focused",
+                }),
+            );
+            expect(view.plugin.data.settings.deckPresetAssignment["Spanish"]).toBe(
+                createdPreset?.uuid,
+            );
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("deletes a created preset by uuid and clears the current deck assignment on save", async () => {
+        const view = renderPanel();
+
+        try {
+            await clickButton(findButtonByText(view.container, "+"));
+            await clickButton(
+                findButtonByText(view.container, t("DECK_OPTIONS_BTN_DELETE_PRESET")),
+            );
+            await clickButton(findButtonByText(view.container, t("DECK_OPTIONS_BTN_SAVE")));
+
+            expect(view.plugin.saveDeckOptionsAndRequestSync).toHaveBeenCalledTimes(1);
+            expect(view.plugin.data.settings.deckOptionsPresets).toHaveLength(1);
+            expect(view.plugin.data.settings.deckOptionsPresets[0]?.uuid).toBe(
+                DEFAULT_SETTINGS.deckOptionsPresets[0]?.uuid,
+            );
+            expect(view.plugin.data.settings.deckPresetAssignment["Spanish"]).toBeUndefined();
+        } finally {
+            view.cleanup();
+        }
+    });
 });
