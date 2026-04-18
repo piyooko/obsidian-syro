@@ -8,7 +8,7 @@ import React, {
     useRef,
     useState,
 } from "react";
-import { Platform } from "obsidian";
+import { Notice, Platform } from "obsidian";
 import { X } from "lucide-react";
 import type SRPlugin from "src/main";
 import { t } from "src/lang/helpers";
@@ -19,8 +19,8 @@ import {
     DEFAULT_DECK_OPTIONS_PRESET,
     getDeckOptionsPresetDisplayName,
     normalizeDeckOptionsPreset,
+    parseDeckOptionsStepInput,
     syncFsrsSettingsCompatibilityMirror,
-    updateDeckOptionsPresetStepProxy,
 } from "src/settings";
 import { BaseComponent, InputRow, Section, ToggleRow } from "./common/SettingsComponents";
 import { useMobileNavbarOffset } from "./useMobileNavbarOffset";
@@ -134,14 +134,42 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
         (updater: (preset: DeckOptionsPreset) => DeckOptionsPreset) => {
             setDraft((prev) => {
                 const presets = [...prev.presets];
-                presets[prev.currentPresetIndex] = normalizePreset(
-                    updater({ ...presets[prev.currentPresetIndex] }),
-                    plugin,
-                );
+                const currentDraftPreset =
+                    presets[prev.currentPresetIndex] ??
+                    createDefaultDeckOptionsPreset(plugin.data.settings.fsrsSettings);
+                presets[prev.currentPresetIndex] = updater({ ...currentDraftPreset });
                 return { ...prev, presets };
             });
         },
         [plugin],
+    );
+
+    const updateCurrentPresetSteps = useCallback(
+        (field: "learningSteps" | "lapseSteps", value: string) => {
+            updateCurrentPreset((preset) => {
+                const nextPreset: DeckOptionsPreset = { ...preset, [field]: value };
+                const parsedSteps = parseDeckOptionsStepInput(value);
+                if (parsedSteps === null) {
+                    return nextPreset;
+                }
+
+                const nextFsrs = {
+                    ...(preset.fsrs ?? normalizePreset(preset, plugin).fsrs),
+                };
+
+                if (field === "learningSteps") {
+                    nextFsrs.learning_steps = parsedSteps;
+                } else {
+                    nextFsrs.relearning_steps = parsedSteps;
+                }
+
+                return {
+                    ...nextPreset,
+                    fsrs: nextFsrs,
+                };
+            });
+        },
+        [plugin, updateCurrentPreset],
     );
 
     const recalculateLayout = useCallback(() => {
@@ -242,9 +270,34 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
     }, []);
 
     const handleSave = useCallback(async () => {
-        plugin.data.settings.deckOptionsPresets = draft.presets.map((preset) =>
-            normalizePreset(preset, plugin),
-        );
+        const validatedPresets: DeckOptionsPreset[] = [];
+
+        for (const preset of draft.presets) {
+            const learningSteps = parseDeckOptionsStepInput(preset.learningSteps);
+            const lapseSteps = parseDeckOptionsStepInput(preset.lapseSteps);
+
+            if (learningSteps === null || lapseSteps === null) {
+                new Notice(t("DECK_OPTIONS_INVALID_STEP_FORMAT"));
+                return;
+            }
+
+            const normalizedPreset = normalizePreset(preset, plugin);
+            validatedPresets.push(
+                normalizePreset(
+                    {
+                        ...preset,
+                        fsrs: {
+                            ...(normalizedPreset.fsrs ?? plugin.data.settings.fsrsSettings),
+                            learning_steps: [...learningSteps],
+                            relearning_steps: [...lapseSteps],
+                        },
+                    },
+                    plugin,
+                ),
+            );
+        }
+
+        plugin.data.settings.deckOptionsPresets = validatedPresets;
         plugin.data.settings.deckOptionsPresets = plugin.data.settings.deckOptionsPresets.map(
             (preset, index) => ({
                 ...preset,
@@ -360,15 +413,7 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                             label={t("DECK_OPTIONS_LEARNING_STEPS")}
                             desc={t("DECK_OPTIONS_LEARNING_STEPS_DESC")}
                             value={currentPreset.learningSteps}
-                            onChange={(value) =>
-                                updateCurrentPreset((preset) =>
-                                    updateDeckOptionsPresetStepProxy(
-                                        preset,
-                                        { learningSteps: value },
-                                        plugin.data.settings.fsrsSettings,
-                                    ),
-                                )
-                            }
+                            onChange={(value) => updateCurrentPresetSteps("learningSteps", value)}
                         />
                         <InputRow
                             label={t("DECK_OPTIONS_MAX_NEW_CARDS")}
@@ -388,15 +433,7 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                             label={t("DECK_OPTIONS_RELEARNING_STEPS")}
                             desc={t("DECK_OPTIONS_RELEARNING_STEPS_DESC")}
                             value={currentPreset.lapseSteps}
-                            onChange={(value) =>
-                                updateCurrentPreset((preset) =>
-                                    updateDeckOptionsPresetStepProxy(
-                                        preset,
-                                        { lapseSteps: value },
-                                        plugin.data.settings.fsrsSettings,
-                                    ),
-                                )
-                            }
+                            onChange={(value) => updateCurrentPresetSteps("lapseSteps", value)}
                         />
                     </Section>
 

@@ -110,6 +110,20 @@ function isFsrsStepUnit(value: unknown): value is tsfsrs.StepUnit {
     return typeof value === "string" && FSRS_STEP_PATTERN.test(value.trim());
 }
 
+export function parseDeckOptionsStepInput(value: string): tsfsrs.StepUnit[] | null {
+    const entries = value
+        .split(/\s+/)
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+
+    if (entries.length === 0) {
+        return [];
+    }
+
+    const validSteps = entries.filter(isFsrsStepUnit);
+    return validSteps.length === entries.length ? validSteps : null;
+}
+
 function normalizeFsrsStepList(
     value: unknown,
     fallback: readonly tsfsrs.StepUnit[],
@@ -164,17 +178,8 @@ function parseLegacyFsrsSteps(
         return [...fallback];
     }
 
-    const entries = value
-        .split(/\s+/)
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0);
-
-    if (entries.length === 0) {
-        return [];
-    }
-
-    const validSteps = entries.filter(isFsrsStepUnit);
-    return validSteps.length === entries.length ? validSteps : [...fallback];
+    const parsedSteps = parseDeckOptionsStepInput(value);
+    return parsedSteps === null ? [...fallback] : [...parsedSteps];
 }
 
 export function createDefaultFsrsSettings(overrides: Partial<FsrsSettings> = {}): FsrsSettings {

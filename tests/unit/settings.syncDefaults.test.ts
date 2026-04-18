@@ -3,10 +3,12 @@ import {
     DEFAULT_SETTINGS,
     DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
     getDeckOptionsPresetDisplayName,
+    parseDeckOptionsStepInput,
     resolveDeckFsrsSettings,
     resolveDeckOptionsPreset,
     SRSettings,
     upgradeSettings,
+    updateDeckOptionsPresetStepProxy,
 } from "src/settings";
 import { t } from "src/lang/helpers";
 import { mergeUIStateToSettings, settingsToUIState } from "src/ui/adapters/settingsAdapter";
@@ -31,6 +33,34 @@ describe("sync progress display defaults", () => {
     test("new deck presets enable auto-advance with the progress bar by default", () => {
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.autoAdvance).toBe(true);
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.showProgressBar).toBe(true);
+    });
+
+    test("deck option step parser accepts valid values, blanks, and rejects malformed entries", () => {
+        expect(parseDeckOptionsStepInput("1m 10m")).toEqual(["1m", "10m"]);
+        expect(parseDeckOptionsStepInput("   ")).toEqual([]);
+        expect(parseDeckOptionsStepInput("1 10m")).toBeNull();
+    });
+
+    test("legacy step proxy keeps the previous valid steps when an edit is malformed", () => {
+        const updated = updateDeckOptionsPresetStepProxy(
+            {
+                ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                learningSteps: "3m 30m",
+                lapseSteps: "15m",
+                fsrs: {
+                    ...cloneFsrsSettings(DEFAULT_SETTINGS.fsrsSettings),
+                    learning_steps: ["3m", "30m"],
+                    relearning_steps: ["15m"],
+                },
+            },
+            {
+                learningSteps: "3m 30",
+            },
+            DEFAULT_SETTINGS.fsrsSettings,
+        );
+
+        expect(updated.learningSteps).toBe("3m 30m");
+        expect(updated.fsrs?.learning_steps).toEqual(["3m", "30m"]);
     });
 
     test("default preset display name follows the current locale for built-in names", () => {

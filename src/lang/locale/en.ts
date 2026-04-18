@@ -1044,13 +1044,15 @@ export default normalizeSentenceCaseLocale({
     DECK_OPTIONS_SECTION_NEW_CARDS: "New Cards",
     DECK_OPTIONS_LEARNING_STEPS: "Learning Steps",
     DECK_OPTIONS_LEARNING_STEPS_DESC:
-        "Space separated intervals (e.g. 1m 10m). Supports s(sec) m(min) h(hour) d(day)",
+        "Space separated intervals (e.g. 1m 10m). Supports m(min) h(hour) d(day)",
     DECK_OPTIONS_MAX_NEW_CARDS: "New Cards/Day",
     DECK_OPTIONS_MAX_NEW_CARDS_DESC: "Maximum number of new cards to show per day",
     DECK_OPTIONS_SECTION_LAPSES: "Lapses",
     DECK_OPTIONS_RELEARNING_STEPS: "Relearning Steps",
     DECK_OPTIONS_RELEARNING_STEPS_DESC:
-        "Space separated intervals (e.g. 10m). Supports s(sec) m(min) h(hour) d(day)",
+        "Space separated intervals (e.g. 10m). Supports m(min) h(hour) d(day)",
+    DECK_OPTIONS_INVALID_STEP_FORMAT:
+        "Deck option steps must use space separated values like 1m 10m, using only m, h, or d.",
     DECK_OPTIONS_SECTION_REVIEWS: "Reviews",
     DECK_OPTIONS_MAX_REVIEWS: "Reviews/Day",
     DECK_OPTIONS_MAX_REVIEWS_DESC: "Maximum number of reviews to show per day",

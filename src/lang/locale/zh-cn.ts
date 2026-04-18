@@ -819,13 +819,15 @@ export default {
     DECK_OPTIONS_SECTION_NEW_CARDS: "新卡片",
     DECK_OPTIONS_LEARNING_STEPS: "初学间隔",
     DECK_OPTIONS_LEARNING_STEPS_DESC:
-        "间隔之间用空格分隔（如 1m 10m）。支持 s(秒) m(分) h(时) d(天)",
+        "间隔之间用空格分隔（如 1m 10m）。支持 m(分) h(时) d(天)",
     DECK_OPTIONS_MAX_NEW_CARDS: "每日新卡片上限 (张/天)",
     DECK_OPTIONS_MAX_NEW_CARDS_DESC: "该牌组每天显示的新卡片最大数量",
     DECK_OPTIONS_SECTION_LAPSES: "遗忘",
     DECK_OPTIONS_RELEARNING_STEPS: "重学间隔",
     DECK_OPTIONS_RELEARNING_STEPS_DESC:
-        "间隔之间用空格分隔（如 10m）。支持 s(秒) m(分) h(时) d(天)",
+        "间隔之间用空格分隔（如 10m）。支持 m(分) h(时) d(天)",
+    DECK_OPTIONS_INVALID_STEP_FORMAT:
+        "牌组选项的间隔格式必须是像 1m 10m 这样的空格分隔值，并且只能使用 m、h 或 d。",
     DECK_OPTIONS_SECTION_REVIEWS: "复习",
     DECK_OPTIONS_MAX_REVIEWS: "每日复习上限 (次/天)",
     DECK_OPTIONS_MAX_REVIEWS_DESC: "该牌组每天进行复习的最大次数",
