@@ -1,24 +1,14 @@
 import type { DataAdapter } from "obsidian";
 import { Iadapter } from "./adapter";
-import {
-    cloneFolderTrackingRule,
-    type FolderTrackingRule,
-} from "src/folderTracking";
-import {
-    parseTimestampMap,
-} from "./syroSyncMeta";
+import { cloneFolderTrackingRule, type FolderTrackingRule } from "src/folderTracking";
+import { parseTimestampMap } from "./syroSyncMeta";
 import {
     DEFAULT_SETTINGS,
     normalizeLicenseState,
     type LicenseState,
     type SRSettings,
 } from "src/settings";
-import {
-    getNumberProp,
-    getStringProp,
-    isRecord,
-    parseJsonUnknown,
-} from "src/util/typeGuards";
+import { getNumberProp, getStringProp, isRecord, parseJsonUnknown } from "src/util/typeGuards";
 
 const SYRO_SHARED_SETTINGS_VERSION = 1;
 const SYRO_TRACKING_RULES_VERSION = 1;
@@ -65,6 +55,7 @@ export interface PersistedDeviceState {
     version: number;
     settings: Partial<SRSettings> & Record<string, unknown>;
     historyDeck: string | null;
+    deckOptionsProtocolVersion: number;
 }
 
 export interface PersistedLicenseState {
@@ -377,9 +368,7 @@ function parseTrackingRuleTombstones(
     return tombstones;
 }
 
-function parseTrackingRuleEntries(
-    value: unknown,
-): Record<string, PersistedTrackingRuleEntry> {
+function parseTrackingRuleEntries(value: unknown): Record<string, PersistedTrackingRuleEntry> {
     if (!isRecord(value)) {
         return {};
     }
@@ -390,8 +379,7 @@ function parseTrackingRuleEntries(
             continue;
         }
 
-        const updatedAt =
-            getStringProp(entry, "updatedAt")?.trim() ?? "1970-01-01T00:00:00.000Z";
+        const updatedAt = getStringProp(entry, "updatedAt")?.trim() ?? "1970-01-01T00:00:00.000Z";
         if (isRecord(entry["rule"])) {
             rules[folderPath] = {
                 rule: cloneFolderTrackingRule(entry["rule"]),
@@ -438,7 +426,11 @@ function parseSettingsSubset(
     version: number,
     fields: readonly (keyof SRSettings)[],
 ): (Partial<SRSettings> & Record<string, unknown>) | null {
-    if (!isRecord(value) || getNumberProp(value, "version") !== version || !isRecord(value["settings"])) {
+    if (
+        !isRecord(value) ||
+        getNumberProp(value, "version") !== version ||
+        !isRecord(value["settings"])
+    ) {
         return null;
     }
 
@@ -484,7 +476,11 @@ export function createDefaultSharedSettingsState(): PersistedSharedSettingsState
 }
 
 export function parseSharedSettingsState(value: unknown): PersistedSharedSettingsState | null {
-    const settings = parseSettingsSubset(value, SYRO_SHARED_SETTINGS_VERSION, SHARED_SETTINGS_FIELDS);
+    const settings = parseSettingsSubset(
+        value,
+        SYRO_SHARED_SETTINGS_VERSION,
+        SHARED_SETTINGS_FIELDS,
+    );
     if (!settings || !isRecord(value)) {
         return null;
     }
@@ -767,6 +763,7 @@ export function diffDailyState(
 export function extractDeviceState(input: {
     settings: SRSettings;
     historyDeck: string | null;
+    deckOptionsProtocolVersion?: number;
 }): PersistedDeviceState {
     return {
         version: SYRO_DEVICE_STATE_VERSION,
@@ -775,6 +772,11 @@ export function extractDeviceState(input: {
             typeof input.historyDeck === "string" && input.historyDeck.trim().length > 0
                 ? input.historyDeck
                 : null,
+        deckOptionsProtocolVersion:
+            typeof input.deckOptionsProtocolVersion === "number" &&
+            Number.isFinite(input.deckOptionsProtocolVersion)
+                ? input.deckOptionsProtocolVersion
+                : 1,
     };
 }
 
@@ -783,6 +785,7 @@ export function createDefaultDeviceState(): PersistedDeviceState {
         version: SYRO_DEVICE_STATE_VERSION,
         settings: pickSettingsFields(cloneUnknown(DEFAULT_SETTINGS), DEVICE_STATE_FIELDS),
         historyDeck: null,
+        deckOptionsProtocolVersion: 1,
     };
 }
 
@@ -796,6 +799,7 @@ export function parseDeviceState(value: unknown): PersistedDeviceState | null {
         version: SYRO_DEVICE_STATE_VERSION,
         settings,
         historyDeck: getStringProp(value, "historyDeck")?.trim() ?? null,
+        deckOptionsProtocolVersion: getNumberProp(value, "deckOptionsProtocolVersion") ?? 1,
     };
 }
 
@@ -844,10 +848,7 @@ export function parseLicenseState(value: unknown): PersistedLicenseState | null 
     };
 }
 
-export function applyLicenseState(
-    settings: SRSettings,
-    persisted: PersistedLicenseState,
-): void {
+export function applyLicenseState(settings: SRSettings, persisted: PersistedLicenseState): void {
     settings.licenseKey = persisted.licenseKey;
     settings.isPro = persisted.isPro;
     settings.licenseInstallationId = persisted.licenseInstallationId;

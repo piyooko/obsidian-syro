@@ -2,7 +2,15 @@ import { createHash } from "crypto";
 import { type PendingOverlayFile } from "src/dataStore/pendingOverlayStore";
 import { RPITEMTYPE } from "src/dataStore/repetitionItem";
 import { FlashcardReviewMode, ReviewResponse } from "src/scheduling";
-import { createSyroMultiDeviceHarness, type HarnessCardsStateEntry, type HarnessDailyStateSnapshot, type HarnessStateDiagnostics } from "./helpers/createSyroMultiDeviceHarness";
+import { DEFAULT_SETTINGS } from "src/settings";
+import {
+    createSyroMultiDeviceHarness,
+    type HarnessCardsStateEntry,
+    type HarnessDailyStateSnapshot,
+    type HarnessDeckOptionsStateSnapshot,
+    type HarnessStateDiagnostics,
+    type HarnessTrackedFileStateEntry,
+} from "./helpers/createSyroMultiDeviceHarness";
 
 const NOTE_ONE_PATH = "归档/Blog Public/日志 10.24--11.21.md";
 const NOTE_TWO_PATH = "归档/Blog Public/日志 11.12-12.10 后面丢失到1.21.md";
@@ -12,6 +20,10 @@ const TARGET_DECK_PATHS = [
     "归档/Blog Public/日志 10.24--11.21",
     "归档/Blog Public/日志 11.12-12.10 后面丢失到1.21",
 ];
+
+function noteDeckPath(notePath: string): string {
+    return notePath.replace(/\\/g, "/").replace(/\.md$/i, "");
+}
 
 function comparableDailyState(
     value: HarnessDailyStateSnapshot | null,
@@ -39,15 +51,34 @@ function comparablePendingOverlay(value: PendingOverlayFile | null): PendingOver
 function comparableCards(value: HarnessCardsStateEntry[]): HarnessCardsStateEntry[] {
     return value.map((entry) => ({
         ...JSON.parse(JSON.stringify(entry)),
-        aliases: [entry.uuid, ...entry.aliases].sort((left, right) =>
-            left.localeCompare(right),
-        ),
-        trackedFileAliases: [entry.trackedFileUuid, ...entry.trackedFileAliases].sort((left, right) =>
-            left.localeCompare(right),
+        aliases: [entry.uuid, ...entry.aliases].sort((left, right) => left.localeCompare(right)),
+        trackedFileAliases: [entry.trackedFileUuid, ...entry.trackedFileAliases].sort(
+            (left, right) => left.localeCompare(right),
         ),
         uuid: "",
         trackedFileUuid: "",
     })) as HarnessCardsStateEntry[];
+}
+
+function comparableTrackedFiles(
+    value: HarnessTrackedFileStateEntry[],
+): HarnessTrackedFileStateEntry[] {
+    return value.map((entry) => ({
+        ...JSON.parse(JSON.stringify(entry)),
+        aliases: [entry.uuid, ...entry.aliases].sort((left, right) => left.localeCompare(right)),
+        noteItemUuid: null,
+        cardItemUuids: [],
+        uuid: "",
+    })) as HarnessTrackedFileStateEntry[];
+}
+
+function comparableDeckOptions(
+    value: HarnessDeckOptionsStateSnapshot | null,
+): HarnessDeckOptionsStateSnapshot | null {
+    if (!value) {
+        return null;
+    }
+    return JSON.parse(JSON.stringify(value)) as HarnessDeckOptionsStateSnapshot;
 }
 
 function expectDiagnosticsMatch(
@@ -55,16 +86,24 @@ function expectDiagnosticsMatch(
     leftClient: string,
     rightClient: string,
 ): void {
-    expect(
-        comparableCards(diagnostics.cardsByClient[leftClient]),
-    ).toEqual(comparableCards(diagnostics.cardsByClient[rightClient]));
-    expect(
-        comparableDailyState(diagnostics.dailyByClient[leftClient]),
-    ).toEqual(comparableDailyState(diagnostics.dailyByClient[rightClient]));
-    expect(
-        comparablePendingOverlay(diagnostics.pendingOverlayByClient[leftClient]),
-    ).toEqual(comparablePendingOverlay(diagnostics.pendingOverlayByClient[rightClient]));
-    expect(diagnostics.deckCountsByClient[leftClient]).toEqual(diagnostics.deckCountsByClient[rightClient]);
+    expect(comparableCards(diagnostics.cardsByClient[leftClient])).toEqual(
+        comparableCards(diagnostics.cardsByClient[rightClient]),
+    );
+    expect(comparableTrackedFiles(diagnostics.trackedFilesByClient[leftClient])).toEqual(
+        comparableTrackedFiles(diagnostics.trackedFilesByClient[rightClient]),
+    );
+    expect(comparableDeckOptions(diagnostics.deckOptionsByClient[leftClient])).toEqual(
+        comparableDeckOptions(diagnostics.deckOptionsByClient[rightClient]),
+    );
+    expect(comparableDailyState(diagnostics.dailyByClient[leftClient])).toEqual(
+        comparableDailyState(diagnostics.dailyByClient[rightClient]),
+    );
+    expect(comparablePendingOverlay(diagnostics.pendingOverlayByClient[leftClient])).toEqual(
+        comparablePendingOverlay(diagnostics.pendingOverlayByClient[rightClient]),
+    );
+    expect(diagnostics.deckCountsByClient[leftClient]).toEqual(
+        diagnostics.deckCountsByClient[rightClient],
+    );
 }
 
 function expectOverlaySectionsEmpty(value: PendingOverlayFile | null): void {
@@ -72,8 +111,13 @@ function expectOverlaySectionsEmpty(value: PendingOverlayFile | null): void {
     expect(value?.sections ?? {}).toEqual({});
 }
 
-function sessionEventOpIdsForDevice(diagnostics: HarnessStateDiagnostics, deviceFolderName: string): string[] {
-    return (diagnostics.sessionDigestsByDevice[deviceFolderName] ?? []).map((record) => record.opId);
+function sessionEventOpIdsForDevice(
+    diagnostics: HarnessStateDiagnostics,
+    deviceFolderName: string,
+): string[] {
+    return (diagnostics.sessionDigestsByDevice[deviceFolderName] ?? []).map(
+        (record) => record.opId,
+    );
 }
 
 function dailyStateTargetUuidsForDevice(
@@ -83,8 +127,7 @@ function dailyStateTargetUuidsForDevice(
     return (diagnostics.sessionDigestsByDevice[deviceFolderName] ?? [])
         .filter(
             (record) =>
-                record.domain === "daily-state" &&
-                record.targetUuid.startsWith("daily-op:"),
+                record.domain === "daily-state" && record.targetUuid.startsWith("daily-op:"),
         )
         .map((record) => record.targetUuid);
 }
@@ -94,9 +137,7 @@ function debugDiagnostics(label: string, diagnostics: HarnessStateDiagnostics): 
         return;
     }
 
-    console.log(
-        `[SYRO-TEST-DEBUG] ${label}\n${JSON.stringify(diagnostics, null, 2)}`,
-    );
+    console.log(`[SYRO-TEST-DEBUG] ${label}\n${JSON.stringify(diagnostics, null, 2)}`);
 }
 
 describe("multi-device review backend flow", () => {
@@ -118,26 +159,24 @@ describe("multi-device review backend flow", () => {
                     return `${prefix}abcd-0000-4000-8000-000000000000`;
                 },
                 getRandomValues:
-                    originalCrypto?.getRandomValues ??
-                    ((buffer: Uint8Array) => buffer),
-                subtle:
-                    originalCrypto?.subtle ??
-                    {
-                        digest: async (_algorithm: string, data: BufferSource): Promise<ArrayBuffer> => {
-                            const hash = createHash("sha256");
-                            if (data instanceof ArrayBuffer) {
-                                hash.update(Buffer.from(data));
-                            } else {
-                                hash.update(
-                                    Buffer.from(data.buffer, data.byteOffset, data.byteLength),
-                                );
-                            }
-                            const digest = hash.digest();
-                            return digest.buffer.slice(
-                                digest.byteOffset,
-                                digest.byteOffset + digest.byteLength,
-                            );
-                        },
+                    originalCrypto?.getRandomValues ?? ((buffer: Uint8Array) => buffer),
+                subtle: originalCrypto?.subtle ?? {
+                    digest: async (
+                        _algorithm: string,
+                        data: BufferSource,
+                    ): Promise<ArrayBuffer> => {
+                        const hash = createHash("sha256");
+                        if (data instanceof ArrayBuffer) {
+                            hash.update(Buffer.from(data));
+                        } else {
+                            hash.update(Buffer.from(data.buffer, data.byteOffset, data.byteLength));
+                        }
+                        const digest = hash.digest();
+                        return digest.buffer.slice(
+                            digest.byteOffset,
+                            digest.byteOffset + digest.byteLength,
+                        );
+                    },
                 },
             },
         });
@@ -224,8 +263,12 @@ describe("multi-device review backend flow", () => {
             );
         }
 
-        expect(sessionEventOpIdsForDevice(diagnostics, expectedDeviceFolders[0]).length).toBeGreaterThan(0);
-        expect(sessionEventOpIdsForDevice(diagnostics, expectedDeviceFolders[1]).length).toBeGreaterThan(0);
+        expect(
+            sessionEventOpIdsForDevice(diagnostics, expectedDeviceFolders[0]).length,
+        ).toBeGreaterThan(0);
+        expect(
+            sessionEventOpIdsForDevice(diagnostics, expectedDeviceFolders[1]).length,
+        ).toBeGreaterThan(0);
     });
 
     test("fresh baseline first import keeps source daily-state stable instead of replaying old source history again", async () => {
@@ -239,10 +282,12 @@ describe("multi-device review backend flow", () => {
         await harness.bootstrapMobileFromDesktop();
 
         const diagnostics = harness.collectDiagnostics(["desktop", "mobile"], TARGET_DECK_PATHS);
-        expect(
-            comparableDailyState(diagnostics.dailyByClient.desktop),
-        ).toEqual(comparableDailyState(diagnostics.dailyByClient.mobile));
-        expect(diagnostics.deckCountsByClient.desktop).toEqual(diagnostics.deckCountsByClient.mobile);
+        expect(comparableDailyState(diagnostics.dailyByClient.desktop)).toEqual(
+            comparableDailyState(diagnostics.dailyByClient.mobile),
+        );
+        expect(diagnostics.deckCountsByClient.desktop).toEqual(
+            diagnostics.deckCountsByClient.mobile,
+        );
     });
 
     test("independent fresh devices reconcile the whole card library before importing first shared review history", async () => {
@@ -276,10 +321,7 @@ describe("multi-device review backend flow", () => {
                         client.plugin.data.settings.fsrsSettings,
                     );
                     client.plugin.reviewStateCommitCoordinator?.queueCardCommit(itemId, "review");
-                    client.plugin.incrementDailyCounts(
-                        NOTE_ONE_PATH.replace(/\.md$/i, ""),
-                        wasNew,
-                    );
+                    client.plugin.incrementDailyCounts(NOTE_ONE_PATH.replace(/\.md$/i, ""), wasNew);
                 }
                 await client.plugin.store?.drainReviewOverlayFlush();
                 await (client.plugin as any).pendingOverlayStore?.drainFlush();
@@ -325,12 +367,14 @@ describe("multi-device review backend flow", () => {
 
         const expectedDailyNewCount = 27;
         expect(
-            diagnostics.dailyByClient.desktop?.dailyDeckStats.counts["归档/Blog Public/日志 10.24--11.21"]
-                ?.new ?? 0,
+            diagnostics.dailyByClient.desktop?.dailyDeckStats.counts[
+                "归档/Blog Public/日志 10.24--11.21"
+            ]?.new ?? 0,
         ).toBe(expectedDailyNewCount);
         expect(
-            diagnostics.dailyByClient.mobile?.dailyDeckStats.counts["归档/Blog Public/日志 10.24--11.21"]
-                ?.new ?? 0,
+            diagnostics.dailyByClient.mobile?.dailyDeckStats.counts[
+                "归档/Blog Public/日志 10.24--11.21"
+            ]?.new ?? 0,
         ).toBe(expectedDailyNewCount);
     });
 
@@ -364,10 +408,11 @@ describe("multi-device review backend flow", () => {
             .split("/")
             .pop() as string;
         const desktopSessionPath = `${desktopFolderName}/2026-04-18.session.jsonl`;
-        const desktopLatestOpId = sessionEventOpIdsForDevice(diagnostics, desktopFolderName).at(-1) ?? null;
+        const desktopLatestOpId =
+            sessionEventOpIdsForDevice(diagnostics, desktopFolderName).at(-1) ?? null;
         expect(
-            diagnostics.cursorSnapshotsByDevice[mobileFolderName]?.cursors[desktopSessionPath]?.lastOpId ??
-                null,
+            diagnostics.cursorSnapshotsByDevice[mobileFolderName]?.cursors[desktopSessionPath]
+                ?.lastOpId ?? null,
         ).toBe(desktopLatestOpId);
     });
 
@@ -411,6 +456,156 @@ describe("multi-device review backend flow", () => {
         expect(new Set(desktopDailyTargetUuids).size).toBe(desktopDailyTargetUuids.length);
     });
 
+    test("deck-options assignment conflicts plus a later rename converge tracked files and deck-options formal state on both devices", async () => {
+        const harness = createSyroMultiDeviceHarness();
+        const originalNotePath = "Archive/Deck Options Original.md";
+        const renamedNotePath = "Archive/Deck Options Renamed.md";
+        await harness.seedFlashcardNote(originalNotePath, 6, "Rename");
+
+        await harness.bootstrapDesktop();
+        await harness.sync("desktop", "incremental");
+        await harness.bootstrapMobileFromDesktop();
+
+        const desktopClient = await harness.activateClient("desktop");
+        const desktopPreset = {
+            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+            uuid: "deck-preset-desktop-rename",
+            createdAt: "2026-04-18T08:01:00.000Z",
+            name: "Desktop Rename",
+        };
+        desktopClient.plugin.data.settings.deckOptionsPresets = [
+            desktopClient.plugin.data.settings.deckOptionsPresets[0],
+            desktopPreset,
+        ];
+        desktopClient.plugin.data.settings.deckPresetAssignment = {
+            [noteDeckPath(originalNotePath)]: desktopPreset.uuid,
+        };
+        await desktopClient.plugin.saveDeckOptionsAndRequestSync();
+
+        await harness.sync("mobile", "incremental");
+
+        const mobileClient = await harness.activateClient("mobile");
+        const mobilePreset = {
+            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+            uuid: "deck-preset-mobile-rename",
+            createdAt: "2026-04-18T08:02:00.000Z",
+            name: "Mobile Rename",
+        };
+        mobileClient.plugin.data.settings.deckOptionsPresets = [
+            ...mobileClient.plugin.data.settings.deckOptionsPresets.filter(
+                (preset) => preset.uuid !== mobilePreset.uuid,
+            ),
+            mobilePreset,
+        ];
+        mobileClient.plugin.data.settings.deckPresetAssignment = {
+            [noteDeckPath(originalNotePath)]: mobilePreset.uuid,
+        };
+        await mobileClient.plugin.saveDeckOptionsAndRequestSync();
+
+        await harness.sync("desktop", "incremental");
+
+        await desktopClient.app.vault.adapter.rename(originalNotePath, renamedNotePath);
+        const renamedNote = desktopClient.plugin.noteReviewStore?.renameWithSnapshot(
+            originalNotePath,
+            renamedNotePath,
+        );
+        if (renamedNote) {
+            await desktopClient.plugin.noteReviewStore?.save();
+            await desktopClient.plugin.appendSyroNoteRename(originalNotePath, renamedNote);
+        }
+        const renamedTimeline = desktopClient.plugin.reviewCommitStore?.renameFileWithSnapshot(
+            originalNotePath,
+            renamedNotePath,
+        );
+        if (renamedTimeline) {
+            await desktopClient.plugin.reviewCommitStore?.save();
+            await desktopClient.plugin.appendSyroTimelineRenameFile(
+                originalNotePath,
+                renamedNotePath,
+                renamedTimeline.commits,
+            );
+        }
+        const renamedTrackedFiles =
+            desktopClient.plugin.store?.renamePathPrefixWithSnapshots(
+                originalNotePath,
+                renamedNotePath,
+            ) ?? [];
+        if (renamedTrackedFiles.length > 0) {
+            await desktopClient.plugin.store?.save();
+            for (const snapshot of renamedTrackedFiles) {
+                await desktopClient.plugin.appendSyroCardsRenameFile(
+                    snapshot.oldPath,
+                    snapshot.file,
+                );
+            }
+        }
+        desktopClient.plugin.renameDeckOptionsAssignments(originalNotePath, renamedNotePath);
+        await (desktopClient.plugin as any).savePluginData({
+            domains: ["deck-options"],
+            source: "test-rename",
+        });
+
+        await harness.sync("desktop", "incremental");
+        await harness.sync("mobile", "incremental");
+        await harness.restartClient("desktop");
+        await harness.restartClient("mobile");
+        await harness.sync("desktop", "incremental");
+        await harness.sync("mobile", "incremental");
+
+        const diagnostics = harness.collectDiagnostics(
+            ["desktop", "mobile"],
+            ["Archive", noteDeckPath(originalNotePath), noteDeckPath(renamedNotePath)],
+        );
+        debugDiagnostics("deck-options-rename-final", diagnostics);
+        expectDiagnosticsMatch(diagnostics, "desktop", "mobile");
+
+        expect(
+            diagnostics.trackedFilesByClient.desktop.every(
+                (entry) => entry.path !== originalNotePath,
+            ),
+        ).toBe(true);
+        expect(
+            diagnostics.trackedFilesByClient.mobile.every(
+                (entry) => entry.path !== originalNotePath,
+            ),
+        ).toBe(true);
+        expect(diagnostics.deckOptionsByClient.desktop?.assignments).toContainEqual([
+            noteDeckPath(renamedNotePath),
+            "deck-preset-desktop-rename",
+        ]);
+        expect(diagnostics.deckOptionsByClient.mobile?.assignments).toContainEqual([
+            noteDeckPath(renamedNotePath),
+            "deck-preset-desktop-rename",
+        ]);
+        expect(
+            diagnostics.deckOptionsByClient.desktop?.assignments.some(
+                ([deckPath]) => deckPath === noteDeckPath(originalNotePath),
+            ),
+        ).toBe(false);
+        expect(
+            diagnostics.deckOptionsByClient.mobile?.assignments.some(
+                ([deckPath]) => deckPath === noteDeckPath(originalNotePath),
+            ),
+        ).toBe(false);
+
+        const allSessionRecords = Object.values(diagnostics.sessionDigestsByDevice).flat();
+        expect(
+            allSessionRecords.some(
+                (record) =>
+                    record.domain === "deck-options" &&
+                    record.entityType === "deck-options-assignment",
+            ),
+        ).toBe(true);
+        expect(
+            allSessionRecords.some(
+                (record) =>
+                    record.domain === "cards" &&
+                    record.entityType === "tracked-file" &&
+                    record.opType === "rename-file",
+            ),
+        ).toBe(true);
+    });
+
     test("restart recovers cardsReview pending entries when session already exists but cards.json has not been saved yet", async () => {
         const harness = createSyroMultiDeviceHarness();
         await harness.seedFlashcardNote(NOTE_ONE_PATH, 6, "挂账");
@@ -428,16 +623,9 @@ describe("multi-device review backend flow", () => {
             .find((item) => item.itemType === RPITEMTYPE.CARD);
         expect(targetItem).toBeDefined();
         const wasNew = targetItem!.isNew;
-        store!.reviewId(
-            targetItem!.ID,
-            2,
-            client.plugin.data.settings.fsrsSettings,
-        );
+        store!.reviewId(targetItem!.ID, 2, client.plugin.data.settings.fsrsSettings);
         const commitId = coordinator!.queueCardCommit(targetItem!.ID, "review");
-        client.plugin.incrementDailyCounts(
-            NOTE_ONE_PATH.replace(/\.md$/i, ""),
-            wasNew,
-        );
+        client.plugin.incrementDailyCounts(NOTE_ONE_PATH.replace(/\.md$/i, ""), wasNew);
         await harness.stagePendingOverlay("desktop");
 
         const snapshot = store!.getCardSnapshot(targetItem!.ID);
@@ -509,9 +697,11 @@ describe("multi-device review backend flow", () => {
 
         const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
         const importedOpIds: string[] = [];
-        await manager.importPendingSessions(async (_sessionId: string, records: Array<{ opId: string }>) => {
-            importedOpIds.push(...records.map((record) => record.opId));
-        });
+        await manager.importPendingSessions(
+            async (_sessionId: string, records: Array<{ opId: string }>) => {
+                importedOpIds.push(...records.map((record) => record.opId));
+            },
+        );
 
         const expectedImportedOpIds = eventLines
             .slice(1)

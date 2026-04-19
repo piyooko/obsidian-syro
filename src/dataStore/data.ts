@@ -12,11 +12,7 @@ import { getStorePath } from "src/dataStore/dataLocation";
 import { isPathInsideFolder, renamePathPrefix } from "src/folderTracking";
 import { Tags } from "src/tags";
 import { SrsAlgorithm } from "src/algorithms/algorithms";
-import {
-    TrackedFile,
-    TrackedItem,
-    reconcileTrackedItemsWithCandidates,
-} from "./trackedFile";
+import { TrackedFile, TrackedItem, reconcileTrackedItemsWithCandidates } from "./trackedFile";
 import { RPITEMTYPE, RepetitionItem, ReviewResult, CardQueue } from "./repetitionItem";
 import { Queue } from "./queue";
 import { Iadapter } from "./adapter";
@@ -127,6 +123,8 @@ export interface TrackedCardsFileSnapshot {
     uuid: string;
     aliases: string[];
     path: string;
+    oldPath?: string;
+    newPath?: string;
     tags: string[];
     items: Record<string, number>;
     trackedItems: TrackedItem[];
@@ -137,6 +135,11 @@ export interface RenamedTrackedCardsFileSnapshot {
     oldPath: string;
     newPath: string;
     file: TrackedCardsFileSnapshot;
+}
+
+export interface TrackedFileMatchInput {
+    uuids?: readonly string[];
+    paths?: readonly string[];
 }
 
 export interface ParsedTrackedCardsStoreSnapshots {
@@ -436,8 +439,8 @@ export class DataStore {
     }
 
     private clonePendingReviewEntries(): PendingReviewItemEntry[] {
-        return Array.from(this.reviewItemOverlayById.values()).map((entry) =>
-            JSON.parse(JSON.stringify(entry)) as PendingReviewItemEntry,
+        return Array.from(this.reviewItemOverlayById.values()).map(
+            (entry) => JSON.parse(JSON.stringify(entry)) as PendingReviewItemEntry,
         );
     }
 
@@ -1046,8 +1049,9 @@ export class DataStore {
 
         const trackedItem =
             item.itemType === RPITEMTYPE.CARD
-                ? (trackedFile.trackedItems ?? []).find((candidate) => candidate.reviewId === itemId) ??
-                  null
+                ? ((trackedFile.trackedItems ?? []).find(
+                      (candidate) => candidate.reviewId === itemId,
+                  ) ?? null)
                 : null;
 
         return {
@@ -1096,6 +1100,16 @@ export class DataStore {
         return "";
     }
 
+    findFileIdsByUuid(uuid: string): string[] {
+        if (!uuid) {
+            return [];
+        }
+
+        return Object.entries(this.data.trackedFiles)
+            .filter(([, trackedFile]) => trackedFile?.uuid === uuid)
+            .map(([fileID]) => fileID);
+    }
+
     findFileIdByUuidOrAlias(uuid: string): string {
         if (!uuid) {
             return "";
@@ -1111,6 +1125,45 @@ export class DataStore {
         }
 
         return "";
+    }
+
+    findFileIdsByUuidOrAlias(uuid: string): string[] {
+        if (!uuid) {
+            return [];
+        }
+
+        return Object.entries(this.data.trackedFiles)
+            .filter(
+                ([, trackedFile]) =>
+                    trackedFile?.uuid === uuid ||
+                    (Array.isArray(trackedFile?.aliases) && trackedFile.aliases.includes(uuid)),
+            )
+            .map(([fileID]) => fileID);
+    }
+
+    findFileIdsByPath(path: string): string[] {
+        if (!path) {
+            return [];
+        }
+
+        return Object.entries(this.data.trackedFiles)
+            .filter(([, trackedFile]) => trackedFile?.path === path)
+            .map(([fileID]) => fileID);
+    }
+
+    findTrackedFileIds(input: TrackedFileMatchInput): string[] {
+        const matches = new Set<string>();
+        for (const uuid of input.uuids ?? []) {
+            for (const fileID of this.findFileIdsByUuidOrAlias(uuid)) {
+                matches.add(fileID);
+            }
+        }
+        for (const path of input.paths ?? []) {
+            for (const fileID of this.findFileIdsByPath(path)) {
+                matches.add(fileID);
+            }
+        }
+        return [...matches];
     }
 
     findItemByUuid(uuid: string): RepetitionItem | null {
@@ -1206,7 +1259,8 @@ export class DataStore {
         }
 
         return (
-            (trackedFile.trackedItems ?? []).filter((item) => item.fingerprint === fingerprint).length <= 1
+            (trackedFile.trackedItems ?? []).filter((item) => item.fingerprint === fingerprint)
+                .length <= 1
         );
     }
 
@@ -1230,7 +1284,9 @@ export class DataStore {
         const nextTrackedItems = (trackedFile.trackedItems ?? []).filter(
             (item) => item.reviewId !== localItemId,
         );
-        const nextTrackedItem = snapshot.trackedItem ? cloneTrackedItem(snapshot.trackedItem) : null;
+        const nextTrackedItem = snapshot.trackedItem
+            ? cloneTrackedItem(snapshot.trackedItem)
+            : null;
         if (nextTrackedItem) {
             nextTrackedItem.reviewId = localItemId;
             nextTrackedItems.push(nextTrackedItem);
@@ -1242,11 +1298,10 @@ export class DataStore {
         const fileIDByUuid = this.findFileIdByUuidOrAlias(snapshot.uuid);
         if (fileIDByUuid) {
             const trackedFile = this.data.trackedFiles[fileIDByUuid];
-            trackedFile.aliases = mergeEquivalentUuids(
-                trackedFile.uuid,
-                trackedFile.aliases,
-                [snapshot.uuid, ...(snapshot.aliases ?? [])],
-            );
+            trackedFile.aliases = mergeEquivalentUuids(trackedFile.uuid, trackedFile.aliases, [
+                snapshot.uuid,
+                ...(snapshot.aliases ?? []),
+            ]);
             trackedFile.path = snapshot.path;
             trackedFile.tags = [...snapshot.tags];
             return;
@@ -1273,7 +1328,8 @@ export class DataStore {
 
     removeTrackedFileByUuid(uuid: string, fallbackPath?: string): boolean {
         const fileID =
-            this.findFileIdByUuidOrAlias(uuid) || (fallbackPath ? this.getFileID(fallbackPath) : "");
+            this.findFileIdByUuidOrAlias(uuid) ||
+            (fallbackPath ? this.getFileID(fallbackPath) : "");
         if (!fileID || !this.data.trackedFiles[fileID]) {
             return false;
         }
@@ -1283,8 +1339,146 @@ export class DataStore {
             this.unTrackItem(itemId);
         }
         delete this.data.trackedFiles[fileID];
-        this.data.fileOrder = (this.data.fileOrder ?? []).filter((existingId) => existingId !== fileID);
+        this.data.fileOrder = (this.data.fileOrder ?? []).filter(
+            (existingId) => existingId !== fileID,
+        );
         return true;
+    }
+
+    removeTrackedFilesByIds(fileIDs: readonly string[]): boolean {
+        let changed = false;
+        for (const fileID of [...new Set(fileIDs)].filter((candidate) => candidate.length > 0)) {
+            if (!this.data.trackedFiles[fileID]) {
+                continue;
+            }
+            const trackedFile = this.data.trackedFiles[fileID];
+            for (const itemId of trackedFile.itemIDs) {
+                this.unTrackItem(itemId);
+            }
+            delete this.data.trackedFiles[fileID];
+            this.data.fileOrder = (this.data.fileOrder ?? []).filter(
+                (existingId) => existingId !== fileID,
+            );
+            changed = true;
+        }
+        return changed;
+    }
+
+    collapseTrackedFilesToCanonical(
+        canonicalFileID: string,
+        duplicateFileIDs: readonly string[],
+    ): boolean {
+        const canonical = this.getFileByID(canonicalFileID);
+        if (!canonical) {
+            return false;
+        }
+
+        let changed = false;
+        for (const duplicateFileID of [...new Set(duplicateFileIDs)]) {
+            if (!duplicateFileID || duplicateFileID === canonicalFileID) {
+                continue;
+            }
+            const duplicate = this.getFileByID(duplicateFileID);
+            if (!duplicate) {
+                continue;
+            }
+
+            canonical.aliases = mergeEquivalentUuids(canonical.uuid, canonical.aliases, [
+                duplicate.uuid,
+                ...(duplicate.aliases ?? []),
+            ]);
+
+            const duplicateNoteId = duplicate.items?.file ?? -1;
+            if (duplicateNoteId >= 0) {
+                const duplicateNote = this.getItembyID(duplicateNoteId);
+                const canonicalNoteId = canonical.items?.file ?? -1;
+                const canonicalNote =
+                    canonicalNoteId >= 0 ? this.getItembyID(canonicalNoteId) : null;
+                if (duplicateNote) {
+                    if (!canonicalNote) {
+                        canonical.items.file = duplicateNote.ID;
+                        duplicateNote.setTracked(canonicalFileID);
+                        changed = true;
+                    } else if (
+                        canonicalNote.uuid === duplicateNote.uuid ||
+                        canonicalNote.aliases?.includes(duplicateNote.uuid) ||
+                        duplicateNote.aliases?.includes(canonicalNote.uuid)
+                    ) {
+                        this.mergeItemUuidEquivalence(canonicalNote.ID, [
+                            duplicateNote.uuid,
+                            ...(duplicateNote.aliases ?? []),
+                        ]);
+                        this.unTrackItem(duplicateNote.ID);
+                        changed = true;
+                    } else {
+                        this.unTrackItem(duplicateNote.ID);
+                        changed = true;
+                    }
+                }
+            }
+
+            for (const duplicateTrackedItem of duplicate.trackedItems ?? []) {
+                const duplicateCard = this.getItembyID(duplicateTrackedItem.reviewId);
+                if (!duplicateCard) {
+                    continue;
+                }
+                const cardKey = `${duplicateTrackedItem.lineNo}:${duplicateTrackedItem.clozeId ?? "c1"}`;
+                const canonicalTrackedItem = (canonical.trackedItems ?? []).find((item) => {
+                    if (item.reviewId < 0) {
+                        return false;
+                    }
+                    const currentItem = this.getItembyID(item.reviewId);
+                    return (
+                        `${item.lineNo}:${item.clozeId ?? "c1"}` === cardKey ||
+                        currentItem?.uuid === duplicateCard.uuid ||
+                        currentItem?.aliases?.includes(duplicateCard.uuid) ||
+                        duplicateCard.aliases?.includes(currentItem?.uuid ?? "")
+                    );
+                });
+
+                if (canonicalTrackedItem) {
+                    const canonicalCard = this.getItembyID(canonicalTrackedItem.reviewId);
+                    if (canonicalCard) {
+                        this.mergeItemUuidEquivalence(canonicalCard.ID, [
+                            duplicateCard.uuid,
+                            ...(duplicateCard.aliases ?? []),
+                        ]);
+                    }
+                    this.unTrackItem(duplicateCard.ID);
+                    changed = true;
+                    continue;
+                }
+
+                duplicateCard.setTracked(canonicalFileID);
+                canonical.trackedItems = canonical.trackedItems ?? [];
+                canonical.trackedItems.push(
+                    cloneTrackedItem(duplicateTrackedItem) ?? duplicateTrackedItem,
+                );
+                changed = true;
+            }
+
+            delete this.data.trackedFiles[duplicateFileID];
+            this.data.fileOrder = (this.data.fileOrder ?? []).filter(
+                (existingId) => existingId !== duplicateFileID,
+            );
+            changed = true;
+        }
+
+        if (changed) {
+            canonical.trackedItems = (canonical.trackedItems ?? []).filter(
+                (trackedItem, index, items) => {
+                    const key = `${trackedItem.lineNo}:${trackedItem.clozeId ?? "c1"}`;
+                    return (
+                        items.findIndex(
+                            (candidate) =>
+                                `${candidate.lineNo}:${candidate.clozeId ?? "c1"}` === key,
+                        ) === index
+                    );
+                },
+            );
+        }
+
+        return changed;
     }
 
     renamePathPrefixWithSnapshots(
@@ -1353,14 +1547,14 @@ export class DataStore {
         aliases?: string[];
         updatePath?: boolean;
     }): { fileID: string; trackedFile: TrackedFile } {
-        const existingFileId = this.findFileIdByUuidOrAlias(input.uuid) || this.getFileID(input.path);
+        const existingFileId =
+            this.findFileIdByUuidOrAlias(input.uuid) || this.getFileID(input.path);
         if (existingFileId) {
             const trackedFile = this.data.trackedFiles[existingFileId];
-            trackedFile.aliases = mergeEquivalentUuids(
-                trackedFile.uuid,
-                trackedFile.aliases,
-                [input.uuid, ...(input.aliases ?? [])],
-            );
+            trackedFile.aliases = mergeEquivalentUuids(trackedFile.uuid, trackedFile.aliases, [
+                input.uuid,
+                ...(input.aliases ?? []),
+            ]);
             if (input.updatePath !== false) {
                 trackedFile.path = input.path;
             }
@@ -1405,20 +1599,15 @@ export class DataStore {
         clonedItem.fileID = fileID;
 
         if (existingItem) {
-            clonedItem.aliases = mergeEquivalentUuids(
-                existingItem.uuid,
-                existingItem.aliases,
-                [clonedItem.uuid, ...(clonedItem.aliases ?? [])],
-            );
+            clonedItem.aliases = mergeEquivalentUuids(existingItem.uuid, existingItem.aliases, [
+                clonedItem.uuid,
+                ...(clonedItem.aliases ?? []),
+            ]);
             clonedItem.uuid = existingItem.uuid;
             Object.assign(existingItem, clonedItem);
             this.data.queues.remove(existingItem);
         } else {
-            clonedItem.aliases = mergeEquivalentUuids(
-                clonedItem.uuid,
-                clonedItem.aliases,
-                [],
-            );
+            clonedItem.aliases = mergeEquivalentUuids(clonedItem.uuid, clonedItem.aliases, []);
             this.data.items.push(clonedItem);
         }
 

@@ -28,7 +28,8 @@ function buildFileIdentityChange(input: {
     aliases?: readonly string[];
     deleted: boolean;
 }): SyroFileIdentity {
-    const fallbackUuid = input.fallbackUuid?.trim() || createDeterministicFileIdentityUuid(input.path);
+    const fallbackUuid =
+        input.fallbackUuid?.trim() || createDeterministicFileIdentityUuid(input.path);
     const uuid = input.existingIdentity?.uuid ?? fallbackUuid;
     return {
         uuid,
@@ -121,7 +122,8 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                 await noteReviewStore.save();
                 noteChanged = true;
                 if (renamedNote) {
-                    const existingIdentity = plugin.getSyroFileIdentity?.(renamedNote.item.uuid) ?? null;
+                    const existingIdentity =
+                        plugin.getSyroFileIdentity?.(renamedNote.item.uuid) ?? null;
                     await fileIdentityEmitter.upsert(
                         buildFileIdentityChange({
                             existingIdentity,
@@ -150,6 +152,9 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
             }
 
             if (plugin.renameFolderTrackingPaths(oldPath, file.path)) {
+                noteChanged = true;
+            }
+            if (plugin.renameDeckOptionsAssignments(oldPath, file.path)) {
                 noteChanged = true;
             }
 
@@ -217,7 +222,8 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
             if (renamedTrackedFiles.length > 0) {
                 await store.save();
                 for (const snapshot of renamedTrackedFiles) {
-                    const existingIdentity = plugin.getSyroFileIdentity?.(snapshot.file.uuid) ?? null;
+                    const existingIdentity =
+                        plugin.getSyroFileIdentity?.(snapshot.file.uuid) ?? null;
                     await fileIdentityEmitter.upsert(
                         buildFileIdentityChange({
                             existingIdentity,
@@ -274,14 +280,13 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
             }
             const fileIdentityEmitter = createFileIdentityEmitter(plugin);
             const removedNote = noteReviewStore.removeWithSnapshot(file.path);
-            const removedNotesByPrefix = noteReviewStore.removePathPrefixWithSnapshots(
-                file.path,
-            );
+            const removedNotesByPrefix = noteReviewStore.removePathPrefixWithSnapshots(file.path);
             if (removedNote || removedNotesByPrefix.length > 0) {
                 await noteReviewStore.save();
                 noteChanged = true;
                 if (removedNote) {
-                    const existingIdentity = plugin.getSyroFileIdentity?.(removedNote.item.uuid) ?? null;
+                    const existingIdentity =
+                        plugin.getSyroFileIdentity?.(removedNote.item.uuid) ?? null;
                     await fileIdentityEmitter.delete(
                         buildFileIdentityChange({
                             existingIdentity,
@@ -294,7 +299,8 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                     await plugin.appendSyroNoteRemove(removedNote);
                 }
                 for (const snapshot of removedNotesByPrefix) {
-                    const existingIdentity = plugin.getSyroFileIdentity?.(snapshot.item.uuid) ?? null;
+                    const existingIdentity =
+                        plugin.getSyroFileIdentity?.(snapshot.item.uuid) ?? null;
                     await fileIdentityEmitter.delete(
                         buildFileIdentityChange({
                             existingIdentity,
@@ -311,10 +317,14 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
             if (plugin.removeFolderTrackingPaths(file.path)) {
                 noteChanged = true;
             }
+            if (plugin.removeDeckOptionsAssignments(file.path)) {
+                noteChanged = true;
+            }
 
             const removedTimeline = reviewCommitStore.deleteFileWithSnapshot(file.path);
-            const removedTimelineByPrefix =
-                reviewCommitStore.deletePathPrefixWithSnapshots(file.path);
+            const removedTimelineByPrefix = reviewCommitStore.deletePathPrefixWithSnapshots(
+                file.path,
+            );
             if (removedTimeline || removedTimelineByPrefix.length > 0) {
                 await reviewCommitStore.save();
                 if (removedTimeline) {
@@ -335,7 +345,8 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                     );
                 }
                 for (const snapshot of removedTimelineByPrefix) {
-                    const existingIdentity = plugin.getSyroFileIdentityByPath?.(snapshot.path) ?? null;
+                    const existingIdentity =
+                        plugin.getSyroFileIdentityByPath?.(snapshot.path) ?? null;
                     await fileIdentityEmitter.delete(
                         buildFileIdentityChange({
                             existingIdentity,

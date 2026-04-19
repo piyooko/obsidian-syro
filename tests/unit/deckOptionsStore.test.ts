@@ -3,7 +3,9 @@ import {
     createPersistableSettingsSnapshot,
     DeckOptionsStore,
     diffDeckOptionsState,
+    removeDeckOptionsAssignmentPaths,
     removeDeckOptionsPresetFromSettings,
+    renameDeckOptionsAssignmentPaths,
 } from "src/dataStore/deckOptionsStore";
 import { Iadapter } from "src/dataStore/adapter";
 import { DEFAULT_DECK_OPTIONS_PRESET_UUID, DEFAULT_SETTINGS } from "src/settings";
@@ -23,7 +25,11 @@ function cloneSettings() {
 }
 
 function createLegacyPreset(overrides: Record<string, unknown> = {}) {
-    const { uuid: _uuid, createdAt: _createdAt, ...preset } = DEFAULT_SETTINGS.deckOptionsPresets[0];
+    const {
+        uuid: _uuid,
+        createdAt: _createdAt,
+        ...preset
+    } = DEFAULT_SETTINGS.deckOptionsPresets[0];
     return {
         ...preset,
         ...overrides,
@@ -122,7 +128,9 @@ describe("deckOptionsStore", () => {
         await firstStore.loadIntoSettings(firstSettings);
         await secondStore.loadIntoSettings(secondSettings);
 
-        expect(firstSettings.deckOptionsPresets[1].uuid).toBe(secondSettings.deckOptionsPresets[1].uuid);
+        expect(firstSettings.deckOptionsPresets[1].uuid).toBe(
+            secondSettings.deckOptionsPresets[1].uuid,
+        );
         expect(firstSettings.deckPresetAssignment).toEqual(secondSettings.deckPresetAssignment);
     });
 
@@ -160,8 +168,7 @@ describe("deckOptionsStore", () => {
         await store.loadIntoSettings(settings);
 
         const saved = JSON.parse(
-            files.get(".obsidian/plugins/syro/devices/Desktop--d84f/deck-options.json") ??
-                "{}",
+            files.get(".obsidian/plugins/syro/devices/Desktop--d84f/deck-options.json") ?? "{}",
         );
         expect(saved.version).toBe(2);
         expect(saved.fsrsSettings.enable_fuzz).toBe(false);
@@ -246,10 +253,7 @@ describe("deckOptionsStore", () => {
             Reading: readingPreset.uuid,
         };
 
-        nextSettings.deckOptionsPresets = [
-            nextSettings.deckOptionsPresets[0],
-            focusPreset,
-        ];
+        nextSettings.deckOptionsPresets = [nextSettings.deckOptionsPresets[0], focusPreset];
         nextSettings.deckPresetAssignment = {
             Reading: focusPreset.uuid,
         };
@@ -290,5 +294,79 @@ describe("deckOptionsStore", () => {
         expect(settings.deckOptionsPresets).toHaveLength(1);
         expect(settings.deckOptionsPresets[0].uuid).toBe(DEFAULT_DECK_OPTIONS_PRESET_UUID);
         expect(settings.deckPresetAssignment).toEqual({});
+    });
+
+    it("renames deck assignment paths for direct note renames", () => {
+        const result = renameDeckOptionsAssignmentPaths(
+            {
+                "Archive/Original": "deck-preset-reading",
+                "Archive/Other": "deck-preset-focus",
+            },
+            "Archive/Original.md",
+            "Archive/Renamed.md",
+        );
+
+        expect(result.deckPresetAssignment).toEqual({
+            "Archive/Renamed": "deck-preset-reading",
+            "Archive/Other": "deck-preset-focus",
+        });
+        expect(result.affectedDeckPaths).toEqual(["Archive/Original", "Archive/Renamed"]);
+    });
+
+    it("renames nested deck assignment paths for folder renames without overwriting existing targets", () => {
+        const result = renameDeckOptionsAssignmentPaths(
+            {
+                "Archive/Folder/Card One": "deck-preset-reading",
+                "Archive/Folder/Card Two": "deck-preset-reading",
+                "Archive/Renamed/Card One": "deck-preset-focus",
+            },
+            "Archive/Folder",
+            "Archive/Renamed",
+        );
+
+        expect(result.deckPresetAssignment).toEqual({
+            "Archive/Renamed/Card One": "deck-preset-focus",
+            "Archive/Renamed/Card Two": "deck-preset-reading",
+        });
+        expect(result.affectedDeckPaths).toEqual([
+            "Archive/Folder/Card One",
+            "Archive/Folder/Card Two",
+            "Archive/Renamed/Card One",
+            "Archive/Renamed/Card Two",
+        ]);
+    });
+
+    it("removes deck assignment paths for deleted notes and folders", () => {
+        const result = removeDeckOptionsAssignmentPaths(
+            {
+                "Archive/Folder/Card One": "deck-preset-reading",
+                "Archive/Folder/Sub/Card Two": "deck-preset-focus",
+                "Archive/Keep/Card Three": "deck-preset-keep",
+            },
+            "Archive/Folder",
+        );
+
+        expect(result.deckPresetAssignment).toEqual({
+            "Archive/Keep/Card Three": "deck-preset-keep",
+        });
+        expect(result.affectedDeckPaths).toEqual([
+            "Archive/Folder/Card One",
+            "Archive/Folder/Sub/Card Two",
+        ]);
+    });
+
+    it("removes deck assignment paths for deleted markdown notes", () => {
+        const result = removeDeckOptionsAssignmentPaths(
+            {
+                "Archive/Folder/Card One": "deck-preset-reading",
+                "Archive/Folder/Card Two": "deck-preset-focus",
+            },
+            "Archive/Folder/Card One.md",
+        );
+
+        expect(result.deckPresetAssignment).toEqual({
+            "Archive/Folder/Card Two": "deck-preset-focus",
+        });
+        expect(result.affectedDeckPaths).toEqual(["Archive/Folder/Card One"]);
     });
 });

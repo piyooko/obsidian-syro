@@ -2,7 +2,10 @@ import { getAllTags, TFile, TFolder } from "obsidian";
 import { FsrsAlgorithm } from "src/algorithms/fsrs";
 import { DataStore, parseTrackedCardsStoreSnapshots } from "src/dataStore/data";
 import { Iadapter } from "src/dataStore/adapter";
-import { parsePendingOverlayFile, type PendingOverlayFile } from "src/dataStore/pendingOverlayStore";
+import {
+    parsePendingOverlayFile,
+    type PendingOverlayFile,
+} from "src/dataStore/pendingOverlayStore";
 import { Queue } from "src/dataStore/queue";
 import { parseDailyState, type PersistedDailyState } from "src/dataStore/syroPluginDataStore";
 import { SyroWorkspace } from "src/dataStore/syroWorkspace";
@@ -61,6 +64,22 @@ export interface HarnessDailyStateSnapshot {
     deviceReviewCount: number;
 }
 
+export interface HarnessTrackedFileStateEntry {
+    path: string;
+    uuid: string;
+    aliases: string[];
+    tags: string[];
+    noteItemUuid: string | null;
+    cardItemUuids: string[];
+    trackedItemKeys: string[];
+}
+
+export interface HarnessDeckOptionsStateSnapshot {
+    fsrsFingerprint: string;
+    presets: string[];
+    assignments: Array<[string, string]>;
+}
+
 export interface HarnessDeviceFolderEntry {
     folderName: string;
     files: string[];
@@ -92,6 +111,8 @@ export interface HarnessCursorSnapshotDigest {
 
 export interface HarnessStateDiagnostics {
     cardsByClient: Record<string, HarnessCardsStateEntry[]>;
+    trackedFilesByClient: Record<string, HarnessTrackedFileStateEntry[]>;
+    deckOptionsByClient: Record<string, HarnessDeckOptionsStateSnapshot | null>;
     dailyByClient: Record<string, HarnessDailyStateSnapshot | null>;
     pendingOverlayByClient: Record<string, PendingOverlayFile | null>;
     deckCountsByClient: Record<string, Record<string, HarnessDeckCounts | null>>;
@@ -115,9 +136,14 @@ export interface MultiDeviceHarness {
     flushLocalPersistence(clientKey: string): Promise<boolean>;
     sync(clientKey: string, mode?: "incremental" | "full"): Promise<void>;
     readCardsFormalState(clientKey: string): HarnessCardsStateEntry[];
+    readTrackedFilesFormalState(clientKey: string): HarnessTrackedFileStateEntry[];
+    readDeckOptionsFormalState(clientKey: string): HarnessDeckOptionsStateSnapshot | null;
     readDailyStateFormal(clientKey: string): HarnessDailyStateSnapshot | null;
     readPendingOverlay(clientKey: string): PendingOverlayFile | null;
-    readDeckCounts(clientKey: string, deckPaths: string[]): Record<string, HarnessDeckCounts | null>;
+    readDeckCounts(
+        clientKey: string,
+        deckPaths: string[],
+    ): Record<string, HarnessDeckCounts | null>;
     readDeviceFolders(): HarnessDeviceFolderEntry[];
     readSessionDigests(): Record<string, HarnessSessionRecordDigest[]>;
     collectDiagnostics(clientKeys: string[], deckPaths: string[]): HarnessStateDiagnostics;
@@ -485,7 +511,9 @@ function createApp(shared: SharedFileSystem, basePath: string): any {
     };
     const vault = {
         adapter,
-        cachedRead: jest.fn(async (file: TFile) => shared.files.get(normalizePath(file.path)) ?? ""),
+        cachedRead: jest.fn(
+            async (file: TFile) => shared.files.get(normalizePath(file.path)) ?? "",
+        ),
         create: jest.fn(async (path: string, content: string) => {
             writeSharedFile(shared, path, content);
             return createTFile(shared, path);
@@ -503,8 +531,7 @@ function createApp(shared: SharedFileSystem, basePath: string): any {
         getMarkdownFiles: jest.fn(() =>
             Array.from(shared.files.keys())
                 .filter(
-                    (path) =>
-                        path.toLowerCase().endsWith(".md") && !path.startsWith(".obsidian/"),
+                    (path) => path.toLowerCase().endsWith(".md") && !path.startsWith(".obsidian/"),
                 )
                 .sort((left, right) => left.localeCompare(right))
                 .map((path) => createTFile(shared, path)),
@@ -642,6 +669,64 @@ function normalizeCardsState(raw: string | null | undefined): HarnessCardsStateE
         .sort((left, right) => left.key.localeCompare(right.key));
 }
 
+function normalizeTrackedFilesState(
+    raw: string | null | undefined,
+): HarnessTrackedFileStateEntry[] {
+    if (!raw) {
+        return [];
+    }
+    const parsed = parseTrackedCardsStoreSnapshots(raw);
+    if (!parsed) {
+        return [];
+    }
+    return parsed.files
+        .map((snapshot) => ({
+            path: snapshot.path,
+            uuid: snapshot.uuid,
+            aliases: [...(snapshot.aliases ?? [])].sort((left, right) => left.localeCompare(right)),
+            tags: [...(snapshot.tags ?? [])].sort((left, right) => left.localeCompare(right)),
+            noteItemUuid:
+                snapshot.relatedItems.find((item) => item.itemType === RPITEMTYPE.NOTE)?.uuid ??
+                null,
+            cardItemUuids: snapshot.relatedItems
+                .filter((item) => item.itemType === RPITEMTYPE.CARD)
+                .map((item) => item.uuid)
+                .sort((left, right) => left.localeCompare(right)),
+            trackedItemKeys: [...(snapshot.trackedItems ?? [])]
+                .map((item) => `${item.lineNo}:${item.clozeId ?? "c1"}:${item.fingerprint}`)
+                .sort((left, right) => left.localeCompare(right)),
+        }))
+        .sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function normalizeDeckOptionsState(
+    raw: string | null | undefined,
+): HarnessDeckOptionsStateSnapshot | null {
+    if (!raw) {
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(raw) as Record<string, any>;
+        const fsrsSettings = parsed.fsrsSettings ?? {};
+        const presets = Array.isArray(parsed.deckOptionsPresets) ? parsed.deckOptionsPresets : [];
+        const assignments = parsed.deckPresetAssignment ?? {};
+        return {
+            fsrsFingerprint: JSON.stringify(fsrsSettings),
+            presets: presets
+                .map((preset) => JSON.stringify(preset))
+                .sort((left, right) => left.localeCompare(right)),
+            assignments: Object.entries(assignments)
+                .map(
+                    ([deckPath, presetUuid]) =>
+                        [String(deckPath), String(presetUuid)] as [string, string],
+                )
+                .sort(([left], [right]) => left.localeCompare(right)),
+        };
+    } catch {
+        return null;
+    }
+}
+
 function parsePendingOverlay(raw: string | null | undefined): PendingOverlayFile | null {
     if (!raw) {
         return null;
@@ -649,10 +734,15 @@ function parsePendingOverlay(raw: string | null | undefined): PendingOverlayFile
     return parsePendingOverlayFile(raw);
 }
 
-function collectSessionDigests(shared: SharedFileSystem): Record<string, HarnessSessionRecordDigest[]> {
+function collectSessionDigests(
+    shared: SharedFileSystem,
+): Record<string, HarnessSessionRecordDigest[]> {
     const result: Record<string, HarnessSessionRecordDigest[]> = {};
     for (const [path, raw] of shared.files.entries()) {
-        if (!path.startsWith(".obsidian/plugins/syro/sessions/") || !path.endsWith(".session.jsonl")) {
+        if (
+            !path.startsWith(".obsidian/plugins/syro/sessions/") ||
+            !path.endsWith(".session.jsonl")
+        ) {
             continue;
         }
         const sessionPath = path.replace(".obsidian/plugins/syro/sessions/", "");
@@ -690,7 +780,10 @@ function collectLatestCursorSnapshots(
 ): Record<string, HarnessCursorSnapshotDigest | null> {
     const result: Record<string, HarnessCursorSnapshotDigest | null> = {};
     for (const [path, raw] of shared.files.entries()) {
-        if (!path.startsWith(".obsidian/plugins/syro/sessions/") || !path.endsWith(".session.jsonl")) {
+        if (
+            !path.startsWith(".obsidian/plugins/syro/sessions/") ||
+            !path.endsWith(".session.jsonl")
+        ) {
             continue;
         }
         const sessionPath = path.replace(".obsidian/plugins/syro/sessions/", "");
@@ -980,6 +1073,26 @@ export function createSyroMultiDeviceHarness(): MultiDeviceHarness {
         return normalizeCardsState(shared.files.get(normalizePath(layout.cardsPath)));
     };
 
+    const readTrackedFilesFormalState = (clientKey: string): HarnessTrackedFileStateEntry[] => {
+        const client = clients.get(clientKey);
+        if (!client) {
+            throw new Error(`Unknown client: ${clientKey}`);
+        }
+        const layout = getLayout(client.plugin);
+        return normalizeTrackedFilesState(shared.files.get(normalizePath(layout.cardsPath)));
+    };
+
+    const readDeckOptionsFormalState = (
+        clientKey: string,
+    ): HarnessDeckOptionsStateSnapshot | null => {
+        const client = clients.get(clientKey);
+        if (!client) {
+            throw new Error(`Unknown client: ${clientKey}`);
+        }
+        const layout = getLayout(client.plugin);
+        return normalizeDeckOptionsState(shared.files.get(normalizePath(layout.deckOptionsPath)));
+    };
+
     const readDailyStateFormal = (clientKey: string): HarnessDailyStateSnapshot | null => {
         const client = clients.get(clientKey);
         if (!client) {
@@ -1042,6 +1155,12 @@ export function createSyroMultiDeviceHarness(): MultiDeviceHarness {
     ): HarnessStateDiagnostics => ({
         cardsByClient: Object.fromEntries(
             clientKeys.map((clientKey) => [clientKey, readCardsFormalState(clientKey)]),
+        ),
+        trackedFilesByClient: Object.fromEntries(
+            clientKeys.map((clientKey) => [clientKey, readTrackedFilesFormalState(clientKey)]),
+        ),
+        deckOptionsByClient: Object.fromEntries(
+            clientKeys.map((clientKey) => [clientKey, readDeckOptionsFormalState(clientKey)]),
         ),
         dailyByClient: Object.fromEntries(
             clientKeys.map((clientKey) => [clientKey, readDailyStateFormal(clientKey)]),
@@ -1106,6 +1225,10 @@ export function createSyroMultiDeviceHarness(): MultiDeviceHarness {
         },
 
         readCardsFormalState,
+
+        readTrackedFilesFormalState,
+
+        readDeckOptionsFormalState,
 
         readDailyStateFormal,
 

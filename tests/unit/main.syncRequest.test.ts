@@ -131,6 +131,10 @@ describe("SRPlugin sync request orchestration", () => {
             syncLock: false,
             syroReadOnlyReason: null,
             flushReviewPersistence: jest.fn(async () => true),
+            markBufferedPluginStateDirty: jest.fn((domains: string[]) => {
+                order.push(`dirty:${domains.join(",")}`);
+                return domains;
+            }),
             syroSessionManager: {
                 flushActiveSession: jest.fn(async () => {
                     order.push("flush");
@@ -155,7 +159,8 @@ describe("SRPlugin sync request orchestration", () => {
             SRPlugin.prototype as unknown as { saveDeckOptionsAndRequestSync: Function }
         ).saveDeckOptionsAndRequestSync.call(plugin);
 
-        expect(order).toEqual(["flush", "import", "save", "sync"]);
+        expect(order).toEqual(["dirty:deck-options", "flush", "import", "save", "sync"]);
+        expect(plugin.markBufferedPluginStateDirty).toHaveBeenCalledWith(["deck-options"]);
         expect(plugin.savePluginData).toHaveBeenCalledWith({
             domains: ["deck-options"],
             source: "pre-sync:manual",
@@ -209,10 +214,9 @@ describe("SRPlugin sync request orchestration", () => {
             reloadAfterSyroDeviceChange: jest.fn(async () => undefined),
         };
 
-        const result = await (SRPlugin.prototype.pullSyroDeviceToCurrent as unknown as Function).call(
-            plugin,
-            "mobile-id",
-        );
+        const result = await (
+            SRPlugin.prototype.pullSyroDeviceToCurrent as unknown as Function
+        ).call(plugin, "mobile-id");
 
         expect(plugin.syroWorkspace.overwriteCurrentDeviceFromSource).toHaveBeenCalledWith(
             currentLayout,
@@ -459,10 +463,9 @@ describe("SRPlugin sync request orchestration", () => {
         };
 
         try {
-            const result = await (SRPlugin.prototype.deleteValidSyroDevice as unknown as Function).call(
-                plugin,
-                "mobile-id",
-            );
+            const result = await (
+                SRPlugin.prototype.deleteValidSyroDevice as unknown as Function
+            ).call(plugin, "mobile-id");
 
             expect(openAndWaitSpy).toHaveBeenCalledTimes(1);
             expect(plugin.flushBeforeSyroDeviceMutation).toHaveBeenCalledTimes(1);
@@ -507,10 +510,9 @@ describe("SRPlugin sync request orchestration", () => {
         };
 
         try {
-            const result = await (SRPlugin.prototype.deleteValidSyroDevice as unknown as Function).call(
-                plugin,
-                "mobile-id",
-            );
+            const result = await (
+                SRPlugin.prototype.deleteValidSyroDevice as unknown as Function
+            ).call(plugin, "mobile-id");
 
             expect(openAndWaitSpy).toHaveBeenCalledTimes(1);
             expect(plugin.flushBeforeSyroDeviceMutation).not.toHaveBeenCalled();
@@ -583,8 +585,8 @@ describe("SRPlugin sync request orchestration", () => {
 
         expect(plugin.executeSyncRequest).toHaveBeenCalledWith(
             {
-            ...pendingRequest,
-            force: true,
+                ...pendingRequest,
+                force: true,
             },
             ["deck-options"],
         );
@@ -690,7 +692,8 @@ describe("SRPlugin sync request orchestration", () => {
     });
 
     test("savePluginData persists split state files, deck options, and a shell-only data.json", async () => {
-        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
+        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function })
+            .saveDataShell;
         const readingPreset = {
             ...DEFAULT_SETTINGS.deckOptionsPresets[0],
             uuid: "deck-preset-reading",
@@ -724,10 +727,7 @@ describe("SRPlugin sync request orchestration", () => {
                         ...DEFAULT_SETTINGS.fsrsSettings,
                         enable_fuzz: false,
                     },
-                    deckOptionsPresets: [
-                        ...DEFAULT_SETTINGS.deckOptionsPresets,
-                        readingPreset,
-                    ],
+                    deckOptionsPresets: [...DEFAULT_SETTINGS.deckOptionsPresets, readingPreset],
                     deckPresetAssignment: { Reading: readingPreset.uuid },
                 },
                 buryDate: "",
@@ -768,8 +768,7 @@ describe("SRPlugin sync request orchestration", () => {
         expect(
             plugin.syroSessionManager.appendRecord.mock.calls.every(
                 ([record]: [{ domain?: string; targetUuid?: string }]) =>
-                    record.domain !== "deck-options" &&
-                    record.targetUuid !== "deck-options:global",
+                    record.domain !== "deck-options" && record.targetUuid !== "deck-options:global",
             ),
         ).toBe(true);
         expect(plugin.sharedSettingsStore.save).toHaveBeenCalledTimes(1);
@@ -792,7 +791,8 @@ describe("SRPlugin sync request orchestration", () => {
     });
 
     test("savePluginData with daily-state only persists just daily-state and the shell", async () => {
-        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
+        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function })
+            .saveDataShell;
         const pendingOverlayStore = {
             getDailyStateSection: jest.fn(async () => ({
                 version: 3,
@@ -916,7 +916,8 @@ describe("SRPlugin sync request orchestration", () => {
     });
 
     test("savePluginData with device-state only persists local device state without shared session records", async () => {
-        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
+        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function })
+            .saveDataShell;
         const plugin = Object.assign(Object.create(SRPlugin.prototype), {
             deckOptionsStore: createDeckOptionsStoreMock(),
             syroSessionManager: createDeckOptionsSessionManagerMock(),
@@ -984,7 +985,8 @@ describe("SRPlugin sync request orchestration", () => {
     });
 
     test("savePluginData with tracking-rules only appends folderPath-keyed rule records", async () => {
-        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
+        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function })
+            .saveDataShell;
         const plugin = Object.assign(Object.create(SRPlugin.prototype), {
             deckOptionsStore: createDeckOptionsStoreMock(),
             syroSessionManager: createDeckOptionsSessionManagerMock(),
@@ -1072,7 +1074,8 @@ describe("SRPlugin sync request orchestration", () => {
     });
 
     test("savePluginData retains daily-state overlay when session append fails", async () => {
-        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
+        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function })
+            .saveDataShell;
         const pendingOverlayStore = {
             getDailyStateSection: jest.fn(async () => ({
                 version: 3,
@@ -1165,7 +1168,8 @@ describe("SRPlugin sync request orchestration", () => {
     });
 
     test("savePluginData skips already committed daily-state targetUuids from pending overlay", async () => {
-        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
+        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function })
+            .saveDataShell;
         const pendingOverlayStore = {
             getDailyStateSection: jest.fn(async () => ({
                 version: 3,
@@ -1277,7 +1281,8 @@ describe("SRPlugin sync request orchestration", () => {
     });
 
     test("savePluginData serializes overlapping daily-state saves and avoids duplicate targetUuid appends", async () => {
-        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function }).saveDataShell;
+        const saveDataShell = (SRPlugin.prototype as unknown as { saveDataShell: Function })
+            .saveDataShell;
         let currentPendingSection: {
             version: number;
             commitId: string;
@@ -1313,9 +1318,7 @@ describe("SRPlugin sync request orchestration", () => {
         });
         const pendingOverlayStore = {
             getDailyStateSection: jest.fn(async () =>
-                currentPendingSection
-                    ? JSON.parse(JSON.stringify(currentPendingSection))
-                    : null,
+                currentPendingSection ? JSON.parse(JSON.stringify(currentPendingSection)) : null,
             ),
             stageDailyStateSection: jest.fn((section) => {
                 currentPendingSection = JSON.parse(JSON.stringify(section));
@@ -2014,8 +2017,9 @@ describe("SRPlugin sync request orchestration", () => {
     });
 
     test("sync merges review overlay before cleaning dirty new items", async () => {
-        (window as Window & { moment?: (value: number) => ReturnType<typeof createMomentStub> }).moment =
-            (value: number) => createMomentStub(value);
+        (
+            window as Window & { moment?: (value: number) => ReturnType<typeof createMomentStub> }
+        ).moment = (value: number) => createMomentStub(value);
         const callOrder: string[] = [];
         const plugin: any = {
             guardSyroDataReady: jest.fn(() => true),
@@ -2376,10 +2380,9 @@ describe("SRPlugin sync request orchestration", () => {
             logRuntimeDebug: jest.fn(),
         });
 
-        const flushTask = (SRPlugin.prototype.flushPendingPluginDataSave as unknown as Function).call(
-            plugin,
-            1500,
-        );
+        const flushTask = (
+            SRPlugin.prototype.flushPendingPluginDataSave as unknown as Function
+        ).call(plugin, 1500);
         (
             SRPlugin.prototype as unknown as { resetSyroDataBackedRuntimeState: Function }
         ).resetSyroDataBackedRuntimeState.call(plugin);

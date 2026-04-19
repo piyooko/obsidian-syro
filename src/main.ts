@@ -75,6 +75,8 @@ import {
     DECK_OPTIONS_ASSIGNMENT_ENTITY_TYPE,
     DECK_OPTIONS_PRESET_ENTITY_TYPE,
     diffDeckOptionsState,
+    removeDeckOptionsAssignmentPaths,
+    renameDeckOptionsAssignmentPaths,
     type DeckOptionsStoreFile,
 } from "./dataStore/deckOptionsStore";
 import {
@@ -166,9 +168,7 @@ import {
     type SyroSessionReplaySummary,
     type SyroSessionReplayReceipt,
 } from "./dataStore/syroSessionImpact";
-import {
-    type SyroUuidAliasGroup,
-} from "./dataStore/syroUuidAlias";
+import { type SyroUuidAliasGroup } from "./dataStore/syroUuidAlias";
 import Commands from "./commands";
 import { SrsAlgorithm } from "src/algorithms/algorithms";
 import { FsrsAlgorithm } from "src/algorithms/fsrs";
@@ -215,10 +215,7 @@ import {
 } from "./util/typeGuards";
 import { SyncProgressTip } from "src/ui/components/SyncProgressTip";
 import { installStyleSettingsHierarchyResetSupport } from "src/styleSettingsHierarchyReset";
-import {
-    SyroRecoveryModal,
-    type SyroRecoveryModalContext,
-} from "src/ui/modals/SyroRecoveryModal";
+import { SyroRecoveryModal, type SyroRecoveryModalContext } from "src/ui/modals/SyroRecoveryModal";
 import {
     cloneFolderTrackingRule,
     DEFAULT_FOLDER_TRACKING_RULE,
@@ -347,6 +344,7 @@ const BUFFERED_IMPORT_PROTECTED_DOMAINS = [
     "shared-settings",
     "tracking-rules",
     "daily-state",
+    "deck-options",
 ] as const;
 
 type BufferedImportProtectedDomain = (typeof BUFFERED_IMPORT_PROTECTED_DOMAINS)[number];
@@ -358,6 +356,7 @@ interface BufferedImportBaselineSnapshot {
     sharedSettingsState: PersistedSharedSettingsState;
     trackingRulesState: PersistedTrackingRulesState;
     dailyState: PersistedDailyState;
+    deckOptionsState: DeckOptionsStoreFile;
 }
 
 interface PendingSyroStagedImportReceipt {
@@ -403,6 +402,7 @@ interface FirstMeetingImportPreparationResult {
 
 const AUTO_SYNC_COOLDOWN_MS = 15_000;
 const REMOTE_DELTA_POLL_INTERVAL_MS = 7_000;
+const DECK_OPTIONS_PROTOCOL_REBASELINE_VERSION = 2;
 
 const STYLE_SETTINGS_BRIDGE_RETRY_DELAYS_MS = [0, 400, 1400, 3200] as const;
 
@@ -418,15 +418,14 @@ function createBufferedStateRevisionMap(): BufferedStateRevisionMap {
         "shared-settings": 0,
         "tracking-rules": 0,
         "daily-state": 0,
+        "deck-options": 0,
     };
 }
 
 function isBufferedImportProtectedDomain(
     domain: PluginDataPersistDomain,
 ): domain is BufferedImportProtectedDomain {
-    return BUFFERED_IMPORT_PROTECTED_DOMAINS.includes(
-        domain as BufferedImportProtectedDomain,
-    );
+    return BUFFERED_IMPORT_PROTECTED_DOMAINS.includes(domain as BufferedImportProtectedDomain);
 }
 
 function getCurrentDate(): Date {
@@ -537,7 +536,8 @@ export default class SRPlugin extends Plugin {
     private syroRuntimeGeneration = 0;
     private syroRuntimeDisposed = false;
     private syroRuntimeTeardownPending = false;
-    private bufferedStateDirtyRevisions: BufferedStateRevisionMap = createBufferedStateRevisionMap();
+    private bufferedStateDirtyRevisions: BufferedStateRevisionMap =
+        createBufferedStateRevisionMap();
     private bufferedStatePersistedRevisions: BufferedStateRevisionMap =
         createBufferedStateRevisionMap();
     private syroReadOnlyReason: string | null = null;
@@ -555,6 +555,7 @@ export default class SRPlugin extends Plugin {
     private persistedTrackingRulesState: PersistedTrackingRulesState | null = null;
     private persistedDailyState: PersistedDailyState | null = null;
     private persistedDeckOptionsState: DeckOptionsStoreFile | null = null;
+    private persistedDeckOptionsSessionBaseline: DeckOptionsStoreFile | null = null;
     private persistedDeviceState: PersistedDeviceState | null = null;
     private persistedLicenseState: PersistedLicenseState | null = null;
     private sharedSettingsUpdatedAtByField: Record<string, string> = {};
@@ -654,10 +655,7 @@ export default class SRPlugin extends Plugin {
         domains?: readonly PluginDataPersistDomain[] | null;
         logEvent: string;
     }): Promise<boolean> {
-        if (
-            options.runtimeGeneration !== this.syroRuntimeGeneration ||
-            this.syroRuntimeDisposed
-        ) {
+        if (options.runtimeGeneration !== this.syroRuntimeGeneration || this.syroRuntimeDisposed) {
             this.logRuntimeDebug(
                 options.logEvent,
                 this.buildStaleRuntimeDebugPayload(options.runtimeGeneration, {
@@ -748,10 +746,12 @@ export default class SRPlugin extends Plugin {
         );
     }
 
-    private stagePendingDailyStateSection(options: {
-        requestFlush?: boolean;
-        preserveCommitId?: boolean;
-    } = {}): void {
+    private stagePendingDailyStateSection(
+        options: {
+            requestFlush?: boolean;
+            preserveCommitId?: boolean;
+        } = {},
+    ): void {
         if (!this.pendingOverlayStore) {
             return;
         }
@@ -837,14 +837,11 @@ export default class SRPlugin extends Plugin {
         this.pendingOverlayStore.requestFlush();
         const flushed = await this.pendingOverlayStore.drainFlush();
         if (!flushed) {
-            this.logRuntimeDebug(
-                "[SR-PendingOverlay] section-retained-due-to-incomplete-commit",
-                {
-                    section: "dailyState",
-                    reason: "committed-target-flush-failed",
-                    targetUuid: normalizedTargetUuid,
-                },
-            );
+            this.logRuntimeDebug("[SR-PendingOverlay] section-retained-due-to-incomplete-commit", {
+                section: "dailyState",
+                reason: "committed-target-flush-failed",
+                targetUuid: normalizedTargetUuid,
+            });
             throw new Error(
                 `[SR-PendingOverlay] Failed to persist committed daily-state targetUuid: ${normalizedTargetUuid}`,
             );
@@ -977,6 +974,34 @@ export default class SRPlugin extends Plugin {
         this.bufferedStatePersistedRevisions = createBufferedStateRevisionMap();
     }
 
+    private captureCurrentDeckOptionsState(): DeckOptionsStoreFile {
+        return createDeckOptionsStoreSnapshot(
+            this.data.settings,
+            this.deckOptionsStore?.getSyncEntities() ?? {},
+        ).state;
+    }
+
+    private getCurrentDeckOptionsProtocolVersion(): number {
+        return this.persistedDeviceState?.deckOptionsProtocolVersion ?? 1;
+    }
+
+    private shouldForceDeckOptionsProtocolRebaseline(): boolean {
+        return (
+            this.getCurrentDeckOptionsProtocolVersion() < DECK_OPTIONS_PROTOCOL_REBASELINE_VERSION
+        );
+    }
+
+    private buildCurrentDeviceState(
+        overrides: { deckOptionsProtocolVersion?: number } = {},
+    ): PersistedDeviceState {
+        return extractDeviceState({
+            settings: this.data.settings,
+            historyDeck: this.data.historyDeck,
+            deckOptionsProtocolVersion:
+                overrides.deckOptionsProtocolVersion ?? this.getCurrentDeckOptionsProtocolVersion(),
+        });
+    }
+
     private captureBufferedImportBaselineSnapshot(): BufferedImportBaselineSnapshot {
         return {
             revisions: this.getBufferedStateDirtyRevisionSnapshot(),
@@ -990,6 +1015,7 @@ export default class SRPlugin extends Plugin {
                 this.trackingRulesTombstones,
             ),
             dailyState: this.buildDailyStateSnapshotWithMetadata(),
+            deckOptionsState: this.captureCurrentDeckOptionsState(),
         };
     }
 
@@ -1009,6 +1035,10 @@ export default class SRPlugin extends Plugin {
         if (domains.includes("daily-state")) {
             this.persistedDailyState = snapshot.dailyState;
             this.markBufferedPluginStatePersisted(["daily-state"], revisionSnapshot);
+        }
+        if (domains.includes("deck-options")) {
+            this.persistedDeckOptionsSessionBaseline = snapshot.deckOptionsState;
+            this.markBufferedPluginStatePersisted(["deck-options"], revisionSnapshot);
         }
     }
 
@@ -1274,10 +1304,13 @@ export default class SRPlugin extends Plugin {
                     ) {
                         const followupDomains = [...this.pendingPluginDataSaveDomains];
                         if (followupDomains.includes("daily-state")) {
-                            this.logRuntimeDebug("[SR-DailyState] daily-state-save-followup-queued", {
-                                domains: followupDomains,
-                                runtimeGeneration,
-                            });
+                            this.logRuntimeDebug(
+                                "[SR-DailyState] daily-state-save-followup-queued",
+                                {
+                                    domains: followupDomains,
+                                    runtimeGeneration,
+                                },
+                            );
                         }
                         this.schedulePendingPluginDataSave(0);
                     }
@@ -1497,6 +1530,7 @@ export default class SRPlugin extends Plugin {
         this.deviceStateStore = null;
         this.licenseStateStore = null;
         this.persistedDeckOptionsState = null;
+        this.persistedDeckOptionsSessionBaseline = null;
         this.persistedSharedSettingsState = null;
         this.persistedTrackingRulesState = null;
         this.persistedDailyState = null;
@@ -1547,9 +1581,7 @@ export default class SRPlugin extends Plugin {
             this.updateAndSortDueNotes();
         }
         this.dataBackedRuntimeInitialized = true;
-        this.logRuntimeDebug(
-            `[SR-DataReady] data-backed runtime initialized: context=${context}`,
-        );
+        this.logRuntimeDebug(`[SR-DataReady] data-backed runtime initialized: context=${context}`);
         return Promise.resolve(true);
     }
 
@@ -1659,12 +1691,9 @@ export default class SRPlugin extends Plugin {
         registerTrackFileEvents(this);
 
         this.registerInterval(
-            window.setInterval(
-                () => {
-                    this.queueRemoteDeltaSyncCheck("interval");
-                },
-                REMOTE_DELTA_POLL_INTERVAL_MS,
-            ),
+            window.setInterval(() => {
+                this.queueRemoteDeltaSyncCheck("interval");
+            }, REMOTE_DELTA_POLL_INTERVAL_MS),
         );
         if (typeof document !== "undefined") {
             this.registerDomEvent(document, "visibilitychange", () => {
@@ -2396,10 +2425,8 @@ export default class SRPlugin extends Plugin {
             return;
         }
         const finalizedImportResult =
-            (await this.finalizeImportedSyroSessions?.(
-                importResult,
-                `remote-delta:${reason}`,
-            )) ?? importResult;
+            (await this.finalizeImportedSyroSessions?.(importResult, `remote-delta:${reason}`)) ??
+            importResult;
 
         if (
             finalizedImportResult &&
@@ -2421,8 +2448,7 @@ export default class SRPlugin extends Plugin {
     private async applyLightweightSessionDelta(
         importResult: SyroSessionImportResult | null,
     ): Promise<"noop" | "applied" | "escalated"> {
-        const replayImpact =
-            importResult?.replayImpact ?? createEmptySyroSessionReplaySummary();
+        const replayImpact = importResult?.replayImpact ?? createEmptySyroSessionReplaySummary();
         if (!hasSyroSessionReplayChanges(replayImpact)) {
             return "noop";
         }
@@ -2620,9 +2646,7 @@ export default class SRPlugin extends Plugin {
             }
 
             const stat = await readFingerprintStat(metaPath);
-            entries.push(
-                `${metaPath}|${stat?.mtime ?? 0}|${stat?.size ?? 0}`,
-            );
+            entries.push(`${metaPath}|${stat?.mtime ?? 0}|${stat?.size ?? 0}`);
         }
 
         return entries.join("\n");
@@ -2775,10 +2799,7 @@ export default class SRPlugin extends Plugin {
             return true;
         }
 
-        return this.hasNoteCacheMetadataChanges(
-            options.nextCache,
-            options.baselineCacheByPath,
-        );
+        return this.hasNoteCacheMetadataChanges(options.nextCache, options.baselineCacheByPath);
     }
 
     private async saveNoteCacheToDisk(
@@ -3137,8 +3158,7 @@ export default class SRPlugin extends Plugin {
                           ...startup,
                           startupDecision: "read-only",
                           layout: null,
-                          readOnlyReason:
-                              "[SR-Syro] Startup recovery was cancelled by the user.",
+                          readOnlyReason: "[SR-Syro] Startup recovery was cancelled by the user.",
                       };
             }
 
@@ -3168,7 +3188,8 @@ export default class SRPlugin extends Plugin {
 
         const retentionMs = SYRO_SYNC_RETENTION_WINDOW_MS;
         const cardsChanged = this.store?.pruneSyncEntities(retentionMs) ?? false;
-        const fileIdentitiesChanged = this.fileIdentityStore?.pruneSyncEntities(retentionMs) ?? false;
+        const fileIdentitiesChanged =
+            this.fileIdentityStore?.pruneSyncEntities(retentionMs) ?? false;
         const notesChanged = this.noteReviewStore?.pruneSyncEntities(retentionMs) ?? false;
         const timelineChanged = this.reviewCommitStore?.pruneSyncEntities(retentionMs) ?? false;
         const deckOptionsChanged = this.deckOptionsStore?.pruneSyncEntities(retentionMs) ?? false;
@@ -3210,7 +3231,10 @@ export default class SRPlugin extends Plugin {
                 this.deckOptionsStore.getSyncEntities(),
             );
             await this.deckOptionsStore.saveSerialized(snapshot.serialized);
-            this.persistedDeckOptionsState = this.deckOptionsStore.rememberPersistedState(snapshot.state);
+            this.persistedDeckOptionsState = this.deckOptionsStore.rememberPersistedState(
+                snapshot.state,
+            );
+            this.persistedDeckOptionsSessionBaseline = snapshot.state;
         }
         if (sharedSettingsChanged && this.sharedSettingsStore) {
             await this.sharedSettingsStore.save(
@@ -3220,7 +3244,10 @@ export default class SRPlugin extends Plugin {
                 ),
             );
         }
-        if ((trackingRulesTombstonesChanged || trackingRulesUpdatedChanged) && this.trackingRulesStore) {
+        if (
+            (trackingRulesTombstonesChanged || trackingRulesUpdatedChanged) &&
+            this.trackingRulesStore
+        ) {
             await this.trackingRulesStore.save(
                 extractTrackingRules(
                     this.data.folderTrackingRules,
@@ -3262,7 +3289,11 @@ export default class SRPlugin extends Plugin {
             return `[SR-Syro] Failed to parse legacy sync-merge-state.json: ${String(error)}`;
         }
 
-        if (!isRecord(parsed) || getNumberProp(parsed, "version") !== 1 || !isRecord(parsed["entities"])) {
+        if (
+            !isRecord(parsed) ||
+            getNumberProp(parsed, "version") !== 1 ||
+            !isRecord(parsed["entities"])
+        ) {
             return "[SR-Syro] Invalid legacy sync-merge-state.json schema.";
         }
 
@@ -3308,7 +3339,7 @@ export default class SRPlugin extends Plugin {
                 case "tracking-rules": {
                     const folderPath = targetUuid.startsWith("tracking-rule:")
                         ? targetUuid.slice("tracking-rule:".length)
-                        : pathHint ?? "";
+                        : (pathHint ?? "");
                     if (!folderPath) {
                         continue;
                     }
@@ -3319,7 +3350,7 @@ export default class SRPlugin extends Plugin {
                             ? compareIsoTime(current, tombstone) >= 0
                                 ? current
                                 : tombstone
-                            : current ?? tombstone ?? null;
+                            : (current ?? tombstone ?? null);
                     if (watermark && compareIsoTime(watermark, updatedAt) >= 0) {
                         continue;
                     }
@@ -3395,7 +3426,10 @@ export default class SRPlugin extends Plugin {
                 this.deckOptionsStore.getSyncEntities(),
             );
             await this.deckOptionsStore.saveSerialized(snapshot.serialized);
-            this.persistedDeckOptionsState = this.deckOptionsStore.rememberPersistedState(snapshot.state);
+            this.persistedDeckOptionsState = this.deckOptionsStore.rememberPersistedState(
+                snapshot.state,
+            );
+            this.persistedDeckOptionsSessionBaseline = snapshot.state;
         }
         if (sharedSettingsChanged) {
             await this.sharedSettingsStore.save(
@@ -3488,7 +3522,9 @@ export default class SRPlugin extends Plugin {
 
         let totalBytes = 0;
         for (const filePath of listing.files) {
-            const raw = await this.app.vault.adapter.read(normalizeSyroPath(filePath)).catch(() => "");
+            const raw = await this.app.vault.adapter
+                .read(normalizeSyroPath(filePath))
+                .catch(() => "");
             totalBytes += new TextEncoder().encode(raw).length;
         }
         for (const folderPath of listing.folders) {
@@ -3536,13 +3572,12 @@ export default class SRPlugin extends Plugin {
         currentDeviceId: string | null,
     ): SyroDeviceCardState {
         const isCurrent = currentDeviceId === device.deviceId;
-        const inactiveDays =
-            Number.isFinite(Date.parse(device.lastSeenAt))
-                ? Math.max(
-                      0,
-                      Math.floor((Date.now() - Date.parse(device.lastSeenAt)) / (24 * 60 * 60 * 1000)),
-                  )
-                : null;
+        const inactiveDays = Number.isFinite(Date.parse(device.lastSeenAt))
+            ? Math.max(
+                  0,
+                  Math.floor((Date.now() - Date.parse(device.lastSeenAt)) / (24 * 60 * 60 * 1000)),
+              )
+            : null;
         const status = this.getSyroDeviceStatus({
             isCurrent,
             inactiveDays,
@@ -3585,9 +3620,9 @@ export default class SRPlugin extends Plugin {
         const inventory = await this.syroWorkspace.listDeviceInventory();
         const fallbackCurrentDevice =
             this.syroLayout?.device.deviceId != null
-                ? inventory.validDevices.find(
+                ? (inventory.validDevices.find(
                       (entry) => entry.deviceId === this.syroLayout?.device.deviceId,
-                  ) ?? null
+                  ) ?? null)
                 : null;
         const currentDevice = inventory.currentDevice ?? fallbackCurrentDevice;
         const sessionSummaryEntries = await this.syroSessionManager?.summarizeDeviceSessions();
@@ -3656,7 +3691,9 @@ export default class SRPlugin extends Plugin {
                           sessionSummaries.get(currentDevice.deviceFolderName) ?? null,
                           await this.getSyroDeviceFootprintBytes(
                               currentDevice.deviceRoot,
-                              this.syroWorkspace.getSessionDirectoryPath(currentDevice.deviceFolderName),
+                              this.syroWorkspace.getSessionDirectoryPath(
+                                  currentDevice.deviceFolderName,
+                              ),
                           ),
                           currentDeviceId,
                       )
@@ -3689,7 +3726,10 @@ export default class SRPlugin extends Plugin {
         }
 
         await this.flushBeforeSyroDeviceMutation();
-        this.syroLayout = await this.syroWorkspace.renameCurrentDevice(this.syroLayout, nextDeviceName);
+        this.syroLayout = await this.syroWorkspace.renameCurrentDevice(
+            this.syroLayout,
+            nextDeviceName,
+        );
         await this.reloadAfterSyroDeviceChange();
         new Notice(t("NOTICE_SYRO_DEVICE_RENAMED"));
         return true;
@@ -4016,7 +4056,9 @@ export default class SRPlugin extends Plugin {
         let matchedFiles = 0;
         for (const snapshot of remoteSnapshots.files) {
             const exactFileId = this.store.findFileIdByUuid(snapshot.uuid);
-            const aliasFileId = exactFileId ? "" : this.store.findFileIdByUuidOrAlias(snapshot.uuid);
+            const aliasFileId = exactFileId
+                ? ""
+                : this.store.findFileIdByUuidOrAlias(snapshot.uuid);
             const pathFileId =
                 exactFileId || aliasFileId ? "" : this.store.getFileID(snapshot.path);
             const resolvedFileId = exactFileId || aliasFileId || pathFileId;
@@ -4072,10 +4114,8 @@ export default class SRPlugin extends Plugin {
         let adoptedRemoteCardStates = 0;
         for (const snapshot of remoteSnapshots.cards) {
             const exactItem = this.store.findItemByUuid(snapshot.item.uuid);
-            const aliasItem =
-                exactItem ?? this.store.findItemByUuidOrAlias(snapshot.item.uuid);
-            const matchedItem =
-                aliasItem ?? this.store.findMatchingItemByTrackedSnapshot(snapshot);
+            const aliasItem = exactItem ?? this.store.findItemByUuidOrAlias(snapshot.item.uuid);
+            const matchedItem = aliasItem ?? this.store.findMatchingItemByTrackedSnapshot(snapshot);
             if (!matchedItem) {
                 continue;
             }
@@ -4094,8 +4134,9 @@ export default class SRPlugin extends Plugin {
                 ...(snapshot.item.aliases ?? []),
             ]);
             const afterUuids = this.store.getItemEquivalentUuids(matchedItem.ID);
-            const localTrackedFile =
-                matchedItem.fileID ? this.store.getFileByID(matchedItem.fileID) : null;
+            const localTrackedFile = matchedItem.fileID
+                ? this.store.getFileByID(matchedItem.fileID)
+                : null;
             const adoptedRemoteState =
                 !!localTrackedFile &&
                 this.shouldAdoptRemoteFirstMeetingCardState(
@@ -4110,7 +4151,9 @@ export default class SRPlugin extends Plugin {
                     trackedFileAliases: [...(localTrackedFile.aliases ?? [])],
                     trackedFileTags: [...(localTrackedFile.tags ?? [])],
                     trackedItem: snapshot.trackedItem
-                        ? (JSON.parse(JSON.stringify(snapshot.trackedItem)) as typeof snapshot.trackedItem)
+                        ? (JSON.parse(
+                              JSON.stringify(snapshot.trackedItem),
+                          ) as typeof snapshot.trackedItem)
                         : null,
                     item: RepetitionItem.create({
                         ...snapshot.item,
@@ -4130,7 +4173,7 @@ export default class SRPlugin extends Plugin {
             }
             const fingerprintUnique = snapshot.trackedItem
                 ? this.store.isTrackedFingerprintUnique(
-                    snapshot.path,
+                      snapshot.path,
                       snapshot.trackedItem.fingerprint,
                   )
                 : undefined;
@@ -4167,8 +4210,7 @@ export default class SRPlugin extends Plugin {
         }
 
         return {
-            changed:
-                mergedFiles > 0 || mergedCards > 0 || adoptedRemoteCardStates > 0,
+            changed: mergedFiles > 0 || mergedCards > 0 || adoptedRemoteCardStates > 0,
             matchedFiles,
             mergedFiles,
             matchedCards,
@@ -4318,11 +4360,10 @@ export default class SRPlugin extends Plugin {
                 stagedReceipt.receipt.dailyStateDeckCounts,
             )
                 .filter(([deckName, expectedCounts]) => {
-                    const currentCounts =
-                        persistedDailyState.dailyDeckStats.counts[deckName] ?? {
-                            new: 0,
-                            review: 0,
-                        };
+                    const currentCounts = persistedDailyState.dailyDeckStats.counts[deckName] ?? {
+                        new: 0,
+                        review: 0,
+                    };
                     return (
                         currentCounts.new !== expectedCounts.new ||
                         currentCounts.review !== expectedCounts.review
@@ -4457,8 +4498,7 @@ export default class SRPlugin extends Plugin {
         }
 
         const importReason = options.reason ?? "manual";
-        const readyForImport =
-            await this.prepareBufferedPluginStateForRemoteImport(importReason);
+        const readyForImport = await this.prepareBufferedPluginStateForRemoteImport(importReason);
         if (!readyForImport) {
             return {
                 importedSessionIds: [],
@@ -4486,8 +4526,14 @@ export default class SRPlugin extends Plugin {
         const replayReceiptsBySessionId = new Map<string, SyroSessionReplayReceipt>();
         const importStartSnapshot = this.captureBufferedImportBaselineSnapshot();
         let latestCleanSnapshot = importStartSnapshot;
-        const remoteCardsCache = new Map<string, ReturnType<typeof parseTrackedCardsStoreSnapshots>>();
-        const remoteNotesCache = new Map<string, ReturnType<typeof parseNoteReviewStoreSnapshots>>();
+        const remoteCardsCache = new Map<
+            string,
+            ReturnType<typeof parseTrackedCardsStoreSnapshots>
+        >();
+        const remoteNotesCache = new Map<
+            string,
+            ReturnType<typeof parseNoteReviewStoreSnapshots>
+        >();
         const aliasGroupsByDomain: Record<"cards" | "notes", Map<string, SyroUuidAliasGroup>> = {
             cards: new Map<string, SyroUuidAliasGroup>(),
             notes: new Map<string, SyroUuidAliasGroup>(),
@@ -4519,7 +4565,9 @@ export default class SRPlugin extends Plugin {
             }
 
             try {
-                const raw = await this.app.vault.adapter.read(`${validDevice.deviceRoot}/cards.json`);
+                const raw = await this.app.vault.adapter.read(
+                    `${validDevice.deviceRoot}/cards.json`,
+                );
                 const parsed = parseTrackedCardsStoreSnapshots(raw);
                 remoteCardsCache.set(deviceId, parsed);
                 return parsed;
@@ -4540,7 +4588,9 @@ export default class SRPlugin extends Plugin {
             }
 
             try {
-                const raw = await this.app.vault.adapter.read(`${validDevice.deviceRoot}/notes.json`);
+                const raw = await this.app.vault.adapter.read(
+                    `${validDevice.deviceRoot}/notes.json`,
+                );
                 const parsed = parseNoteReviewStoreSnapshots(raw);
                 remoteNotesCache.set(deviceId, parsed);
                 return parsed;
@@ -4623,6 +4673,9 @@ export default class SRPlugin extends Plugin {
                         ...(domain === "daily-state"
                             ? { dailyState: currentSnapshot.dailyState }
                             : {}),
+                        ...(domain === "deck-options"
+                            ? { deckOptionsState: currentSnapshot.deckOptionsState }
+                            : {}),
                     };
                 }
                 return replaySummary;
@@ -4684,9 +4737,6 @@ export default class SRPlugin extends Plugin {
                 domains: requeueDomains,
             });
         }
-        this.persistedDeckOptionsState = this.deckOptionsStore.rememberPersistedState(
-            this.data.settings,
-        );
         await this.pruneSyroInlineSyncMetadata();
         return result;
     }
@@ -4705,27 +4755,26 @@ export default class SRPlugin extends Plugin {
             this.fileIdentityStore?.getByUuidOrAlias(identity.uuid) ??
             this.fileIdentityStore?.getByPath(identity.path) ??
             null;
-        const storedIdentity =
-            this.fileIdentityStore?.upsert({
-                uuid: identity.uuid,
-                createdAt: identity.createdAt || existingIdentity?.createdAt || appliedUpdatedAt,
-                updatedAt: appliedUpdatedAt,
-                path: identity.path,
-                aliases: normalizeFileIdentityAliases(identity.uuid, [
-                    ...(existingIdentity?.aliases ?? []),
-                    ...(identity.aliases ?? []),
-                ]),
-                deleted: opType === "delete",
-            }) ?? {
-                ...identity,
-                createdAt: identity.createdAt || existingIdentity?.createdAt || appliedUpdatedAt,
-                updatedAt: appliedUpdatedAt,
-                aliases: normalizeFileIdentityAliases(identity.uuid, [
-                    ...(existingIdentity?.aliases ?? []),
-                    ...(identity.aliases ?? []),
-                ]),
-                deleted: opType === "delete",
-            };
+        const storedIdentity = this.fileIdentityStore?.upsert({
+            uuid: identity.uuid,
+            createdAt: identity.createdAt || existingIdentity?.createdAt || appliedUpdatedAt,
+            updatedAt: appliedUpdatedAt,
+            path: identity.path,
+            aliases: normalizeFileIdentityAliases(identity.uuid, [
+                ...(existingIdentity?.aliases ?? []),
+                ...(identity.aliases ?? []),
+            ]),
+            deleted: opType === "delete",
+        }) ?? {
+            ...identity,
+            createdAt: identity.createdAt || existingIdentity?.createdAt || appliedUpdatedAt,
+            updatedAt: appliedUpdatedAt,
+            aliases: normalizeFileIdentityAliases(identity.uuid, [
+                ...(existingIdentity?.aliases ?? []),
+                ...(identity.aliases ?? []),
+            ]),
+            deleted: opType === "delete",
+        };
         const appended =
             (await this.syroSessionManager?.appendFileIdentityChange(
                 storedIdentity,
@@ -4787,9 +4836,7 @@ export default class SRPlugin extends Plugin {
         }
 
         const canonicalUuid =
-            existingIdentity?.uuid ||
-            trackedFileUuid ||
-            createDeterministicFileIdentityUuid(path);
+            existingIdentity?.uuid || trackedFileUuid || createDeterministicFileIdentityUuid(path);
         const mergedAliases = normalizeFileIdentityAliases(canonicalUuid, [
             ...(existingIdentity?.aliases ?? []),
             ...candidateAliases,
@@ -4874,7 +4921,9 @@ export default class SRPlugin extends Plugin {
         aliases: readonly string[] = [],
     ): SyroFileIdentity | null {
         const existingIdentity =
-            this.fileIdentityStore?.getByPath(oldPath) ?? this.fileIdentityStore?.getByPath(newPath) ?? null;
+            this.fileIdentityStore?.getByPath(oldPath) ??
+            this.fileIdentityStore?.getByPath(newPath) ??
+            null;
         if (!existingIdentity || !this.fileIdentityStore) {
             return this.ensureSyroFileIdentityForPath(newPath, aliases);
         }
@@ -4992,7 +5041,8 @@ export default class SRPlugin extends Plugin {
         }
 
         const targetUuid =
-            snapshot.item.uuid || `card:${snapshot.path}:${snapshot.trackedItem?.reviewId ?? snapshot.item.ID}`;
+            snapshot.item.uuid ||
+            `card:${snapshot.path}:${snapshot.trackedItem?.reviewId ?? snapshot.item.ID}`;
         const updatedAt = getCurrentIsoTimestamp();
         const appended =
             (await this.syroSessionManager?.appendRecord({
@@ -5273,7 +5323,8 @@ export default class SRPlugin extends Plugin {
         }
 
         const existingIdentity =
-            this.fileIdentityStore?.getByPath(notePath) ?? this.ensureSyroFileIdentityForPath(notePath);
+            this.fileIdentityStore?.getByPath(notePath) ??
+            this.ensureSyroFileIdentityForPath(notePath);
         const fileUuid = existingIdentity?.uuid ?? createDeterministicFileIdentityUuid(notePath);
         const updatedAt = getCurrentIsoTimestamp();
         const appended =
@@ -5649,6 +5700,41 @@ export default class SRPlugin extends Plugin {
         return changed;
     }
 
+    public renameDeckOptionsAssignments(oldPath: string, newPath: string): boolean {
+        const result = renameDeckOptionsAssignmentPaths(
+            this.data.settings.deckPresetAssignment ?? {},
+            oldPath,
+            newPath,
+        );
+        if (result.affectedDeckPaths.length === 0) {
+            return false;
+        }
+
+        this.data.settings.deckPresetAssignment = result.deckPresetAssignment;
+        this.requestPluginDataSave({
+            delayMs: 0,
+            domains: ["deck-options"],
+        });
+        return true;
+    }
+
+    public removeDeckOptionsAssignments(deletedPath: string): boolean {
+        const result = removeDeckOptionsAssignmentPaths(
+            this.data.settings.deckPresetAssignment ?? {},
+            deletedPath,
+        );
+        if (result.affectedDeckPaths.length === 0) {
+            return false;
+        }
+
+        this.data.settings.deckPresetAssignment = result.deckPresetAssignment;
+        this.requestPluginDataSave({
+            delayMs: 0,
+            domains: ["deck-options"],
+        });
+        return true;
+    }
+
     private resolveNoteReviewTracking(
         note: TFile,
     ): { deckName: string; source: NoteReviewSource } | null {
@@ -5744,9 +5830,7 @@ export default class SRPlugin extends Plugin {
         );
     }
 
-    private async initializeFirstRunTutorialNote(): Promise<
-        "initialized" | "deferred" | "failed"
-    > {
+    private async initializeFirstRunTutorialNote(): Promise<"initialized" | "deferred" | "failed"> {
         if (!this.noteReviewStore || !this.noteAlgorithm) {
             return "deferred";
         }
@@ -6010,10 +6094,8 @@ export default class SRPlugin extends Plugin {
             trigger: request.trigger,
             force: request.force,
         });
-        await (this.finalizeImportedSyroSessions?.(
-            sessionImportResult ?? null,
-            request.trigger,
-        ) ?? Promise.resolve(sessionImportResult ?? null));
+        await (this.finalizeImportedSyroSessions?.(sessionImportResult ?? null, request.trigger) ??
+            Promise.resolve(sessionImportResult ?? null));
         await this.updateRemoteDeltaFingerprint();
         return { ...request, status: "executed" };
     }
@@ -6028,6 +6110,7 @@ export default class SRPlugin extends Plugin {
     }
 
     async saveDeckOptionsAndRequestSync(): Promise<SyncRequestResult> {
+        this.markBufferedPluginStateDirty(["deck-options"]);
         return this.executeSyncRequest(normalizeSyncRequest({ trigger: "manual" }), [
             "deck-options",
         ]);
@@ -6906,7 +6989,9 @@ export default class SRPlugin extends Plugin {
     private async validateMigratedSplitState(): Promise<string | null> {
         const sharedState = await this.sharedSettingsStore?.load();
         if (!sharedState) {
-            return this.sharedSettingsStore?.lastLoadError ?? "[SR-Syro] Invalid settings.json schema.";
+            return (
+                this.sharedSettingsStore?.lastLoadError ?? "[SR-Syro] Invalid settings.json schema."
+            );
         }
 
         const trackingRulesState = await this.trackingRulesStore?.load();
@@ -6919,7 +7004,9 @@ export default class SRPlugin extends Plugin {
 
         const dailyState = await this.dailyStateStore?.load();
         if (!dailyState) {
-            return this.dailyStateStore?.lastLoadError ?? "[SR-Syro] Invalid daily-state.json schema.";
+            return (
+                this.dailyStateStore?.lastLoadError ?? "[SR-Syro] Invalid daily-state.json schema."
+            );
         }
 
         return null;
@@ -6941,10 +7028,7 @@ export default class SRPlugin extends Plugin {
         const sharedSettingsState = extractSharedSettings(this.data.settings);
         const trackingRulesState = extractTrackingRules(this.data.folderTrackingRules, {}, {});
         const dailyState = this.buildDailyStateSnapshot();
-        const deviceState = extractDeviceState({
-            settings: this.data.settings,
-            historyDeck: this.data.historyDeck,
-        });
+        const deviceState = this.buildCurrentDeviceState();
         const licenseState = extractLicenseState(this.data.settings);
 
         await this.sharedSettingsStore.save(sharedSettingsState);
@@ -7048,10 +7132,7 @@ export default class SRPlugin extends Plugin {
             );
             this.persistedDeviceState = deviceState;
         } else {
-            const nextState = extractDeviceState({
-                settings: this.data.settings,
-                historyDeck: this.data.historyDeck,
-            });
+            const nextState = this.buildCurrentDeviceState();
             this.persistedDeviceState = deviceState ?? nextState;
             if (!this.syroReadOnlyReason) {
                 await this.deviceStateStore.save(nextState);
@@ -7149,6 +7230,18 @@ export default class SRPlugin extends Plugin {
         this.applySyroReadOnlyState();
         await this.deckOptionsStore.loadIntoSettings(this.data.settings);
         this.persistedDeckOptionsState = this.deckOptionsStore.getPersistedState();
+        this.persistedDeckOptionsSessionBaseline = this.shouldForceDeckOptionsProtocolRebaseline()
+            ? createDeckOptionsStoreSnapshot(
+                  {
+                      fsrsSettings: this.data.settings.fsrsSettings,
+                      deckOptionsPresets: [
+                          this.data.settings.deckOptionsPresets[0] ?? DEFAULT_DECK_OPTIONS_PRESET,
+                      ],
+                      deckPresetAssignment: {},
+                  },
+                  this.deckOptionsStore.getSyncEntities(),
+              ).state
+            : this.persistedDeckOptionsState;
         this.applySyroReadOnlyState();
         await this.fileIdentityStore.load();
         this.store = new DataStore(this.data.settings, {
@@ -7178,7 +7271,8 @@ export default class SRPlugin extends Plugin {
         );
         let noteReviewCanonicalized = false;
         for (const path of this.noteReviewStore.listPaths()) {
-            noteReviewCanonicalized = this.canonicalizeNoteReviewEntryPath(path) || noteReviewCanonicalized;
+            noteReviewCanonicalized =
+                this.canonicalizeNoteReviewEntryPath(path) || noteReviewCanonicalized;
         }
         if (noteReviewMigratedFromLegacy || noteReviewCanonicalized) {
             await this.noteReviewStore.save();
@@ -7223,13 +7317,9 @@ export default class SRPlugin extends Plugin {
         );
     }
 
-    private async savePluginDataInternal(
-        options: PluginDataPersistOptions = {},
-    ): Promise<void> {
+    private async savePluginDataInternal(options: PluginDataPersistOptions = {}): Promise<void> {
         const runtimeGeneration = options.runtimeGeneration ?? this.syroRuntimeGeneration;
-        const requestedDomains = new Set(
-            this.normalizeRequestedPluginDataDomains(options.domains),
-        );
+        const requestedDomains = new Set(this.normalizeRequestedPluginDataDomains(options.domains));
         const canWrite = await this.canWriteCurrentSyroLayout({
             runtimeGeneration,
             domains: [...requestedDomains],
@@ -7270,11 +7360,18 @@ export default class SRPlugin extends Plugin {
         const previousSharedSettingsState = persistSharedSettings
             ? (this.persistedSharedSettingsState ?? createDefaultSharedSettingsState())
             : null;
+        const shouldPersistDeckOptionsProtocolVersion =
+            persistDeckOptions &&
+            this.getCurrentDeckOptionsProtocolVersion() < DECK_OPTIONS_PROTOCOL_REBASELINE_VERSION;
         const deviceState =
-            persistDeviceState || this.syroReadOnlyReason
-                ? extractDeviceState({
-                      settings: this.data.settings,
-                      historyDeck: this.data.historyDeck,
+            persistDeviceState || shouldPersistDeckOptionsProtocolVersion || this.syroReadOnlyReason
+                ? this.buildCurrentDeviceState({
+                      deckOptionsProtocolVersion:
+                          shouldPersistDeckOptionsProtocolVersion ||
+                          this.getCurrentDeckOptionsProtocolVersion() >=
+                              DECK_OPTIONS_PROTOCOL_REBASELINE_VERSION
+                              ? DECK_OPTIONS_PROTOCOL_REBASELINE_VERSION
+                              : this.getCurrentDeckOptionsProtocolVersion(),
                   })
                 : null;
         const licenseState =
@@ -7406,12 +7503,11 @@ export default class SRPlugin extends Plugin {
         if (persistDailyState && dailyState && previousDailyState) {
             const dailyStateOperations = diffDailyState(previousDailyState, dailyState);
             const dailyStateCommitKey =
-                pendingDailyStateSection?.commitId ??
-                this.pendingDailyStateCommitId ??
-                updatedAt;
+                pendingDailyStateSection?.commitId ?? this.pendingDailyStateCommitId ?? updatedAt;
             const committedTargetUuids = new Set(
-                pendingDailyStateSection?.committedTargetUuids ??
-                    [...this.pendingDailyStateCommittedTargetUuids],
+                pendingDailyStateSection?.committedTargetUuids ?? [
+                    ...this.pendingDailyStateCommittedTargetUuids,
+                ],
             );
             if (dailyStateOperations.length === 0) {
                 dailyStateSessionCommitted = true;
@@ -7476,6 +7572,7 @@ export default class SRPlugin extends Plugin {
 
         if (persistDeckOptions) {
             const previousDeckOptionsState =
+                this.persistedDeckOptionsSessionBaseline ??
                 this.persistedDeckOptionsState ??
                 this.deckOptionsStore.getPersistedState() ??
                 createDeckOptionsStoreSnapshot(
@@ -7486,7 +7583,10 @@ export default class SRPlugin extends Plugin {
                     },
                     this.deckOptionsStore.getSyncEntities(),
                 ).state;
-            const deckOptionsDiff = diffDeckOptionsState(previousDeckOptionsState, this.data.settings);
+            const deckOptionsDiff = diffDeckOptionsState(
+                previousDeckOptionsState,
+                this.data.settings,
+            );
             for (const preset of deckOptionsDiff.presetUpserts) {
                 const appended =
                     (await this.syroSessionManager?.appendDeckOptionsPresetChange(
@@ -7579,10 +7679,7 @@ export default class SRPlugin extends Plugin {
             );
             await this.sharedSettingsStore.save(finalSharedSettingsState);
             this.persistedSharedSettingsState = finalSharedSettingsState;
-            this.markBufferedPluginStatePersisted(
-                ["shared-settings"],
-                bufferedRevisionSnapshot,
-            );
+            this.markBufferedPluginStatePersisted(["shared-settings"], bufferedRevisionSnapshot);
         }
 
         if (persistTrackingRules) {
@@ -7594,10 +7691,7 @@ export default class SRPlugin extends Plugin {
             await this.trackingRulesStore.save(finalTrackingRulesState);
             this.persistedTrackingRulesState = finalTrackingRulesState;
             this.trackingRulesTombstones = { ...finalTrackingRulesState.tombstones };
-            this.markBufferedPluginStatePersisted(
-                ["tracking-rules"],
-                bufferedRevisionSnapshot,
-            );
+            this.markBufferedPluginStatePersisted(["tracking-rules"], bufferedRevisionSnapshot);
         }
 
         if (persistDailyState) {
@@ -7619,7 +7713,7 @@ export default class SRPlugin extends Plugin {
             this.markBufferedPluginStatePersisted(["daily-state"], bufferedRevisionSnapshot);
         }
 
-        if (persistDeviceState && deviceState) {
+        if ((persistDeviceState || shouldPersistDeckOptionsProtocolVersion) && deviceState) {
             await this.deviceStateStore.save(deviceState);
             this.persistedDeviceState = deviceState;
         }
@@ -7635,8 +7729,11 @@ export default class SRPlugin extends Plugin {
                 this.deckOptionsStore.getSyncEntities(),
             );
             await this.deckOptionsStore.saveSerialized(finalDeckOptionsSnapshot.serialized);
-            this.persistedDeckOptionsState =
-                this.deckOptionsStore.rememberPersistedState(finalDeckOptionsSnapshot.state);
+            this.persistedDeckOptionsState = this.deckOptionsStore.rememberPersistedState(
+                finalDeckOptionsSnapshot.state,
+            );
+            this.persistedDeckOptionsSessionBaseline = finalDeckOptionsSnapshot.state;
+            this.markBufferedPluginStatePersisted(["deck-options"], bufferedRevisionSnapshot);
         }
 
         await this.saveDataShell();

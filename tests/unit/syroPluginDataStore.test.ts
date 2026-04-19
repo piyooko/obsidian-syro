@@ -82,6 +82,7 @@ describe("syroPluginDataStore daily-state device review count", () => {
         expect(deviceState.settings.reactDeckTreeWidth).toBe(420);
         expect(deviceState.settings).not.toHaveProperty("flashcardTags");
         expect(deviceState.historyDeck).toBe("Desktop/Deck");
+        expect(deviceState.deckOptionsProtocolVersion).toBe(1);
     });
 
     test("diffTrackingRules uses folderPath as the natural key", () => {

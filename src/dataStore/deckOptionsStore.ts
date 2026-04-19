@@ -20,6 +20,7 @@ import {
     type FsrsSettings,
     type SRSettings,
 } from "src/settings";
+import { isPathInsideFolder, renamePathPrefix } from "src/folderTracking";
 import { getNumberProp, isRecord, parseJsonUnknown } from "src/util/typeGuards";
 
 const LEGACY_DECK_OPTIONS_STORE_VERSION = 1;
@@ -55,6 +56,17 @@ export interface DeckOptionsStateDiff {
     presetRemovals: Array<{ presetUuid: string }>;
     assignmentUpserts: DeckOptionsAssignmentPayload[];
     assignmentRemovals: Array<{ deckPath: string }>;
+}
+
+export interface DeckOptionsAssignmentPathMutationResult {
+    deckPresetAssignment: Record<string, string>;
+    affectedDeckPaths: string[];
+}
+
+export function normalizeDeckOptionsAssignmentPathKey(path: string): string {
+    return String(path ?? "")
+        .replace(/\\/g, "/")
+        .replace(/\.md$/i, "");
 }
 
 export function buildDeckOptionsPresetTargetUuid(presetUuid: string): string {
@@ -133,8 +145,12 @@ export function diffDeckOptionsState(
 ): DeckOptionsStateDiff {
     const previous = normalizeDeckOptionsState(previousState);
     const next = normalizeDeckOptionsState(nextState);
-    const previousPresets = new Map(previous.deckOptionsPresets.map((preset) => [preset.uuid, preset] as const));
-    const nextPresets = new Map(next.deckOptionsPresets.map((preset) => [preset.uuid, preset] as const));
+    const previousPresets = new Map(
+        previous.deckOptionsPresets.map((preset) => [preset.uuid, preset] as const),
+    );
+    const nextPresets = new Map(
+        next.deckOptionsPresets.map((preset) => [preset.uuid, preset] as const),
+    );
     const presetUpserts: DeckOptionsPreset[] = [];
     const presetRemovals: Array<{ presetUuid: string }> = [];
     const assignmentUpserts: DeckOptionsAssignmentPayload[] = [];
@@ -152,7 +168,10 @@ export function diffDeckOptionsState(
     }
 
     for (const previousPreset of previous.deckOptionsPresets) {
-        if (!nextPresets.has(previousPreset.uuid) && previousPreset.uuid !== DEFAULT_DECK_OPTIONS_PRESET_UUID) {
+        if (
+            !nextPresets.has(previousPreset.uuid) &&
+            previousPreset.uuid !== DEFAULT_DECK_OPTIONS_PRESET_UUID
+        ) {
             presetRemovals.push({ presetUuid: previousPreset.uuid });
         }
     }
@@ -248,7 +267,9 @@ export function assignDeckOptionsPresetToDeck(
     if (!presetUuid || presetUuid === DEFAULT_DECK_OPTIONS_PRESET_UUID) {
         delete nextAssignment[deckPath];
     } else {
-        const presetExists = settings.deckOptionsPresets.some((preset) => preset.uuid === presetUuid);
+        const presetExists = settings.deckOptionsPresets.some(
+            (preset) => preset.uuid === presetUuid,
+        );
         if (!presetExists) {
             delete nextAssignment[deckPath];
         } else {
@@ -261,6 +282,62 @@ export function assignDeckOptionsPresetToDeck(
         deckOptionsPresets: settings.deckOptionsPresets,
         deckPresetAssignment: nextAssignment,
     });
+}
+
+export function renameDeckOptionsAssignmentPaths(
+    deckPresetAssignment: Record<string, string>,
+    oldPath: string,
+    newPath: string,
+): DeckOptionsAssignmentPathMutationResult {
+    const normalizedOldPath = normalizeDeckOptionsAssignmentPathKey(oldPath);
+    const normalizedNewPath = normalizeDeckOptionsAssignmentPathKey(newPath);
+    const nextAssignment: Record<string, string> = {};
+    const affectedDeckPaths = new Set<string>();
+
+    for (const [deckPath, presetUuid] of Object.entries(deckPresetAssignment)) {
+        const nextDeckPath = renamePathPrefix(deckPath, normalizedOldPath, normalizedNewPath);
+        if (nextDeckPath !== deckPath) {
+            affectedDeckPaths.add(deckPath);
+            affectedDeckPaths.add(nextDeckPath);
+        }
+        if (
+            nextDeckPath !== deckPath &&
+            Object.prototype.hasOwnProperty.call(deckPresetAssignment, nextDeckPath)
+        ) {
+            continue;
+        }
+        if (Object.prototype.hasOwnProperty.call(nextAssignment, nextDeckPath)) {
+            continue;
+        }
+        nextAssignment[nextDeckPath] = presetUuid;
+    }
+
+    return {
+        deckPresetAssignment: nextAssignment,
+        affectedDeckPaths: [...affectedDeckPaths].sort((left, right) => left.localeCompare(right)),
+    };
+}
+
+export function removeDeckOptionsAssignmentPaths(
+    deckPresetAssignment: Record<string, string>,
+    deletedPath: string,
+): DeckOptionsAssignmentPathMutationResult {
+    const normalizedDeletedPath = normalizeDeckOptionsAssignmentPathKey(deletedPath);
+    const nextAssignment: Record<string, string> = {};
+    const affectedDeckPaths = new Set<string>();
+
+    for (const [deckPath, presetUuid] of Object.entries(deckPresetAssignment)) {
+        if (isPathInsideFolder(normalizedDeletedPath, deckPath)) {
+            affectedDeckPaths.add(deckPath);
+            continue;
+        }
+        nextAssignment[deckPath] = presetUuid;
+    }
+
+    return {
+        deckPresetAssignment: nextAssignment,
+        affectedDeckPaths: [...affectedDeckPaths].sort((left, right) => left.localeCompare(right)),
+    };
 }
 
 export function createPersistableSettingsSnapshot(
@@ -376,7 +453,8 @@ export class DeckOptionsStore {
 
     getPersistedState(): DeckOptionsStoreFile | null {
         return this.persistedState
-            ? createDeckOptionsStoreSnapshot(this.persistedState, this.persistedState.syncEntities).state
+            ? createDeckOptionsStoreSnapshot(this.persistedState, this.persistedState.syncEntities)
+                  .state
             : null;
     }
 

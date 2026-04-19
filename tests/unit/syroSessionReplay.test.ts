@@ -17,11 +17,7 @@ import {
     SyroJsonStateStore,
 } from "src/dataStore/syroPluginDataStore";
 import { CardType } from "src/Question";
-import {
-    DEFAULT_SETTINGS,
-    resolveDeckOptionsPreset,
-    type DeckOptionsPreset,
-} from "src/settings";
+import { DEFAULT_SETTINGS, resolveDeckOptionsPreset, type DeckOptionsPreset } from "src/settings";
 import { TrackedItem } from "src/dataStore/trackedFile";
 
 function normalizePath(path: string): string {
@@ -87,7 +83,9 @@ function createSettings() {
     return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
 }
 
-function createStoreWithAdapter(adapter: ReturnType<typeof createMockAdapter>["adapter"]): DataStore {
+function createStoreWithAdapter(
+    adapter: ReturnType<typeof createMockAdapter>["adapter"],
+): DataStore {
     (Iadapter as any)._instance = {
         adapter,
         vault: {
@@ -835,11 +833,9 @@ describe("replaySyroSessionRecords", () => {
             deps,
         );
 
-        expect(settings.deckOptionsPresets.map((preset: DeckOptionsPreset) => preset.uuid)).toEqual([
-            DEFAULT_SETTINGS.deckOptionsPresets[0].uuid,
-            alphaPreset.uuid,
-            betaPreset.uuid,
-        ]);
+        expect(settings.deckOptionsPresets.map((preset: DeckOptionsPreset) => preset.uuid)).toEqual(
+            [DEFAULT_SETTINGS.deckOptionsPresets[0].uuid, alphaPreset.uuid, betaPreset.uuid],
+        );
         expect(settings.deckPresetAssignment).toEqual({
             "Deck/A": alphaPreset.uuid,
             "Deck/B": betaPreset.uuid,
@@ -1349,6 +1345,133 @@ describe("replaySyroSessionRecords", () => {
         expect(targetStore.getFileByID(fileId)?.path).toBe("cards/new.md");
     });
 
+    test("collapses old and new tracked-file residues when replaying a rename-file payload with oldPath/newPath", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const sourceStore = createStoreWithAdapter(adapter);
+        sourceStore.trackFile("cards/old.md", RPITEMTYPE.CARD, false);
+        const sourceTrackedFile = sourceStore.getTrackedFile("cards/old.md");
+        const sourceTrackedItem = new TrackedItem(
+            "hash-rename",
+            0,
+            "context",
+            CardType.SingleLineBasic,
+            {
+                startOffset: 0,
+                endOffset: 1,
+                blockStartOffset: 0,
+                blockEndOffset: 1,
+            },
+            "c1",
+        );
+        sourceTrackedFile.trackedItems.push(sourceTrackedItem);
+        sourceStore.updateCardItems(sourceTrackedFile, sourceTrackedItem, "#flashcards", false);
+        const sourceFileSnapshot = sourceStore.getTrackedFileSnapshot("cards/old.md");
+        if (!sourceFileSnapshot) {
+            throw new Error("Expected source tracked-file snapshot");
+        }
+        sourceFileSnapshot.path = "cards/new.md";
+        sourceFileSnapshot.oldPath = "cards/old.md";
+        sourceFileSnapshot.newPath = "cards/new.md";
+
+        const targetStore = createStoreWithAdapter(adapter);
+        targetStore.trackFile("cards/old.md", RPITEMTYPE.CARD, false);
+        const oldTrackedFile = targetStore.getTrackedFile("cards/old.md");
+        const oldTrackedItem = new TrackedItem(
+            "hash-rename",
+            0,
+            "context",
+            CardType.SingleLineBasic,
+            {
+                startOffset: 0,
+                endOffset: 1,
+                blockStartOffset: 0,
+                blockEndOffset: 1,
+            },
+            "c1",
+        );
+        oldTrackedFile.trackedItems.push(oldTrackedItem);
+        targetStore.updateCardItems(oldTrackedFile, oldTrackedItem, "#flashcards", false);
+
+        targetStore.trackFile("cards/new.md", RPITEMTYPE.CARD, false);
+        const newTrackedFile = targetStore.getTrackedFile("cards/new.md");
+        const newTrackedItem = new TrackedItem(
+            "hash-rename",
+            0,
+            "context",
+            CardType.SingleLineBasic,
+            {
+                startOffset: 0,
+                endOffset: 1,
+                blockStartOffset: 0,
+                blockEndOffset: 1,
+            },
+            "c1",
+        );
+        newTrackedFile.trackedItems.push(newTrackedItem);
+        targetStore.updateCardItems(newTrackedFile, newTrackedItem, "#flashcards", false);
+
+        const deps = createReplayDependencies(adapter, settings, targetStore);
+
+        await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-cards-rename-collapse",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "cards",
+                    entityType: "tracked-file",
+                    opType: "rename-file",
+                    targetUuid: sourceFileSnapshot.uuid,
+                    createdAt: "2026-04-13T12:02:00.000Z",
+                    updatedAt: "2026-04-13T12:02:00.000Z",
+                    payload: sourceFileSnapshot,
+                    pathHint: "cards/new.md",
+                },
+            ],
+            deps as any,
+        );
+
+        expect(targetStore.findFileIdsByPath("cards/old.md")).toEqual([]);
+        expect(targetStore.findFileIdsByPath("cards/new.md")).toHaveLength(1);
+        expect(
+            targetStore.getTrackedFile("cards/new.md")?.trackedItems?.length ?? 0,
+        ).toBeGreaterThan(0);
+    });
+
+    test("removes tracked-file residues whose file-identity path is already tombstoned", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const targetStore = createStoreWithAdapter(adapter);
+        targetStore.trackFile("cards/legacy.md", RPITEMTYPE.CARD, false);
+        targetStore.trackFile("cards/current.md", RPITEMTYPE.CARD, false);
+        const deps = createReplayDependencies(adapter, settings, targetStore);
+
+        await replaySyroSessionRecords(
+            [
+                createFileIdentityRecord({
+                    uuid: "file-legacy-deleted",
+                    path: "cards/legacy.md",
+                    opId: "op-file-legacy-delete",
+                    opType: "delete",
+                    updatedAt: "2026-04-13T12:03:00.000Z",
+                }),
+                createFileIdentityRecord({
+                    uuid: "file-current-active",
+                    path: "cards/current.md",
+                    opId: "op-file-current-upsert",
+                    updatedAt: "2026-04-13T12:03:30.000Z",
+                }),
+            ],
+            deps as any,
+        );
+
+        expect(targetStore.findFileIdsByPath("cards/legacy.md")).toEqual([]);
+        expect(targetStore.findFileIdsByPath("cards/current.md")).toHaveLength(1);
+    });
+
     test("accepts a semantically newer card review even when its updatedAt is older", async () => {
         const { adapter } = createMockAdapter();
         const settings = createSettings();
@@ -1718,13 +1841,16 @@ describe("replaySyroSessionRecords", () => {
             throw new Error("Expected card snapshot");
         }
 
-        const deps = createReplayDependencies(adapter, settings, createStoreWithAdapter(adapter)) as
-            ReturnType<typeof createReplayDependencies> & {
-                loadRemoteCardsSnapshots?: (deviceId: string) => Promise<{
-                    files: unknown[];
-                    cards: unknown[];
-                }>;
-            };
+        const deps = createReplayDependencies(
+            adapter,
+            settings,
+            createStoreWithAdapter(adapter),
+        ) as ReturnType<typeof createReplayDependencies> & {
+            loadRemoteCardsSnapshots?: (deviceId: string) => Promise<{
+                files: unknown[];
+                cards: unknown[];
+            }>;
+        };
         const loadRemoteCardsSnapshots = jest.fn(async () => ({ files: [], cards: [] }));
         deps.loadRemoteCardsSnapshots = loadRemoteCardsSnapshots;
 

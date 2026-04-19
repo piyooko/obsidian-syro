@@ -91,6 +91,7 @@ describe("trackFileEvents syro session hooks", () => {
             appendSyroNoteRename: jest.fn(async () => true),
             appendSyroTimelineRenameFile: jest.fn(async () => true),
             renameFolderTrackingPaths: jest.fn(() => false),
+            renameDeckOptionsAssignments: jest.fn(() => true),
             ensureFolderTrackingForFile: jest.fn(async () => false),
             getResolvedFolderTrackingRule: jest.fn(() => null),
             store: {
@@ -123,9 +124,16 @@ describe("trackFileEvents syro session hooks", () => {
 
         await renameHandler(createMarkdownFile("archive/renamed.md"), "folder/original.md");
 
+        expect(plugin.renameDeckOptionsAssignments).toHaveBeenCalledWith(
+            "folder/original.md",
+            "archive/renamed.md",
+        );
         expect(plugin.noteReviewStore.save).toHaveBeenCalled();
         expect(plugin.reviewCommitStore.save).toHaveBeenCalled();
-        expect(plugin.appendSyroNoteRename).toHaveBeenCalledWith("folder/original.md", noteSnapshot);
+        expect(plugin.appendSyroNoteRename).toHaveBeenCalledWith(
+            "folder/original.md",
+            noteSnapshot,
+        );
         expect(plugin.appendSyroTimelineRenameFile).toHaveBeenCalledWith(
             "folder/original.md",
             "archive/renamed.md",
@@ -230,6 +238,7 @@ describe("trackFileEvents syro session hooks", () => {
             appendSyroNoteRemove: jest.fn(async () => true),
             appendSyroTimelineDeleteFile: jest.fn(async () => true),
             removeFolderTrackingPaths: jest.fn(() => false),
+            removeDeckOptionsAssignments: jest.fn(() => true),
             store: {
                 untrackPathPrefixWithSnapshots: jest.fn(() => [cardSnapshot]),
                 save: jest.fn(async () => undefined),
@@ -260,6 +269,7 @@ describe("trackFileEvents syro session hooks", () => {
 
         await deleteHandler(createMarkdownFile("archive/deleted.md"));
 
+        expect(plugin.removeDeckOptionsAssignments).toHaveBeenCalledWith("archive/deleted.md");
         expect(plugin.noteReviewStore.save).toHaveBeenCalled();
         expect(plugin.reviewCommitStore.save).toHaveBeenCalled();
         expect(plugin.appendSyroNoteRemove).toHaveBeenCalledWith(noteSnapshot);
