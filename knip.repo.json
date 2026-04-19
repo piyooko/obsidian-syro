@@ -1,14 +1,30 @@
 {
     "$schema": "https://unpkg.com/knip@5/schema.json",
-    "entry": ["src/main.ts!"],
-    "project": ["src/**/*.{ts,tsx}!"],
+    "entry": [
+        "src/main.ts!",
+        "esbuild.config.mjs",
+        "eslint.review.config.mjs",
+        "jest.config.js",
+        "postcss.config.js",
+        "tailwind.config.js"
+    ],
+    "project": [
+        "src/**/*.{ts,tsx}!",
+        "tests/**/*.{js,ts,tsx}",
+        "scripts/**/*.{js,cjs,mjs}",
+        "utils/**/*.{js,cjs,mjs}",
+        "esbuild.config.mjs",
+        "eslint.review.config.mjs",
+        "jest.config.js",
+        "postcss.config.js",
+        "tailwind.config.js"
+    ],
     "ignore": [
         "build/**",
         "coverage/**",
         "docs/**",
         "plugin_test/**",
         "site/**",
-        "scripts/**",
         "debug-parser.ts",
         "test-*.{js,ts}",
         "*.log",

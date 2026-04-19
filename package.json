@@ -19,7 +19,11 @@
         "changelog": "pnpm auto-changelog --template=compact --package && pnpm prettier --write docs/docs/changelog.md",
         "css:report": "node scripts/css-report.mjs",
         "knip": "knip --no-config-hints",
-        "knip:production": "knip --production --no-config-hints"
+        "knip:production": "knip --production --no-config-hints",
+        "audit:deadcode:prod": "knip --config knip.json --production --no-config-hints",
+        "audit:deadcode:repo": "knip --config knip.repo.json --no-config-hints",
+        "audit:unused:src": "tsc --project tsconfig.audit.json --pretty false --noEmit",
+        "audit:deadcode": "node scripts/run-deadcode-audit.mjs"
     },
     "keywords": [
         "obsidian",
