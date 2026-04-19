@@ -10,7 +10,7 @@
  * 1. src/util/utils.ts (分行工具)
  *
  * 哪些文件会用到它：
- * 1. src/dataStore/location_switch.ts (迁移数据时删除旧注释)
+ * 1. 旧迁移逻辑曾用它处理多行文本替换，当前保留给通用文本处理场景。
  */
 import { literalStringReplace, splitTextIntoLineArray } from "./utils";
 

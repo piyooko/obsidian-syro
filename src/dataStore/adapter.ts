@@ -12,7 +12,6 @@
  * 哪些文件会用到它：
  * 1. src/dataStore/data.ts (数据存取)
  * 2. src/algorithms/fsrs.ts (读写 RevLog)
- * 3. src/location_switch.ts (迁移数据)
  */
 /**
  * [数据层：负责数据的持久化、读取和内存状态管理] [工具] 封装 Obsidian 的文件系统 API，提供统一的读写接口。

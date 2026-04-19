@@ -609,7 +609,6 @@ export default normalizeSentenceCaseLocale({
     NEXT_REVIEW_MINUTES: "You can review in ${interval}m",
     NEXT_REVIEW_HOURS: "You can review in ${interval}h",
 
-    // location_switch.ts
     DATA_FILE_MOVED_SUCCESS: "Successfully moved data file!",
     DATA_FILE_DELETE_OLD_FAILED: "Unable to delete old data file, please delete it manually.",
     DATA_FILE_MOVE_FAILED: "Unable to move data file!",

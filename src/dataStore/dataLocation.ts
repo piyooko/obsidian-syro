@@ -10,7 +10,6 @@
  *
  * 哪些文件会用到它：
  * 1. src/dataStore/data.ts
- * 2. src/location_switch.ts
  */
 /**
  * [数据层：负责数据的持久化、读取和内存状态管理] [配置] 决定数据是存在 `tracked_files.json` 还是分散在笔记的 Frontmatter 中。

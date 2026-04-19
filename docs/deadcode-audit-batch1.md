@@ -10,8 +10,8 @@
   - 旧设置函数文件（2026-04-19）
   - 旧 modal / view 实现（2026-04-19）
   - `src/NoteEaseCalculator.ts`（2026-04-19）
+  - `src/dataStore/location_switch.ts`（2026-04-19）
 - 待处理：
-  - `src/dataStore/location_switch.ts`
   - 依赖联动候选
 
 ## 第一批可优先复核删除
@@ -95,7 +95,7 @@
 
 ## 需要再看一眼再删
 
-### 4. 旧迁移逻辑
+### 4. 旧迁移逻辑（已处理）
 
 候选文件：
 
@@ -107,13 +107,15 @@
 - 目前只发现测试引用：`tests/unit/location_switch.test.ts`
 - 另外还有少量注释或说明文字提到它。
 
-建议动作：
+处理结果：
 
-- 不要直接删。
-- 先确认这个迁移逻辑是否已经被你当前的 Syro 多端同步和新数据层完全取代。
-- 如果准备删，通常要连同对应测试一起处理。
+- 已确认运行时代码中不存在 `LocationSwitch` 的 import、构造调用或迁移入口。
+- `src/dataStore/syroLegacy011Migration.ts` 已承担当前 0.0.11 -> 0.0.12 的兼容迁移职责，`location_switch.ts` 不再参与现有数据层。
+- 已删除 `src/dataStore/location_switch.ts` 与 `tests/unit/location_switch.test.ts`，并清理 `src/lang/locale/en.ts` 及相关说明注释中的直接引用。
+- `pnpm run audit:deadcode:prod` 已不再报告该文件。
+- `pnpm run lint:obsidian` 通过。
 
-误判风险：中
+误判风险：已关闭
 
 ## 依赖联动候选
 

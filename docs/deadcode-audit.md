@@ -1,9 +1,9 @@
 # 死代码审计候选清单
 
-- 生成时间: 2026-04-19T12:16:33.641Z
+- 生成时间: 2026-04-19T12:19:37.542Z
 - 生成命令: `pnpm run audit:deadcode`
-- 生产侧 Knip: 4 个 unused files, 28 个 unused exports, 4 个 unused exported types
-- 全仓库 Knip: 3 个 unused files, 19 个 unused exports, 4 个 unused exported types
+- 生产侧 Knip: 3 个 unused files, 28 个 unused exports, 4 个 unused exported types
+- 全仓库 Knip: 3 个 unused files, 24 个 unused exports, 4 个 unused exported types
 - src-only TypeScript: 21 条未使用局部变量/参数诊断
 
 ## 使用约定
@@ -23,7 +23,6 @@
 | 文件/符号 | 命中项 | 归类 | 误判风险 | 推荐动作 |
 | --- | --- | --- | --- | --- |
 | src/algorithms/balance/postpone.ts | unused file | B | medium | 先检查动态入口、旧逻辑或注释引用，再决定是否删 |
-| src/dataStore/location_switch.ts | unused file | B | medium | 先确认历史迁移与测试引用，再决定是否删 |
 | src/util/platform.ts | unused file | B | medium | 先检查动态入口、旧逻辑或注释引用，再决定是否删 |
 | src/settings.ts:548:17 | updateDeckOptionsPresetStepProxy | B | medium | 确认调用链后再删 |
 | src/settings.ts:654:17 | resolveDeckOptionsPresetIndex | B | medium | 确认调用链后再删 |
@@ -32,8 +31,8 @@
 | src/util/utils.ts:165:17 | isEqualOrSubPath | B | medium | 确认调用链后再删 |
 | src/dataStore/data.ts:101:14 | DEFAULT_SRS_DATA | B | medium | 确认调用链后再删 |
 | src/dataStore/deckOptionsStore.ts:343:17 | createPersistableSettingsSnapshot | B | medium | 确认调用链后再删 |
-| src/dataStore/dataLocation.ts:32:14 | locationMap | B | medium | 确认调用链后再删 |
-| src/dataStore/dataLocation.ts:40:17 | getLocalizedLocationMap | B | medium | 确认调用链后再删 |
+| src/dataStore/dataLocation.ts:31:14 | locationMap | B | medium | 确认调用链后再删 |
+| src/dataStore/dataLocation.ts:39:17 | getLocalizedLocationMap | B | medium | 确认调用链后再删 |
 | src/dataStore/pendingOverlayStore.ts:73:17 | createEmptyPendingOverlayFile | B | medium | 确认调用链后再删 |
 | src/dataStore/syroUuidAlias.ts:69:17 | getEquivalentUuidSet | B | medium | 确认调用链后再删 |
 | src/util/utils_recall.ts:335:14 | errorlog | B | medium | 确认调用链后再删 |
@@ -55,7 +54,6 @@
 | src/ui/components/common/SettingsComponents.tsx:339:14 | LinkRow | B | medium | 确认调用链后再删 |
 | scripts/check-i18n-core.cjs:388:5 | collectSourceFiles | B | medium | 确认调用链后再删 |
 | tests/unit/helpers/DateProviderTestUtils.ts:12:17 | setupStaticDateProvider_OriginDatePlusDays | B | medium | 确认调用链后再删 |
-| src/dataStore/location_switch.ts:30:14 | LocationSwitch | B | medium | 确认调用链后再删 |
 | src/dataStore/syroPluginDataStore.ts:91:13 | SharedSettingsField | B | medium | 确认类型外部约定后再删 |
 | src/dataStore/syroPluginDataStore.ts:92:13 | DeviceStateField | B | medium | 确认类型外部约定后再删 |
 | src/dataStore/syroWorkspace.ts:126:18 | SyroDeviceSelectionRequest | B | medium | 确认类型外部约定后再删 |
@@ -103,6 +101,5 @@ _None_
 ## 高优先级人工抽查
 
 - `src/ui/modals/getInputModal.ts`: 确认未在当前 UI 流程、命令入口或动态挂载链里使用。
-- `src/dataStore/location_switch.ts`: 确认是否只剩测试引用和历史迁移注释。
 - `src/util/platform.ts`: 确认平台分支是否已被当前环境适配层完全替代。
 - `src/algorithms/balance/postpone.ts`: 确认旧平衡算法是否仍有命令或调度链路间接调用。
