@@ -1,9 +1,9 @@
 # 死代码审计候选清单
 
-- 生成时间: 2026-04-19T11:39:46.569Z
+- 生成时间: 2026-04-19T12:06:33.859Z
 - 生成命令: `pnpm run audit:deadcode`
-- 生产侧 Knip: 18 个 unused files, 28 个 unused exports, 4 个 unused exported types
-- 全仓库 Knip: 17 个 unused files, 19 个 unused exports, 4 个 unused exported types
+- 生产侧 Knip: 9 个 unused files, 28 个 unused exports, 4 个 unused exported types
+- 全仓库 Knip: 8 个 unused files, 19 个 unused exports, 4 个 unused exported types
 - src-only TypeScript: 21 条未使用局部变量/参数诊断
 
 ## 使用约定
@@ -17,15 +17,6 @@
 | 文件/符号 | 归类 | 误判风险 | 推荐动作 |
 | --- | --- | --- | --- |
 | src/NoteEaseCalculator.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
-| src/settings/burySiblingSetting.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
-| src/settings/ignoreSetting.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
-| src/settings/intervalShowHideSetting.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
-| src/settings/locationSetting.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
-| src/settings/mixQueueSetting.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
-| src/settings/multiClozeSetting.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
-| src/settings/responseBarSetting.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
-| src/settings/reviewNoteDirectlySetting.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
-| src/settings/trackSetting.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
 | src/ui/modals/DeckOptionsModal.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
 | src/ui/modals/getInputModal.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
 | src/ui/modals/info.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |

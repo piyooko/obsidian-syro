@@ -518,12 +518,10 @@ export default normalizeSentenceCaseLocale({
     CARD_BLOCK_ID_CONFIRM:
         "**If set True, block id will append after card text. And block id will keep in note after reset to False again. ** \n\nSuggestion： backup your vault before set True. Or try it in sandbox vault. \n\nAfter setting is turned on, blockid will be added after all cards. Even if it is turned off again, the added blockid will still remain in the note and will not be deleted.\n\nIt is recommended to **backup first** the note library, or try it in a sandbox library.",
 
-    // mixQueueSetting.ts
     MIX_QUEUE: "Mix queue",
     MIX_QUEUE_DESC:
         "mix ondue and new notes when review. **first** slider for total count, second slider for ondue count. And new count is (total - ondue).",
 
-    // trackSetting.ts
     UNTRACK_WITH_REVIEWTAG_DESC:
         "When deleting the review tag in the note, synchronously untrack the operation, so that the note will no longer be reviewed<br><b>true</b>: synchronous untrack operation;<br><b>false</b>：After deleting the review tag, you need to untrack again before the note will no longer be reviewed. (same as previous version)",
 
@@ -550,7 +548,6 @@ export default normalizeSentenceCaseLocale({
     NEW_CARD: "NewCard",
     ITEM_DATA_INFO: "Item.data info",
 
-    // locationSetting.ts
     DATA_LOCATION_WARNING_TO_NOTE:
         "BE CAREFUL!!!\n  if you confirm this, it will convert all your scheduling informations in `tracked_files.json` to note, which will change lots of your note file in the same time.\n Please make sure the setting tags of flashcards and notes is what you are using.",
     DATA_LOCATION_WARNING_TO_TRACKED:
@@ -562,7 +559,6 @@ export default normalizeSentenceCaseLocale({
     // donation.ts
     DONATION_TEXT: "Syro is under active development. Feedback and bug reports are welcome.",
 
-    // locationSetting.ts
     FOLDER_PLACEHOLDER: "Example: folder1/folder2",
     SAVE_BUTTON: "Save",
     LOCATION_CHANGE_FINISHED: "Finished location change.",
@@ -1088,7 +1084,6 @@ export default normalizeSentenceCaseLocale({
     FOLDER_TRACKING_SAVE_SUCCESS: "Folder tracking settings saved",
     FOLDER_TRACKING_RESET: "Remove auto-added tags",
     FOLDER_TRACKING_RESET_SUCCESS: "Auto-added tags removed",
-    // locationSetting.ts
     LOC_CONFIRM_NOTES: "### Review Notes\n",
     LOC_CONFIRM_FLASHCARDS: "\n---\n### Flashcards\n",
     CONFIRM: "Confirm",
