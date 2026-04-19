@@ -29,8 +29,6 @@ import { CardScheduleInfo } from "./CardSchedule";
 import { TopicPath } from "./TopicPath";
 
 export class DeckTreeStatsCalculator {
-    private deckTree: Deck;
-
     calculate(deckTree: Deck): Stats {
         // Order doesn't matter as long as we iterate over everything
         const iteratorOrder: IIteratorOrder = {

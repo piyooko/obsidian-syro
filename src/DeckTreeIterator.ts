@@ -423,15 +423,6 @@ export class DeckTreeIterator implements IDeckTreeIterator {
         this.singleDeckIterator.moveCurrentCardToEndOfList();
     }
 
-    private removeCurrentDeckIfEmpty(): void {
-        if (this.currentDeck.getCardCount(CardListType.All, false) == 0) {
-            this.deckArray.splice(this.deckIdx, 1);
-
-            // There is no change to deckIdx, but this now is a different deck
-            if (this.deckIdx < this.deckArray.length) this.setDeckIdx(this.deckIdx);
-        }
-    }
-
     setCurrentCard(card: Card, deck: Deck): void {
         const deckIdx = this.deckArray.findIndex((d) => d === deck);
         if (deckIdx === -1) {

@@ -103,7 +103,6 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
     private reviewMode: FlashcardReviewMode;
     private cardSequencer: IDeckTreeIterator;
     private settings: SRSettings;
-    private questionPostponementList: IQuestionPostponementList;
     private history: ReviewHistoryItem[] = [];
     private sessionCounterDeckPath: string | null = null;
 
@@ -207,12 +206,11 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         reviewMode: FlashcardReviewMode,
         cardSequencer: IDeckTreeIterator,
         settings: SRSettings,
-        questionPostponementList: IQuestionPostponementList,
+        _questionPostponementList: IQuestionPostponementList,
     ) {
         this.reviewMode = reviewMode;
         this.cardSequencer = cardSequencer;
         this.settings = settings;
-        this.questionPostponementList = questionPostponementList;
     }
 
     get canUndo(): boolean {

@@ -1,10 +1,10 @@
 # 死代码审计候选清单
 
-- 生成时间: 2026-04-19T12:29:28.384Z
+- 生成时间: 2026-04-19T12:36:28.208Z
 - 生成命令: `pnpm run audit:deadcode`
 - 生产侧 Knip: 3 个 unused files, 28 个 unused exports, 4 个 unused exported types
 - 全仓库 Knip: 3 个 unused files, 24 个 unused exports, 4 个 unused exported types
-- src-only TypeScript: 21 条未使用局部变量/参数诊断
+- src-only TypeScript: 13 条未使用局部变量/参数诊断
 
 ## 使用约定
 
@@ -67,19 +67,12 @@ _None_
 
 | 文件/符号 | 类型 | 诊断 |
 | --- | --- | --- |
-| src/commands.ts:17:13 | TS6133 | 'runAsync' is declared but its value is never read. |
-| src/dataStore/data.ts:1313:36 | TS6133 | 'fallbackPath' is declared but its value is never read. |
-| src/DeckTreeIterator.ts:426:13 | TS6133 | 'removeCurrentDeckIfEmpty' is declared but its value is never read. |
-| src/DeckTreeStatsCalculator.ts:32:13 | TS6133 | 'deckTree' is declared but its value is never read. |
-| src/FlashcardReviewSequencer.ts:106:13 | TS6133 | 'questionPostponementList' is declared but its value is never read. |
-| src/main.ts:563:13 | TS6133 | 'persistedLicenseState' is declared but its value is never read. |
 | src/question-type.ts:916:12 | TS6133 | 'answer' is declared but its value is never read. |
 | src/question-type.ts:924:12 | TS6133 | 'answer' is declared but its value is never read. |
 | src/question-type.ts:938:12 | TS6133 | 'answer' is declared but its value is never read. |
 | src/question-type.ts:1199:13 | TS6133 | 'extractClozeInfos' is declared but its value is never read. |
 | src/question-type.ts:1250:13 | TS6133 | 'groupLineScopedClozes' is declared but its value is never read. |
 | src/question-type.ts:1305:13 | TS6133 | 'stripOtherAnkiClozeVisual' is declared but its value is never read. |
-| src/ReviewDeck.ts:38:13 | TS6133 | '_dueNotesCount' is declared but its value is never read. |
 | src/ui/modals/getInputModal.ts:15:13 | TS6133 | 'textComponent' is declared but its value is never read. |
 | src/ui/modals/reviewresponse-modal.tsx:15:13 | TS6133 | 'app' is declared but its value is never read. |
 | src/ui/modals/reviewresponse-modal.tsx:26:13 | TS6133 | 'barItemId' is declared but its value is never read. |
@@ -87,7 +80,6 @@ _None_
 | src/ui/views/TabView.tsx:26:13 | TS6133 | 'reviewMode' is declared but its value is never read. |
 | src/ui/views/TabView.tsx:30:13 | TS6133 | 'settings' is declared but its value is never read. |
 | src/util/multi-cloze-util.ts:68:39 | TS6133 | 'v' is declared but its value is never read. |
-| src/util/utils_recall.ts:354:9 | TS6133 | 'target' is declared but its value is never read. |
 
 ## 高优先级人工抽查
 

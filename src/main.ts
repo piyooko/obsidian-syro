@@ -560,7 +560,6 @@ export default class SRPlugin extends Plugin {
     private persistedDeckOptionsState: DeckOptionsStoreFile | null = null;
     private persistedDeckOptionsSessionBaseline: DeckOptionsStoreFile | null = null;
     private persistedDeviceState: PersistedDeviceState | null = null;
-    private persistedLicenseState: PersistedLicenseState | null = null;
     private sharedSettingsUpdatedAtByField: Record<string, string> = {};
     private trackingRulesUpdatedAtByFolderPath: Record<string, string> = {};
     private trackingRulesTombstones: Record<string, PersistedTrackingRulesTombstone> = {};
@@ -1538,7 +1537,6 @@ export default class SRPlugin extends Plugin {
         this.persistedTrackingRulesState = null;
         this.persistedDailyState = null;
         this.persistedDeviceState = null;
-        this.persistedLicenseState = null;
         this.sharedSettingsUpdatedAtByField = {};
         this.trackingRulesUpdatedAtByFolderPath = {};
         this.trackingRulesTombstones = {};
@@ -7156,10 +7154,8 @@ export default class SRPlugin extends Plugin {
         const licenseState = await this.licenseStateStore.load();
         if (licenseState) {
             applyLicenseState(this.data.settings, licenseState);
-            this.persistedLicenseState = licenseState;
         } else {
             const nextState = extractLicenseState(this.data.settings);
-            this.persistedLicenseState = licenseState ?? nextState;
             if (!this.syroReadOnlyReason) {
                 await this.licenseStateStore.save(nextState);
             }
@@ -7431,7 +7427,6 @@ export default class SRPlugin extends Plugin {
             }
             if (persistLicenseState && licenseState) {
                 await this.licenseStateStore.save(licenseState);
-                this.persistedLicenseState = licenseState;
             }
             await this.saveDataShell();
             return;
@@ -7737,7 +7732,6 @@ export default class SRPlugin extends Plugin {
 
         if (persistLicenseState && licenseState) {
             await this.licenseStateStore.save(licenseState);
-            this.persistedLicenseState = licenseState;
         }
 
         if (persistDeckOptions) {

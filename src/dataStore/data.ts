@@ -1310,7 +1310,7 @@ export class DataStore {
         this.bootstrapTrackedFileFromSnapshot(snapshot);
     }
 
-    removeCardByUuid(uuid: string, fallbackPath?: string): boolean {
+    removeCardByUuid(uuid: string, _fallbackPath?: string): boolean {
         const item = this.findItemByUuidOrAlias(uuid);
         if (!item) {
             return false;

@@ -35,7 +35,6 @@ export class ReviewDeck {
     public newNotes: SchedNote[] = [];
     public scheduledNotes: SchedNote[] = [];
     public activeFolders: Set<string>;
-    private _dueNotesCount = 0;
 
     constructor(name: string) {
         this.deckName = name;

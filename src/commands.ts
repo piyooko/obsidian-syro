@@ -14,12 +14,6 @@ export default class Commands {
         this.plugin = plugin;
     }
 
-    private runAsync(task: Promise<void>, label: string): void {
-        void task.catch((error: unknown) => {
-            console.error(`[Commands] ${label}`, error);
-        });
-    }
-
     addCommands() {
         const plugin = this.plugin;
 

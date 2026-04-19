@@ -351,7 +351,7 @@ export const debug = (functionname: string, ...data: unknown[]) => {
 
 export const logExecutionTime = () => {
     return function (
-        target: object,
+        _target: object,
         propertyKey: string | symbol,
         propertyDescriptor: PropertyDescriptor,
     ) {
