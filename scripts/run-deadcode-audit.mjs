@@ -4,6 +4,48 @@ import path from "node:path";
 
 const rootDir = process.cwd();
 const outputPath = path.join(rootDir, "docs", "deadcode-audit.md");
+const fileDecisionOverrides = new Map([
+    [
+        "src/ui/modals/getInputModal.ts",
+        {
+            bucket: "A",
+            risk: "low",
+            action: "等待下一轮清理：本轮仅清理局部垃圾，删除前再复核命令入口与动态挂载链",
+        },
+    ],
+    [
+        "src/util/platform.ts",
+        {
+            bucket: "B",
+            risk: "medium",
+            action: "兼容性保留：先确认移动端/桌面平台适配链路是否仍需这个薄封装",
+        },
+    ],
+    [
+        "src/algorithms/balance/postpone.ts",
+        {
+            bucket: "B",
+            risk: "medium",
+            action: "兼容性保留：先确认推迟复习命令与旧平衡算法是否已完全断链",
+        },
+    ],
+    [
+        "src/dataStore/location_switch.ts",
+        {
+            bucket: "B",
+            risk: "medium",
+            action: "先确认历史迁移与测试引用，再决定是否删",
+        },
+    ],
+    [
+        "src/NoteEaseCalculator.ts",
+        {
+            bucket: "A",
+            risk: "low",
+            action: "优先交给 AI 复核，确认入口链断开后直接删",
+        },
+    ],
+]);
 const highConfidenceFilePatterns = [
     /^src\/ui\/modals\/getInputModal\.ts$/,
     /^src\/NoteEaseCalculator\.ts$/,
@@ -13,7 +55,7 @@ const reviewFilePatterns = [/^src\/dataStore\/location_switch\.ts$/];
 const priorityCheckRules = [
     {
         pattern: /^src\/ui\/modals\/getInputModal\.ts$/,
-        note: "- `src/ui/modals/getInputModal.ts`: 确认未在当前 UI 流程、命令入口或动态挂载链里使用。",
+        note: "- `src/ui/modals/getInputModal.ts`: 已延后到下一轮；本轮只清掉局部垃圾，删除前还要复核命令入口与动态挂载链。",
     },
     {
         pattern: /^src\/dataStore\/location_switch\.ts$/,
@@ -25,11 +67,11 @@ const priorityCheckRules = [
     },
     {
         pattern: /^src\/util\/platform\.ts$/,
-        note: "- `src/util/platform.ts`: 确认平台分支是否已被当前环境适配层完全替代。",
+        note: "- `src/util/platform.ts`: 兼容性保留；下一轮要确认平台适配层是否还需要这个薄封装。",
     },
     {
         pattern: /^src\/algorithms\/balance\/postpone\.ts$/,
-        note: "- `src/algorithms/balance/postpone.ts`: 确认旧平衡算法是否仍有命令或调度链路间接调用。",
+        note: "- `src/algorithms/balance/postpone.ts`: 兼容性保留；下一轮要确认推迟复习命令与旧平衡算法是否已完全断链。",
     },
 ];
 
@@ -126,6 +168,11 @@ function uniqueSorted(values) {
 }
 
 function classifyProdFile(file) {
+    const override = fileDecisionOverrides.get(file);
+    if (override) {
+        return override;
+    }
+
     if (highConfidenceFilePatterns.some((pattern) => pattern.test(file))) {
         return {
             bucket: "A",

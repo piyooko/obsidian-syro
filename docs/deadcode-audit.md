@@ -1,6 +1,6 @@
 # 死代码审计候选清单
 
-- 生成时间: 2026-04-19T12:43:29.358Z
+- 生成时间: 2026-04-19T12:48:31.201Z
 - 生成命令: `pnpm run audit:deadcode`
 - 生产侧 Knip: 3 个 unused files, 28 个 unused exports, 4 个 unused exported types
 - 全仓库 Knip: 3 个 unused files, 24 个 unused exports, 4 个 unused exported types
@@ -16,14 +16,14 @@
 
 | 文件/符号 | 归类 | 误判风险 | 推荐动作 |
 | --- | --- | --- | --- |
-| src/ui/modals/getInputModal.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
+| src/ui/modals/getInputModal.ts | A | low | 等待下一轮清理：本轮仅清理局部垃圾，删除前再复核命令入口与动态挂载链 |
 
 ## B 档: 需要 AI / 人工复核
 
 | 文件/符号 | 命中项 | 归类 | 误判风险 | 推荐动作 |
 | --- | --- | --- | --- | --- |
-| src/algorithms/balance/postpone.ts | unused file | B | medium | 先检查动态入口、旧逻辑或注释引用，再决定是否删 |
-| src/util/platform.ts | unused file | B | medium | 先检查动态入口、旧逻辑或注释引用，再决定是否删 |
+| src/algorithms/balance/postpone.ts | unused file | B | medium | 兼容性保留：先确认推迟复习命令与旧平衡算法是否已完全断链 |
+| src/util/platform.ts | unused file | B | medium | 兼容性保留：先确认移动端/桌面平台适配链路是否仍需这个薄封装 |
 | src/settings.ts:548:17 | updateDeckOptionsPresetStepProxy | B | medium | 确认调用链后再删 |
 | src/settings.ts:654:17 | resolveDeckOptionsPresetIndex | B | medium | 确认调用链后再删 |
 | src/scheduling.ts:15:17 | parseSteps | B | medium | 确认调用链后再删 |
@@ -69,6 +69,6 @@ _None_
 
 ## 高优先级人工抽查
 
-- `src/ui/modals/getInputModal.ts`: 确认未在当前 UI 流程、命令入口或动态挂载链里使用。
-- `src/util/platform.ts`: 确认平台分支是否已被当前环境适配层完全替代。
-- `src/algorithms/balance/postpone.ts`: 确认旧平衡算法是否仍有命令或调度链路间接调用。
+- `src/ui/modals/getInputModal.ts`: 已延后到下一轮；本轮只清掉局部垃圾，删除前还要复核命令入口与动态挂载链。
+- `src/util/platform.ts`: 兼容性保留；下一轮要确认平台适配层是否还需要这个薄封装。
+- `src/algorithms/balance/postpone.ts`: 兼容性保留；下一轮要确认推迟复习命令与旧平衡算法是否已完全断链。
