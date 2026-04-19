@@ -17,7 +17,6 @@ import {
     extractAnkiClozeInfos,
     groupLineScopedAnkiClozes,
     type AnkiClozeInfo,
-    type AnkiClozeLineGroup,
 } from "src/util/ankiClozeGrouping";
 import { extractPlainCurlyClozeMatches, stripPlainCurlyClozeSyntax } from "src/util/curlyCloze";
 import { findLineIndexOfSearchStringIgnoringWs } from "src/util/utils";
@@ -913,7 +912,7 @@ class QuestionTypeCloze implements IQuestionTypeHandler {
 }
 
 export class QuestionTypeClozeFormatter implements IClozeFormatter {
-    asking(answer?: string, hint?: string): string {
+    asking(_answer?: string, hint?: string): string {
         return encodeHiddenMarker(buildClozePlaceholder(hint));
     }
 
@@ -921,7 +920,7 @@ export class QuestionTypeClozeFormatter implements IClozeFormatter {
         return encodeShownMarker(answer);
     }
 
-    hiding(answer?: string, hint?: string): string {
+    hiding(_answer?: string, hint?: string): string {
         return encodeHiddenMarker(buildClozePlaceholder(hint));
     }
 }
@@ -935,7 +934,7 @@ export class QuestionTypeReviewFormatter implements IClozeFormatter {
         return encodeUnifiedMarker(buildClozePlaceholder(hint), answer);
     }
 
-    hiding(answer?: string, hint?: string): string {
+    hiding(_answer?: string, hint?: string): string {
         return encodeHiddenMarker(buildClozePlaceholder(hint));
     }
 }
@@ -1196,93 +1195,6 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
         return { windowedText, startSliceIndex: startSlice, activeLineRelative };
     }
 
-    private extractClozeInfos(text: string): AnkiClozeInfo[] {
-        const infos: AnkiClozeInfo[] = [];
-
-        const regex = /\{\{c(\d+)(?:::|：：)/gi;
-
-        let match;
-        while ((match = regex.exec(text)) !== null) {
-            const id = parseInt(match[1]);
-            const startPos = match.index;
-            const contentStart = startPos + match[0].length;
-
-            let braceDepth = 0;
-            let endPos = -1;
-
-            for (let j = contentStart; j < text.length; j++) {
-                if (braceDepth === 0 && text.startsWith("}}", j)) {
-                    endPos = j;
-                    break;
-                }
-                if (text[j] === "{") braceDepth++;
-                else if (text[j] === "}") {
-                    if (braceDepth > 0) braceDepth--;
-                }
-            }
-
-            if (endPos !== -1) {
-                let lineNum = 1;
-                for (let k = 0; k < startPos; k++) {
-                    if (text[k] === "\n") lineNum++;
-                }
-                const endLineNum =
-                    lineNum + (text.substring(startPos, endPos).match(/\n/g) || []).length;
-
-                const content = text.substring(contentStart, endPos);
-                infos.push({
-                    id,
-                    content,
-                    answerText: content,
-                    start: startPos,
-                    end: endPos + 2,
-                    lineNum,
-                    lineIndex: lineNum - 1,
-                    endLineNum,
-                });
-
-                regex.lastIndex = endPos + 2;
-            }
-        }
-        return infos;
-    }
-
-    private groupLineScopedClozes(clozeInfos: AnkiClozeInfo[]): AnkiClozeLineGroup[] {
-        const groups = new Map<string, AnkiClozeLineGroup>();
-
-        clozeInfos.forEach((info) => {
-            const key = `${info.lineNum}:${info.id}`;
-            if (!groups.has(key)) {
-                groups.set(key, {
-                    id: info.id,
-                    lineNum: info.lineNum,
-                    lineIndex: info.lineIndex,
-                    endLineNum: info.endLineNum,
-                    start: info.start,
-                    end: info.end,
-                    clozeId: `c${info.id}_l${info.lineIndex}`,
-                    answerParts: [],
-                    fingerprint: "",
-                    infos: [],
-                });
-            }
-
-            const existing = groups.get(key);
-            if (!existing) {
-                return;
-            }
-
-            existing.endLineNum = Math.max(existing.endLineNum, info.endLineNum);
-            existing.start = Math.min(existing.start, info.start);
-            existing.end = Math.max(existing.end, info.end);
-            existing.answerParts.push(info.answerText);
-            existing.fingerprint = existing.answerParts.join("||");
-            existing.infos.push(info);
-        });
-
-        return Array.from(groups.values());
-    }
-
     private resolveTextContext(
         questionText: string,
         activeLines: number[],
@@ -1300,10 +1212,6 @@ class QuestionTypeAnkiCloze implements IQuestionTypeHandler {
                 clozeContextSoftLimitLines: settings.clozeContextSoftLimitLines,
             },
         });
-    }
-
-    private stripOtherAnkiClozeVisual(text: string): string {
-        return text.replace(/\{\{c\d+::(.*?)(?:::.*)?\}\}/gi, "$1");
     }
 
     private isActiveCloze(

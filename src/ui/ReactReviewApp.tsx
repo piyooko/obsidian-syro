@@ -7,7 +7,6 @@ import { FlashcardReviewMode, IFlashcardReviewSequencer } from "src/FlashcardRev
 import { ReviewSession, type ReviewSessionView } from "./containers/ReviewSession";
 
 export class ReactReviewApp {
-    private app: App;
     private plugin: SRPlugin;
     private sequencer: IFlashcardReviewSequencer;
     private reviewMode: FlashcardReviewMode;
@@ -20,7 +19,7 @@ export class ReactReviewApp {
     private initialTargetDeckPath?: string;
 
     constructor(
-        app: App,
+        _app: App,
         plugin: SRPlugin,
         sequencer: IFlashcardReviewSequencer,
         reviewMode: FlashcardReviewMode,
@@ -31,7 +30,6 @@ export class ReactReviewApp {
         initialView: ReviewSessionView = "deck-list",
         initialTargetDeckPath?: string,
     ) {
-        this.app = app;
         this.plugin = plugin;
         this.sequencer = sequencer;
         this.reviewMode = reviewMode;

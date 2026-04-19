@@ -65,7 +65,7 @@ export function convMultiCloze(
     const textsibls = getSiblings(questionText, settings);
     let front: string = "",
         back: string;
-    const ftsibls = textsibls.filter((v, idx) => idxs.includes(idx));
+    const ftsibls = textsibls.filter((_v, idx) => idxs.includes(idx));
     // .sort((a, b) => b.index - a.index);
     let startIdx: number;
     ftsibls.forEach((m0, sibIdx) => {

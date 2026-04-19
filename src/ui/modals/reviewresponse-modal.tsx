@@ -1,4 +1,4 @@
-import { App, MarkdownView, Notice, Platform, setIcon } from "obsidian";
+import { MarkdownView, Notice, Platform, setIcon } from "obsidian";
 import { TouchOnMobile } from "src/Events/touchEvent";
 import { FlashcardReviewMode } from "src/FlashcardReviewSequencer";
 import { t } from "src/lang/helpers";
@@ -12,7 +12,6 @@ import { SrsAlgorithm } from "src/algorithms/algorithms";
 
 export class reviewResponseModal {
     private static instance: reviewResponseModal;
-    private app: App;
     public plugin: SRPlugin;
     private settings: SRSettings;
     public submitCallback: (resp: number) => void;
@@ -23,7 +22,6 @@ export class reviewResponseModal {
     private contentEl: HTMLElement;
 
     barId = "reviewResponseModalBar";
-    private barItemId = "ResponseFloatBarCommandItem";
     answerBtn: HTMLButtonElement;
     buttons: HTMLButtonElement[];
     response: HTMLDivElement;
@@ -51,7 +49,6 @@ export class reviewResponseModal {
     }
 
     constructor(plugin: SRPlugin, settings: SRSettings) {
-        this.app = plugin.app;
         this.plugin = plugin;
         this.settings = settings;
         reviewResponseModal.instance = this;

@@ -1,4 +1,4 @@
-import { App, ButtonComponent, Modal, Setting, TextComponent } from "obsidian";
+import { App, ButtonComponent, Modal, Setting } from "obsidian";
 import { t } from "src/lang/helpers";
 
 /**
@@ -12,7 +12,6 @@ import { t } from "src/lang/helpers";
 export class GetInputModal extends Modal {
     private promptText: string = "";
     private days: number = 1; // 默认值为1天
-    private textComponent: TextComponent; // 保存输入组件引用
 
     // 回调函数：当用户点击提交时调用，参数是输入的天数
     public submitCallback: (days: number) => void;
@@ -30,7 +29,6 @@ export class GetInputModal extends Modal {
         new Setting(contentEl.createDiv())
             .setDesc(this.promptText) // 设置描述文本
             .addText((text) => {
-                this.textComponent = text;
                 text.setValue(String(this.days)) // 初始值为1
                     .onChange((value) => {
                         // 当输入变化时解析数字

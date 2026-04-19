@@ -3,7 +3,6 @@ import { ItemView, WorkspaceLeaf } from "obsidian";
 import { SR_TAB_VIEW } from "src/constants";
 import { FlashcardReviewMode, IFlashcardReviewSequencer } from "src/FlashcardReviewSequencer";
 import type SRPlugin from "src/main";
-import type { SRSettings } from "src/settings";
 import { ReactReviewApp } from "src/ui/ReactReviewApp";
 import type { ReviewSessionView } from "src/ui/containers/ReviewSession";
 
@@ -23,11 +22,9 @@ export class TabView extends ItemView {
     loadReviewSequencerData: () => Promise<ReviewSessionLoadResult>;
 
     private plugin: SRPlugin;
-    private reviewMode: FlashcardReviewMode | null = null;
     private viewContainerEl: HTMLElement;
     private viewContentEl: HTMLElement;
     private reviewSequencer: IFlashcardReviewSequencer | null = null;
-    private settings: SRSettings;
     private reactApp: ReactReviewApp | null = null;
     private openErrorCount = 0;
 
@@ -38,7 +35,6 @@ export class TabView extends ItemView {
     ) {
         super(leaf);
         this.plugin = plugin;
-        this.settings = plugin.data.settings;
         this.loadReviewSequencerData = loadReviewSequencerData;
 
         const viewContent = this.containerEl.getElementsByClassName("view-content");
@@ -75,7 +71,6 @@ export class TabView extends ItemView {
         try {
             const loadedData = nextSession ?? (await this.loadReviewSequencerData());
             this.reviewSequencer = loadedData.reviewSequencer;
-            this.reviewMode = loadedData.mode;
             const initialView = loadedData.initialView ?? "deck-list";
             const initialTargetDeckPath = loadedData.initialTargetDeckPath;
             if (this.plugin.data.settings.showRuntimeDebugMessages) {
