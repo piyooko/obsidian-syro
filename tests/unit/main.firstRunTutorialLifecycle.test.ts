@@ -92,6 +92,7 @@ describe("SRPlugin first run tutorial lifecycle", () => {
                 create: jest.fn(),
             },
         };
+        plugin.canonicalizeNoteReviewEntryPath = jest.fn();
         plugin.updateAndSortDueNotes = jest.fn();
         plugin.syncEvents = { emit: jest.fn() };
 
@@ -107,6 +108,7 @@ describe("SRPlugin first run tutorial lifecycle", () => {
             "manual",
             plugin.noteAlgorithm,
         );
+        expect(plugin.canonicalizeNoteReviewEntryPath).toHaveBeenCalledWith(tutorialFile.path);
         expect(plugin.noteReviewStore.save).toHaveBeenCalledTimes(1);
         expect(plugin.reviewDecks).toBe(buildReviewDecksResult);
         expect(plugin.updateAndSortDueNotes).toHaveBeenCalledTimes(1);

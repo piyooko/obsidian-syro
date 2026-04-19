@@ -50,92 +50,111 @@ function formatDate(date, pattern) {
     return date.toISOString();
 }
 
+class MockMomentValue {
+    constructor(input, localeAccessor) {
+        this._date = normalizeDateInput(input);
+        this._localeAccessor = localeAccessor;
+    }
+
+    add(amount, unit) {
+        const normalizedUnit = String(unit ?? "").toLowerCase();
+        const numericAmount = Number(amount) || 0;
+
+        switch (normalizedUnit) {
+            case "d":
+            case "day":
+            case "days":
+                this._date = new Date(this._date.getTime() + numericAmount * DAY_MS);
+                break;
+            case "h":
+            case "hour":
+            case "hours":
+                this._date = new Date(this._date.getTime() + numericAmount * 60 * 60 * 1000);
+                break;
+            case "m":
+            case "minute":
+            case "minutes":
+                this._date = new Date(this._date.getTime() + numericAmount * 60 * 1000);
+                break;
+            default:
+                break;
+        }
+
+        return this;
+    }
+
+    subtract(amount, unit) {
+        return this.add(-Number(amount || 0), unit);
+    }
+
+    startOf(unit) {
+        if (String(unit ?? "").toLowerCase() === "day") {
+            this._date = new Date(this._date.getTime());
+            this._date.setHours(0, 0, 0, 0);
+        }
+        return this;
+    }
+
+    endOf(unit) {
+        if (String(unit ?? "").toLowerCase() === "day") {
+            this._date = new Date(this._date.getTime());
+            this._date.setHours(23, 59, 59, 999);
+        }
+        return this;
+    }
+
+    clone() {
+        return new MockMomentValue(this._date, this._localeAccessor);
+    }
+
+    format(pattern) {
+        return formatDate(this._date, pattern);
+    }
+
+    valueOf() {
+        return this._date.getTime();
+    }
+
+    toDate() {
+        return new Date(this._date.getTime());
+    }
+
+    locale(nextLocale) {
+        return this._localeAccessor(nextLocale);
+    }
+
+    isSameOrBefore(value) {
+        return this.valueOf() <= normalizeDateInput(value).valueOf();
+    }
+
+    isSameOrAfter(value) {
+        return this.valueOf() >= normalizeDateInput(value).valueOf();
+    }
+
+    isBefore(value) {
+        return this.valueOf() < normalizeDateInput(value).valueOf();
+    }
+
+    isAfter(value) {
+        return this.valueOf() > normalizeDateInput(value).valueOf();
+    }
+}
+
 function createMockMoment(options = {}) {
     let currentLocale = options.locale ?? "en";
 
-    function createMomentValue(input) {
-        let date = normalizeDateInput(input);
-
-        const api = {
-            add(amount, unit) {
-                const normalizedUnit = String(unit ?? "").toLowerCase();
-                const numericAmount = Number(amount) || 0;
-
-                switch (normalizedUnit) {
-                    case "d":
-                    case "day":
-                    case "days":
-                        date = new Date(date.getTime() + numericAmount * DAY_MS);
-                        break;
-                    case "h":
-                    case "hour":
-                    case "hours":
-                        date = new Date(date.getTime() + numericAmount * 60 * 60 * 1000);
-                        break;
-                    case "m":
-                    case "minute":
-                    case "minutes":
-                        date = new Date(date.getTime() + numericAmount * 60 * 1000);
-                        break;
-                    default:
-                        break;
-                }
-
-                return api;
-            },
-            subtract(amount, unit) {
-                return api.add(-Number(amount || 0), unit);
-            },
-            startOf(unit) {
-                if (String(unit ?? "").toLowerCase() === "day") {
-                    date = new Date(date.getTime());
-                    date.setHours(0, 0, 0, 0);
-                }
-                return api;
-            },
-            endOf(unit) {
-                if (String(unit ?? "").toLowerCase() === "day") {
-                    date = new Date(date.getTime());
-                    date.setHours(23, 59, 59, 999);
-                }
-                return api;
-            },
-            clone() {
-                return createMomentValue(date);
-            },
-            format(pattern) {
-                return formatDate(date, pattern);
-            },
-            valueOf() {
-                return date.getTime();
-            },
-            toDate() {
-                return new Date(date.getTime());
-            },
-            locale(nextLocale) {
-                return mockMoment.locale(nextLocale);
-            },
-        };
-
-        return api;
-    }
-
-    const mockMoment = (...args) => createMomentValue(args[0]);
-    mockMoment.locale = jest.fn((nextLocale) => {
+    const applyLocale = (nextLocale) => {
         if (typeof nextLocale === "string" && nextLocale.trim().length > 0) {
             currentLocale = nextLocale;
         }
 
         return currentLocale;
-    });
-    mockMoment.isMoment = (value) =>
-        Boolean(
-            value &&
-                typeof value === "object" &&
-                typeof value.valueOf === "function" &&
-                typeof value.clone === "function",
-        );
-    mockMoment.unix = (seconds) => createMomentValue(Number(seconds) * 1000);
+    };
+
+    const mockMoment = (...args) => new MockMomentValue(args[0], applyLocale);
+    mockMoment.locale = jest.fn(applyLocale);
+    mockMoment.isMoment = (value) => value instanceof MockMomentValue;
+    mockMoment.unix = (seconds) => new MockMomentValue(Number(seconds) * 1000, applyLocale);
 
     return mockMoment;
 }
