@@ -114,7 +114,6 @@ import {
     extractSharedSettings,
     extractSharedSettingsWithMetadata,
     extractTrackingRules,
-    hasSyro012MigrationMarker,
     normalizeDeviceReviewCount,
     parseDailyState,
     parseDeviceState,
@@ -143,6 +142,10 @@ import {
     SYRO_SYNC_RETENTION_WINDOW_MS,
     pruneTimestampMap,
 } from "./dataStore/syroSyncMeta";
+import {
+    cleanupLegacy011ArchivedFiles,
+    migrateLegacy011PluginState,
+} from "./dataStore/syroLegacy011Migration";
 import {
     SyroPersistenceLayout,
     SyroWorkspace,
@@ -7013,37 +7016,48 @@ export default class SRPlugin extends Plugin {
     }
 
     private async migrateLegacyPluginDataIfNeeded(rawData: unknown): Promise<string | null> {
-        if (
-            hasSyro012MigrationMarker(rawData) ||
-            !this.sharedSettingsStore ||
-            !this.trackingRulesStore ||
-            !this.dailyStateStore ||
-            !this.deviceStateStore ||
-            !this.licenseStateStore
-        ) {
-            this.dataShell = parseLegacyPluginData(rawData);
-            return null;
+        const result = await migrateLegacy011PluginState({
+            rawData,
+            data: {
+                settings: this.data.settings,
+                buryDate: this.data.buryDate,
+                buryList: this.data.buryList,
+                historyDeck: this.data.historyDeck,
+                dailyDeckStats: this.data.dailyDeckStats,
+                folderTrackingRules: this.data.folderTrackingRules,
+            },
+            sharedSettingsStore: this.sharedSettingsStore,
+            trackingRulesStore: this.trackingRulesStore,
+            dailyStateStore: this.dailyStateStore,
+            deviceStateStore: this.deviceStateStore,
+            licenseStateStore: this.licenseStateStore,
+            buildDailyStateSnapshot: () => this.buildDailyStateSnapshot(),
+            buildCurrentDeviceState: () => this.buildCurrentDeviceState(),
+            validateSplitState: () => this.validateMigratedSplitState(),
+            saveDataShell: (completedAt?: string) => this.saveDataShell(completedAt),
+            now: () => getCurrentIsoTimestamp(),
+        });
+        return result.validationError;
+    }
+
+    private async cleanupArchivedLegacy011FilesIfReady(): Promise<void> {
+        if (!this.syroLayout) {
+            return;
         }
 
-        const sharedSettingsState = extractSharedSettings(this.data.settings);
-        const trackingRulesState = extractTrackingRules(this.data.folderTrackingRules, {}, {});
-        const dailyState = this.buildDailyStateSnapshot();
-        const deviceState = this.buildCurrentDeviceState();
-        const licenseState = extractLicenseState(this.data.settings);
-
-        await this.sharedSettingsStore.save(sharedSettingsState);
-        await this.trackingRulesStore.save(trackingRulesState);
-        await this.dailyStateStore.save(dailyState);
-        await this.deviceStateStore.save(deviceState);
-        await this.licenseStateStore.save(licenseState);
-
-        const validationError = await this.validateMigratedSplitState();
-        if (validationError) {
-            return validationError;
+        try {
+            await cleanupLegacy011ArchivedFiles({
+                adapter: this.app.vault.adapter,
+                manifestDir: this.manifest.dir,
+                settings: this.data.settings,
+                layout: this.syroLayout,
+                logDebug: (...args: unknown[]) => this.logRuntimeDebug(...args),
+            });
+        } catch (error) {
+            this.logRuntimeDebug("[SR-SyroMigration] legacy-cleanup-failed", {
+                error: String(error),
+            });
         }
-
-        await this.saveDataShell(getCurrentIsoTimestamp());
-        return null;
     }
 
     private async loadSplitPluginState(): Promise<string | null> {
@@ -7203,6 +7217,9 @@ export default class SRPlugin extends Plugin {
         const splitStateLoadError = await this.loadSplitPluginState();
         if (splitStateLoadError) {
             this.enableSyroReadOnly(splitStateLoadError);
+        }
+        if (this.syroReadOnlyReason === null) {
+            await this.cleanupArchivedLegacy011FilesIfReady();
         }
 
         this.deckOptionsStore = new DeckOptionsStore({

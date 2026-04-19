@@ -3,7 +3,6 @@ import { NOTE_CACHE_VERSION } from "src/cache/noteCacheStore";
 import { createDefaultSrsData } from "./data";
 import { createDeckOptionsStoreSnapshot } from "./deckOptionsStore";
 import type { PendingOverlayStore } from "./pendingOverlayStore";
-import { wrapLegacyCardsReviewOverlay } from "./pendingOverlayStore";
 import { createDefaultFileIdentityStoreFile, parseFileIdentityStoreFile } from "./syroFileIdentityStore";
 import {
     createDefaultDailyState,
@@ -11,11 +10,13 @@ import {
     createDefaultLicenseState,
     createDefaultSharedSettingsState,
     createDefaultTrackingRulesState,
-    hasSyro012MigrationMarker,
     normalizeDeviceReviewCount,
     parseDailyState,
 } from "./syroPluginDataStore";
-import { getStorePath } from "src/dataStore/dataLocation";
+import {
+    listLegacy011SourceFiles,
+    migrateLegacy011WorkspaceFiles,
+} from "./syroLegacy011Migration";
 import type { SRSettings } from "src/settings";
 import {
     getArrayProp,
@@ -239,11 +240,6 @@ function dirname(path: string): string {
     return slashIndex >= 0 ? normalized.substring(0, slashIndex) : "";
 }
 
-function replaceFileName(path: string, fileName: string): string {
-    const parentDir = dirname(path);
-    return parentDir ? joinPath(parentDir, fileName) : fileName;
-}
-
 function createDeviceId(): string {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
         return crypto.randomUUID();
@@ -444,24 +440,6 @@ async function ensureDirectory(adapter: FileBackedAdapter, targetDir: string): P
         }
         await adapter.mkdir(current);
     }
-}
-
-async function copyFileIfMissing(
-    adapter: FileBackedAdapter,
-    sourcePath: string,
-    targetPath: string,
-): Promise<void> {
-    if (sourcePath === targetPath) {
-        return;
-    }
-
-    if (!(await adapter.exists(sourcePath)) || (await adapter.exists(targetPath))) {
-        return;
-    }
-
-    const data = await adapter.read(sourcePath);
-    await ensureDirectory(adapter, dirname(targetPath));
-    await adapter.write(targetPath, data);
 }
 
 async function copyFile(
@@ -1491,179 +1469,6 @@ export class SyroWorkspace {
         await this.adapter.write(path, JSON.stringify(value, null, 2));
     }
 
-    private getMigrationBackupsRoot(): string {
-        return joinPath(trimTrailingSlash(this.manifestDir), "migration-backups");
-    }
-
-    private async prepareMigrationBackup(layout: SyroPersistenceLayout): Promise<void> {
-        const existingLegacyFiles = await this.listExistingLegacySourceFiles(layout);
-
-        if (existingLegacyFiles.length === 0) {
-            return;
-        }
-
-        const backupDir = joinPath(
-            this.getMigrationBackupsRoot(),
-            `${new Date().toISOString().replace(/:/g, "-")}-before-0.0.12`,
-        );
-        await ensureDirectory(this.adapter, backupDir);
-
-        const copiedFiles: string[] = [];
-        for (const [name, path] of existingLegacyFiles) {
-            const targetPath = joinPath(backupDir, name);
-            await copyFileIfMissing(this.adapter, path, targetPath);
-            copiedFiles.push(name);
-        }
-
-        const deckOptionsSnapshot = createDeckOptionsStoreSnapshot(this.settings);
-        await this.writeJson(
-            joinPath(backupDir, "deck-options.settings-snapshot.json"),
-            deckOptionsSnapshot.state,
-        );
-        copiedFiles.push("deck-options.settings-snapshot.json");
-
-        await this.writeJson(joinPath(backupDir, "meta.json"), {
-            createdAt: new Date().toISOString(),
-            reason: "0.0.11-to-0.0.12-migration-backup",
-            sourceVersion: "0.0.11",
-            targetVersion: "0.0.12",
-            deviceNameAtMigration: layout.device.deviceName,
-            sourceFiles: copiedFiles,
-            notes: "copy-only backup generated before the Syro 0.0.12 layout migration",
-        });
-    }
-
-    private getLegacySourceFiles(): Array<[string, string]> {
-        const legacyPluginDataPath = joinPath(trimTrailingSlash(this.manifestDir), "data.json");
-        const legacyCardsPath = normalizePath(getStorePath(this.manifestDir, this.settings));
-        const legacyNotesPath = replaceFileName(legacyCardsPath, "review_notes.json");
-        const legacyTimelinePath = replaceFileName(legacyCardsPath, "review_commits.json");
-        const legacyOverlayPath = replaceFileName(
-            legacyCardsPath,
-            "tracked_files.review_overlay.json",
-        );
-        const legacyNoteCachePath = replaceFileName(legacyCardsPath, "note_cache.json");
-
-        return [
-            ["data.json", legacyPluginDataPath],
-            ["tracked_files.json", legacyCardsPath],
-            ["review_notes.json", legacyNotesPath],
-            ["review_commits.json", legacyTimelinePath],
-            ["tracked_files.review_overlay.json", legacyOverlayPath],
-            ["note_cache.json", legacyNoteCachePath],
-        ];
-    }
-
-    private async isLegacyPluginDataFile(path: string): Promise<boolean> {
-        if (!(await this.adapter.exists(path))) {
-            return false;
-        }
-
-        try {
-            const parsed = parseJsonUnknown(await this.adapter.read(path));
-            if (!isRecord(parsed)) {
-                return true;
-            }
-
-            const version = getNumberProp(parsed, "version");
-            const schemaVersion = getStringProp(parsed, "schemaVersion")?.trim();
-            if (
-                version === 2 &&
-                (schemaVersion === "0.0.12" || hasSyro012MigrationMarker(parsed))
-            ) {
-                return false;
-            }
-
-            return true;
-        } catch {
-            return true;
-        }
-    }
-
-    private async listExistingLegacySourceFiles(
-        layout?: SyroPersistenceLayout,
-    ): Promise<Array<[string, string]>> {
-        const existingLegacyFiles: Array<[string, string]> = [];
-
-        for (const [name, path] of this.getLegacySourceFiles()) {
-            if (name === "data.json") {
-                if (await this.isLegacyPluginDataFile(path)) {
-                    existingLegacyFiles.push([name, path]);
-                }
-                continue;
-            }
-
-            if (await this.adapter.exists(path)) {
-                existingLegacyFiles.push([name, path]);
-            }
-        }
-
-        if (!layout) {
-            return existingLegacyFiles;
-        }
-
-        for (const [name, path] of this.getCompatibilitySourceFiles(layout)) {
-            if (await this.adapter.exists(path)) {
-                existingLegacyFiles.push([name, path]);
-            }
-        }
-
-        return existingLegacyFiles;
-    }
-
-    private getCompatibilitySourceFiles(layout: SyroPersistenceLayout): Array<[string, string]> {
-        const legacyLocalStateRoot = joinPath(trimTrailingSlash(this.manifestDir), "local-state");
-        return [
-            ["sync-merge-state.json", joinPath(layout.deviceRoot, "sync-merge-state.json")],
-            [
-                "cards.review_overlay.json",
-                joinPath(layout.deviceRoot, "cards.review_overlay.json"),
-            ],
-            [
-                "local-state/cards.review_overlay.json",
-                joinPath(legacyLocalStateRoot, "cards.review_overlay.json"),
-            ],
-            [
-                "local-state/migration-state.json",
-                joinPath(legacyLocalStateRoot, "migration-state.json"),
-            ],
-        ];
-    }
-
-    private async migrateLegacyFiles(layout: SyroPersistenceLayout): Promise<void> {
-        const legacyFiles = this.getLegacySourceFiles();
-        const legacyCardsPath =
-            legacyFiles.find(([name]) => name === "tracked_files.json")?.[1] ?? "";
-        const legacyNotesPath =
-            legacyFiles.find(([name]) => name === "review_notes.json")?.[1] ?? "";
-        const legacyTimelinePath =
-            legacyFiles.find(([name]) => name === "review_commits.json")?.[1] ?? "";
-        const legacyOverlayPath =
-            legacyFiles.find(([name]) => name === "tracked_files.review_overlay.json")?.[1] ?? "";
-        const legacyNoteCachePath =
-            legacyFiles.find(([name]) => name === "note_cache.json")?.[1] ?? "";
-
-        // Copy-only migration keeps the old files intact so a partial rollout cannot strand user data.
-        await copyFileIfMissing(this.adapter, legacyCardsPath, layout.cardsPath);
-        await copyFileIfMissing(this.adapter, legacyNotesPath, layout.notesPath);
-        await copyFileIfMissing(this.adapter, legacyTimelinePath, layout.timelinePath);
-        await copyFileIfMissing(this.adapter, legacyNoteCachePath, layout.noteCachePath);
-        if (!(await this.adapter.exists(layout.deckOptionsPath))) {
-            const snapshot = createDeckOptionsStoreSnapshot(this.settings);
-            await this.writeJson(layout.deckOptionsPath, snapshot.state);
-        }
-        if (!(await this.adapter.exists(layout.fileIdentitiesPath))) {
-            await this.writeJson(layout.fileIdentitiesPath, createDefaultFileIdentityStoreFile());
-        }
-
-        await this.migrateCompatibilityLayout(layout);
-        await this.migrateLegacyCardsOverlay(
-            legacyOverlayPath,
-            layout.pendingOverlayPath,
-            "legacy-root",
-        );
-    }
-
     private buildLayout(
         roots: Omit<
             SyroPersistenceLayout,
@@ -1782,8 +1587,14 @@ export class SyroWorkspace {
         await ensureDirectory(this.adapter, layout.currentDeviceSessionsRoot);
 
         if (shouldRunMigration) {
-            await this.prepareMigrationBackup(layout);
-            await this.migrateLegacyFiles(layout);
+            await migrateLegacy011WorkspaceFiles({
+                adapter: this.adapter,
+                manifestDir: this.manifestDir,
+                settings: this.settings,
+                layout,
+                deviceNameAtMigration: layout.device.deviceName,
+                logDebug: (...args: unknown[]) => this.logDebug(...args),
+            });
         }
 
         await this.writeJson(layout.deviceMetaPath, layout.device);
@@ -2128,60 +1939,11 @@ export class SyroWorkspace {
     }
 
     private async hasLegacyInputs(): Promise<boolean> {
-        return (await this.listExistingLegacySourceFiles()).length > 0;
-    }
-
-    private async migrateCompatibilityLayout(layout: SyroPersistenceLayout): Promise<void> {
-        await this.migrateLocalStateFiles(layout);
-    }
-
-    private async migrateLegacyCardsOverlay(
-        sourcePath: string,
-        targetPath: string,
-        sourceKind: "legacy-root" | "device-root" | "local-state",
-    ): Promise<void> {
-        if (
-            !sourcePath ||
-            (await this.adapter.exists(targetPath)) ||
-            !(await this.adapter.exists(sourcePath))
-        ) {
-            return;
-        }
-
-        try {
-            const wrapped = wrapLegacyCardsReviewOverlay(await this.adapter.read(sourcePath));
-            if (!wrapped) {
-                return;
-            }
-
-            await this.writeJson(targetPath, wrapped);
-            this.logDebug("[SR-PendingOverlay] legacy-migrated", {
-                sourceKind,
-                sourcePath,
-                targetPath,
-                sections: Object.keys(wrapped.sections),
-            });
-        } catch (error) {
-            this.logDebug("[SR-PendingOverlay] legacy-migration-skipped", {
-                sourceKind,
-                sourcePath,
-                targetPath,
-                error: String(error),
-            });
-        }
-    }
-
-    private async migrateLocalStateFiles(layout: SyroPersistenceLayout): Promise<void> {
-        const legacyLocalStateRoot = joinPath(trimTrailingSlash(this.manifestDir), "local-state");
-        await this.migrateLegacyCardsOverlay(
-            joinPath(layout.deviceRoot, "cards.review_overlay.json"),
-            layout.pendingOverlayPath,
-            "device-root",
-        );
-        await this.migrateLegacyCardsOverlay(
-            joinPath(legacyLocalStateRoot, "cards.review_overlay.json"),
-            layout.pendingOverlayPath,
-            "local-state",
-        );
+        const sourceFiles = await listLegacy011SourceFiles({
+            adapter: this.adapter,
+            manifestDir: this.manifestDir,
+            settings: this.settings,
+        });
+        return sourceFiles.legacyEntries.length > 0;
     }
 }

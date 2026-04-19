@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { createDeckOptionsStoreSnapshot } from "src/dataStore/deckOptionsStore";
+import * as Legacy011Migration from "src/dataStore/syroLegacy011Migration";
 import { DEFAULT_SETTINGS } from "src/settings";
 import { SyroWorkspace } from "src/dataStore/syroWorkspace";
 import { sha256Hex } from "src/util/hash";
@@ -498,6 +499,7 @@ describe("SyroWorkspace", () => {
             '{"items":[{"id":1}]}',
         );
         files.set(".obsidian/plugins/syro/note_cache.json", '{"items":[{"path":"note.md"}]}');
+        files.set(".obsidian/plugins/syro/ob_revlog.csv", "date,grade\n");
 
         const startup = await createWorkspace(adapter).initialize();
         const layout = startup.layout!;
@@ -551,6 +553,32 @@ describe("SyroWorkspace", () => {
         expect(files.get(backupMetaPath!.replace("/meta.json", "/data.json"))).toContain(
             '"openRandomNote":true',
         );
+        expect(files.get(backupMetaPath!.replace("/meta.json", "/ob_revlog.csv"))).toBe(
+            "date,grade\n",
+        );
+    });
+
+    it("delegates legacy workspace migration to the 011 migration module", async () => {
+        const { adapter, files } = createMockAdapter();
+        const migrateSpy = jest.spyOn(Legacy011Migration, "migrateLegacy011WorkspaceFiles");
+        files.set(".obsidian/plugins/syro/data.json", '{"settings":{"openRandomNote":true}}');
+        files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[]}');
+        files.set(".obsidian/plugins/syro/review_notes.json", createValidNotesPayload());
+        files.set(".obsidian/plugins/syro/review_commits.json", '{"note.md":[{"id":"1"}]}');
+
+        const startup = await createWorkspace(adapter).initialize();
+
+        expect(startup.startupDecision).toBe("ready");
+        expect(migrateSpy).toHaveBeenCalledTimes(1);
+        expect(migrateSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                manifestDir: ".obsidian/plugins/syro",
+                layout: expect.objectContaining({
+                    cardsPath: ".obsidian/plugins/syro/devices/Desktop--d84f/cards.json",
+                }),
+            }),
+        );
+        migrateSpy.mockRestore();
     });
 
     it("does not treat the 0.0.12 data shell as a legacy migration source", async () => {
@@ -663,6 +691,25 @@ describe("SyroWorkspace", () => {
         ).toBe(false);
         expect(files.has(".obsidian/plugins/syro/sessions/archive/d84f__2026-04.sessionpack.gz")).toBe(
             false,
+        );
+    });
+
+    it("preserves wrapped timeline payloads during legacy migration", async () => {
+        const { adapter, files } = createMockAdapter();
+        files.set(".obsidian/plugins/syro/data.json", '{"settings":{"openRandomNote":true}}');
+        files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[]}');
+        files.set(".obsidian/plugins/syro/review_notes.json", createValidNotesPayload());
+        files.set(
+            ".obsidian/plugins/syro/review_commits.json",
+            '{"version":1,"files":{"note.md":[{"id":"1"}]},"syncEntities":{}}',
+        );
+
+        const startup = await createWorkspace(adapter).initialize();
+        const layout = startup.layout!;
+
+        expect(startup.startupDecision).toBe("ready");
+        expect(files.get(layout.timelinePath)).toBe(
+            '{"version":1,"files":{"note.md":[{"id":"1"}]},"syncEntities":{}}',
         );
     });
 

@@ -1,4 +1,5 @@
 import SRPlugin from "src/main";
+import * as Legacy011Migration from "src/dataStore/syroLegacy011Migration";
 import { FlashcardReviewMode } from "src/scheduling";
 import { SR_TAB_VIEW } from "src/constants";
 import { DEFAULT_SETTINGS } from "src/settings";
@@ -788,6 +789,142 @@ describe("SRPlugin sync request orchestration", () => {
                 }),
             }),
         );
+    });
+
+    test("migrateLegacyPluginDataIfNeeded delegates to the 011 migration module", async () => {
+        const migrateSpy = jest
+            .spyOn(Legacy011Migration, "migrateLegacy011PluginState")
+            .mockResolvedValue({
+                skipped: false,
+                skippedBecause: null,
+                wroteSplitState: true,
+                wroteShellMarker: false,
+                validationError: "[SR-Syro] Invalid settings.json schema.",
+                completedAt: null,
+            });
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: {
+                settings: DEFAULT_SETTINGS,
+                buryDate: "",
+                buryList: [] as string[],
+                historyDeck: null as string | null,
+                dailyDeckStats: {
+                    date: "",
+                    counts: {},
+                },
+                folderTrackingRules: {},
+            },
+            sharedSettingsStore: { save: jest.fn(async () => undefined) },
+            trackingRulesStore: { save: jest.fn(async () => undefined) },
+            dailyStateStore: { save: jest.fn(async () => undefined) },
+            deviceStateStore: { save: jest.fn(async () => undefined) },
+            licenseStateStore: { save: jest.fn(async () => undefined) },
+            buildDailyStateSnapshot: jest.fn(() => ({
+                version: 1,
+                buryDate: "",
+                buryList: [],
+                dailyDeckStats: {
+                    date: "",
+                    counts: {},
+                },
+                deviceReviewCount: 0,
+                appliedOpIds: {},
+            })),
+            buildCurrentDeviceState: jest.fn(() => ({
+                version: 1,
+                settings: {},
+                historyDeck: null,
+                deckOptionsProtocolVersion: 1,
+            })),
+            validateMigratedSplitState: jest.fn(async () => null),
+            saveDataShell: jest.fn(async () => undefined),
+        });
+
+        const result = await (
+            SRPlugin.prototype as unknown as {
+                migrateLegacyPluginDataIfNeeded: (rawData: unknown) => Promise<string | null>;
+            }
+        ).migrateLegacyPluginDataIfNeeded.call(plugin, {});
+
+        expect(result).toBe("[SR-Syro] Invalid settings.json schema.");
+        expect(migrateSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                rawData: {},
+                data: expect.objectContaining({
+                    settings: DEFAULT_SETTINGS,
+                }),
+                buildDailyStateSnapshot: expect.any(Function),
+                buildCurrentDeviceState: expect.any(Function),
+                validateSplitState: expect.any(Function),
+                saveDataShell: expect.any(Function),
+            }),
+        );
+        migrateSpy.mockRestore();
+    });
+
+    test("cleanupArchivedLegacy011FilesIfReady delegates to the 011 migration cleanup module", async () => {
+        const cleanupSpy = jest
+            .spyOn(Legacy011Migration, "cleanupLegacy011ArchivedFiles")
+            .mockResolvedValue({
+                skipped: false,
+                skippedBecause: null,
+                removedFiles: [".obsidian/plugins/syro/tracked_files.json"],
+                removedDirectories: [],
+                sourceFiles: {
+                    primary: {
+                        dataJson: ".obsidian/plugins/syro/data.json",
+                        trackedFilesJson: ".obsidian/plugins/syro/tracked_files.json",
+                        reviewNotesJson: ".obsidian/plugins/syro/review_notes.json",
+                        reviewCommitsJson: ".obsidian/plugins/syro/review_commits.json",
+                        trackedFilesReviewOverlayJson:
+                            ".obsidian/plugins/syro/tracked_files.review_overlay.json",
+                        noteCacheJson: ".obsidian/plugins/syro/note_cache.json",
+                        obRevlogCsv: ".obsidian/plugins/syro/ob_revlog.csv",
+                    },
+                    compatibility: {
+                        syncMergeStateJson: null,
+                        deviceRootCardsReviewOverlayJson: null,
+                        localStateCardsReviewOverlayJson: null,
+                        localStateMigrationStateJson: null,
+                    },
+                    entries: [],
+                    presentEntries: [],
+                    legacyEntries: [],
+                },
+            });
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            app: {
+                vault: {
+                    adapter: {},
+                },
+            },
+            manifest: {
+                dir: ".obsidian/plugins/syro",
+            },
+            data: {
+                settings: DEFAULT_SETTINGS,
+            },
+            syroLayout: {
+                deviceRoot: ".obsidian/plugins/syro/devices/Desktop--d84f",
+            },
+            logRuntimeDebug: jest.fn(),
+        });
+
+        await (
+            SRPlugin.prototype as unknown as {
+                cleanupArchivedLegacy011FilesIfReady: () => Promise<void>;
+            }
+        ).cleanupArchivedLegacy011FilesIfReady.call(plugin);
+
+        expect(cleanupSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                adapter: plugin.app.vault.adapter,
+                manifestDir: ".obsidian/plugins/syro",
+                settings: DEFAULT_SETTINGS,
+                layout: plugin.syroLayout,
+            }),
+        );
+        cleanupSpy.mockRestore();
     });
 
     test("savePluginData with daily-state only persists just daily-state and the shell", async () => {
