@@ -9,8 +9,8 @@
 - 已处理：
   - 旧设置函数文件（2026-04-19）
   - 旧 modal / view 实现（2026-04-19）
+  - `src/NoteEaseCalculator.ts`（2026-04-19）
 - 待处理：
-  - `src/NoteEaseCalculator.ts`
   - `src/dataStore/location_switch.ts`
   - 依赖联动候选
 
@@ -73,7 +73,7 @@
 
 误判风险：已关闭
 
-### 3. 独立逻辑类
+### 3. 独立逻辑类（已处理）
 
 候选文件：
 
@@ -84,12 +84,14 @@
 - `NoteEaseCalculator` 在 `src` 和 `tests` 中没有 import，也没有构造或静态调用。
 - 文件头注释仍写着“可能在某些调度逻辑中使用”，但当前仓库里已经找不到对应调用链。
 
-建议动作：
+处理结果：
 
-- 作为单文件候选先交给 AI 复核。
-- 如果没有隐藏入口，可直接删除。
+- 已确认 `NoteEaseCalculator` 在 `src` 和 `tests` 中没有 import、构造调用或静态调用。
+- 已删除 `src/NoteEaseCalculator.ts`。
+- `pnpm run audit:deadcode:prod` 已不再报告该文件。
+- `pnpm run lint:obsidian` 通过。
 
-误判风险：低
+误判风险：已关闭
 
 ## 需要再看一眼再删
 

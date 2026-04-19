@@ -1,9 +1,9 @@
 # 死代码审计候选清单
 
-- 生成时间: 2026-04-19T12:12:57.195Z
+- 生成时间: 2026-04-19T12:16:33.641Z
 - 生成命令: `pnpm run audit:deadcode`
-- 生产侧 Knip: 5 个 unused files, 28 个 unused exports, 4 个 unused exported types
-- 全仓库 Knip: 4 个 unused files, 19 个 unused exports, 4 个 unused exported types
+- 生产侧 Knip: 4 个 unused files, 28 个 unused exports, 4 个 unused exported types
+- 全仓库 Knip: 3 个 unused files, 19 个 unused exports, 4 个 unused exported types
 - src-only TypeScript: 21 条未使用局部变量/参数诊断
 
 ## 使用约定
@@ -16,7 +16,6 @@
 
 | 文件/符号 | 归类 | 误判风险 | 推荐动作 |
 | --- | --- | --- | --- |
-| src/NoteEaseCalculator.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
 | src/ui/modals/getInputModal.ts | A | low | 优先交给 AI 复核，确认入口链断开后直接删 |
 
 ## B 档: 需要 AI / 人工复核
@@ -105,6 +104,5 @@ _None_
 
 - `src/ui/modals/getInputModal.ts`: 确认未在当前 UI 流程、命令入口或动态挂载链里使用。
 - `src/dataStore/location_switch.ts`: 确认是否只剩测试引用和历史迁移注释。
-- `src/NoteEaseCalculator.ts`: 确认没有运行时或测试依赖。
 - `src/util/platform.ts`: 确认平台分支是否已被当前环境适配层完全替代。
 - `src/algorithms/balance/postpone.ts`: 确认旧平衡算法是否仍有命令或调度链路间接调用。
