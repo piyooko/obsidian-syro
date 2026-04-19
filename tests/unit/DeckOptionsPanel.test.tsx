@@ -6,31 +6,7 @@ import { t } from "src/lang/helpers";
 import { cloneFsrsSettings, DEFAULT_SETTINGS } from "src/settings";
 import { DeckOptionsPanel } from "src/ui/components/DeckOptionsPanel";
 
-jest.mock("obsidian", () => {
-    const actualMoment = require("moment");
-    const moment = (...args: unknown[]) => actualMoment(...args);
-    const Notice = jest.fn().mockImplementation(function MockNotice(
-        this: { message?: string },
-        message: string,
-    ) {
-        this.message = message;
-    });
-
-    Object.assign(moment, actualMoment);
-    moment.locale = jest.fn((...args: unknown[]) => actualMoment.locale(...args));
-
-    if (typeof window !== "undefined") {
-        (window as any).moment = moment;
-    }
-
-    return {
-        Notice,
-        Platform: {
-            isMobile: false,
-        },
-        moment,
-    };
-});
+jest.mock("obsidian");
 
 jest.mock("src/ui/components/useMobileNavbarOffset", () => ({
     useMobileNavbarOffset: () => 0,

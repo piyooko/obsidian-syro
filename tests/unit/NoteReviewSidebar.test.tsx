@@ -4,26 +4,7 @@ import { NoteReviewSidebar } from "src/ui/components/NoteReviewSidebar";
 import type { NoteReviewItem, NoteReviewSidebarState } from "src/ui/types/noteReview";
 import type { SidebarProgressIndicatorMode, SidebarProgressRingDirection } from "src/settings";
 
-jest.mock("obsidian", () => {
-    const actualMoment = require("moment");
-    const moment = (...args: unknown[]) => actualMoment(...args);
-
-    Object.assign(moment, actualMoment);
-    moment.locale = jest.fn(() => "en");
-
-    return {
-        Component: class Component {
-            load() {}
-            unload() {}
-        },
-        MarkdownRenderer: {
-            render: jest.fn(async (_app: unknown, content: string, el: HTMLElement) => {
-                el.textContent = content;
-            }),
-        },
-        moment,
-    };
-});
+jest.mock("obsidian");
 
 jest.mock("src/ui/components/TimelineCodeMirror", () => ({
     TimelineCodeMirror: () => null,

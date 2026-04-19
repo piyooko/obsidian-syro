@@ -11,8 +11,9 @@
   - 旧 modal / view 实现（2026-04-19）
   - `src/NoteEaseCalculator.ts`（2026-04-19）
   - `src/dataStore/location_switch.ts`（2026-04-19）
+  - repo 级未使用依赖与测试侧 `moment` 引用（2026-04-19）
 - 待处理：
-  - 依赖联动候选
+  - 无
 
 ## 第一批可优先复核删除
 
@@ -130,29 +131,41 @@
 
 - 已随 `StatsModal` 删除链路一并移除，不再出现在当前审计结果中。
 
-### `fflate`
+### `fflate`（已处理）
 
 当前证据：
 
 - 当前扫描里没有发现代码级引用。
 - 还没有做针对性的历史用途复核。
 
-建议动作：
+处理结果：
 
-- 暂时留在 B 档。
-- 等第一批文件删完后再单独追它的历史用途。
+- 已确认仓库内没有 `fflate` 的源码、测试或工具链引用。
+- 已从 `package.json` 与 `pnpm-lock.yaml` 中移除。
+- `pnpm run audit:deadcode:repo` 已不再报告该依赖。
 
-### `preact` / `vhtml` / `@types/vhtml`
+### `preact` / `vhtml` / `@types/vhtml`（已处理）
 
 当前证据：
 
 - `preact` 没找到代码级引用。
 - `vhtml` 相关目前只在 `esbuild.config.mjs` 的说明日志里出现，没有看到实际运行时代码引用。
 
-建议动作：
+处理结果：
 
-- 先不要和第一批文件一起删。
-- 等你确认当前构建链已经完全不需要旧 JSX 兼容方案后再处理。
+- 已确认当前 `.tsx` 文件都位于 `src/ui/**`，并走 React JSX 路径；仓库内没有 `preact` / `vhtml` 的实际 import。
+- 已从 `package.json` 与 `pnpm-lock.yaml` 中移除 `preact`、`vhtml`、`@types/vhtml`。
+- `pnpm run audit:deadcode:repo` 已不再报告这组依赖。
+
+### 其它 repo 级依赖与测试侧 `moment`（已处理）
+
+处理结果：
+
+- 已确认 `@microsoft/eslint-plugin-sdl` 与 `@popperjs/core` 没有当前工具链引用，并已从 `package.json` 与 `pnpm-lock.yaml` 中移除。
+- 已把 `tests/unit/DeckOptionsPanel.test.tsx`、`tests/unit/NoteReviewSidebar.test.tsx`、`tests/unit/__mocks__/obsidian.js` 改为复用统一的 `obsidian` mock，不再直接 `require("moment")`。
+- `pnpm exec jest tests/unit/DeckOptionsPanel.test.tsx --coverage=false` 通过。
+- `pnpm exec jest tests/unit/NoteReviewSidebar.test.tsx --coverage=false` 通过。
+- `pnpm run audit:deadcode:repo` 已不再报告 unused dependency、unused devDependency 或 unlisted dependency 的 `moment` 命中。
 
 ## 推荐的下一步提问方式
 

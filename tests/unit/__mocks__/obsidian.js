@@ -1,14 +1,17 @@
-const actualMoment = require("moment");
-const moment = (...args) => actualMoment(...args);
-
-Object.assign(moment, actualMoment);
-moment.locale = jest.fn((...args) => actualMoment.locale(...args));
+const { createMockMoment } = require("../helpers/createMockMoment");
+const moment = createMockMoment();
 
 if (typeof window !== "undefined") {
     window.moment = moment;
 }
 
 class Plugin {}
+
+class Component {
+    load() {}
+
+    unload() {}
+}
 
 class ItemView {
     constructor(leaf) {
@@ -98,11 +101,9 @@ class TFile extends TAbstractFile {}
 
 class TFolder extends TAbstractFile {}
 
-class Notice {
-    constructor(message) {
-        this.message = message;
-    }
-}
+const Notice = jest.fn().mockImplementation(function Notice(message) {
+    this.message = message;
+});
 
 class Scope {
     register() {}
@@ -127,12 +128,20 @@ class MarkdownView {
     }
 }
 
+const MarkdownRenderer = {
+    render: jest.fn(async (_app, content, el) => {
+        el.textContent = content;
+    }),
+};
+
 const Dummy = function () {};
 
 module.exports = new Proxy(
     {
         FrontMatterCache: class FrontMatterCache {},
+        Component,
         ItemView,
+        MarkdownRenderer,
         MarkdownView,
         Menu,
         Modal: class Modal {},

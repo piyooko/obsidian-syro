@@ -1,6 +1,6 @@
 # 死代码审计候选清单
 
-- 生成时间: 2026-04-19T12:19:37.542Z
+- 生成时间: 2026-04-19T12:29:28.384Z
 - 生成命令: `pnpm run audit:deadcode`
 - 生产侧 Knip: 3 个 unused files, 28 个 unused exports, 4 个 unused exported types
 - 全仓库 Knip: 3 个 unused files, 24 个 unused exports, 4 个 unused exported types
@@ -58,15 +58,6 @@
 | src/dataStore/syroPluginDataStore.ts:92:13 | DeviceStateField | B | medium | 确认类型外部约定后再删 |
 | src/dataStore/syroWorkspace.ts:126:18 | SyroDeviceSelectionRequest | B | medium | 确认类型外部约定后再删 |
 | src/dataStore/trackedFile.ts:56:13 | CardInfo | B | medium | 确认类型外部约定后再删 |
-| package.json:40:10 | @microsoft/eslint-plugin-sdl | B | medium | 确认上游文件或工具链配置是否真的可删，再决定是否移除依赖 |
-| package.json:41:10 | @popperjs/core | B | medium | 确认上游文件或工具链配置是否真的可删，再决定是否移除依赖 |
-| package.json:46:10 | @types/vhtml | B | medium | 确认上游文件或工具链配置是否真的可删，再决定是否移除依赖 |
-| package.json:79:10 | fflate | B | medium | 确认上游文件或工具链配置是否真的可删，再决定是否移除依赖 |
-| package.json:84:10 | preact | B | medium | 确认上游文件或工具链配置是否真的可删，再决定是否移除依赖 |
-| package.json:72:10 | vhtml | B | medium | 确认上游文件或工具链配置是否真的可删，再决定是否移除依赖 |
-| tests/unit/DeckOptionsPanel.test.tsx:10:12 | moment | B | medium | 确认测试或工具脚本是否应显式声明该依赖 |
-| tests/unit/NoteReviewSidebar.test.tsx:8:12 | moment | B | medium | 确认测试或工具脚本是否应显式声明该依赖 |
-| tests/unit/__mocks__/obsidian.js:1:8 | moment | B | medium | 确认测试或工具脚本是否应显式声明该依赖 |
 
 ## C 档: 误报或配置型噪音
 
