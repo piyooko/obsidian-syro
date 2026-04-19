@@ -1086,7 +1086,7 @@ export class ReactNoteReviewView extends ItemView {
         this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
         await targetLeaf.openFile(item.noteFile);
         this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
-        this.app.workspace.revealLeaf?.(targetLeaf);
+        await this.app.workspace.revealLeaf?.(targetLeaf);
 
         // Show the floating review bar when the note is tracked.
         const repItem = this.plugin.noteReviewStore.getItem(item.path);

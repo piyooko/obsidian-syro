@@ -86,6 +86,40 @@ describe("SRPlugin startup data readiness gates", () => {
         expect(plugin.ensureReviewQueueViewRegistered).toHaveBeenCalledTimes(1);
         expect(plugin.activateReviewQueueViewPanel).not.toHaveBeenCalled();
     });
+
+    test("openReviewQueueView waits for revealLeaf before refreshing due notes", async () => {
+        let resolveReveal!: () => void;
+        const revealPromise = new Promise<void>((resolve) => {
+            resolveReveal = resolve;
+        });
+        const reviewQueueLeaf = { id: "review-queue-leaf" };
+        const plugin: any = Object.create(SRPlugin.prototype);
+        plugin.ensureReviewQueueViewRegistered = jest.fn();
+        plugin.guardSyroDataReady = jest.fn(() => true);
+        plugin.getActiveLeaf = jest.fn(() => reviewQueueLeaf);
+        plugin.activateReviewQueueViewPanel = jest.fn();
+        plugin.updateAndSortDueNotes = jest.fn();
+        plugin.app = {
+            workspace: {
+                revealLeaf: jest.fn(() => revealPromise),
+            },
+        };
+
+        const openReviewQueueView = (SRPlugin.prototype as unknown as {
+            openReviewQueueView: () => Promise<void>;
+        }).openReviewQueueView;
+
+        const pending = openReviewQueueView.call(plugin);
+
+        expect(plugin.ensureReviewQueueViewRegistered).toHaveBeenCalledTimes(1);
+        expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(reviewQueueLeaf);
+        expect(plugin.updateAndSortDueNotes).not.toHaveBeenCalled();
+
+        resolveReveal();
+        await pending;
+
+        expect(plugin.updateAndSortDueNotes).toHaveBeenCalledTimes(1);
+    });
 });
 
 describe("Review note startup behavior", () => {

@@ -39,6 +39,11 @@ export default tseslint.config(
             obsidianmd,
         },
         rules: {
+            // Deferred from eslint-plugin-obsidianmd 0.2.3 recommended set.
+            // We are not doing the repo-wide popout-window compatibility migration in this release-closeout pass.
+            "obsidianmd/prefer-active-doc": "off",
+            "obsidianmd/prefer-active-window-timers": "off",
+            "obsidianmd/prefer-instanceof": "off",
             "obsidianmd/prefer-file-manager-trash-file": "error",
             "no-console": ["error", { allow: ["warn", "error", "debug"] }],
             "no-empty": "error",

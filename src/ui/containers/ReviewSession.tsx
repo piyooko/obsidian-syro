@@ -1365,7 +1365,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
         clearReviewMobileChromeCover();
         const activeLeaf = resolveNavigationLeaf(plugin, noteFile, options);
         await activeLeaf.openFile(noteFile, buildOpenStateForLine(reviewTarget.startLine));
-        plugin.app.workspace.revealLeaf?.(activeLeaf);
+        await plugin.app.workspace.revealLeaf?.(activeLeaf);
         plugin.app.workspace.setActiveLeaf(activeLeaf, { focus: true });
         focusLeafEditorRange(activeLeaf, reviewTarget);
     };
@@ -1380,7 +1380,7 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
         clearReviewMobileChromeCover();
         const activeLeaf = resolveNavigationLeaf(plugin, noteFile, options);
         await activeLeaf.openFile(noteFile, buildOpenStateForLine(breadcrumb.line));
-        plugin.app.workspace.revealLeaf?.(activeLeaf);
+        await plugin.app.workspace.revealLeaf?.(activeLeaf);
         plugin.app.workspace.setActiveLeaf(activeLeaf, { focus: true });
         const safeLine =
             hasEditor(activeLeaf.view) && activeLeaf.view.editor.lineCount() > 0

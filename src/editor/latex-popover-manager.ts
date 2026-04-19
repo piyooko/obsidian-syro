@@ -168,12 +168,6 @@ class LatexPopoverPlugin {
             });
         }
 
-        this.container.setCssProps({
-            "z-index": "1000",
-            "max-width": "600px",
-            width: "max-content",
-        });
-
         this.root?.render(
             React.createElement(LatexPopover, {
                 app: appInstance,

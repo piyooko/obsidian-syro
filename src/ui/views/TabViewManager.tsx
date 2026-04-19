@@ -77,7 +77,7 @@ export default class TabViewManager {
 
         if (existingLeaf) {
             await this.reloadExistingLeaf(existingLeaf, pendingSession);
-            workspace.revealLeaf(existingLeaf);
+            await workspace.revealLeaf(existingLeaf);
             return existingLeaf;
         }
 
@@ -87,7 +87,7 @@ export default class TabViewManager {
         const leaf = workspace.getLeaf(newLeaf);
         if (leaf !== null) {
             await leaf.setViewState({ type, active: true });
-            workspace.revealLeaf(leaf);
+            await workspace.revealLeaf(leaf);
         }
 
         return leaf;

@@ -29,6 +29,8 @@
 .sr-latex-popover-anchor {
     position: absolute;
     z-index: 1000;
+    max-width: 600px;
+    width: max-content;
     pointer-events: auto;
 }
 

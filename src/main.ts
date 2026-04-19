@@ -7814,7 +7814,7 @@ export default class SRPlugin extends Plugin {
         }
 
         if (reviewQueueLeaf !== null) {
-            this.app.workspace.revealLeaf(reviewQueueLeaf);
+            await this.app.workspace.revealLeaf(reviewQueueLeaf);
             this.updateAndSortDueNotes();
         }
     }

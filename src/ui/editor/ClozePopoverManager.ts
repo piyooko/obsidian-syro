@@ -278,7 +278,15 @@ export class ClozePopoverManager {
                     void MarkdownRenderer.render(this.app, text, el, "", this.renderComponent);
                 },
                 storage: {
-                    load: (key) => (this.app as AppLocalStorageApi).loadLocalStorage?.(key) ?? null,
+                    load: (key) => {
+                        const storageApi = this.app as AppLocalStorageApi;
+                        if (typeof storageApi.loadLocalStorage !== "function") {
+                            return null;
+                        }
+
+                        const storedValue: unknown = storageApi.loadLocalStorage(key);
+                        return typeof storedValue === "string" ? storedValue : null;
+                    },
                     save: (key, value) =>
                         (this.app as AppLocalStorageApi).saveLocalStorage?.(key, value),
                 },
