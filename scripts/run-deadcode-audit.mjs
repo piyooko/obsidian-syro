@@ -5,16 +5,33 @@ import path from "node:path";
 const rootDir = process.cwd();
 const outputPath = path.join(rootDir, "docs", "deadcode-audit.md");
 const highConfidenceFilePatterns = [
-    /^src\/settings\/.+Setting\.ts$/,
-    /^src\/ui\/modals\/DeckOptionsModal\.ts$/,
     /^src\/ui\/modals\/getInputModal\.ts$/,
-    /^src\/ui\/modals\/info\.ts$/,
-    /^src\/ui\/modals\/ReleaseNotes\.ts$/,
-    /^src\/ui\/views\/StatsModal\.tsx$/,
     /^src\/NoteEaseCalculator\.ts$/,
 ];
 
 const reviewFilePatterns = [/^src\/dataStore\/location_switch\.ts$/];
+const priorityCheckRules = [
+    {
+        pattern: /^src\/ui\/modals\/getInputModal\.ts$/,
+        note: "- `src/ui/modals/getInputModal.ts`: 确认未在当前 UI 流程、命令入口或动态挂载链里使用。",
+    },
+    {
+        pattern: /^src\/dataStore\/location_switch\.ts$/,
+        note: "- `src/dataStore/location_switch.ts`: 确认是否只剩测试引用和历史迁移注释。",
+    },
+    {
+        pattern: /^src\/NoteEaseCalculator\.ts$/,
+        note: "- `src/NoteEaseCalculator.ts`: 确认没有运行时或测试依赖。",
+    },
+    {
+        pattern: /^src\/util\/platform\.ts$/,
+        note: "- `src/util/platform.ts`: 确认平台分支是否已被当前环境适配层完全替代。",
+    },
+    {
+        pattern: /^src\/algorithms\/balance\/postpone\.ts$/,
+        note: "- `src/algorithms/balance/postpone.ts`: 确认旧平衡算法是否仍有命令或调度链路间接调用。",
+    },
+];
 
 function runTool(label, args, allowFailure = false) {
     const command = process.platform === "win32" ? "cmd.exe" : "pnpm";
@@ -233,6 +250,13 @@ function buildTscRows(diagnostics) {
     }));
 }
 
+function buildPriorityChecks(prodReport) {
+    const files = uniqueSorted(prodReport.files ?? []);
+    return priorityCheckRules
+        .filter((rule) => files.some((file) => rule.pattern.test(file)))
+        .map((rule) => rule.note);
+}
+
 function renderReport({ prodReport, repoReport, tscDiagnostics }) {
     const prodFileRows = buildProdFileRows(prodReport);
     const exportRows = buildSymbolRows(
@@ -252,6 +276,7 @@ function renderReport({ prodReport, repoReport, tscDiagnostics }) {
     const dependencyRows = buildDependencyRows(prodReport, repoReport);
     const unlistedRows = buildUnlistedRows(repoReport);
     const tscRows = buildTscRows(tscDiagnostics);
+    const priorityChecks = buildPriorityChecks(prodReport);
 
     const aRows = prodFileRows.filter((row) => row.bucket === "A");
     const bRows = [
@@ -314,11 +339,7 @@ ${renderTable(tscRows, [
 ])}
 ## 高优先级人工抽查
 
-- \`src/settings/*.ts\`: 旧设置函数文件。优先确认是否已完全被 React 设置面板替代。
-- \`src/ui/views/StatsModal.tsx\`: 若确认无入口，可与 \`chart.js\` 一并进入可删链路。
-- \`src/ui/modals/ReleaseNotes.ts\`: 确认未在启动流程或版本检查中动态调用。
-- \`src/dataStore/location_switch.ts\`: 确认是否只剩测试引用和历史迁移注释。
-- \`src/NoteEaseCalculator.ts\`: 确认没有运行时或测试依赖。
+${priorityChecks.length > 0 ? priorityChecks.join("\n") : "_None_"}
 `;
 }
 

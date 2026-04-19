@@ -537,7 +537,6 @@ export default normalizeSentenceCaseLocale({
     FSRS_W_PARAM_DESC:
         'See <a href="https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm">FSRS V6 WIKI</a> and <a href="https://open-spaced-repetition.github.io/anki_fsrs_visualizer">FSRS w parameter visualization</a> to set various parameters.',
 
-    // info.ts
     ITEM_INFO_TITLE: "Item info of",
     CARDS_IN_NOTE: "Cards in this Note",
     SAVE_ITEM_INFO: "Save",
@@ -1030,7 +1029,6 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_MSG_DEACTIVATE_SUCCESS: "License removed. Reverted to Standard version.",
     SETTINGS_MSG_DEACTIVATE_FAIL: "Deactivation failed.",
     SETTINGS_FOOTER_TEXT: "Your support keeps the plugin growing with the community.",
-    // DeckOptionsModal.ts
     DECK_OPTIONS_TITLE: "Deck Options",
     DECK_OPTIONS_PRESET_SELECT: "Preset Selection",
     DECK_OPTIONS_PRESET_SELECT_DESC: "Select the review preset for this deck",

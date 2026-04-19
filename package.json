@@ -75,7 +75,6 @@
         "@codemirror/state": "^6.5.0",
         "@codemirror/view": "^6.38.6",
         "@emotion/is-prop-valid": "^1.4.0",
-        "chart.js": "^4.4.8",
         "clozecraft": "^0.4.0",
         "fflate": "^0.8.2",
         "framer-motion": "^12.23.26",

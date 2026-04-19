@@ -8,8 +8,8 @@
 
 - 已处理：
   - 旧设置函数文件（2026-04-19）
+  - 旧 modal / view 实现（2026-04-19）
 - 待处理：
-  - 旧 modal / view 实现
   - `src/NoteEaseCalculator.ts`
   - `src/dataStore/location_switch.ts`
   - 依赖联动候选
@@ -46,7 +46,7 @@
 
 误判风险：已关闭
 
-### 2. 旧 modal / view 实现
+### 2. 旧 modal / view 实现（已处理）
 
 候选文件：
 
@@ -62,12 +62,16 @@
 - `ItemInfoModal`、`ReleaseNotes`、`StatsModal` 也只剩类定义和注释提及。
 - `StatsModal` 是当前 `chart.js` 的唯一代码级上游；如果它确认可删，`chart.js` 可以一起进入删除链路。
 
-建议动作：
+处理结果：
 
-- 先单独复核 `StatsModal` 和 `ReleaseNotes` 是否存在你记忆中的动态入口。
-- 若没有隐藏入口，这组文件可以作为第一批删除候选。
+- 已确认 `DeckOptionsModal`、`ItemInfoModal`、`ReleaseNotes`、`StatsModal` 在 `src` 与 `tests` 中都没有构造调用或 import 引用。
+- 已删除这 4 个旧 modal / view 文件，并清理 `src/lang/locale/en.ts` 与 `src/stats.ts` 中的遗留注释。
+- 已从 `package.json` 与 `pnpm-lock.yaml` 中移除 `chart.js`。
+- `pnpm test -- tests/unit/DeckOptionsPanel.test.tsx` 的断言全部通过；命令仍会因为仓库现有的全局 coverage 门槛返回非零。
+- `pnpm run audit:deadcode:prod` 已不再报告这 4 个文件，`chart.js` 也不再出现在 unused dependency 中。
+- `pnpm run lint:obsidian` 通过。
 
-误判风险：低到中
+误判风险：已关闭
 
 ### 3. 独立逻辑类
 
@@ -111,16 +115,16 @@
 
 ## 依赖联动候选
 
-### `chart.js`
+### `chart.js`（已处理）
 
 当前证据：
 
 - 目前只在 `src/ui/views/StatsModal.tsx` 中发现代码级引用。
 - 如果 `StatsModal` 删除成立，`chart.js` 大概率可以一起删除。
 
-建议动作：
+处理结果：
 
-- 把它和 `StatsModal` 绑定成同一条删除链路处理。
+- 已随 `StatsModal` 删除链路一并移除，不再出现在当前审计结果中。
 
 ### `fflate`
 

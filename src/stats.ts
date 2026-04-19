@@ -12,7 +12,6 @@
  *
  * 哪些文件会用到它：
  * 1. src/main.ts (持有 Stats 实例)
- * 2. src/ui/views/StatsModal.ts (展示数据)
  */
 /**
  * [逻辑] 统计数据计算。
