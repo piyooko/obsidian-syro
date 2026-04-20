@@ -81,6 +81,9 @@ importers:
       eslint-plugin-eslint-comments:
         specifier: ^3.2.0
         version: 3.2.0(eslint@9.39.4(jiti@1.21.7))
+      eslint-plugin-no-unsanitized:
+        specifier: ^4.1.5
+        version: 4.1.5(eslint@9.39.4(jiti@1.21.7))
       eslint-plugin-obsidianmd:
         specifier: 0.2.3
         version: 0.2.3(@eslint/js@9.39.4)(@eslint/json@0.14.0)(@typescript-eslint/parser@8.57.1(eslint@9.39.4(jiti@1.21.7))(typescript@5.1.6))(eslint@9.39.4(jiti@1.21.7))(obsidian@1.8.7(@codemirror/state@6.5.4)(@codemirror/view@6.39.17))(typescript-eslint@8.57.1(eslint@9.39.4(jiti@1.21.7))(typescript@5.1.6))
@@ -1566,6 +1569,11 @@ packages:
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
     peerDependencies:
       eslint: '>=8.23.0'
+
+  eslint-plugin-no-unsanitized@4.1.5:
+    resolution: {integrity: sha512-MSB4hXPVFQrI8weqzs6gzl7reP2k/qSjtCoL2vUMSDejIIq9YL1ZKvq5/ORBXab/PvfBBrWO2jWviYpL+4Ghfg==}
+    peerDependencies:
+      eslint: ^9 || ^10
 
   eslint-plugin-obsidianmd@0.2.3:
     resolution: {integrity: sha512-UJ2mfx7I0CCJhejaN33F48sNfIoPRJYGb1744kY4lajoRTquaQSOdVYgRzVk+mz/sJS2OPK35PJPwC/1a3J+yQ==}
@@ -5064,6 +5072,10 @@ snapshots:
       ignore: 5.3.2
       minimatch: 9.0.9
       semver: 7.7.4
+
+  eslint-plugin-no-unsanitized@4.1.5(eslint@9.39.4(jiti@1.21.7)):
+    dependencies:
+      eslint: 9.39.4(jiti@1.21.7)
 
   eslint-plugin-obsidianmd@0.2.3(@eslint/js@9.39.4)(@eslint/json@0.14.0)(@typescript-eslint/parser@8.57.1(eslint@9.39.4(jiti@1.21.7))(typescript@5.1.6))(eslint@9.39.4(jiti@1.21.7))(obsidian@1.8.7(@codemirror/state@6.5.4)(@codemirror/view@6.39.17))(typescript-eslint@8.57.1(eslint@9.39.4(jiti@1.21.7))(typescript@5.1.6)):
     dependencies:
