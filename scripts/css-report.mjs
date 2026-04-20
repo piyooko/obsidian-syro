@@ -137,7 +137,7 @@ console.log(`tailwind entry: ${rel(tailwindEntry)}`);
 console.log("");
 
 console.log("Build note");
-console.log("- esbuild.config.mjs currently bundles all src/ui/*.css recursively.");
+console.log("- config/build/esbuild.config.mjs currently bundles all src/ui/*.css recursively.");
 console.log("- A file can be bundled even if it has no direct import or @import.");
 console.log("");
 

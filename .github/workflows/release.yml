@@ -77,9 +77,9 @@ jobs:
                   python-version: "3.12"
 
             - name: Install dependencies
-              run: pip install -r requirements.txt
+              run: pip install -r docs/requirements.txt
 
             - name: Deploy the documentation
-              run: mkdocs gh-deploy --force --clean --verbose
+              run: mkdocs gh-deploy -f docs/mkdocs.yml --force --clean --verbose
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

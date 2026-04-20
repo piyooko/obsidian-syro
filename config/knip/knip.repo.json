@@ -2,22 +2,19 @@
     "$schema": "https://unpkg.com/knip@5/schema.json",
     "entry": [
         "src/main.ts!",
-        "esbuild.config.mjs",
-        "eslint.review.config.mjs",
-        "jest.config.js",
-        "postcss.config.js",
-        "tailwind.config.js"
+        "config/build/esbuild.config.mjs",
+        "config/eslint/main.config.mjs",
+        "config/eslint/review.config.mjs",
+        "config/jest/jest.config.js",
+        "config/css/postcss.config.js",
+        "config/css/tailwind.config.js"
     ],
     "project": [
         "src/**/*.{ts,tsx}!",
         "tests/**/*.{js,ts,tsx}",
         "scripts/**/*.{js,cjs,mjs}",
-        "utils/**/*.{js,cjs,mjs}",
-        "esbuild.config.mjs",
-        "eslint.review.config.mjs",
-        "jest.config.js",
-        "postcss.config.js",
-        "tailwind.config.js"
+        "config/**/*.{js,cjs,mjs}",
+        "config/**/*.{json}"
     ],
     "ignore": [
         "build/**",

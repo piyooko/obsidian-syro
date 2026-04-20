@@ -156,7 +156,7 @@
 当前证据：
 
 - `preact` 没找到代码级引用。
-- `vhtml` 相关目前只在 `esbuild.config.mjs` 的说明日志里出现，没有看到实际运行时代码引用。
+- `vhtml` 相关目前只在 `config/build/esbuild.config.mjs` 的说明日志里出现，没有看到实际运行时代码引用。
 
 处理结果：
 

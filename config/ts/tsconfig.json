@@ -1,6 +1,6 @@
 {
     "compilerOptions": {
-        "baseUrl": "./",
+        "baseUrl": "../..",
         "paths": {
             "src/*": ["src/*"]
         },
@@ -22,7 +22,7 @@
         "skipLibCheck": true,
         "strict": false
     },
-    "include": ["**/*.ts", "**/*.tsx"],
-    "exclude": ["node_modules"],
-    "files": ["node_modules/jest-expect-message/types/index.d.ts"]
+    "include": ["../../src/**/*.ts", "../../src/**/*.tsx", "../../tests/**/*.ts", "../../tests/**/*.tsx"],
+    "exclude": ["../../node_modules"],
+    "files": ["../../node_modules/jest-expect-message/types/index.d.ts"]
 }

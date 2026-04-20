@@ -1,7 +1,9 @@
 /** @type {import('ts-jest').JestConfigWithTsJest} */
+const path = require("path");
+
 module.exports = {
+    rootDir: path.resolve(__dirname, "..", ".."),
     verbose: true,
-    preset: "ts-jest",
     testEnvironment: "jsdom",
     setupFilesAfterEnv: ["jest-expect-message"],
     moduleNameMapper: {
@@ -10,8 +12,14 @@ module.exports = {
     },
     modulePaths: ["<rootDir>"],
     transform: {
+        "^.+\\.(ts|tsx)$": [
+            "ts-jest",
+            {
+                tsconfig: "<rootDir>/config/ts/tsconfig.json",
+            },
+        ],
         "\\.(jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga|md)$":
-            "<rootDir>/utils/fileTransformer.js",
+            "<rootDir>/tests/unit/helpers/fileTransformer.js",
     },
     moduleFileExtensions: ["js", "jsx", "ts", "tsx", "json", "node", "d.ts"],
     roots: ["<rootDir>/src/", "<rootDir>/tests/unit/"],

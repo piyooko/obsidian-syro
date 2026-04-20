@@ -393,17 +393,17 @@ ${priorityChecks.length > 0 ? priorityChecks.join("\n") : "_None_"}
 function main() {
     const prodResult = runTool(
         "knip-production",
-        ["exec", "knip", "--config", "knip.json", "--production", "--reporter", "json", "--no-config-hints", "--no-exit-code"],
+        ["exec", "knip", "--config", "config/knip/knip.prod.json", "--production", "--reporter", "json", "--no-config-hints", "--no-exit-code"],
         true,
     );
     const repoResult = runTool(
         "knip-repo",
-        ["exec", "knip", "--config", "knip.repo.json", "--reporter", "json", "--no-config-hints", "--no-exit-code"],
+        ["exec", "knip", "--config", "config/knip/knip.repo.json", "--reporter", "json", "--no-config-hints", "--no-exit-code"],
         true,
     );
     const tscResult = runTool(
         "tsc-src-unused",
-        ["exec", "tsc", "--project", "tsconfig.audit.json", "--pretty", "false", "--noEmit"],
+        ["exec", "tsc", "--project", "config/ts/tsconfig.audit.json", "--pretty", "false", "--noEmit"],
         true,
     );
 

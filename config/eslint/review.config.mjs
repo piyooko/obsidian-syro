@@ -30,7 +30,8 @@ export default tseslint.config(
         languageOptions: {
             parser: tseslint.parser,
             parserOptions: {
-                project: "./tsconfig.json",
+                project: "./config/ts/tsconfig.json",
+                tsconfigRootDir: process.cwd(),
             },
             globals: reviewGlobals,
         },

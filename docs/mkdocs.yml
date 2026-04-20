@@ -7,7 +7,7 @@ site_description: >-
 repo_name: piyooko/obsidian-syro
 repo_url: https://github.com/piyooko/obsidian-syro
 edit_uri: ""
-docs_dir: docs/docs
+docs_dir: docs
 
 theme:
     name: material
