@@ -718,8 +718,8 @@ function renderOverlayBlocks(overlay: HTMLElement, blocks: MeasuredExtractBlock[
         element.style.top = `${block.top}px`;
         element.style.width = `${block.width}px`;
         element.style.height = `${block.height}px`;
-        element.style.setProperty("--sr-ir-border-alpha", String(0.12 + progress * 0.2));
-        element.style.setProperty("--sr-ir-bg-alpha", String(0.02 + progress * 0.04));
+        element.style.setProperty("--sr-ir-border-alpha", String(0.07 + progress * 0.08));
+        element.style.setProperty("--sr-ir-bg-alpha", String(0.006 + progress * 0.014));
         fragment.appendChild(element);
     }
     overlay.replaceChildren(fragment);
@@ -806,9 +806,9 @@ const irExtractDecorationTheme = EditorView.baseTheme({
     ".sr-ir-extract-block": {
         position: "absolute",
         boxSizing: "border-box",
-        border: "1px solid rgba(var(--mono-rgb-100), var(--sr-ir-border-alpha, 0.16))",
+        border: "1px solid rgba(var(--mono-rgb-100), var(--sr-ir-border-alpha, 0.1))",
         borderRadius: "4px",
-        backgroundColor: "rgba(var(--mono-rgb-100), var(--sr-ir-bg-alpha, 0.02))",
+        backgroundColor: "rgba(var(--mono-rgb-100), var(--sr-ir-bg-alpha, 0.008))",
     },
 });
 

@@ -291,9 +291,9 @@
 .sr-ir-reading-block {
     position: absolute;
     box-sizing: border-box;
-    border: 1px solid rgba(var(--mono-rgb-100), var(--sr-ir-border-alpha, 0.16));
+    border: 1px solid rgba(var(--mono-rgb-100), var(--sr-ir-border-alpha, 0.1));
     border-radius: 4px;
-    background-color: rgba(var(--mono-rgb-100), var(--sr-ir-bg-alpha, 0.02));
+    background-color: rgba(var(--mono-rgb-100), var(--sr-ir-bg-alpha, 0.008));
 }
 
 /* Anki cloze hint */

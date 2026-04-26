@@ -233,8 +233,8 @@ function renderReadingOverlay(root: HTMLElement, blocks: ReadingBlock[]): void {
         element.style.top = `${block.top}px`;
         element.style.width = `${block.width}px`;
         element.style.height = `${block.height}px`;
-        element.style.setProperty("--sr-ir-border-alpha", String(0.12 + progress * 0.2));
-        element.style.setProperty("--sr-ir-bg-alpha", String(0.02 + progress * 0.04));
+        element.style.setProperty("--sr-ir-border-alpha", String(0.07 + progress * 0.08));
+        element.style.setProperty("--sr-ir-bg-alpha", String(0.006 + progress * 0.014));
         fragment.appendChild(element);
     }
 
