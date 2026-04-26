@@ -28,6 +28,21 @@ describe("irExtractParser", () => {
         expect(matches[2].parentStart).toBe(matches[1].start);
     });
 
+    test("does not close an outer extract at a cloze close marker", () => {
+        const text = [
+            "{{ir::outer {{ir::inner}}",
+            "with {{c1::cloze}} text",
+            "}}",
+        ].join("\n");
+        const matches = parseIrExtracts(text);
+
+        expect(matches.map((match) => match.rawMarkdown)).toEqual([
+            ["outer {{ir::inner}}", "with {{c1::cloze}} text", ""].join("\n"),
+            "inner",
+        ]);
+        expect(matches[0].end).toBe(text.length);
+    });
+
     test("ignores extract markers inside code contexts", () => {
         const text = [
             "`{{ir::inline}}`",

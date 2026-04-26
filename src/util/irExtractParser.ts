@@ -24,10 +24,18 @@ export interface IrExtractMatch {
 }
 
 interface OpenIrExtract {
+    kind: "ir";
     start: number;
     innerStart: number;
     parentStart?: number;
 }
+
+interface OpenOtherBrace {
+    kind: "other";
+    start: number;
+}
+
+type OpenBraceSegment = OpenIrExtract | OpenOtherBrace;
 
 const IR_OPEN = "{{ir::";
 const IR_CLOSE = "}}";
@@ -61,18 +69,25 @@ function createAnchor(text: string, start: number, end: number, innerStart: numb
 
 export function parseIrExtracts(text: string): IrExtractMatch[] {
     const codeSegments = findCodeContextSegments(text);
-    const stack: OpenIrExtract[] = [];
+    const stack: OpenBraceSegment[] = [];
     const matches: IrExtractMatch[] = [];
     let index = 0;
 
     while (index < text.length) {
         if (text.startsWith(IR_OPEN, index) && !isIndexInsideCodeContext(index, codeSegments)) {
             stack.push({
+                kind: "ir",
                 start: index,
                 innerStart: index + IR_OPEN.length,
-                parentStart: stack[stack.length - 1]?.start,
+                parentStart: findOpenIrParentStart(stack),
             });
             index += IR_OPEN.length;
+            continue;
+        }
+
+        if (text.startsWith("{{", index) && !isIndexInsideCodeContext(index, codeSegments)) {
+            stack.push({ kind: "other", start: index });
+            index += 2;
             continue;
         }
 
@@ -82,7 +97,7 @@ export function parseIrExtracts(text: string): IrExtractMatch[] {
             !isIndexInsideCodeContext(index, codeSegments)
         ) {
             const opened = stack.pop();
-            if (opened) {
+            if (opened?.kind === "ir") {
                 const end = index + IR_CLOSE.length;
                 const rawMarkdown = text.slice(opened.innerStart, index);
                 matches.push({
@@ -178,6 +193,16 @@ export function wrapSelectionAsExtract(
         innerFrom,
         innerTo,
     };
+}
+
+function findOpenIrParentStart(stack: OpenBraceSegment[]): number | undefined {
+    for (let index = stack.length - 1; index >= 0; index--) {
+        const entry = stack[index];
+        if (entry.kind === "ir") {
+            return entry.start;
+        }
+    }
+    return undefined;
 }
 
 function getPreservedBlockPrefixForExtractWrap(text: string, from: number, selected: string): string {
