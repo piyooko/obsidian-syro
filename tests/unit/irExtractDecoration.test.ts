@@ -1,4 +1,5 @@
 import {
+    alignNestedIrExtractBlocksHorizontally,
     clampIrExtractVerticalInsetsForAdjacentBlocks,
     containNestedIrExtractBlocks,
     findIrExtractEditingRoot,
@@ -71,6 +72,43 @@ describe("irExtractDecoration helpers", () => {
         ]);
 
         expect(blocks[0]).toMatchObject({ left: -1, top: 10, width: 132, height: 51 });
+    });
+
+    test("aligns nested extract horizontal edges to the parent frame", () => {
+        const blocks = alignNestedIrExtractBlocksHorizontally([
+            {
+                start: 0,
+                left: 20,
+                top: 0,
+                width: 220,
+                height: 80,
+                depth: 1,
+                maxDepth: 3,
+            },
+            {
+                start: 30,
+                parentStart: 0,
+                left: 120,
+                top: 20,
+                width: 80,
+                height: 30,
+                depth: 2,
+                maxDepth: 3,
+            },
+            {
+                start: 50,
+                parentStart: 30,
+                left: 150,
+                top: 28,
+                width: 40,
+                height: 18,
+                depth: 3,
+                maxDepth: 3,
+            },
+        ]);
+
+        expect(blocks[1]).toMatchObject({ left: 26, width: 208 });
+        expect(blocks[2]).toMatchObject({ left: 32, width: 196 });
     });
 
     test("separates nested extract vertical borders by depth", () => {

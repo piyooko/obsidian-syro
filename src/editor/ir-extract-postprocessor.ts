@@ -1,6 +1,10 @@
 import type { MarkdownPostProcessorContext } from "obsidian";
 import { parseIrExtracts, type IrExtractMatch } from "src/util/irExtractParser";
-import { getIrExtractLayerInset } from "./ir-extract-decoration";
+import {
+    alignNestedIrExtractBlocksHorizontally,
+    containNestedIrExtractBlocks,
+    getIrExtractLayerInset,
+} from "./ir-extract-decoration";
 
 interface TextSlice {
     node: Text;
@@ -9,6 +13,8 @@ interface TextSlice {
 }
 
 interface MarkerPair {
+    matchStart: number;
+    parentStart?: number;
     start: HTMLElement;
     end: HTMLElement;
     depth: number;
@@ -16,6 +22,8 @@ interface MarkerPair {
 }
 
 interface ReadingBlock {
+    start: number;
+    parentStart?: number;
     left: number;
     top: number;
     width: number;
@@ -164,6 +172,8 @@ function createMarkerPairs(root: HTMLElement, matches: IrExtractMatch[]): Marker
             if (!start || !end) return null;
             const rootStart = rootStarts.get(match) ?? match.start;
             return {
+                matchStart: match.start,
+                parentStart: match.parentStart,
                 start,
                 end,
                 depth: depths.get(match) ?? 1,
@@ -204,6 +214,8 @@ function measureReadingBlocks(root: HTMLElement, pairs: MarkerPair[]): ReadingBl
         const inset = getIrExtractLayerInset(pair.depth, pair.maxDepth);
 
         blocks.push({
+            start: pair.matchStart,
+            parentStart: pair.parentStart,
             left: minLeft - rootRect.left - inset,
             top: minTop - rootRect.top - 4,
             width: maxRight - minLeft + inset * 2,
@@ -213,7 +225,7 @@ function measureReadingBlocks(root: HTMLElement, pairs: MarkerPair[]): ReadingBl
         });
     }
 
-    return blocks;
+    return containNestedIrExtractBlocks(alignNestedIrExtractBlocksHorizontally(blocks));
 }
 
 function renderReadingOverlay(root: HTMLElement, blocks: ReadingBlock[]): void {

@@ -401,6 +401,40 @@ export function containNestedIrExtractBlocks<T extends MeasuredExtractBlock>(blo
     return nextBlocks;
 }
 
+export function alignNestedIrExtractBlocksHorizontally<T extends MeasuredExtractBlock>(
+    blocks: T[],
+): T[] {
+    const nextBlocks = blocks.map((block) => ({ ...block }));
+    const byStart = new Map(nextBlocks.map((block) => [block.start, block]));
+    const parentsFirst = [...nextBlocks].sort((left, right) => left.depth - right.depth);
+
+    for (const child of parentsFirst) {
+        if (child.parentStart === undefined) {
+            continue;
+        }
+        const parent = byStart.get(child.parentStart);
+        if (!parent) {
+            continue;
+        }
+
+        const maxDepth = Math.max(parent.maxDepth, child.maxDepth, parent.depth, child.depth);
+        const parentInset = getIrExtractLayerInset(parent.depth, maxDepth);
+        const childInset = getIrExtractLayerInset(child.depth, maxDepth);
+        const stairGap = Math.max(0, parentInset - childInset);
+        const nextLeft = parent.left + stairGap;
+        const nextRight = parent.left + parent.width - stairGap;
+        const nextWidth = nextRight - nextLeft;
+        if (nextWidth <= 1) {
+            continue;
+        }
+
+        child.left = Number(nextLeft.toFixed(2));
+        child.width = Number(nextWidth.toFixed(2));
+    }
+
+    return nextBlocks;
+}
+
 function buildIrExtractDecorations(view: EditorView): {
     decorations: DecorationSet;
     renderExtracts: RenderExtract[];
@@ -700,7 +734,7 @@ function measureExtractBlocks(
         };
     });
 
-    return containNestedIrExtractBlocks(measuredBlocks);
+    return containNestedIrExtractBlocks(alignNestedIrExtractBlocksHorizontally(measuredBlocks));
 }
 
 function getDepthProgress(depth: number, maxDepth: number): number {
