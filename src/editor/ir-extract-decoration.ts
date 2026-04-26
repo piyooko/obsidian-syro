@@ -18,10 +18,11 @@ interface DecorationItem {
     decoration: Decoration;
 }
 
-interface RenderExtract {
+export interface RenderExtract {
     match: IrExtractMatch;
     depth: number;
     maxDepth: number;
+    showSource: boolean;
 }
 
 interface MeasuredExtractBlock {
@@ -60,6 +61,16 @@ export function findIrExtractEditingRoot(
     selectionFrom: number,
     selectionTo: number,
 ): IrExtractMatch | null {
+    const containing = matches.filter((match) => {
+        if (selectionFrom === selectionTo) {
+            return selectionTouchesRange(selectionFrom, selectionTo, match.start, match.end);
+        }
+        return match.start <= selectionFrom && match.end >= selectionTo;
+    });
+    if (containing.length > 0) {
+        return containing.sort((left, right) => left.end - left.start - (right.end - right.start))[0];
+    }
+
     return (
         matches
             .filter((match) =>
@@ -153,16 +164,21 @@ function createRenderExtracts(
         maxDepthByRoot.set(rootStart, Math.max(maxDepthByRoot.get(rootStart) ?? 1, depth));
     }
 
-    return matches
-        .filter((match) => !editingRoot || !isInsideMatch(match, editingRoot))
-        .map((match) => {
-            const rootStart = rootStarts.get(match) ?? match.start;
-            return {
-                match,
-                depth: depths.get(match) ?? 1,
-                maxDepth: maxDepthByRoot.get(rootStart) ?? 1,
-            };
-        });
+    return matches.map((match) => {
+        const rootStart = rootStarts.get(match) ?? match.start;
+        return {
+            match,
+            depth: depths.get(match) ?? 1,
+            maxDepth: maxDepthByRoot.get(rootStart) ?? 1,
+            showSource: editingRoot ? isInsideMatch(match, editingRoot) : false,
+        };
+    });
+}
+
+export function getIrExtractRenderRange(renderExtract: RenderExtract): { from: number; to: number } {
+    return renderExtract.showSource
+        ? { from: renderExtract.match.start, to: renderExtract.match.end }
+        : { from: renderExtract.match.innerStart, to: renderExtract.match.innerEnd };
 }
 
 function buildIrExtractDecorations(view: EditorView): {
@@ -221,7 +237,7 @@ function createDomRange(view: EditorView, from: number, to: number): Range | nul
     }
 }
 
-function getLineClientRects(view: EditorView, from: number, to: number): DOMRect[] {
+function getRangeClientRects(view: EditorView, from: number, to: number): DOMRect[] {
     if (to > from) {
         const range = createDomRange(view, from, to);
         if (range) {
@@ -251,16 +267,14 @@ function measureExtractBlocks(
     view: EditorView,
     renderExtracts: RenderExtract[],
 ): MeasuredExtractBlock[] {
-    const text = view.state.doc.toString();
     const scrollRect = view.scrollDOM.getBoundingClientRect();
     const scrollLeft = view.scrollDOM.scrollLeft;
     const scrollTop = view.scrollDOM.scrollTop;
     const blocks: MeasuredExtractBlock[] = [];
 
     for (const renderExtract of renderExtracts) {
-        const rects = getIrExtractLineRanges(text, renderExtract.match).flatMap((line) =>
-            getLineClientRects(view, line.from, line.to),
-        );
+        const range = getIrExtractRenderRange(renderExtract);
+        const rects = getRangeClientRects(view, range.from, range.to);
         if (rects.length === 0) continue;
 
         const minLeft = Math.min(...rects.map((rect) => rect.left));

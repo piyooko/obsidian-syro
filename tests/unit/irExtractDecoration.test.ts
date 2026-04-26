@@ -2,6 +2,8 @@ import {
     findIrExtractEditingRoot,
     getIrExtractLayerInset,
     getIrExtractLineRanges,
+    getIrExtractRenderRange,
+    type RenderExtract,
 } from "src/editor/ir-extract-decoration";
 import { parseIrExtracts } from "src/util/irExtractParser";
 
@@ -28,6 +30,31 @@ describe("irExtractDecoration helpers", () => {
         const editingRoot = findIrExtractEditingRoot(matches, cursor, cursor);
 
         expect(editingRoot?.rawMarkdown).toBe("inner");
+    });
+
+    test("selects the outer extract when the selection crosses an inner extract", () => {
+        const text = "{{ir::outer {{ir::inner}} text}}";
+        const matches = parseIrExtracts(text);
+        const selectionFrom = text.indexOf("outer");
+        const selectionTo = text.indexOf(" text") + " text".length;
+        const editingRoot = findIrExtractEditingRoot(matches, selectionFrom, selectionTo);
+
+        expect(editingRoot?.rawMarkdown).toBe("outer {{ir::inner}} text");
+    });
+
+    test("render range uses extract text normally and full source while editing", () => {
+        const text = "before {{ir::one}} after";
+        const [match] = parseIrExtracts(text);
+        const hidden: RenderExtract = { match, depth: 1, maxDepth: 1, showSource: false };
+        const editing: RenderExtract = { match, depth: 1, maxDepth: 1, showSource: true };
+
+        expect(getIrExtractRenderRange(hidden)).toEqual({
+            from: match.innerStart,
+            to: match.innerEnd,
+        });
+        expect(text.slice(match.innerStart, match.innerEnd)).toBe("one");
+        expect(getIrExtractRenderRange(editing)).toEqual({ from: match.start, to: match.end });
+        expect(text.slice(match.start, match.end)).toBe("{{ir::one}}");
     });
 
     test("line coverage expands a partial extract to the touched source lines", () => {
