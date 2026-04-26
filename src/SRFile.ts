@@ -9,6 +9,7 @@
 } from "obsidian";
 import { TextDirection } from "./util/TextDirection";
 import { parseObsidianFrontmatterTag } from "./util/utils";
+import { stripIrExtractSyntax } from "./util/irExtractParser";
 
 export interface QuestionContextBreadcrumb {
     label: string;
@@ -31,6 +32,14 @@ export interface ISRFile {
 // The Obsidian frontmatter cache doesn't include the line number for the specific tag.
 // We define as -1 so that we can differentiate tags within the frontmatter and tags within the content
 export const frontmatterTagPseudoLineNum: number = -1;
+const MARKDOWN_HEADING_PREFIX = /^#{1,6}[ \t]+/;
+
+function cleanQuestionContextHeadingLabel(heading: string): string {
+    return stripIrExtractSyntax(heading)
+        .replace(MARKDOWN_HEADING_PREFIX, "")
+        .replace(/\[\^\d+\]/gm, "")
+        .trim();
+}
 
 // NOTE: Line numbers are zero based
 export class SrTFile implements ISRFile {
@@ -114,7 +123,7 @@ export class SrTFile implements ISRFile {
         const result: QuestionContextBreadcrumb[] = [];
         for (const headingObj of stack) {
             result.push({
-                label: headingObj.heading.replace(/\[\^\d+\]/gm, "").trim(),
+                label: cleanQuestionContextHeadingLabel(headingObj.heading),
                 line: headingObj.position.start.line,
                 level: headingObj.level,
             });

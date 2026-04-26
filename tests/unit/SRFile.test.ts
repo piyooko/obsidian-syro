@@ -53,6 +53,44 @@ describe("SrTFile.getQuestionContext", () => {
         ]);
     });
 
+    test("removes incremental reading syntax from breadcrumb headings", () => {
+        const file = Object.assign(new TFile(), { path: "note.md", basename: "note" });
+        const metadataCache = {
+            getFileCache: jest.fn(() => ({
+                headings: [
+                    createHeading("{{ir::#### 区域 C：核心 KPI 数据卡片}}", 4, 0),
+                    createHeading("{{ir::区域 D：图表展示区}}", 4, 2),
+                    createHeading("区域 E：{{ir::内联摘录}} {{c1::保留 cloze}}", 4, 4),
+                ],
+            })),
+        };
+        const srFile = new SrTFile({} as never, metadataCache as never, file);
+
+        expect(srFile.getQuestionContext(5)).toEqual([
+            { label: "区域 E：内联摘录 {{c1::保留 cloze}}", line: 4, level: 4 },
+        ]);
+    });
+
+    test("keeps IR syntax out of nested breadcrumb trails", () => {
+        const file = Object.assign(new TFile(), { path: "note.md", basename: "note" });
+        const metadataCache = {
+            getFileCache: jest.fn(() => ({
+                headings: [
+                    createHeading("{{ir::Root}}", 1, 0),
+                    createHeading("{{ir::#### Child}}", 2, 2),
+                    createHeading("#### {{ir::Leaf}}", 3, 4),
+                ],
+            })),
+        };
+        const srFile = new SrTFile({} as never, metadataCache as never, file);
+
+        expect(srFile.getQuestionContext(6)).toEqual([
+            { label: "Root", line: 0, level: 1 },
+            { label: "Child", line: 2, level: 2 },
+            { label: "Leaf", line: 4, level: 3 },
+        ]);
+    });
+
     test("returns an empty breadcrumb trail when the file has no headings", () => {
         const file = Object.assign(new TFile(), { path: "note.md", basename: "note" });
         const metadataCache = {

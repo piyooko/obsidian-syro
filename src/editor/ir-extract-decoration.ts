@@ -151,6 +151,56 @@ export function findIrExtractSourceMatches(
         .sort((left, right) => left.start - right.start || right.end - left.end);
 }
 
+function distanceToRange(offset: number, rangeFrom: number, rangeTo: number): number {
+    if (offset >= rangeFrom && offset <= rangeTo) {
+        return 0;
+    }
+    return Math.min(Math.abs(offset - rangeFrom), Math.abs(offset - rangeTo));
+}
+
+export function findActiveIrExtractSourceMatch(
+    text: string,
+    matches: IrExtractMatch[],
+    selectionFrom: number,
+    selectionTo: number,
+): IrExtractMatch | null {
+    const candidates = findIrExtractSourceMatches(text, matches, selectionFrom, selectionTo);
+    if (candidates.length === 0) {
+        return null;
+    }
+
+    const byStart = new Map(matches.map((match) => [match.start, match]));
+    const referenceOffset = selectionFrom === selectionTo
+        ? selectionFrom
+        : Math.floor((selectionFrom + selectionTo) / 2);
+
+    return candidates.sort((left, right) => {
+        const leftDirect = selectionTouchesRange(selectionFrom, selectionTo, left.start, left.end)
+            ? 1
+            : 0;
+        const rightDirect = selectionTouchesRange(selectionFrom, selectionTo, right.start, right.end)
+            ? 1
+            : 0;
+        if (leftDirect !== rightDirect) {
+            return rightDirect - leftDirect;
+        }
+
+        const leftDepth = getDepthForMatch(left, byStart);
+        const rightDepth = getDepthForMatch(right, byStart);
+        if (leftDepth !== rightDepth) {
+            return rightDepth - leftDepth;
+        }
+
+        const leftDistance = distanceToRange(referenceOffset, left.start, left.end);
+        const rightDistance = distanceToRange(referenceOffset, right.start, right.end);
+        if (leftDistance !== rightDistance) {
+            return leftDistance - rightDistance;
+        }
+
+        return left.end - left.start - (right.end - right.start);
+    })[0];
+}
+
 export function getIrExtractLayerInset(depth: number, maxDepth: number): number {
     const safeDepth = Math.max(1, depth);
     const safeMaxDepth = Math.max(safeDepth, maxDepth, 1);
@@ -452,6 +502,12 @@ function buildIrExtractDecorations(view: EditorView): {
             (match) => match.start,
         ),
     );
+    const activeSourceMatch = findActiveIrExtractSourceMatch(
+        text,
+        matches,
+        selection.from,
+        selection.to,
+    );
     const renderExtracts = createRenderExtracts(matches, sourceStarts);
     const decorations: DecorationItem[] = [];
 
@@ -474,6 +530,19 @@ function buildIrExtractDecorations(view: EditorView): {
         for (const item of createWrappedBlockPrefixDecorations(text, match)) {
             decorations.push(item);
         }
+    }
+
+    if (activeSourceMatch && sourceStarts.has(activeSourceMatch.start)) {
+        decorations.push({
+            from: activeSourceMatch.start,
+            to: activeSourceMatch.innerStart,
+            decoration: Decoration.mark({ class: "sr-ir-extract-active-token" }),
+        });
+        decorations.push({
+            from: activeSourceMatch.innerEnd,
+            to: activeSourceMatch.end,
+            decoration: Decoration.mark({ class: "sr-ir-extract-active-token" }),
+        });
     }
 
     decorations
@@ -843,6 +912,10 @@ const irExtractDecorationTheme = EditorView.baseTheme({
         border: "1px solid rgba(var(--mono-rgb-100), var(--sr-ir-border-alpha, 0.1))",
         borderRadius: "4px",
         backgroundColor: "rgba(var(--mono-rgb-100), var(--sr-ir-bg-alpha, 0.008))",
+    },
+    ".sr-ir-extract-active-token": {
+        color: "var(--interactive-accent)",
+        fontWeight: "600",
     },
 });
 

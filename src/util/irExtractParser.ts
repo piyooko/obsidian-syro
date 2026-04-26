@@ -120,6 +120,23 @@ export function parseIrExtracts(text: string): IrExtractMatch[] {
     return matches.sort((left, right) => left.start - right.start || right.end - left.end);
 }
 
+export function stripIrExtractSyntax(text: string): string {
+    const matches = parseIrExtracts(text);
+    if (matches.length === 0) {
+        return text.replaceAll(IR_OPEN, "");
+    }
+
+    let result = text;
+    const tokenRanges = matches.flatMap((match) => [
+        { from: match.innerEnd, to: match.end },
+        { from: match.start, to: match.innerStart },
+    ]);
+    for (const range of tokenRanges.sort((left, right) => right.from - left.from)) {
+        result = result.slice(0, range.from) + result.slice(range.to);
+    }
+    return result.replaceAll(IR_OPEN, "");
+}
+
 function overlaps(leftStart: number, leftEnd: number, rightStart: number, rightEnd: number): boolean {
     return leftStart < rightEnd && leftEnd > rightStart;
 }

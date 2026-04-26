@@ -2,6 +2,7 @@ import {
     alignNestedIrExtractBlocksHorizontally,
     clampIrExtractVerticalInsetsForAdjacentBlocks,
     containNestedIrExtractBlocks,
+    findActiveIrExtractSourceMatch,
     findIrExtractEditingRoot,
     findIrExtractSourceMatches,
     getIrExtractLayerInset,
@@ -139,6 +140,28 @@ describe("irExtractDecoration helpers", () => {
             "outer {{ir::inner}} text",
             "inner",
         ]);
+    });
+
+    test("selects the innermost active source wrapper for token highlighting", () => {
+        const text = "{{ir::outer {{ir::inner}}}}";
+        const matches = parseIrExtracts(text);
+        const cursor = text.indexOf("inner");
+        const active = findActiveIrExtractSourceMatch(text, matches, cursor, cursor);
+
+        expect(active?.rawMarkdown).toBe("inner");
+        expect(active ? text.slice(active.innerEnd, active.end) : "").toBe("}}");
+        expect(active?.end).toBeLessThan(text.length);
+    });
+
+    test("uses the matched IR close token instead of the nearest double brace", () => {
+        const text = "{{ir::outer {{ir::inner {{c1::cloze}} and {{plain}} end}}}}";
+        const matches = parseIrExtracts(text);
+        const cursor = text.indexOf("inner");
+        const active = findActiveIrExtractSourceMatch(text, matches, cursor, cursor);
+
+        expect(active?.rawMarkdown).toBe("inner {{c1::cloze}} and {{plain}} end");
+        expect(active ? text.slice(active.innerEnd, active.end) : "").toBe("}}");
+        expect(active?.end).toBe(text.length - 2);
     });
 
     test("shows source when the cursor is on an extract visual line but outside the extract syntax", () => {

@@ -2,6 +2,7 @@ import {
     parseIrExtracts,
     removeExtractWrapperKeepInnerContent,
     replaceExtractInnerMarkdown,
+    stripIrExtractSyntax,
     wrapSelectionAsExtract,
 } from "src/util/irExtractParser";
 
@@ -26,6 +27,15 @@ describe("irExtractParser", () => {
         ]);
         expect(matches[1].parentStart).toBe(matches[0].start);
         expect(matches[2].parentStart).toBe(matches[1].start);
+    });
+
+    test("strips only IR wrapper syntax while preserving heading and cloze text", () => {
+        expect(stripIrExtractSyntax("{{ir::#### Area C}}")).toBe("#### Area C");
+        expect(stripIrExtractSyntax("#### {{ir::Area D}}")).toBe("#### Area D");
+        expect(stripIrExtractSyntax("{{ir::outer {{ir::inner}} {{c1::cloze}}}}")).toBe(
+            "outer inner {{c1::cloze}}",
+        );
+        expect(stripIrExtractSyntax("{{ir::Unclosed heading")).toBe("Unclosed heading");
     });
 
     test("does not close an outer extract at a cloze close marker", () => {
