@@ -259,6 +259,43 @@
     font-weight: 500;
 }
 
+/* ==========================================
+   Incremental Reading Extracts
+   Reading-mode overlay mirrors the editor overlay from ir-extract-decoration.ts.
+   ========================================== */
+
+.sr-ir-reading-root {
+    position: relative;
+}
+
+.sr-ir-reading-marker {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+}
+
+.sr-ir-reading-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: visible;
+    z-index: 0;
+}
+
+.sr-ir-reading-root > :not(.sr-ir-reading-overlay) {
+    position: relative;
+    z-index: 1;
+}
+
+.sr-ir-reading-block {
+    position: absolute;
+    box-sizing: border-box;
+    border: 1px solid rgba(var(--mono-rgb-100), var(--sr-ir-border-alpha, 0.16));
+    border-radius: 4px;
+    background-color: rgba(var(--mono-rgb-100), var(--sr-ir-bg-alpha, 0.02));
+}
+
 /* Anki cloze hint */
 .cm-anki-cloze-hint {
     color: var(--text-muted);

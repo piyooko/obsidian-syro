@@ -223,6 +223,7 @@ import { createIrExtractDecorationExtensions } from "./editor/ir-extract-decorat
 import { latexPopoverExtension, initializeLatexPopover } from "./editor/latex-popover-manager";
 import { latexClozePreprocessorPlugin } from "./editor/latex-cloze-preprocessor";
 import { clozePostProcessor } from "./editor/cloze-postprocessor";
+import { irExtractPostProcessor } from "./editor/ir-extract-postprocessor";
 import { LicenseManager } from "./services/LicenseManager";
 import {
     getArrayProp,
@@ -1649,6 +1650,7 @@ export default class SRPlugin extends Plugin {
         this.registerEditorExtension(latexClozePreprocessorPlugin);
 
         this.registerMarkdownPostProcessor(clozePostProcessor);
+        this.registerMarkdownPostProcessor(irExtractPostProcessor);
 
         const PLUGIN_VERSION = this.manifest.version;
         const obsidianJustInstalled = this.data.settings.previousRelease === "0.0.0";
@@ -2176,7 +2178,10 @@ export default class SRPlugin extends Plugin {
         return intervals.map((interval) => textInterval(interval, false));
     }
 
-    public async reviewExtract(uuid: string, response: ReviewResponse): Promise<ExtractItem | null> {
+    public async reviewExtract(
+        uuid: string,
+        response: ReviewResponse,
+    ): Promise<ExtractItem | null> {
         if (!this.extractStore || this.data.settings.enableExtracts === false) {
             return null;
         }

@@ -127,6 +127,9 @@ export function expandPartialOverlapSelectionToValidBoundary(
             if (!overlaps(nextFrom, nextTo, match.start, match.end)) {
                 continue;
             }
+            if (contains(match.innerStart, match.innerEnd, nextFrom, nextTo)) {
+                continue;
+            }
             if (contains(nextFrom, nextTo, match.start, match.end)) {
                 continue;
             }

@@ -5,161 +5,361 @@ import {
     EditorView,
     ViewPlugin,
     type ViewUpdate,
-    WidgetType,
 } from "@codemirror/view";
-import type { TFile } from "obsidian";
-import type { ExtractItem, ExtractStore } from "src/dataStore/extractStore";
-import { t } from "src/lang/helpers";
-import { parseIrExtracts } from "src/util/irExtractParser";
+import { parseIrExtracts, type IrExtractMatch } from "src/util/irExtractParser";
 
-interface IrExtractDecorationHost {
-    app: {
-        workspace: {
-            getActiveFile(): TFile | null;
-        };
-    };
-    extractStore: ExtractStore | null;
-    updateExtractPriority(uuid: string, priority: number): Promise<ExtractItem | null>;
+const OUTER_INSET = 18;
+const INNER_INSET = 6;
+const VERTICAL_INSET = 4;
+
+interface DecorationItem {
+    from: number;
+    to: number;
+    decoration: Decoration;
 }
 
-class IrExtractMetaWidget extends WidgetType {
-    constructor(
-        private readonly host: IrExtractDecorationHost,
-        private readonly item: ExtractItem,
-    ) {
-        super();
-    }
-
-    eq(other: IrExtractMetaWidget): boolean {
-        return (
-            other.item.uuid === this.item.uuid &&
-            other.item.memo === this.item.memo &&
-            other.item.priority === this.item.priority
-        );
-    }
-
-    toDOM(): HTMLElement {
-        const wrapper = document.createElement("span");
-        wrapper.className = "sr-ir-extract-meta";
-
-        if (this.item.memo.trim()) {
-            const memo = document.createElement("span");
-            memo.className = "sr-ir-extract-memo";
-            memo.textContent = this.item.memo.trim();
-            memo.title = this.item.memo.trim();
-            wrapper.appendChild(memo);
-        }
-
-        const priority = document.createElement("select");
-        priority.className = "sr-ir-extract-priority";
-        priority.setAttribute("aria-label", t("EXTRACT_PRIORITY_LABEL"));
-        priority.title = t("EXTRACT_PRIORITY_LABEL");
-        priority.value = String(this.item.priority);
-        for (let value = 1; value <= 10; value++) {
-            const option = document.createElement("option");
-            option.value = String(value);
-            option.textContent = String(value);
-            priority.appendChild(option);
-        }
-        priority.addEventListener("mousedown", (event) => event.stopPropagation());
-        priority.addEventListener("click", (event) => event.stopPropagation());
-        priority.addEventListener("change", (event) => {
-            event.stopPropagation();
-            const nextPriority = Number(priority.value);
-            void this.host.updateExtractPriority(this.item.uuid, nextPriority);
-        });
-        wrapper.appendChild(priority);
-
-        return wrapper;
-    }
-
-    ignoreEvent(): boolean {
-        return false;
-    }
+interface RenderExtract {
+    match: IrExtractMatch;
+    depth: number;
+    maxDepth: number;
 }
 
-function findExtractItemForMatch(
-    host: IrExtractDecorationHost | null,
-    match: ReturnType<typeof parseIrExtracts>[number],
-): ExtractItem | null {
-    const file = host?.app.workspace.getActiveFile();
-    if (!host?.extractStore || !file) {
-        return null;
+interface MeasuredExtractBlock {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    depth: number;
+    maxDepth: number;
+}
+
+export interface IrExtractLineRange {
+    from: number;
+    to: number;
+    line: number;
+}
+
+function isLivePreview(view: EditorView): boolean {
+    return !!view.dom.closest(".is-live-preview");
+}
+
+function selectionTouchesRange(
+    selectionFrom: number,
+    selectionTo: number,
+    rangeFrom: number,
+    rangeTo: number,
+): boolean {
+    if (selectionFrom === selectionTo) {
+        return selectionFrom >= rangeFrom && selectionFrom <= rangeTo;
     }
+    return selectionFrom < rangeTo && selectionTo > rangeFrom;
+}
+
+export function findIrExtractEditingRoot(
+    matches: IrExtractMatch[],
+    selectionFrom: number,
+    selectionTo: number,
+): IrExtractMatch | null {
     return (
-        host.extractStore
-            .getActiveByPath(file.path)
-            .find(
-                (item) =>
-                    item.sourceAnchor.start === match.start &&
-                    item.sourceAnchor.end === match.end &&
-                    item.sourceAnchor.contentHash === match.anchor.contentHash,
-            ) ??
-        host.extractStore
-            .getActiveByPath(file.path)
-            .find((item) => item.rawMarkdown === match.rawMarkdown) ??
-        null
+        matches
+            .filter((match) =>
+                selectionTouchesRange(selectionFrom, selectionTo, match.start, match.end),
+            )
+            .sort((left, right) => left.end - left.start - (right.end - right.start))[0] ?? null
     );
 }
 
-function buildIrExtractDecorations(
-    view: EditorView,
-    host: IrExtractDecorationHost | null,
-): DecorationSet {
-    const builder = new RangeSetBuilder<Decoration>();
-    const text = view.state.doc.toString();
-    const matches = parseIrExtracts(text);
-    const ranges: Array<{ from: number; to: number; decoration: Decoration }> = [];
+function isInsideMatch(match: IrExtractMatch, outer: IrExtractMatch): boolean {
+    return match.start >= outer.start && match.end <= outer.end;
+}
+
+export function getIrExtractLayerInset(depth: number, maxDepth: number): number {
+    const safeDepth = Math.max(1, depth);
+    const safeMaxDepth = Math.max(safeDepth, maxDepth, 1);
+    if (safeMaxDepth <= 3) {
+        return [OUTER_INSET, 12, INNER_INSET][safeDepth - 1] ?? INNER_INSET;
+    }
+    const step = (OUTER_INSET - INNER_INSET) / (safeMaxDepth - 1);
+    return Number((OUTER_INSET - step * (safeDepth - 1)).toFixed(2));
+}
+
+function getLineAtOffset(text: string, offset: number): IrExtractLineRange {
+    const safeOffset = Math.max(0, Math.min(offset, text.length));
+    const from = text.lastIndexOf("\n", Math.max(0, safeOffset - 1)) + 1;
+    const nextNewline = text.indexOf("\n", safeOffset);
+    const to = nextNewline === -1 ? text.length : nextNewline;
+    let line = 1;
+    for (let index = 0; index < from; index++) {
+        if (text[index] === "\n") line++;
+    }
+    return { from, to, line };
+}
+
+export function getIrExtractLineRanges(
+    text: string,
+    match: Pick<IrExtractMatch, "innerStart" | "innerEnd">,
+): IrExtractLineRange[] {
+    const first = getLineAtOffset(text, match.innerStart);
+    const last = getLineAtOffset(text, Math.max(match.innerStart, match.innerEnd - 1));
+    const ranges: IrExtractLineRange[] = [];
+    let cursor = first.from;
+
+    while (cursor <= last.from) {
+        const line = getLineAtOffset(text, cursor);
+        ranges.push(line);
+        if (line.to >= text.length) break;
+        cursor = line.to + 1;
+    }
+
+    return ranges;
+}
+
+function getDepthForMatch(match: IrExtractMatch, byStart: Map<number, IrExtractMatch>): number {
+    let depth = 1;
+    let parentStart = match.parentStart;
+    while (parentStart !== undefined) {
+        const parent = byStart.get(parentStart);
+        if (!parent) break;
+        depth++;
+        parentStart = parent.parentStart;
+    }
+    return depth;
+}
+
+function getRootStartForMatch(match: IrExtractMatch, byStart: Map<number, IrExtractMatch>): number {
+    let current = match;
+    while (current.parentStart !== undefined) {
+        const parent = byStart.get(current.parentStart);
+        if (!parent) break;
+        current = parent;
+    }
+    return current.start;
+}
+
+function createRenderExtracts(
+    matches: IrExtractMatch[],
+    editingRoot: IrExtractMatch | null,
+): RenderExtract[] {
+    const byStart = new Map(matches.map((match) => [match.start, match]));
+    const depths = new Map<IrExtractMatch, number>();
+    const rootStarts = new Map<IrExtractMatch, number>();
+    const maxDepthByRoot = new Map<number, number>();
 
     for (const match of matches) {
-        if (match.end <= match.start) {
+        const depth = getDepthForMatch(match, byStart);
+        const rootStart = getRootStartForMatch(match, byStart);
+        depths.set(match, depth);
+        rootStarts.set(match, rootStart);
+        maxDepthByRoot.set(rootStart, Math.max(maxDepthByRoot.get(rootStart) ?? 1, depth));
+    }
+
+    return matches
+        .filter((match) => !editingRoot || !isInsideMatch(match, editingRoot))
+        .map((match) => {
+            const rootStart = rootStarts.get(match) ?? match.start;
+            return {
+                match,
+                depth: depths.get(match) ?? 1,
+                maxDepth: maxDepthByRoot.get(rootStart) ?? 1,
+            };
+        });
+}
+
+function buildIrExtractDecorations(view: EditorView): {
+    decorations: DecorationSet;
+    renderExtracts: RenderExtract[];
+} {
+    const builder = new RangeSetBuilder<Decoration>();
+    if (!isLivePreview(view)) {
+        return { decorations: builder.finish(), renderExtracts: [] };
+    }
+
+    const text = view.state.doc.toString();
+    const matches = parseIrExtracts(text);
+    const selection = view.state.selection.main;
+    const editingRoot = findIrExtractEditingRoot(matches, selection.from, selection.to);
+    const renderExtracts = createRenderExtracts(matches, editingRoot);
+    const editingBlocked = (match: IrExtractMatch) =>
+        editingRoot ? isInsideMatch(match, editingRoot) : false;
+    const decorations: DecorationItem[] = [];
+
+    for (const match of matches) {
+        if (editingBlocked(match)) {
             continue;
         }
-        ranges.push({
+
+        decorations.push({
             from: match.start,
-            to: match.end,
-            decoration: Decoration.mark({
-                class: "sr-ir-extract-mark",
-                attributes: {
-                    "data-sr-ir": "true",
-                },
-            }),
+            to: match.innerStart,
+            decoration: Decoration.replace({}),
         });
-        const item = findExtractItemForMatch(host, match);
-        if (item && host) {
-            ranges.push({
-                from: match.end,
-                to: match.end,
-                decoration: Decoration.widget({
-                    widget: new IrExtractMetaWidget(host, item),
-                    side: 1,
-                }),
-            });
+        decorations.push({
+            from: match.innerEnd,
+            to: match.end,
+            decoration: Decoration.replace({}),
+        });
+    }
+
+    decorations
+        .filter((item) => item.to > item.from)
+        .sort((left, right) => left.from - right.from || left.to - right.to)
+        .forEach((item) => builder.add(item.from, item.to, item.decoration));
+
+    return { decorations: builder.finish(), renderExtracts };
+}
+
+function createDomRange(view: EditorView, from: number, to: number): Range | null {
+    try {
+        const start = view.domAtPos(from);
+        const end = view.domAtPos(to);
+        const range = document.createRange();
+        range.setStart(start.node, start.offset);
+        range.setEnd(end.node, end.offset);
+        return range;
+    } catch {
+        return null;
+    }
+}
+
+function getLineClientRects(view: EditorView, from: number, to: number): DOMRect[] {
+    if (to > from) {
+        const range = createDomRange(view, from, to);
+        if (range) {
+            const rects = Array.from(range.getClientRects()).filter(
+                (rect) => rect.width > 0 && rect.height > 0,
+            );
+            range.detach();
+            if (rects.length > 0) {
+                return rects;
+            }
         }
     }
 
-    ranges
-        .sort((left, right) => left.from - right.from || left.to - right.to)
-        .forEach((range) => builder.add(range.from, range.to, range.decoration));
-
-    return builder.finish();
+    const coords = view.coordsAtPos(from);
+    if (!coords) return [];
+    return [
+        new DOMRect(
+            coords.left,
+            coords.top,
+            Math.max(1, coords.right - coords.left),
+            coords.bottom - coords.top,
+        ),
+    ];
 }
 
-function createIrExtractDecorationPlugin(host: IrExtractDecorationHost | null): Extension {
+function measureExtractBlocks(
+    view: EditorView,
+    renderExtracts: RenderExtract[],
+): MeasuredExtractBlock[] {
+    const text = view.state.doc.toString();
+    const scrollRect = view.scrollDOM.getBoundingClientRect();
+    const scrollLeft = view.scrollDOM.scrollLeft;
+    const scrollTop = view.scrollDOM.scrollTop;
+    const blocks: MeasuredExtractBlock[] = [];
+
+    for (const renderExtract of renderExtracts) {
+        const rects = getIrExtractLineRanges(text, renderExtract.match).flatMap((line) =>
+            getLineClientRects(view, line.from, line.to),
+        );
+        if (rects.length === 0) continue;
+
+        const minLeft = Math.min(...rects.map((rect) => rect.left));
+        const maxRight = Math.max(...rects.map((rect) => rect.right));
+        const minTop = Math.min(...rects.map((rect) => rect.top));
+        const maxBottom = Math.max(...rects.map((rect) => rect.bottom));
+        const inset = getIrExtractLayerInset(renderExtract.depth, renderExtract.maxDepth);
+
+        blocks.push({
+            left: minLeft - scrollRect.left + scrollLeft - inset,
+            top: minTop - scrollRect.top + scrollTop - VERTICAL_INSET,
+            width: maxRight - minLeft + inset * 2,
+            height: maxBottom - minTop + VERTICAL_INSET * 2,
+            depth: renderExtract.depth,
+            maxDepth: renderExtract.maxDepth,
+        });
+    }
+
+    return blocks;
+}
+
+function getDepthProgress(depth: number, maxDepth: number): number {
+    if (maxDepth <= 1) return 0;
+    return Math.max(0, Math.min(1, (depth - 1) / (maxDepth - 1)));
+}
+
+function renderOverlayBlocks(overlay: HTMLElement, blocks: MeasuredExtractBlock[]): void {
+    const fragment = document.createDocumentFragment();
+    for (const block of blocks) {
+        const progress = getDepthProgress(block.depth, block.maxDepth);
+        const element = document.createElement("div");
+        element.className = "sr-ir-extract-block";
+        element.style.left = `${block.left}px`;
+        element.style.top = `${block.top}px`;
+        element.style.width = `${block.width}px`;
+        element.style.height = `${block.height}px`;
+        element.style.setProperty("--sr-ir-border-alpha", String(0.12 + progress * 0.2));
+        element.style.setProperty("--sr-ir-bg-alpha", String(0.02 + progress * 0.04));
+        fragment.appendChild(element);
+    }
+    overlay.replaceChildren(fragment);
+}
+
+function createIrExtractDecorationPlugin(): Extension {
     return ViewPlugin.fromClass(
         class {
-        decorations: DecorationSet;
+            decorations: DecorationSet;
+            private renderExtracts: RenderExtract[];
+            private readonly overlay: HTMLElement;
 
-        constructor(view: EditorView) {
-            this.decorations = buildIrExtractDecorations(view, host);
-        }
-
-        update(update: ViewUpdate): void {
-            if (update.docChanged || update.viewportChanged || update.focusChanged) {
-                this.decorations = buildIrExtractDecorations(update.view, host);
+            constructor(view: EditorView) {
+                const state = buildIrExtractDecorations(view);
+                this.decorations = state.decorations;
+                this.renderExtracts = state.renderExtracts;
+                this.overlay = document.createElement("div");
+                this.overlay.className = "sr-ir-extract-overlay";
+                view.scrollDOM.appendChild(this.overlay);
+                this.scheduleMeasure(view);
             }
-        }
-    },
+
+            update(update: ViewUpdate): void {
+                if (
+                    update.docChanged ||
+                    update.viewportChanged ||
+                    update.selectionSet ||
+                    update.focusChanged
+                ) {
+                    const state = buildIrExtractDecorations(update.view);
+                    this.decorations = state.decorations;
+                    this.renderExtracts = state.renderExtracts;
+                    this.scheduleMeasure(update.view);
+                    return;
+                }
+
+                if (update.geometryChanged) {
+                    this.scheduleMeasure(update.view);
+                }
+            }
+
+            destroy(): void {
+                this.overlay.remove();
+            }
+
+            private scheduleMeasure(view: EditorView): void {
+                if (!isLivePreview(view) || this.renderExtracts.length === 0) {
+                    this.overlay.replaceChildren();
+                    return;
+                }
+
+                view.requestMeasure({
+                    read: () => measureExtractBlocks(view, this.renderExtracts),
+                    write: (blocks) => {
+                        this.overlay.style.width = `${view.scrollDOM.scrollWidth}px`;
+                        this.overlay.style.height = `${view.scrollDOM.scrollHeight}px`;
+                        renderOverlayBlocks(this.overlay, blocks);
+                    },
+                });
+            }
+        },
         {
             decorations: (plugin) => plugin.decorations,
         },
@@ -167,47 +367,30 @@ function createIrExtractDecorationPlugin(host: IrExtractDecorationHost | null): 
 }
 
 const irExtractDecorationTheme = EditorView.baseTheme({
-    ".sr-ir-extract-mark": {
-        border: "1px solid var(--background-modifier-border)",
+    ".cm-scroller": {
+        position: "relative",
+    },
+    ".cm-content": {
+        position: "relative",
+        zIndex: "2",
+    },
+    ".sr-ir-extract-overlay": {
+        position: "absolute",
+        top: "0",
+        left: "0",
+        pointerEvents: "none",
+        overflow: "visible",
+        zIndex: "1",
+    },
+    ".sr-ir-extract-block": {
+        position: "absolute",
+        boxSizing: "border-box",
+        border: "1px solid rgba(var(--mono-rgb-100), var(--sr-ir-border-alpha, 0.16))",
         borderRadius: "4px",
-        boxDecorationBreak: "clone",
-        WebkitBoxDecorationBreak: "clone",
-        padding: "0 2px",
+        backgroundColor: "rgba(var(--mono-rgb-100), var(--sr-ir-bg-alpha, 0.02))",
     },
-    ".sr-ir-extract-mark:hover": {
-        borderColor: "var(--interactive-accent)",
-    },
-    ".sr-ir-extract-meta": {
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "4px",
-        marginLeft: "4px",
-        verticalAlign: "baseline",
-    },
-    ".sr-ir-extract-memo": {
-        maxWidth: "18em",
-        overflow: "hidden",
-        color: "var(--text-muted)",
-        fontSize: "0.85em",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-    },
-    ".sr-ir-extract-priority": {
-        width: "3.6em",
-        height: "1.7em",
-        minHeight: "1.7em",
-        padding: "0 2px",
-        opacity: "0",
-        transition: "opacity 120ms ease",
-    },
-    ".sr-ir-extract-mark:hover + .sr-ir-extract-meta .sr-ir-extract-priority, .sr-ir-extract-meta:hover .sr-ir-extract-priority":
-        {
-            opacity: "1",
-        },
 });
 
-export function createIrExtractDecorationExtensions(
-    host: IrExtractDecorationHost | null = null,
-): Extension[] {
-    return [createIrExtractDecorationPlugin(host), irExtractDecorationTheme];
+export function createIrExtractDecorationExtensions(_host: unknown = null): Extension[] {
+    return [createIrExtractDecorationPlugin(), irExtractDecorationTheme];
 }

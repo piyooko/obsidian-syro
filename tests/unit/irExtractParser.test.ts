@@ -51,6 +51,23 @@ describe("irExtractParser", () => {
         expect(wrapped.text).toBe("a {{ir::{{ir::one}}}} b");
     });
 
+    test("wraps only the selected inner text when selecting inside an existing extract", () => {
+        const text = [
+            "4. {{ir::**Step four**",
+            "    * first item",
+            "    * second item}}",
+        ].join("\n");
+        const from = text.indexOf("first item");
+        const to = from + "first item".length;
+        const wrapped = wrapSelectionAsExtract(text, from, to);
+
+        expect(wrapped.text).toBe(
+            ["4. {{ir::**Step four**", "    * {{ir::first item}}", "    * second item}}"].join(
+                "\n",
+            ),
+        );
+    });
+
     test("replaces inner markdown and removes only the current wrapper", () => {
         const text = "{{ir::outer {{ir::inner}}}}";
         const [outer] = parseIrExtracts(text);
