@@ -32,6 +32,8 @@ interface OpenIrExtract {
 const IR_OPEN = "{{ir::";
 const IR_CLOSE = "}}";
 const CONTEXT_RADIUS = 80;
+const MARKDOWN_BLOCK_PREFIX =
+    /^([ \t]*(?:(?:#{1,6}[ \t]+)|(?:[-+*][ \t]+\[[ xX]\][ \t]+)|(?:[-+*][ \t]+)|(?:\d{1,9}[.)][ \t]+)|(?:>[ \t]*)))/;
 
 function countLinesBefore(text: string, offset: number): number {
     let line = 0;
@@ -157,10 +159,16 @@ export function wrapSelectionAsExtract(
 } {
     const expanded = expandPartialOverlapSelectionToValidBoundary(text, from, to);
     const selected = text.slice(expanded.from, expanded.to);
+    const preservedPrefix = getPreservedBlockPrefixForExtractWrap(text, expanded.from, selected);
     const nextText =
-        text.slice(0, expanded.from) + IR_OPEN + selected + IR_CLOSE + text.slice(expanded.to);
-    const innerFrom = expanded.from + IR_OPEN.length;
-    const innerTo = innerFrom + selected.length;
+        text.slice(0, expanded.from) +
+        preservedPrefix +
+        IR_OPEN +
+        selected.slice(preservedPrefix.length) +
+        IR_CLOSE +
+        text.slice(expanded.to);
+    const innerFrom = expanded.from + preservedPrefix.length + IR_OPEN.length;
+    const innerTo = innerFrom + selected.length - preservedPrefix.length;
     return {
         text: nextText,
         from: expanded.from,
@@ -170,6 +178,15 @@ export function wrapSelectionAsExtract(
         innerFrom,
         innerTo,
     };
+}
+
+function getPreservedBlockPrefixForExtractWrap(text: string, from: number, selected: string): string {
+    const lineStart = text.lastIndexOf("\n", Math.max(0, from - 1)) + 1;
+    const beforeSelection = text.slice(lineStart, from);
+    if (!/^[ \t]{0,3}$/.test(beforeSelection)) {
+        return "";
+    }
+    return selected.match(MARKDOWN_BLOCK_PREFIX)?.[0] ?? "";
 }
 
 export function replaceExtractInnerMarkdown(

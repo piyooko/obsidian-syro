@@ -1,8 +1,15 @@
 import {
+    clampIrExtractVerticalInsetsForAdjacentBlocks,
+    containNestedIrExtractBlocks,
     findIrExtractEditingRoot,
+    findIrExtractSourceMatches,
     getIrExtractLayerInset,
+    getIrExtractLayerVerticalInset,
     getIrExtractLineRanges,
     getIrExtractRenderRange,
+    getIrExtractVerticalInsetForMetrics,
+    getIrExtractWrappedBlockPrefix,
+    getIrExtractWrappedHeading,
     type RenderExtract,
 } from "src/editor/ir-extract-decoration";
 import { parseIrExtracts } from "src/util/irExtractParser";
@@ -23,6 +30,58 @@ describe("irExtractDecoration helpers", () => {
         ]);
     });
 
+    test("scales vertical inset with line-height breathing room", () => {
+        expect(getIrExtractVerticalInsetForMetrics(50, [26])).toBe(8);
+        expect(getIrExtractVerticalInsetForMetrics(34, [26])).toBe(4);
+        expect(getIrExtractVerticalInsetForMetrics(28, [26])).toBe(1);
+        expect(getIrExtractVerticalInsetForMetrics(26, [26])).toBe(0);
+    });
+
+    test("clamps same-depth vertical insets to adjacent block gaps", () => {
+        const clamped = clampIrExtractVerticalInsetsForAdjacentBlocks([
+            { rawTop: 0, rawBottom: 26, depth: 1, verticalInset: 8 },
+            { rawTop: 30, rawBottom: 56, depth: 1, verticalInset: 8 },
+            { rawTop: 30, rawBottom: 56, depth: 2, verticalInset: 4 },
+        ]);
+
+        expect(clamped).toEqual([2, 2, 4]);
+    });
+
+    test("expands parent blocks to contain nested child blocks", () => {
+        const blocks = containNestedIrExtractBlocks([
+            {
+                start: 0,
+                left: 10,
+                top: 10,
+                width: 90,
+                height: 40,
+                depth: 1,
+                maxDepth: 2,
+            },
+            {
+                start: 20,
+                parentStart: 0,
+                left: 0,
+                top: 20,
+                width: 130,
+                height: 40,
+                depth: 2,
+                maxDepth: 2,
+            },
+        ]);
+
+        expect(blocks[0]).toMatchObject({ left: -1, top: 10, width: 132, height: 51 });
+    });
+
+    test("separates nested extract vertical borders by depth", () => {
+        expect([1, 2, 3].map((depth) => getIrExtractLayerVerticalInset(8, depth, 3))).toEqual([
+            8, 5.33, 2.67,
+        ]);
+        expect([1, 2].map((depth) => getIrExtractLayerVerticalInset(1, depth, 2))).toEqual([
+            1, 0.5,
+        ]);
+    });
+
     test("selects the smallest touched extract as the editing root", () => {
         const text = "{{ir::outer {{ir::inner}} text}}";
         const matches = parseIrExtracts(text);
@@ -30,6 +89,27 @@ describe("irExtractDecoration helpers", () => {
         const editingRoot = findIrExtractEditingRoot(matches, cursor, cursor);
 
         expect(editingRoot?.rawMarkdown).toBe("inner");
+    });
+
+    test("shows source for every extract layer touched by the cursor", () => {
+        const text = "{{ir::outer {{ir::inner}} text}}";
+        const matches = parseIrExtracts(text);
+        const cursor = text.indexOf("inner");
+        const sourceMatches = findIrExtractSourceMatches(text, matches, cursor, cursor);
+
+        expect(sourceMatches.map((match) => match.rawMarkdown)).toEqual([
+            "outer {{ir::inner}} text",
+            "inner",
+        ]);
+    });
+
+    test("shows source when the cursor is on an extract visual line but outside the extract syntax", () => {
+        const text = "prefix {{ir::target}} suffix";
+        const matches = parseIrExtracts(text);
+        const cursor = text.indexOf("prefix");
+        const sourceMatches = findIrExtractSourceMatches(text, matches, cursor, cursor);
+
+        expect(sourceMatches.map((match) => match.rawMarkdown)).toEqual(["target"]);
     });
 
     test("selects the outer extract when the selection crosses an inner extract", () => {
@@ -55,6 +135,26 @@ describe("irExtractDecoration helpers", () => {
         expect(text.slice(match.innerStart, match.innerEnd)).toBe("one");
         expect(getIrExtractRenderRange(editing)).toEqual({ from: match.start, to: match.end });
         expect(text.slice(match.start, match.end)).toBe("{{ir::one}}");
+    });
+
+    test("detects legacy IR-wrapped heading and list block prefixes", () => {
+        const headingText = "{{ir::#### Area C}}";
+        const [heading] = parseIrExtracts(headingText);
+        expect(getIrExtractWrappedHeading(headingText, heading)).toMatchObject({
+            level: 4,
+            markerFrom: heading.innerStart,
+            markerTo: heading.innerStart + "#### ".length,
+            textFrom: heading.innerStart + "#### ".length,
+        });
+
+        const bulletText = "    {{ir::* Forecast chart}}";
+        const [bullet] = parseIrExtracts(bulletText);
+        expect(getIrExtractWrappedBlockPrefix(bulletText, bullet)).toMatchObject({
+            kind: "unordered-list",
+            markerFrom: bullet.innerStart,
+            markerTo: bullet.innerStart + "* ".length,
+            textFrom: bullet.innerStart + "* ".length,
+        });
     });
 
     test("line coverage expands a partial extract to the touched source lines", () => {

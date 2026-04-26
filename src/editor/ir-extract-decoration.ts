@@ -10,12 +10,13 @@ import { parseIrExtracts, type IrExtractMatch } from "src/util/irExtractParser";
 
 const OUTER_INSET = 18;
 const INNER_INSET = 6;
-const VERTICAL_INSET = 4;
+const MAX_VERTICAL_INSET = 8;
 
 interface DecorationItem {
     from: number;
     to: number;
     decoration: Decoration;
+    allowEmpty?: boolean;
 }
 
 export interface RenderExtract {
@@ -25,7 +26,9 @@ export interface RenderExtract {
     showSource: boolean;
 }
 
-interface MeasuredExtractBlock {
+export interface MeasuredExtractBlock {
+    start: number;
+    parentStart?: number;
     left: number;
     top: number;
     width: number;
@@ -34,11 +37,61 @@ interface MeasuredExtractBlock {
     maxDepth: number;
 }
 
+interface PendingMeasuredExtractBlock {
+    start: number;
+    parentStart?: number;
+    left: number;
+    rawTop: number;
+    rawBottom: number;
+    width: number;
+    verticalInset: number;
+    depth: number;
+    maxDepth: number;
+}
+
+export interface IrExtractVerticalInsetBlock {
+    rawTop: number;
+    rawBottom: number;
+    depth: number;
+    verticalInset: number;
+}
+
+export interface IrExtractWrappedHeading {
+    level: number;
+    lineFrom: number;
+    markerFrom: number;
+    markerTo: number;
+    textFrom: number;
+    textTo: number;
+}
+
+export type IrExtractWrappedBlockKind =
+    | "heading"
+    | "unordered-list"
+    | "ordered-list"
+    | "task-list"
+    | "quote";
+
+export interface IrExtractWrappedBlockPrefix {
+    kind: IrExtractWrappedBlockKind;
+    level?: number;
+    lineFrom: number;
+    markerFrom: number;
+    markerTo: number;
+    textFrom: number;
+    textTo: number;
+}
+
 export interface IrExtractLineRange {
     from: number;
     to: number;
     line: number;
 }
+
+const ATX_HEADING_INNER_PREFIX = /^(#{1,6})[ \t]+/;
+const WRAPPED_BLOCK_PREFIX =
+    /^(#{1,6}[ \t]+|[-+*][ \t]+\[[ xX]\][ \t]+|[-+*][ \t]+|\d{1,9}[.)][ \t]+|>[ \t]*)/;
+const NESTED_BLOCK_GAP = 1;
 
 function isLivePreview(view: EditorView): boolean {
     return !!view.dom.closest(".is-live-preview");
@@ -80,8 +133,22 @@ export function findIrExtractEditingRoot(
     );
 }
 
-function isInsideMatch(match: IrExtractMatch, outer: IrExtractMatch): boolean {
-    return match.start >= outer.start && match.end <= outer.end;
+export function findIrExtractSourceMatches(
+    text: string,
+    matches: IrExtractMatch[],
+    selectionFrom: number,
+    selectionTo: number,
+): IrExtractMatch[] {
+    return matches
+        .filter((match) => {
+            if (selectionTouchesRange(selectionFrom, selectionTo, match.start, match.end)) {
+                return true;
+            }
+            return getIrExtractLineRanges(text, match).some((line) =>
+                selectionTouchesRange(selectionFrom, selectionTo, line.from, line.to),
+            );
+        })
+        .sort((left, right) => left.start - right.start || right.end - left.end);
 }
 
 export function getIrExtractLayerInset(depth: number, maxDepth: number): number {
@@ -125,6 +192,70 @@ export function getIrExtractLineRanges(
     return ranges;
 }
 
+export function getIrExtractWrappedHeading(
+    text: string,
+    match: Pick<IrExtractMatch, "start" | "innerStart" | "innerEnd">,
+): IrExtractWrappedHeading | null {
+    const block = getIrExtractWrappedBlockPrefix(text, match);
+    if (!block || block.kind !== "heading" || block.level === undefined) {
+        return null;
+    }
+    return {
+        level: block.level,
+        lineFrom: block.lineFrom,
+        markerFrom: block.markerFrom,
+        markerTo: block.markerTo,
+        textFrom: block.textFrom,
+        textTo: block.textTo,
+    };
+}
+
+export function getIrExtractWrappedBlockPrefix(
+    text: string,
+    match: Pick<IrExtractMatch, "start" | "innerStart" | "innerEnd">,
+): IrExtractWrappedBlockPrefix | null {
+    const line = getLineAtOffset(text, match.innerStart);
+    const beforeExtract = text.slice(line.from, match.start);
+    if (!/^[ \t]*$/.test(beforeExtract)) {
+        return null;
+    }
+
+    const lineInner = text.slice(match.innerStart, Math.min(line.to, match.innerEnd));
+    const prefixMatch = lineInner.match(WRAPPED_BLOCK_PREFIX);
+    if (!prefixMatch) {
+        return null;
+    }
+
+    const markerFrom = match.innerStart;
+    const markerTo = markerFrom + prefixMatch[0].length;
+    const kind = getWrappedBlockKind(prefixMatch[0]);
+    return {
+        kind,
+        level: kind === "heading" ? lineInner.match(ATX_HEADING_INNER_PREFIX)?.[1].length : undefined,
+        lineFrom: line.from,
+        markerFrom,
+        markerTo,
+        textFrom: markerTo,
+        textTo: Math.min(line.to, match.innerEnd),
+    };
+}
+
+function getWrappedBlockKind(prefix: string): IrExtractWrappedBlockKind {
+    if (/^#{1,6}[ \t]+/.test(prefix)) {
+        return "heading";
+    }
+    if (/^[-+*][ \t]+\[[ xX]\][ \t]+/.test(prefix)) {
+        return "task-list";
+    }
+    if (/^[-+*][ \t]+/.test(prefix)) {
+        return "unordered-list";
+    }
+    if (/^\d{1,9}[.)][ \t]+/.test(prefix)) {
+        return "ordered-list";
+    }
+    return "quote";
+}
+
 function getDepthForMatch(match: IrExtractMatch, byStart: Map<number, IrExtractMatch>): number {
     let depth = 1;
     let parentStart = match.parentStart;
@@ -149,7 +280,7 @@ function getRootStartForMatch(match: IrExtractMatch, byStart: Map<number, IrExtr
 
 function createRenderExtracts(
     matches: IrExtractMatch[],
-    editingRoot: IrExtractMatch | null,
+    sourceStarts: Set<number>,
 ): RenderExtract[] {
     const byStart = new Map(matches.map((match) => [match.start, match]));
     const depths = new Map<IrExtractMatch, number>();
@@ -170,7 +301,7 @@ function createRenderExtracts(
             match,
             depth: depths.get(match) ?? 1,
             maxDepth: maxDepthByRoot.get(rootStart) ?? 1,
-            showSource: editingRoot ? isInsideMatch(match, editingRoot) : false,
+            showSource: sourceStarts.has(match.start),
         };
     });
 }
@@ -179,6 +310,95 @@ export function getIrExtractRenderRange(renderExtract: RenderExtract): { from: n
     return renderExtract.showSource
         ? { from: renderExtract.match.start, to: renderExtract.match.end }
         : { from: renderExtract.match.innerStart, to: renderExtract.match.innerEnd };
+}
+
+export function getIrExtractVerticalInsetForMetrics(
+    lineHeight: number,
+    rowHeights: number[],
+): number {
+    const tallestRow = Math.max(...rowHeights, 0);
+    const cssBreathingInset = Math.max(0, (lineHeight - tallestRow) / 2);
+    return Number(Math.min(MAX_VERTICAL_INSET, cssBreathingInset).toFixed(2));
+}
+
+export function getIrExtractLayerVerticalInset(
+    baseInset: number,
+    depth: number,
+    maxDepth: number,
+): number {
+    const safeBaseInset = Math.max(0, baseInset);
+    const safeDepth = Math.max(1, depth);
+    const safeMaxDepth = Math.max(safeDepth, maxDepth, 1);
+    if (safeMaxDepth <= 1) {
+        return Number(safeBaseInset.toFixed(2));
+    }
+    const step = safeBaseInset / safeMaxDepth;
+    return Number(Math.max(0, safeBaseInset - step * (safeDepth - 1)).toFixed(2));
+}
+
+export function clampIrExtractVerticalInsetsForAdjacentBlocks(
+    blocks: IrExtractVerticalInsetBlock[],
+): number[] {
+    const nextInsets = blocks.map((block) => Math.max(0, block.verticalInset));
+
+    for (let leftIndex = 0; leftIndex < blocks.length; leftIndex++) {
+        for (let rightIndex = leftIndex + 1; rightIndex < blocks.length; rightIndex++) {
+            const left = blocks[leftIndex];
+            const right = blocks[rightIndex];
+            if (left.depth !== right.depth) {
+                continue;
+            }
+
+            let gap: number | null = null;
+            if (left.rawBottom <= right.rawTop) {
+                gap = right.rawTop - left.rawBottom;
+            } else if (right.rawBottom <= left.rawTop) {
+                gap = left.rawTop - right.rawBottom;
+            }
+
+            if (gap === null) {
+                continue;
+            }
+
+            const maxInset = Math.max(0, gap / 2);
+            nextInsets[leftIndex] = Math.min(nextInsets[leftIndex], maxInset);
+            nextInsets[rightIndex] = Math.min(nextInsets[rightIndex], maxInset);
+        }
+    }
+
+    return nextInsets.map((inset) => Number(inset.toFixed(2)));
+}
+
+export function containNestedIrExtractBlocks<T extends MeasuredExtractBlock>(blocks: T[]): T[] {
+    const nextBlocks = blocks.map((block) => ({ ...block }));
+    const byStart = new Map(nextBlocks.map((block) => [block.start, block]));
+    const childrenFirst = [...nextBlocks].sort((left, right) => right.depth - left.depth);
+
+    for (const child of childrenFirst) {
+        if (child.parentStart === undefined) {
+            continue;
+        }
+        const parent = byStart.get(child.parentStart);
+        if (!parent) {
+            continue;
+        }
+
+        const parentRight = parent.left + parent.width;
+        const parentBottom = parent.top + parent.height;
+        const childRight = child.left + child.width;
+        const childBottom = child.top + child.height;
+        const nextLeft = Math.min(parent.left, child.left - NESTED_BLOCK_GAP);
+        const nextTop = Math.min(parent.top, child.top - NESTED_BLOCK_GAP);
+        const nextRight = Math.max(parentRight, childRight + NESTED_BLOCK_GAP);
+        const nextBottom = Math.max(parentBottom, childBottom + NESTED_BLOCK_GAP);
+
+        parent.left = Number(nextLeft.toFixed(2));
+        parent.top = Number(nextTop.toFixed(2));
+        parent.width = Number((nextRight - nextLeft).toFixed(2));
+        parent.height = Number((nextBottom - nextTop).toFixed(2));
+    }
+
+    return nextBlocks;
 }
 
 function buildIrExtractDecorations(view: EditorView): {
@@ -193,14 +413,16 @@ function buildIrExtractDecorations(view: EditorView): {
     const text = view.state.doc.toString();
     const matches = parseIrExtracts(text);
     const selection = view.state.selection.main;
-    const editingRoot = findIrExtractEditingRoot(matches, selection.from, selection.to);
-    const renderExtracts = createRenderExtracts(matches, editingRoot);
-    const editingBlocked = (match: IrExtractMatch) =>
-        editingRoot ? isInsideMatch(match, editingRoot) : false;
+    const sourceStarts = new Set(
+        findIrExtractSourceMatches(text, matches, selection.from, selection.to).map(
+            (match) => match.start,
+        ),
+    );
+    const renderExtracts = createRenderExtracts(matches, sourceStarts);
     const decorations: DecorationItem[] = [];
 
     for (const match of matches) {
-        if (editingBlocked(match)) {
+        if (sourceStarts.has(match.start)) {
             continue;
         }
 
@@ -214,14 +436,92 @@ function buildIrExtractDecorations(view: EditorView): {
             to: match.end,
             decoration: Decoration.replace({}),
         });
+
+        for (const item of createWrappedBlockPrefixDecorations(text, match)) {
+            decorations.push(item);
+        }
     }
 
     decorations
-        .filter((item) => item.to > item.from)
+        .filter((item) => item.to > item.from || item.allowEmpty)
         .sort((left, right) => left.from - right.from || left.to - right.to)
         .forEach((item) => builder.add(item.from, item.to, item.decoration));
 
     return { decorations: builder.finish(), renderExtracts };
+}
+
+function createWrappedBlockPrefixDecorations(
+    text: string,
+    match: Pick<IrExtractMatch, "start" | "innerStart" | "innerEnd">,
+): DecorationItem[] {
+    const block = getIrExtractWrappedBlockPrefix(text, match);
+    if (!block) {
+        return [];
+    }
+
+    const lineClass = getWrappedBlockLineClass(block);
+    const markerClass = getWrappedBlockMarkerClass(block);
+    const textClass = getWrappedBlockTextClass(block);
+    const decorations: DecorationItem[] = [
+        {
+            from: block.lineFrom,
+            to: block.lineFrom,
+            decoration: Decoration.line({ class: lineClass }),
+            allowEmpty: true,
+        },
+    ];
+
+    if (block.kind === "heading") {
+        decorations.push({
+            from: block.markerFrom,
+            to: block.markerTo,
+            decoration: Decoration.replace({}),
+        });
+    } else {
+        decorations.push({
+            from: block.markerFrom,
+            to: block.markerTo,
+            decoration: Decoration.mark({ class: markerClass }),
+        });
+    }
+
+    decorations.push({
+        from: block.textFrom,
+        to: block.textTo,
+        decoration: Decoration.mark({ class: textClass }),
+    });
+
+    return decorations;
+}
+
+function getWrappedBlockLineClass(block: IrExtractWrappedBlockPrefix): string {
+    if (block.kind === "heading") {
+        return `HyperMD-header HyperMD-header-${block.level ?? 1} sr-ir-extract-heading-line`;
+    }
+    if (block.kind === "quote") {
+        return "HyperMD-quote sr-ir-extract-blockquote-line";
+    }
+    return "HyperMD-list-line HyperMD-list-line-1 sr-ir-extract-list-line";
+}
+
+function getWrappedBlockMarkerClass(block: IrExtractWrappedBlockPrefix): string {
+    if (block.kind === "ordered-list") {
+        return "cm-formatting cm-formatting-list cm-formatting-list-ol cm-list-1";
+    }
+    if (block.kind === "quote") {
+        return "cm-formatting cm-formatting-quote cm-quote";
+    }
+    return "cm-formatting cm-formatting-list cm-formatting-list-ul cm-list-1";
+}
+
+function getWrappedBlockTextClass(block: IrExtractWrappedBlockPrefix): string {
+    if (block.kind === "heading") {
+        return `cm-header cm-header-${block.level ?? 1}`;
+    }
+    if (block.kind === "quote") {
+        return "cm-quote";
+    }
+    return "cm-list-1";
 }
 
 function createDomRange(view: EditorView, from: number, to: number): Range | null {
@@ -263,18 +563,90 @@ function getRangeClientRects(view: EditorView, from: number, to: number): DOMRec
     ];
 }
 
+function parseCssPixelValue(value: string): number | null {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getEditorLineHeight(view: EditorView): number {
+    if (Number.isFinite(view.defaultLineHeight) && view.defaultLineHeight > 0) {
+        return view.defaultLineHeight;
+    }
+
+    const computed = getComputedStyle(view.contentDOM);
+    const lineHeight = parseCssPixelValue(computed.lineHeight);
+    if (lineHeight !== null) {
+        return lineHeight;
+    }
+
+    const fontSize = parseCssPixelValue(computed.fontSize);
+    return fontSize === null ? 0 : fontSize * 1.5;
+}
+
+function rectsOverlapVertically(left: DOMRect, right: DOMRect): boolean {
+    return left.top < right.bottom && left.bottom > right.top;
+}
+
+function mergeRectsByVisualLine(rects: DOMRect[]): DOMRect[] {
+    const sorted = [...rects].sort((left, right) => left.top - right.top || left.left - right.left);
+    const rows: DOMRect[] = [];
+    for (const rect of sorted) {
+        const row = rows.find((candidate) => rectsOverlapVertically(candidate, rect));
+        if (!row) {
+            rows.push(
+                new DOMRect(rect.left, rect.top, rect.width, Math.max(1, rect.height)),
+            );
+            continue;
+        }
+
+        const left = Math.min(row.left, rect.left);
+        const right = Math.max(row.right, rect.right);
+        const top = Math.min(row.top, rect.top);
+        const bottom = Math.max(row.bottom, rect.bottom);
+        row.x = left;
+        row.y = top;
+        row.width = Math.max(1, right - left);
+        row.height = Math.max(1, bottom - top);
+    }
+    return rows;
+}
+
+function getVisualLineClientRectsForRange(
+    view: EditorView,
+    text: string,
+    from: number,
+    to: number,
+): DOMRect[] {
+    const targetRows = mergeRectsByVisualLine(getRangeClientRects(view, from, to));
+    if (targetRows.length === 0) {
+        return [];
+    }
+
+    const lineRows = mergeRectsByVisualLine(
+        getIrExtractLineRanges(text, { innerStart: from, innerEnd: to }).flatMap((line) =>
+            getRangeClientRects(view, line.from, line.to),
+        ),
+    );
+    const touchedRows = lineRows.filter((lineRow) =>
+        targetRows.some((targetRow) => rectsOverlapVertically(lineRow, targetRow)),
+    );
+    return touchedRows.length > 0 ? touchedRows : targetRows;
+}
+
 function measureExtractBlocks(
     view: EditorView,
     renderExtracts: RenderExtract[],
 ): MeasuredExtractBlock[] {
+    const text = view.state.doc.toString();
     const scrollRect = view.scrollDOM.getBoundingClientRect();
     const scrollLeft = view.scrollDOM.scrollLeft;
     const scrollTop = view.scrollDOM.scrollTop;
-    const blocks: MeasuredExtractBlock[] = [];
+    const lineHeight = getEditorLineHeight(view);
+    const pendingBlocks: PendingMeasuredExtractBlock[] = [];
 
     for (const renderExtract of renderExtracts) {
         const range = getIrExtractRenderRange(renderExtract);
-        const rects = getRangeClientRects(view, range.from, range.to);
+        const rects = getVisualLineClientRectsForRange(view, text, range.from, range.to);
         if (rects.length === 0) continue;
 
         const minLeft = Math.min(...rects.map((rect) => rect.left));
@@ -282,18 +654,53 @@ function measureExtractBlocks(
         const minTop = Math.min(...rects.map((rect) => rect.top));
         const maxBottom = Math.max(...rects.map((rect) => rect.bottom));
         const inset = getIrExtractLayerInset(renderExtract.depth, renderExtract.maxDepth);
+        const baseVerticalInset = getIrExtractVerticalInsetForMetrics(
+            lineHeight,
+            rects.map((rect) => rect.height),
+        );
+        const verticalInset = getIrExtractLayerVerticalInset(
+            baseVerticalInset,
+            renderExtract.depth,
+            renderExtract.maxDepth,
+        );
 
-        blocks.push({
+        pendingBlocks.push({
+            start: renderExtract.match.start,
+            parentStart: renderExtract.match.parentStart,
             left: minLeft - scrollRect.left + scrollLeft - inset,
-            top: minTop - scrollRect.top + scrollTop - VERTICAL_INSET,
+            rawTop: minTop - scrollRect.top + scrollTop,
+            rawBottom: maxBottom - scrollRect.top + scrollTop,
             width: maxRight - minLeft + inset * 2,
-            height: maxBottom - minTop + VERTICAL_INSET * 2,
+            verticalInset,
             depth: renderExtract.depth,
             maxDepth: renderExtract.maxDepth,
         });
     }
 
-    return blocks;
+    const verticalInsets = clampIrExtractVerticalInsetsForAdjacentBlocks(
+        pendingBlocks.map((block) => ({
+            rawTop: block.rawTop,
+            rawBottom: block.rawBottom,
+            depth: block.depth,
+            verticalInset: block.verticalInset,
+        })),
+    );
+
+    const measuredBlocks = pendingBlocks.map((block, index) => {
+        const verticalInset = verticalInsets[index] ?? 0;
+        return {
+            start: block.start,
+            parentStart: block.parentStart,
+            left: block.left,
+            top: block.rawTop - verticalInset,
+            width: block.width,
+            height: block.rawBottom - block.rawTop + verticalInset * 2,
+            depth: block.depth,
+            maxDepth: block.maxDepth,
+        };
+    });
+
+    return containNestedIrExtractBlocks(measuredBlocks);
 }
 
 function getDepthProgress(depth: number, maxDepth: number): number {

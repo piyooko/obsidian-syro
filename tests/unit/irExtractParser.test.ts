@@ -68,6 +68,20 @@ describe("irExtractParser", () => {
         );
     });
 
+    test("preserves heading and list block prefixes outside newly wrapped extracts", () => {
+        const heading = "#### Area C";
+        const wrappedHeading = wrapSelectionAsExtract(heading, 0, heading.length);
+        expect(wrappedHeading.text).toBe("#### {{ir::Area C}}");
+
+        const bullet = "    * Forecast chart";
+        const wrappedBullet = wrapSelectionAsExtract(bullet, 0, bullet.length);
+        expect(wrappedBullet.text).toBe("    * {{ir::Forecast chart}}");
+
+        const task = "- [ ] Review extract rendering";
+        const wrappedTask = wrapSelectionAsExtract(task, 0, task.length);
+        expect(wrappedTask.text).toBe("- [ ] {{ir::Review extract rendering}}");
+    });
+
     test("replaces inner markdown and removes only the current wrapper", () => {
         const text = "{{ir::outer {{ir::inner}}}}";
         const [outer] = parseIrExtracts(text);
