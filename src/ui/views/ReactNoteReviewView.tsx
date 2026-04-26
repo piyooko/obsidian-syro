@@ -29,6 +29,7 @@ import {
     ReviewCommitLog,
     type ReviewCommitEditPayload,
 } from "src/dataStore/reviewCommitStore";
+import type { ExtractItem } from "src/dataStore/extractStore";
 import { t } from "src/lang/helpers";
 import { Tags } from "src/tags";
 import { ContextAnchorService } from "src/util/ContextAnchor";
@@ -83,6 +84,7 @@ export class ReactNoteReviewView extends ItemView {
     private editingId: string | null = null;
     private unsubscribeSyncEvent: (() => void) | null = null;
     private unsubscribeReviewCardSyncEvent: (() => void) | null = null;
+    private unsubscribeExtractSyncEvent: (() => void) | null = null;
     private isLoading: boolean = false;
     private timelineScopeHandlers: Array<Parameters<Scope["unregister"]>[0]> = [];
     private autoRevealTargetPath: string | null = null;
@@ -710,6 +712,9 @@ export class ReactNoteReviewView extends ItemView {
         this.unsubscribeSyncEvent = this.plugin.syncEvents.on("note-review-updated", () => {
             this.redraw();
         });
+        this.unsubscribeExtractSyncEvent = this.plugin.syncEvents.on("extracts-updated", () => {
+            this.redraw();
+        });
         this.unsubscribeReviewCardSyncEvent = this.plugin.syncEvents.on(
             "timeline-review-card-updated",
             () => {
@@ -732,6 +737,10 @@ export class ReactNoteReviewView extends ItemView {
         if (this.unsubscribeReviewCardSyncEvent) {
             this.unsubscribeReviewCardSyncEvent();
             this.unsubscribeReviewCardSyncEvent = null;
+        }
+        if (this.unsubscribeExtractSyncEvent) {
+            this.unsubscribeExtractSyncEvent();
+            this.unsubscribeExtractSyncEvent = null;
         }
 
         this.unregisterTimelineScopeHotkeys();
@@ -760,6 +769,10 @@ export class ReactNoteReviewView extends ItemView {
         const data = reviewDecksToSidebarState(this.plugin);
         this.restorePersistedTimelineSelection(data);
         const activeFilePath = this.resolvePrimaryMarkdownPath();
+        const activeExtracts =
+            this.selectedItem && this.plugin.extractStore
+                ? this.plugin.extractStore.getActiveByPath(this.selectedItem.path)
+                : [];
         this.lastPrimaryMarkdownPath = activeFilePath;
         this.logRuntimeDebug("[TimelineAutoFollow] redraw", {
             activeFilePath,
@@ -826,6 +839,16 @@ export class ReactNoteReviewView extends ItemView {
                 onCancelEdit: () => this.handleCancelEdit(),
                 onCommitSelect: (log) => {
                     this.runAsync(this.handleCommitSelect(log), "select timeline commit");
+                },
+                activeExtracts,
+                onExtractSelect: (extract) => {
+                    this.runAsync(this.handleExtractSelect(extract), "select extract");
+                },
+                onExtractPriorityChange: (extract, priority) => {
+                    this.runAsync(
+                        this.handleExtractPriorityChange(extract, priority),
+                        "change extract priority",
+                    );
                 },
                 isLoading: this.isLoading,
                 showScrollPercentage: this.plugin.data.settings.showScrollPercentage,
@@ -1508,6 +1531,37 @@ export class ReactNoteReviewView extends ItemView {
 
             new Notice(t("UNABLE_TO_LOCATE_CONTEXT"));
         }
+    }
+
+    private async handleExtractSelect(extract: ExtractItem): Promise<void> {
+        const file = this.app.vault.getAbstractFileByPath(extract.sourcePath);
+        if (!(file instanceof TFile)) {
+            new Notice(t("EXTRACT_SOURCE_MISSING"));
+            return;
+        }
+
+        const leaf = this.app.workspace.getLeaf(false);
+        await leaf.openFile(file);
+
+        const view = leaf.view;
+        if (view instanceof MarkdownView) {
+            const editor = view.editor;
+            const offset = Math.max(
+                0,
+                Math.min(extract.sourceAnchor.start, editor.getValue().length),
+            );
+            const cursor = editor.offsetToPos(offset);
+            editor.setCursor(cursor);
+            editor.scrollIntoView({ from: cursor, to: cursor }, true);
+        }
+    }
+
+    private async handleExtractPriorityChange(
+        extract: ExtractItem,
+        priority: number,
+    ): Promise<void> {
+        await this.plugin.updateExtractPriority(extract.uuid, priority);
+        this.redraw();
     }
 
     /**

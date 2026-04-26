@@ -47,6 +47,13 @@ import {
 import { RepetitionItem } from "./repetitionItem";
 import { ReviewCommitStore, type ReviewCommitLog } from "./reviewCommitStore";
 import {
+    EXTRACT_ITEM_ENTITY_TYPE,
+    ExtractStore,
+    type ExtractItem,
+    type ParsedExtractStoreSnapshots,
+    type ExtractSnapshot,
+} from "./extractStore";
+import {
     buildSyroSessionCardFormalStateDigest,
     classifySyroSessionRecordImpact,
     createEmptySyroSessionReplayReceipt,
@@ -81,6 +88,7 @@ type ReplayDependencies = {
     store: DataStore;
     fileIdentityStore: SyroFileIdentityStore;
     noteReviewStore: NoteReviewStore;
+    extractStore?: ExtractStore;
     reviewCommitStore: ReviewCommitStore;
     deckOptionsStore: DeckOptionsStore;
     sharedSettingsStore: SyroJsonStateStore<PersistedSharedSettingsState>;
@@ -95,7 +103,13 @@ type ReplayDependencies = {
         deviceId: string,
     ) => Promise<ParsedTrackedCardsStoreSnapshots | null>;
     loadRemoteNotesSnapshots?: (deviceId: string) => Promise<ParsedNoteReviewStoreSnapshots | null>;
-    collectAliasGroups?: (domain: "cards" | "notes", groups: SyroUuidAliasGroup[]) => void;
+    loadRemoteExtractsSnapshots?: (
+        deviceId: string,
+    ) => Promise<ParsedExtractStoreSnapshots | null>;
+    collectAliasGroups?: (
+        domain: "cards" | "notes" | "extracts",
+        groups: SyroUuidAliasGroup[],
+    ) => void;
     collectReplayReceipt?: (receipt: SyroSessionReplayReceipt) => void;
     shouldLogDebug?: () => boolean;
     logDebug?: (...args: unknown[]) => void;
@@ -115,6 +129,11 @@ type ReplayEntityResolution =
     | {
           kind: "note-review";
           path: string;
+          matchedBy: SyroUuidAliasEvidence["matchedBy"];
+      }
+    | {
+          kind: "extract-item";
+          uuid: string;
           matchedBy: SyroUuidAliasEvidence["matchedBy"];
       };
 
@@ -293,6 +312,19 @@ function parseNoteSnapshotPayload(payload: unknown): NoteReviewEntrySnapshot | n
         deckName,
         item: RepetitionItem.create(payload["item"] as unknown as RepetitionItem),
     };
+}
+
+function parseExtractSnapshotPayload(payload: unknown): ExtractSnapshot | null {
+    if (!isRecord(payload) || !isRecord(payload["item"])) {
+        return null;
+    }
+
+    const item = cloneUnknown(payload["item"] as unknown as ExtractItem);
+    if (!item.uuid || !item.sourcePath || !item.sourceAnchor) {
+        return null;
+    }
+
+    return { item };
 }
 
 function parseTimelineEntryPayload(payload: unknown): {
@@ -474,7 +506,8 @@ function parseUuidAliasBatchPayload(payload: unknown): SyroUuidAliasBatchPayload
         if (
             (entityType !== "tracked-file" &&
                 entityType !== "card-item" &&
-                entityType !== "note-review") ||
+                entityType !== "note-review" &&
+                entityType !== "extract-item") ||
             !emitterPrimaryUuid ||
             equivalentUuids.length === 0 ||
             !isRecord(rawEvidence)
@@ -492,6 +525,7 @@ function parseUuidAliasBatchPayload(payload: unknown): SyroUuidAliasBatchPayload
                 matchedBy !== "alias-hit" &&
                 matchedBy !== "tracked-file-match" &&
                 matchedBy !== "note-path" &&
+                matchedBy !== "extract-anchor" &&
                 matchedBy !== "snapshot-reconcile")
         ) {
             continue;
@@ -619,18 +653,25 @@ export async function replaySyroSessionRecords(
     let dailyStateChanged = false;
     let dailyStateMetadataChanged = false;
     let notesChanged = false;
+    let extractsChanged = false;
     let timelineChanged = false;
     let cardsChanged = false;
     const replaySummary = createEmptySyroSessionReplaySummary();
     const replayReceipt = createEmptySyroSessionReplayReceipt();
+    const extractStore = deps.extractStore ?? null;
     const pendingAliasGroups: Record<SyroUuidAliasEntityType, Map<string, SyroUuidAliasGroup>> = {
         "tracked-file": new Map<string, SyroUuidAliasGroup>(),
         "card-item": new Map<string, SyroUuidAliasGroup>(),
         "note-review": new Map<string, SyroUuidAliasGroup>(),
+        "extract-item": new Map<string, SyroUuidAliasGroup>(),
     };
-    const discoveredAliasGroups: Record<"cards" | "notes", Map<string, SyroUuidAliasGroup>> = {
+    const discoveredAliasGroups: Record<
+        "cards" | "notes" | "extracts",
+        Map<string, SyroUuidAliasGroup>
+    > = {
         cards: new Map<string, SyroUuidAliasGroup>(),
         notes: new Map<string, SyroUuidAliasGroup>(),
+        extracts: new Map<string, SyroUuidAliasGroup>(),
     };
     const deferredRecords: DeferredReplayRecord[] = [];
     const negativeCache = new Set<string>();
@@ -1124,6 +1165,83 @@ export async function replaySyroSessionRecords(
         return changed;
     };
 
+    const resolveExtractSnapshot = (
+        snapshot: ExtractSnapshot,
+    ): ReplayEntityResolution | null => {
+        if (!extractStore) {
+            return null;
+        }
+        const item = snapshot.item;
+        const exactUuid = extractStore.findCanonicalUuid(item.uuid);
+        if (exactUuid) {
+            return {
+                kind: "extract-item",
+                uuid: exactUuid,
+                matchedBy: exactUuid === item.uuid ? "canonical-hit" : "alias-hit",
+            };
+        }
+
+        const match = extractStore
+            .list()
+            .find(
+                (candidate) =>
+                    candidate.sourcePath === item.sourcePath &&
+                    candidate.sourceAnchor?.contentHash === item.sourceAnchor?.contentHash &&
+                    candidate.sourceAnchor?.start === item.sourceAnchor?.start &&
+                    candidate.sourceAnchor?.end === item.sourceAnchor?.end &&
+                    candidate.rawMarkdown === item.rawMarkdown,
+            );
+        if (match) {
+            return {
+                kind: "extract-item",
+                uuid: match.uuid,
+                matchedBy: "extract-anchor",
+            };
+        }
+
+        return null;
+    };
+
+    const mergeExtractAliases = (
+        uuid: string,
+        incomingUuids: readonly string[],
+        evidence: SyroUuidAliasEvidence,
+        pathHint?: string,
+        emit = true,
+        recordDiscovery = true,
+    ): boolean => {
+        if (!extractStore) {
+            return false;
+        }
+        const beforeUuids = extractStore.getEquivalentUuids(uuid);
+        extractStore.mergeUuidEquivalence(uuid, incomingUuids);
+        absorbPendingAliasGroups(
+            "extract-item",
+            extractStore.getEquivalentUuids(uuid),
+            (pendingUuids) => {
+                extractStore.mergeUuidEquivalence(uuid, pendingUuids);
+            },
+        );
+        const afterUuids = extractStore.getEquivalentUuids(uuid);
+        const changed = afterUuids.length > beforeUuids.length;
+        if (recordDiscovery) {
+            maybeRecordAliasGroup("extract-item", beforeUuids, afterUuids, evidence, pathHint);
+        }
+        if (changed) {
+            extractsChanged = true;
+        }
+        if (emit && changed) {
+            logAliasDebug(deps, "alias-merged", {
+                entityType: "extract-item",
+                pathHint,
+                beforeUuids,
+                afterUuids,
+                matchedBy: evidence.matchedBy,
+            });
+        }
+        return changed;
+    };
+
     const preloadAliasBatchGroup = (group: SyroUuidAliasGroup): void => {
         if (group.entityType === "tracked-file") {
             let resolution: ReplayEntityResolution | null = null;
@@ -1185,6 +1303,37 @@ export async function replaySyroSessionRecords(
             if (resolution?.kind === "card-item") {
                 mergeCardAliases(
                     resolution.itemId,
+                    normalizeEquivalentUuids(group.emitterPrimaryUuid, group.equivalentUuids),
+                    group.evidence,
+                    group.pathHint,
+                    false,
+                    false,
+                );
+                return;
+            }
+        } else if (group.entityType === "extract-item") {
+            if (!extractStore) {
+                registerPendingAliasGroup(group);
+                return;
+            }
+            let resolution: ReplayEntityResolution | null = null;
+            for (const uuid of normalizeEquivalentUuids(
+                group.emitterPrimaryUuid,
+                group.equivalentUuids,
+            )) {
+                const exactUuid = extractStore.findCanonicalUuid(uuid);
+                if (exactUuid) {
+                    resolution = {
+                        kind: "extract-item",
+                        uuid: exactUuid,
+                        matchedBy: exactUuid === uuid ? "canonical-hit" : "alias-hit",
+                    };
+                    break;
+                }
+            }
+            if (resolution?.kind === "extract-item") {
+                mergeExtractAliases(
+                    resolution.uuid,
                     normalizeEquivalentUuids(group.emitterPrimaryUuid, group.equivalentUuids),
                     group.evidence,
                     group.pathHint,
@@ -1601,6 +1750,70 @@ export async function replaySyroSessionRecords(
         return "applied";
     };
 
+    const applyExtractRecord = (
+        record: SyroSessionRecord,
+        snapshot: ExtractSnapshot,
+    ): "applied" | "skipped" => {
+        if (!extractStore) {
+            return "skipped";
+        }
+        const workingSnapshot: ExtractSnapshot = {
+            item: cloneUnknown(snapshot.item),
+        };
+        const resolution = resolveExtractSnapshot(workingSnapshot);
+        if (resolution?.kind === "extract-item") {
+            const evidence = buildEvidence(
+                record,
+                resolution.matchedBy,
+                workingSnapshot.item.sourcePath,
+            );
+            mergeExtractAliases(
+                resolution.uuid,
+                [workingSnapshot.item.uuid, ...(workingSnapshot.item.aliases ?? [])],
+                evidence,
+                workingSnapshot.item.sourcePath,
+            );
+            const current = extractStore.get(resolution.uuid);
+            if (current) {
+                workingSnapshot.item.uuid = current.uuid;
+                workingSnapshot.item.aliases = [...(current.aliases ?? [])];
+            }
+        }
+
+        const targetUuid = workingSnapshot.item.uuid || record.targetUuid;
+        if (!extractStore.shouldApplySyncEntity(targetUuid, record.updatedAt)) {
+            return "skipped";
+        }
+
+        const isDelete = record.opType === "remove" || record.opType === "graduate";
+        if (isDelete) {
+            extractStore.graduateByUuid(targetUuid, workingSnapshot);
+        } else {
+            extractStore.upsertSnapshot(workingSnapshot);
+        }
+        extractStore.markSyncEntity({
+            targetUuid,
+            updatedAt: record.updatedAt,
+            deleted: isDelete,
+            entityType: EXTRACT_ITEM_ENTITY_TYPE,
+            pathHint: workingSnapshot.item.sourcePath,
+        });
+        extractsChanged = true;
+        if (classifySyroSessionRecordImpact(record) === "runtime-only") {
+            replaySummary.extractReviewChanged = true;
+        } else {
+            replaySummary.requiresGlobalSync = true;
+        }
+        logAliasDebug(deps, "resolve-hit", {
+            entityType: EXTRACT_ITEM_ENTITY_TYPE,
+            deviceId: record.deviceId,
+            targetUuid,
+            matchedBy: resolution?.matchedBy ?? "snapshot-reconcile",
+            pathHint: workingSnapshot.item.sourcePath,
+        });
+        return "applied";
+    };
+
     for (const record of records) {
         if (record.domain !== "file-identities" || record.entityType !== "file-identity") {
             continue;
@@ -1955,6 +2168,21 @@ export async function replaySyroSessionRecords(
                 break;
             }
 
+            case "extracts": {
+                if (record.entityType === "uuid-alias-batch") {
+                    continue;
+                }
+                if (record.entityType !== EXTRACT_ITEM_ENTITY_TYPE) {
+                    continue;
+                }
+                const snapshot = parseExtractSnapshotPayload(record.payload);
+                if (!snapshot) {
+                    continue;
+                }
+                applyExtractRecord(record, snapshot);
+                break;
+            }
+
             case "timeline": {
                 if (record.entityType === "timeline-entry") {
                     const payload = parseTimelineEntryPayload(record.payload);
@@ -2277,6 +2505,9 @@ export async function replaySyroSessionRecords(
     if (notesChanged) {
         await deps.noteReviewStore.save();
     }
+    if (extractsChanged) {
+        await extractStore?.save();
+    }
     if (timelineChanged) {
         await deps.reviewCommitStore.save();
     }
@@ -2327,7 +2558,7 @@ export async function replaySyroSessionRecords(
         });
     }
 
-    for (const domain of ["cards", "notes"] as const) {
+    for (const domain of ["cards", "notes", "extracts"] as const) {
         const groups = [...discoveredAliasGroups[domain].values()];
         if (groups.length === 0) {
             continue;

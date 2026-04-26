@@ -1,0 +1,285 @@
+.sr-extract-review-view {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    background: var(--background-primary);
+    box-sizing: border-box;
+    padding: 18px;
+}
+
+.sr-extract-review-view--phone {
+    align-items: stretch;
+    padding: 0;
+}
+
+.sr-extract-card {
+    width: min(880px, 100%);
+    height: min(760px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-secondary);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+    box-sizing: border-box;
+    padding: 16px;
+    overflow: hidden;
+}
+
+.sr-extract-review-view--phone .sr-extract-card {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    border-inline: 0;
+    padding: 12px;
+}
+
+.sr-extract-card--empty {
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+}
+
+.sr-extract-header,
+.sr-extract-meta-row,
+.sr-extract-section-title,
+.sr-extract-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.sr-extract-header {
+    justify-content: space-between;
+    min-height: 32px;
+}
+
+.sr-extract-source,
+.sr-extract-header-stats button,
+.sr-extract-actions button,
+.sr-extract-open-source-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 30px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1;
+    padding: 0 10px;
+    cursor: pointer;
+}
+
+.sr-extract-source {
+    min-width: 0;
+    flex: 1;
+    justify-content: flex-start;
+}
+
+.sr-extract-source span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sr-extract-header-stats {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-faint);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.sr-extract-meta-row {
+    justify-content: space-between;
+}
+
+.sr-extract-priority-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.sr-extract-priority-control select {
+    height: 28px;
+    min-width: 56px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.sr-extract-save-state {
+    color: var(--text-faint);
+    font-size: 11px;
+}
+
+.sr-extract-memo-section,
+.sr-extract-body-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.sr-extract-memo-section label,
+.sr-extract-section-title > span {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.sr-extract-memo-section textarea,
+.sr-extract-body-editor {
+    width: 100%;
+    resize: none;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    box-sizing: border-box;
+    line-height: 1.5;
+}
+
+.sr-extract-memo-section textarea {
+    min-height: 56px;
+    padding: 8px 10px;
+}
+
+.sr-extract-body-section {
+    flex: 1;
+    min-height: 0;
+}
+
+.sr-extract-section-title {
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.sr-extract-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.sr-extract-body-editor {
+    flex: 1;
+    min-height: 180px;
+    padding: 12px;
+    font-family: var(--font-monospace);
+}
+
+.sr-extract-markdown {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    padding: 14px;
+    box-sizing: border-box;
+}
+
+.sr-extract-footer {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+    align-items: stretch;
+    gap: 8px;
+}
+
+.sr-extract-review-button {
+    min-width: 0;
+    min-height: 48px;
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    padding: 8px;
+    cursor: pointer;
+}
+
+.sr-extract-review-button__shortcut {
+    color: var(--text-faint);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+.sr-extract-review-button__icon {
+    display: inline-flex;
+    color: var(--text-muted);
+}
+
+.sr-extract-review-button__text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    font-size: 12px;
+}
+
+.sr-extract-review-button__text span:last-child {
+    color: var(--text-faint);
+    font-size: 11px;
+}
+
+.sr-extract-review-button:hover,
+.sr-extract-source:hover,
+.sr-extract-header-stats button:hover,
+.sr-extract-actions button:hover,
+.sr-extract-open-source-button:hover {
+    border-color: var(--background-modifier-border-hover);
+    color: var(--text-normal);
+    background: var(--background-modifier-hover);
+}
+
+.sr-extract-review-button--reset:hover {
+    color: var(--text-error);
+}
+
+.sr-extract-review-button--good:hover,
+.sr-extract-review-button--easy:hover {
+    color: var(--text-success);
+}
+
+.sr-extract-open-source-button {
+    min-height: 48px;
+}
+
+@media (max-width: 720px) {
+    .sr-extract-header,
+    .sr-extract-meta-row,
+    .sr-extract-section-title {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .sr-extract-header-stats,
+    .sr-extract-actions {
+        justify-content: flex-start;
+    }
+
+    .sr-extract-footer {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .sr-extract-open-source-button {
+        grid-column: 1 / -1;
+    }
+}

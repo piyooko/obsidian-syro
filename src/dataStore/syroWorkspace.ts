@@ -50,6 +50,10 @@ export interface ReviewCommitStorePathConfig {
     timelinePath: string;
 }
 
+export interface ExtractStorePathConfig {
+    extractsPath: string;
+}
+
 export interface DeckOptionsStorePathConfig {
     deckOptionsPath: string;
 }
@@ -183,6 +187,7 @@ export interface SyroPersistenceLayout {
     cardsPath: string;
     notesPath: string;
     timelinePath: string;
+    extractsPath: string;
     deckOptionsPath: string;
     fileIdentitiesPath: string;
     settingsPath: string;
@@ -513,6 +518,16 @@ function validateTimelineStoreFile(raw: string): boolean {
     return isObjectLike(parsed);
 }
 
+function validateExtractsStoreFile(raw: string): boolean {
+    const parsed = parseJsonUnknown(raw);
+    return (
+        isRecord(parsed) &&
+        getNumberProp(parsed, "version") === 1 &&
+        typeof parsed["nextItemId"] === "number" &&
+        isRecord(parsed["items"])
+    );
+}
+
 function validateDeckOptionsStoreFile(raw: string): boolean {
     const parsed = parseJsonUnknown(raw);
     const version = isRecord(parsed) ? getNumberProp(parsed, "version") : undefined;
@@ -551,6 +566,22 @@ function createDefaultTimelineStoreFile(): {
     return {
         version: 1,
         files: {},
+        syncEntities: {},
+    };
+}
+
+function createDefaultExtractStoreFile(): {
+    version: number;
+    nextItemId: number;
+    items: Record<string, never>;
+    reviewedCounts: Record<string, never>;
+    syncEntities: Record<string, never>;
+} {
+    return {
+        version: 1,
+        nextItemId: 1,
+        items: {},
+        reviewedCounts: {},
         syncEntities: {},
     };
 }
@@ -993,6 +1024,7 @@ export class SyroWorkspace {
         | "fileIdentitiesPath"
         | "notesPath"
         | "timelinePath"
+        | "extractsPath"
         | "deckOptionsPath"
         | "settingsPath"
         | "trackingRulesPath"
@@ -1477,6 +1509,7 @@ export class SyroWorkspace {
             | "cardsPath"
             | "notesPath"
             | "timelinePath"
+            | "extractsPath"
             | "deckOptionsPath"
             | "fileIdentitiesPath"
             | "settingsPath"
@@ -1502,6 +1535,7 @@ export class SyroWorkspace {
             cardsPath: joinPath(deviceRoot, "cards.json"),
             notesPath: joinPath(deviceRoot, "notes.json"),
             timelinePath: joinPath(deviceRoot, "timeline.json"),
+            extractsPath: joinPath(deviceRoot, "extracts.json"),
             deckOptionsPath: joinPath(deviceRoot, "deck-options.json"),
             fileIdentitiesPath: joinPath(deviceRoot, "file-identities.json"),
             settingsPath: joinPath(deviceRoot, "settings.json"),
@@ -1528,6 +1562,7 @@ export class SyroWorkspace {
             | "cardsPath"
             | "notesPath"
             | "timelinePath"
+            | "extractsPath"
             | "deckOptionsPath"
             | "fileIdentitiesPath"
             | "settingsPath"
@@ -1676,6 +1711,7 @@ export class SyroWorkspace {
             [layout.cardsPath, validateCardsStoreFile, requireDomainSnapshots],
             [layout.notesPath, validateNotesStoreFile, requireDomainSnapshots],
             [layout.timelinePath, validateTimelineStoreFile, requireDomainSnapshots],
+            [layout.extractsPath, validateExtractsStoreFile, requireDomainSnapshots],
             [layout.deckOptionsPath, validateDeckOptionsStoreFile, requireDomainSnapshots],
             [layout.fileIdentitiesPath, validateFileIdentityStoreFile, requireDomainSnapshots],
             [layout.settingsPath, (raw) => isRecord(parseJsonUnknown(raw)), requireDomainSnapshots],
@@ -1759,6 +1795,11 @@ export class SyroWorkspace {
             "timeline-default",
         );
         await this.writeJsonIfMissing(
+            layout.extractsPath,
+            createDefaultExtractStoreFile(),
+            "extracts-default",
+        );
+        await this.writeJsonIfMissing(
             layout.deckOptionsPath,
             createDeckOptionsStoreSnapshot(this.settings).state,
             "deck-options-default",
@@ -1816,6 +1857,11 @@ export class SyroWorkspace {
             this.adapter,
             joinPath(sourceRoot, "timeline.json"),
             targetLayout.timelinePath,
+        );
+        await copyFile(
+            this.adapter,
+            joinPath(sourceRoot, "extracts.json"),
+            targetLayout.extractsPath,
         );
         await copyFile(
             this.adapter,
@@ -1877,6 +1923,11 @@ export class SyroWorkspace {
             this.adapter,
             joinPath(sourceRoot, "timeline.json"),
             targetLayout.timelinePath,
+        );
+        await replaceFileFromSource(
+            this.adapter,
+            joinPath(sourceRoot, "extracts.json"),
+            targetLayout.extractsPath,
         );
         await replaceFileFromSource(
             this.adapter,

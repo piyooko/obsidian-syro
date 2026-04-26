@@ -34,6 +34,19 @@ import { CardType } from "src/Question";
 import { CardFrontBackUtil, type CardReviewTarget } from "src/question-type";
 import type { QuestionContextBreadcrumb } from "src/SRFile";
 import { resolveDeckOptionsPreset } from "src/settings";
+import type { ExtractItem } from "src/dataStore/extractStore";
+import {
+    BookOpen,
+    Check,
+    Edit3,
+    FileText,
+    GraduationCap,
+    RotateCcw,
+    Save,
+    TextSelect,
+    ThumbsDown,
+    Zap,
+} from "lucide-react";
 import {
     applyReviewMobileHeaderCover,
     applyReviewMobileNavbarCover,
@@ -41,6 +54,7 @@ import {
     clearReviewMobileNavbarCover,
     detectBlockingMobileNavbar,
 } from "./reviewMobileChrome";
+import "../styles/extract-review.css";
 
 // ==========================================
 // Types
@@ -48,6 +62,7 @@ import {
 
 export type ReviewSessionView = "deck-list" | "review";
 type ReviewEntrySource = "global-deck-list" | "manual-deck-click" | "in-note-auto-enter";
+type ActiveReviewItem = { kind: "card" } | { kind: "extract"; uuid: string };
 
 interface ReviewSessionProps {
     plugin: SRPlugin;
@@ -443,6 +458,31 @@ function createDeckStatsDebugSnapshot(stats: {
     };
 }
 
+function getExtractDueAt(item: ExtractItem): number {
+    return item.timesReviewed === 0 || item.nextReview === 0 ? 0 : item.nextReview;
+}
+
+function getCurrentCardDueAt(plugin: SRPlugin, sequencer: IFlashcardReviewSequencer): number {
+    const card = sequencer.currentCard;
+    if (!card) {
+        return Number.POSITIVE_INFINITY;
+    }
+    const item = plugin.store?.getItembyID(card.Id) ?? DataStore.getInstance().getItembyID(card.Id);
+    if (!item || item.isNew) {
+        return 0;
+    }
+    return item.nextReview || Date.now();
+}
+
+function getCurrentCardPriority(plugin: SRPlugin, sequencer: IFlashcardReviewSequencer): number {
+    const card = sequencer.currentCard;
+    if (!card) {
+        return 5;
+    }
+    const item = plugin.store?.getItembyID(card.Id) ?? DataStore.getInstance().getItembyID(card.Id);
+    return item?.priority ?? 5;
+}
+
 // ==========================================
 // Review session
 // ==========================================
@@ -471,6 +511,10 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     const reviewEntrySourceRef = useRef<ReviewEntrySource>(
         initialTargetDeckPath ? "in-note-auto-enter" : "global-deck-list",
     );
+    const activeDeckPathRef = useRef<string | null>(initialTargetDeckPath ?? null);
+    const [activeReviewItem, setActiveReviewItem] = useState<ActiveReviewItem | null>(() =>
+        sequencer.hasCurrentCard ? { kind: "card" } : null,
+    );
     const deckListScrollTopRef = useRef(0);
     const hostLeafId = useMemo(
         () => String((hostLeaf as WorkspaceLeaf & { id?: string | number }).id ?? "leaf"),
@@ -487,6 +531,45 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     );
 
     const forceUpdate = useCallback(() => setTick((t) => t + 1), []);
+
+    const resolveNextReviewItem = useCallback(
+        (deckPathOverride?: string | null): ActiveReviewItem | null => {
+            const deckPath =
+                deckPathOverride ??
+                activeDeckPathRef.current ??
+                getDeckPath(sequencer.currentDeck) ??
+                null;
+            const extract = plugin.getExtractReviewCandidates(
+                deckPath,
+                reviewMode !== FlashcardReviewMode.Cram,
+            )[0];
+            const hasCard = sequencer.hasCurrentCard;
+
+            if (!hasCard && extract) {
+                return { kind: "extract", uuid: extract.uuid };
+            }
+            if (hasCard && !extract) {
+                return { kind: "card" };
+            }
+            if (hasCard && extract) {
+                const cardDueAt = getCurrentCardDueAt(plugin, sequencer);
+                const extractDueAt = getExtractDueAt(extract);
+                if (extractDueAt < cardDueAt) {
+                    return { kind: "extract", uuid: extract.uuid };
+                }
+                if (
+                    extractDueAt === cardDueAt &&
+                    extract.priority < getCurrentCardPriority(plugin, sequencer)
+                ) {
+                    return { kind: "extract", uuid: extract.uuid };
+                }
+                return { kind: "card" };
+            }
+
+            return null;
+        },
+        [plugin, reviewMode, sequencer],
+    );
 
     const enterDeckReview = useCallback(
         (fullPath: string, source: ReviewEntrySource): boolean => {
@@ -546,18 +629,21 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 sessionStats: createDeckStatsDebugSnapshot(sessionStats),
             });
 
-            if (!sequencer.hasCurrentCard) {
+            activeDeckPathRef.current = fullPath;
+            const nextReviewItem = resolveNextReviewItem(fullPath);
+            if (!nextReviewItem) {
                 new Notice(t("REVIEW_NO_CARDS"));
                 return false;
             }
 
             setRecentDeckPath(fullPath);
+            setActiveReviewItem(nextReviewItem);
             setReviewUiResetToken((value) => value + 1);
             setDirection(1);
             setView("review");
             return true;
         },
-        [logRuntimeDebug, plugin, reviewMode, sequencer],
+        [logRuntimeDebug, plugin, resolveNextReviewItem, reviewMode, sequencer],
     );
 
     useEffect(() => {
@@ -572,11 +658,16 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         handledInitialReviewEntryRef.current = true;
         reviewEntrySourceRef.current = "global-deck-list";
 
-        if (!sequencer.hasCurrentCard) {
+        activeDeckPathRef.current = initialTargetDeckPath ?? null;
+        const nextReviewItem = resolveNextReviewItem(initialTargetDeckPath ?? null);
+        if (!nextReviewItem) {
             new Notice(t("REVIEW_NO_CARDS"));
             setView("deck-list");
+            setActiveReviewItem(null);
+            return;
         }
-    }, [initialTargetDeckPath, initialView, sequencer]);
+        setActiveReviewItem(nextReviewItem);
+    }, [initialTargetDeckPath, initialView, resolveNextReviewItem, sequencer]);
 
     useEffect(() => {
         if (handledInitialTargetDeckRef.current || !initialTargetDeckPath) {
@@ -604,11 +695,13 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
 
         const unsubSync = plugin.syncEvents.on("sync-complete", onSyncComplete);
         const unsubStats = plugin.syncEvents.on("deck-stats-updated", onStatsUpdated);
+        const unsubExtracts = plugin.syncEvents.on("extracts-updated", onStatsUpdated);
 
         return () => {
             logRuntimeDebug("[SR-DynSync] ReviewSession: unsubscribed from sync events");
             unsubSync();
             unsubStats();
+            unsubExtracts();
         };
     }, [plugin, forceUpdate, logRuntimeDebug]);
 
@@ -772,12 +865,13 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         plugin.setSRViewInFocus(false);
         setDirection(-1);
         setView("deck-list");
+        setActiveReviewItem(null);
         forceUpdate(); // Refresh deck counts after leaving review.
     }, [clearReviewMobileChromeCover, forceUpdate, logRuntimeDebug, plugin]);
 
     // Submit a review response for the current card.
     const handleAnswer = useCallback(
-        (rating: number) => {
+        async (rating: number) => {
             logRuntimeDebug(`[SR-DynSync] ReviewSession: handleAnswer rating=${rating}`);
             const responseMap = [
                 ReviewResponse.Reset,
@@ -786,6 +880,26 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 ReviewResponse.Easy,
             ];
             const response = responseMap[rating] ?? ReviewResponse.Good;
+
+            if (activeReviewItem?.kind === "extract") {
+                try {
+                    await plugin.reviewExtract(activeReviewItem.uuid, response);
+                } catch (error) {
+                    console.error("[SR-Extract] Failed to review extract", error);
+                }
+
+                const nextReviewItem = resolveNextReviewItem(activeDeckPathRef.current);
+                if (nextReviewItem) {
+                    setActiveReviewItem(nextReviewItem);
+                    setReviewUiResetToken((value) => value + 1);
+                    forceUpdate();
+                    return;
+                }
+
+                handleExitReview();
+                return;
+            }
+
             const debugSequencer = sequencer as IFlashcardReviewSequencer & {
                 sessionCounterDeckPath?: string | null;
                 globalRemainingDeckTree?: Deck;
@@ -860,8 +974,10 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 sessionStatsAfter: createDeckStatsDebugSnapshot(sessionStatsAfter),
             });
 
-            if (sequencer.hasCurrentCard) {
+            const nextReviewItem = resolveNextReviewItem(activeDeckPathRef.current);
+            if (nextReviewItem) {
                 logRuntimeDebug("[SR-DynSync] ReviewSession: current card remains, forceUpdate");
+                setActiveReviewItem(nextReviewItem);
                 setReviewUiResetToken((value) => value + 1);
                 forceUpdate();
             } else {
@@ -869,10 +985,23 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 handleExitReview();
             }
         },
-        [forceUpdate, handleExitReview, logRuntimeDebug, plugin.store, sequencer],
+        [
+            activeReviewItem,
+            forceUpdate,
+            handleExitReview,
+            logRuntimeDebug,
+            plugin,
+            plugin.store,
+            resolveNextReviewItem,
+            sequencer,
+        ],
     );
 
     const handleUndo = useCallback(() => {
+        if (activeReviewItem?.kind === "extract") {
+            new Notice(t("REVIEW_NO_UNDO"));
+            return;
+        }
         if (!sequencer.canUndo) {
             new Notice(t("REVIEW_NO_UNDO"));
             return;
@@ -880,18 +1009,31 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         sequencer.undoReview();
         setReviewUiResetToken((value) => value + 1);
         forceUpdate();
-    }, [sequencer, forceUpdate]);
+    }, [activeReviewItem, sequencer, forceUpdate]);
 
     // Remove the current card from tracking and leave review if nothing remains.
     const handleDelete = useCallback(async () => {
+        if (activeReviewItem?.kind === "extract") {
+            await plugin.graduateExtract(activeReviewItem.uuid);
+            const nextReviewItem = resolveNextReviewItem(activeDeckPathRef.current);
+            if (nextReviewItem) {
+                setActiveReviewItem(nextReviewItem);
+                setReviewUiResetToken((value) => value + 1);
+                forceUpdate();
+            } else {
+                handleExitReview();
+            }
+            return;
+        }
         await sequencer.untrackCurrentCard();
         if (sequencer.hasCurrentCard) {
+            setActiveReviewItem(resolveNextReviewItem(activeDeckPathRef.current) ?? { kind: "card" });
             setReviewUiResetToken((value) => value + 1);
             forceUpdate();
         } else {
             handleExitReview();
         }
-    }, [sequencer, forceUpdate, handleExitReview]);
+    }, [activeReviewItem, forceUpdate, handleExitReview, plugin, resolveNextReviewItem, sequencer]);
 
     // Persist tree collapse changes.
     const handleCollapseChange = useCallback(
@@ -970,25 +1112,44 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                                 pointerEvents: "none",
                             }}
                         >
-                            <CardReviewView
-                                sequencer={sequencer}
-                                plugin={plugin}
-                                clearReviewMobileChromeCover={clearReviewMobileChromeCover}
-                                markdownOwner={markdownOwner}
-                                onAnswer={(rating) => {
-                                    void handleAnswer(rating);
-                                }}
-                                onUndo={() => {
-                                    void handleUndo();
-                                }}
-                                onDelete={() => {
-                                    void handleDelete();
-                                }}
-                                onExit={handleExitReview}
-                                tick={tick}
-                                uiResetToken={reviewUiResetToken}
-                                overlayMobileNavbar={shouldOverlayMobileNavbarForReview}
-                            />
+                            {activeReviewItem?.kind === "extract" ? (
+                                <ExtractReviewView
+                                    plugin={plugin}
+                                    extractUuid={activeReviewItem.uuid}
+                                    deckPath={activeDeckPathRef.current}
+                                    markdownOwner={markdownOwner}
+                                    clearReviewMobileChromeCover={clearReviewMobileChromeCover}
+                                    onAnswer={(rating) => {
+                                        void handleAnswer(rating);
+                                    }}
+                                    onExit={handleExitReview}
+                                    onGraduate={() => {
+                                        void handleDelete();
+                                    }}
+                                    uiResetToken={reviewUiResetToken}
+                                    overlayMobileNavbar={shouldOverlayMobileNavbarForReview}
+                                />
+                            ) : (
+                                <CardReviewView
+                                    sequencer={sequencer}
+                                    plugin={plugin}
+                                    clearReviewMobileChromeCover={clearReviewMobileChromeCover}
+                                    markdownOwner={markdownOwner}
+                                    onAnswer={(rating) => {
+                                        void handleAnswer(rating);
+                                    }}
+                                    onUndo={() => {
+                                        void handleUndo();
+                                    }}
+                                    onDelete={() => {
+                                        void handleDelete();
+                                    }}
+                                    onExit={handleExitReview}
+                                    tick={tick}
+                                    uiResetToken={reviewUiResetToken}
+                                    overlayMobileNavbar={shouldOverlayMobileNavbarForReview}
+                                />
+                            )}
                         </motion.div>
                     )}
                 </AnimatePresence>
@@ -1219,6 +1380,547 @@ const DeckListView: React.FC<DeckListViewProps> = ({
                     }}
                 />
             )}
+        </div>
+    );
+};
+
+// ==========================================
+// Extract Review
+// ==========================================
+
+interface ExtractReviewViewProps {
+    plugin: SRPlugin;
+    extractUuid: string;
+    deckPath: string | null;
+    markdownOwner: Component;
+    clearReviewMobileChromeCover: () => void;
+    onAnswer: (rating: number) => void;
+    onExit: () => void;
+    onGraduate: () => void;
+    uiResetToken: number;
+    overlayMobileNavbar: boolean;
+}
+
+const ExtractMarkdownPreview: React.FC<{
+    plugin: SRPlugin;
+    markdownOwner: Component;
+    sourcePath: string;
+    content: string;
+}> = ({ plugin, markdownOwner, sourcePath, content }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) {
+            return;
+        }
+
+        container.replaceChildren();
+        const renderComponent = new Component();
+        renderComponent.load();
+        let cancelled = false;
+
+        const render = async () => {
+            const buffer = document.createElement("div");
+            await MarkdownRenderer.render(plugin.app, content, buffer, sourcePath, markdownOwner);
+            if (cancelled) {
+                return;
+            }
+            container.replaceChildren(...Array.from(buffer.childNodes));
+        };
+
+        void render().catch((error) => {
+            if (cancelled) {
+                return;
+            }
+            console.error("[SR-Extract] Failed to render extract markdown", error);
+            container.textContent = content;
+        });
+
+        return () => {
+            cancelled = true;
+            renderComponent.unload();
+        };
+    }, [content, markdownOwner, plugin.app, sourcePath]);
+
+    return (
+        <div
+            className="sr-extract-markdown markdown-preview-view markdown-rendered"
+            ref={containerRef}
+        />
+    );
+};
+
+const ExtractReviewButton: React.FC<{
+    icon: React.ReactNode;
+    label: string;
+    sub: string;
+    shortcut: string;
+    variant: "reset" | "hard" | "good" | "easy";
+    onClick: () => void;
+}> = ({ icon, label, sub, shortcut, variant, onClick }) => (
+    <button
+        type="button"
+        className={`sr-extract-review-button sr-extract-review-button--${variant}`}
+        onClick={onClick}
+    >
+        <span className="sr-extract-review-button__shortcut">{shortcut}</span>
+        <span className="sr-extract-review-button__icon">{icon}</span>
+        <span className="sr-extract-review-button__text">
+            <span>{label}</span>
+            <span>{sub}</span>
+        </span>
+    </button>
+);
+
+const ExtractReviewView: React.FC<ExtractReviewViewProps> = ({
+    plugin,
+    extractUuid,
+    deckPath,
+    markdownOwner,
+    clearReviewMobileChromeCover,
+    onAnswer,
+    onExit,
+    onGraduate,
+    uiResetToken,
+    overlayMobileNavbar,
+}) => {
+    const extract = plugin.extractStore?.get(extractUuid) ?? null;
+    const [body, setBody] = useState(extract?.rawMarkdown ?? "");
+    const [memo, setMemo] = useState(extract?.memo ?? "");
+    const [priority, setPriority] = useState(extract?.priority ?? 5);
+    const [isEditingBody, setIsEditingBody] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
+    const bodyValueRef = useRef(body);
+    const memoValueRef = useRef(memo);
+    const bodyDirtyRef = useRef(false);
+    const memoDirtyRef = useRef(false);
+    const bodySaveTimerRef = useRef<number | null>(null);
+    const memoSaveTimerRef = useRef<number | null>(null);
+
+    const sourcePath = extract?.sourcePath ?? "";
+    const reviewIntervals = useMemo(
+        () => plugin.getExtractReviewIntervals(extractUuid),
+        [extractUuid, plugin, uiResetToken],
+    );
+    const extractStats = useMemo(() => {
+        const stats = plugin.extractStore?.getStats(deckPath) ?? {
+            newCount: 0,
+            dueCount: 0,
+            totalCount: 0,
+        };
+        return stats;
+    }, [deckPath, plugin.extractStore, uiResetToken]);
+
+    useEffect(() => {
+        const nextExtract = plugin.extractStore?.get(extractUuid) ?? null;
+        setBody(nextExtract?.rawMarkdown ?? "");
+        setMemo(nextExtract?.memo ?? "");
+        setPriority(nextExtract?.priority ?? 5);
+        setIsEditingBody(false);
+        bodyValueRef.current = nextExtract?.rawMarkdown ?? "";
+        memoValueRef.current = nextExtract?.memo ?? "";
+        bodyDirtyRef.current = false;
+        memoDirtyRef.current = false;
+    }, [extractUuid, plugin.extractStore, uiResetToken]);
+
+    useEffect(() => {
+        bodyValueRef.current = body;
+    }, [body]);
+
+    useEffect(() => {
+        memoValueRef.current = memo;
+    }, [memo]);
+
+    const clearSaveTimer = useCallback((ref: { current: number | null }) => {
+        if (ref.current !== null) {
+            window.clearTimeout(ref.current);
+            ref.current = null;
+        }
+    }, []);
+
+    const saveBodyNow = useCallback(async () => {
+        clearSaveTimer(bodySaveTimerRef);
+        if (!bodyDirtyRef.current) {
+            return;
+        }
+        bodyDirtyRef.current = false;
+        setIsSaving(true);
+        try {
+            const updated = await plugin.updateExtractRawMarkdown(extractUuid, bodyValueRef.current);
+            if (updated) {
+                setBody(updated.rawMarkdown);
+                bodyValueRef.current = updated.rawMarkdown;
+            }
+        } finally {
+            setIsSaving(false);
+        }
+    }, [clearSaveTimer, extractUuid, plugin]);
+
+    const saveMemoNow = useCallback(async () => {
+        clearSaveTimer(memoSaveTimerRef);
+        if (!memoDirtyRef.current) {
+            return;
+        }
+        memoDirtyRef.current = false;
+        setIsSaving(true);
+        try {
+            const updated = await plugin.updateExtractMemo(extractUuid, memoValueRef.current);
+            if (updated) {
+                setMemo(updated.memo);
+                memoValueRef.current = updated.memo;
+            }
+        } finally {
+            setIsSaving(false);
+        }
+    }, [clearSaveTimer, extractUuid, plugin]);
+
+    const flushSaves = useCallback(async () => {
+        await saveBodyNow();
+        await saveMemoNow();
+    }, [saveBodyNow, saveMemoNow]);
+
+    useEffect(() => {
+        return () => {
+            clearSaveTimer(bodySaveTimerRef);
+            clearSaveTimer(memoSaveTimerRef);
+        };
+    }, [clearSaveTimer]);
+
+    const scheduleBodySave = useCallback(
+        (value: string) => {
+            setBody(value);
+            bodyValueRef.current = value;
+            bodyDirtyRef.current = true;
+            clearSaveTimer(bodySaveTimerRef);
+            bodySaveTimerRef.current = window.setTimeout(() => {
+                void saveBodyNow().catch((error) => {
+                    console.error("[SR-Extract] Failed to save extract body", error);
+                    new Notice(t("EXTRACT_SAVE_FAILED"));
+                });
+            }, 700);
+        },
+        [clearSaveTimer, saveBodyNow],
+    );
+
+    const scheduleMemoSave = useCallback(
+        (value: string) => {
+            setMemo(value);
+            memoValueRef.current = value;
+            memoDirtyRef.current = true;
+            clearSaveTimer(memoSaveTimerRef);
+            memoSaveTimerRef.current = window.setTimeout(() => {
+                void saveMemoNow().catch((error) => {
+                    console.error("[SR-Extract] Failed to save extract memo", error);
+                    new Notice(t("EXTRACT_SAVE_FAILED"));
+                });
+            }, 500);
+        },
+        [clearSaveTimer, saveMemoNow],
+    );
+
+    const handlePriorityChange = useCallback(
+        (event: React.ChangeEvent<HTMLSelectElement>) => {
+            const nextPriority = Number(event.target.value);
+            setPriority(nextPriority);
+            void plugin.updateExtractPriority(extractUuid, nextPriority).catch((error) => {
+                console.error("[SR-Extract] Failed to update priority", error);
+                new Notice(t("EXTRACT_SAVE_FAILED"));
+            });
+        },
+        [extractUuid, plugin],
+    );
+
+    const handleAnswer = useCallback(
+        async (rating: number) => {
+            try {
+                await flushSaves();
+            } catch (error) {
+                console.error("[SR-Extract] Failed to flush before review", error);
+                new Notice(t("EXTRACT_SAVE_FAILED"));
+            }
+            onAnswer(rating);
+        },
+        [flushSaves, onAnswer],
+    );
+
+    const handleContinueExtract = useCallback(async () => {
+        const textarea = bodyTextareaRef.current;
+        if (!textarea || textarea.selectionStart === textarea.selectionEnd) {
+            new Notice(t("EXTRACT_SELECT_TEXT_REQUIRED"));
+            return;
+        }
+
+        try {
+            const updated = await plugin.createNestedExtractFromRawRange(
+                extractUuid,
+                textarea.selectionStart,
+                textarea.selectionEnd,
+            );
+            if (updated) {
+                setBody(updated.rawMarkdown);
+                bodyValueRef.current = updated.rawMarkdown;
+                bodyDirtyRef.current = false;
+            }
+            new Notice(t("EXTRACT_NESTED_CREATED"));
+        } catch (error) {
+            console.error("[SR-Extract] Failed to create nested extract", error);
+            new Notice(t("EXTRACT_SAVE_FAILED"));
+        }
+    }, [extractUuid, plugin]);
+
+    const handleOpenSource = useCallback(
+        async (options?: { newTab?: boolean }) => {
+            if (!extract) {
+                return;
+            }
+            const abstractFile = plugin.app.vault.getAbstractFileByPath(extract.sourcePath);
+            if (!(abstractFile instanceof TFile)) {
+                new Notice(t("EXTRACT_SOURCE_MISSING"));
+                return;
+            }
+
+            clearReviewMobileChromeCover();
+            const leaf = resolveNavigationLeaf(plugin, abstractFile, options);
+            const sourceText = await plugin.app.vault.read(abstractFile);
+            const line = sourceText.slice(0, extract.sourceAnchor.start).split("\n").length - 1;
+            await leaf.openFile(abstractFile, buildOpenStateForLine(Math.max(0, line)));
+            await plugin.app.workspace.revealLeaf?.(leaf);
+            plugin.app.workspace.setActiveLeaf(leaf, { focus: true });
+            if (hasEditor(leaf.view)) {
+                const offset = Math.max(
+                    0,
+                    Math.min(extract.sourceAnchor.start, leaf.view.editor.getValue().length),
+                );
+                const cursor = leaf.view.editor.offsetToPos(offset);
+                leaf.view.editor.setCursor(cursor);
+                leaf.view.editor.scrollIntoView({ from: cursor, to: cursor }, true);
+            }
+        },
+        [clearReviewMobileChromeCover, extract, plugin],
+    );
+
+    const handleGraduate = useCallback(async () => {
+        try {
+            await flushSaves();
+        } catch (error) {
+            console.error("[SR-Extract] Failed to flush before graduation", error);
+            new Notice(t("EXTRACT_SAVE_FAILED"));
+        }
+        onGraduate();
+    }, [flushSaves, onGraduate]);
+
+    useEffect(() => {
+        const keyHandler = (event: KeyboardEvent) => {
+            if (event.defaultPrevented) {
+                return;
+            }
+            const activeElement = document.activeElement;
+            if (
+                activeElement instanceof HTMLTextAreaElement ||
+                activeElement instanceof HTMLInputElement ||
+                activeElement instanceof HTMLSelectElement
+            ) {
+                return;
+            }
+            if (event.key === "1") {
+                event.preventDefault();
+                void handleAnswer(0);
+            } else if (event.key === "2") {
+                event.preventDefault();
+                void handleAnswer(1);
+            } else if (event.key === "3") {
+                event.preventDefault();
+                void handleAnswer(2);
+            } else if (event.key === "4") {
+                event.preventDefault();
+                void handleAnswer(3);
+            }
+        };
+        window.addEventListener("keydown", keyHandler);
+        return () => window.removeEventListener("keydown", keyHandler);
+    }, [handleAnswer]);
+
+    if (!extract) {
+        return (
+            <div className="sr-extract-review-view">
+                <div className="sr-extract-card sr-extract-card--empty">
+                    {t("EXTRACT_NO_ACTIVE_ITEMS")}
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div
+            className={[
+                "sr-extract-review-view",
+                Platform.isPhone ? "sr-extract-review-view--phone" : "",
+                overlayMobileNavbar ? "sr-extract-review-view--overlay-mobile-navbar" : "",
+            ]
+                .filter(Boolean)
+                .join(" ")}
+        >
+            <div className="sr-extract-card">
+                <header className="sr-extract-header">
+                    <button
+                        type="button"
+                        className="sr-extract-source"
+                        onClick={() => {
+                            void handleOpenSource();
+                        }}
+                        onMouseDown={(event) => {
+                            if (event.button !== 1) {
+                                return;
+                            }
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void handleOpenSource({ newTab: true });
+                        }}
+                        title={t("EXTRACT_OPEN_SOURCE")}
+                    >
+                        <FileText size={14} />
+                        <span>{sourcePath || t("EXTRACT_SOURCE_MISSING")}</span>
+                    </button>
+                    <div className="sr-extract-header-stats">
+                        <span>{t("EXTRACT_STATS_LABEL", { count: extractStats.totalCount })}</span>
+                        <button type="button" onClick={onExit}>
+                            {t("BACK")}
+                        </button>
+                    </div>
+                </header>
+
+                <section className="sr-extract-meta-row">
+                    <label className="sr-extract-priority-control">
+                        <span>{t("EXTRACT_PRIORITY_LABEL")}</span>
+                        <select value={priority} onChange={handlePriorityChange}>
+                            {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
+                                <option key={value} value={value}>
+                                    {value}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <span className="sr-extract-save-state">
+                        {isSaving ? t("EXTRACT_SAVING") : t("EXTRACT_SAVED")}
+                    </span>
+                </section>
+
+                <section className="sr-extract-memo-section">
+                    <label>{t("EXTRACT_MEMO_LABEL")}</label>
+                    <textarea
+                        value={memo}
+                        onChange={(event) => scheduleMemoSave(event.target.value)}
+                        placeholder={t("EXTRACT_MEMO_PLACEHOLDER")}
+                    />
+                </section>
+
+                <section className="sr-extract-body-section">
+                    <div className="sr-extract-section-title">
+                        <span>{t("EXTRACT_BODY_LABEL")}</span>
+                        <div className="sr-extract-actions">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditingBody((value) => !value)}
+                            >
+                                {isEditingBody ? <Save size={14} /> : <Edit3 size={14} />}
+                                <span>
+                                    {isEditingBody
+                                        ? t("EXTRACT_FINISH_EDIT")
+                                        : t("EXTRACT_EDIT_BODY")}
+                                </span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    void handleContinueExtract();
+                                }}
+                            >
+                                <TextSelect size={14} />
+                                <span>{t("EXTRACT_CONTINUE_EXTRACT")}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    void handleGraduate();
+                                }}
+                            >
+                                <GraduationCap size={14} />
+                                <span>{t("EXTRACT_GRADUATE")}</span>
+                            </button>
+                        </div>
+                    </div>
+                    {isEditingBody ? (
+                        <textarea
+                            ref={bodyTextareaRef}
+                            className="sr-extract-body-editor"
+                            value={body}
+                            onChange={(event) => scheduleBodySave(event.target.value)}
+                        />
+                    ) : (
+                        <ExtractMarkdownPreview
+                            plugin={plugin}
+                            markdownOwner={markdownOwner}
+                            sourcePath={sourcePath}
+                            content={body}
+                        />
+                    )}
+                </section>
+
+                <footer className="sr-extract-footer">
+                    <ExtractReviewButton
+                        icon={<RotateCcw size={13} />}
+                        label={t("UI_RESET")}
+                        sub={reviewIntervals[0] ?? "-"}
+                        shortcut="1"
+                        variant="reset"
+                        onClick={() => {
+                            void handleAnswer(0);
+                        }}
+                    />
+                    <ExtractReviewButton
+                        icon={<ThumbsDown size={13} />}
+                        label={t("UI_HARD")}
+                        sub={reviewIntervals[1] ?? "-"}
+                        shortcut="2"
+                        variant="hard"
+                        onClick={() => {
+                            void handleAnswer(1);
+                        }}
+                    />
+                    <ExtractReviewButton
+                        icon={<Check size={13} />}
+                        label={t("UI_GOOD")}
+                        sub={reviewIntervals[2] ?? "-"}
+                        shortcut="3"
+                        variant="good"
+                        onClick={() => {
+                            void handleAnswer(2);
+                        }}
+                    />
+                    <ExtractReviewButton
+                        icon={<Zap size={13} />}
+                        label={t("UI_EASY")}
+                        sub={reviewIntervals[3] ?? "-"}
+                        shortcut="4"
+                        variant="easy"
+                        onClick={() => {
+                            void handleAnswer(3);
+                        }}
+                    />
+                    <button
+                        type="button"
+                        className="sr-extract-open-source-button"
+                        onClick={() => {
+                            void handleOpenSource();
+                        }}
+                    >
+                        <BookOpen size={14} />
+                        <span>{t("EXTRACT_OPEN_SOURCE")}</span>
+                    </button>
+                </footer>
+            </div>
         </div>
     );
 };

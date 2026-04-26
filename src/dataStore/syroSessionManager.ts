@@ -48,6 +48,7 @@ export type SyroSessionDomain =
     | "file-identities"
     | "notes"
     | "timeline"
+    | "extracts"
     | "deck-options"
     | "settings"
     | "tracking-rules"

@@ -794,6 +794,9 @@ export interface SRSettings {
     reviewingNoteDirectly: boolean;
     disableFileMenuReviewOptions: boolean;
     maxNDaysNotesReviewQueue: number;
+    enableExtracts: boolean;
+    maxNewExtractsPerDay: number;
+    maxExtractReviewsPerDay: number;
 
     // UI preferences
     showRibbonIcon: boolean;
@@ -950,6 +953,9 @@ export const DEFAULT_SETTINGS: SRSettings = {
     reviewingNoteDirectly: false,
     disableFileMenuReviewOptions: false,
     maxNDaysNotesReviewQueue: 365,
+    enableExtracts: true,
+    maxNewExtractsPerDay: 10,
+    maxExtractReviewsPerDay: 50,
 
     // UI settings
     showRibbonIcon: true,
@@ -1168,6 +1174,29 @@ export function upgradeSettings(settings: SRSettings) {
 
     if (settings.autoIncrementalSync === undefined) {
         settings.autoIncrementalSync = true;
+    }
+
+    if (settings.enableExtracts === undefined) {
+        settings.enableExtracts = true;
+    }
+    if (
+        typeof settings.maxNewExtractsPerDay !== "number" ||
+        !Number.isFinite(settings.maxNewExtractsPerDay)
+    ) {
+        settings.maxNewExtractsPerDay = 10;
+    } else {
+        settings.maxNewExtractsPerDay = Math.max(0, Math.round(settings.maxNewExtractsPerDay));
+    }
+    if (
+        typeof settings.maxExtractReviewsPerDay !== "number" ||
+        !Number.isFinite(settings.maxExtractReviewsPerDay)
+    ) {
+        settings.maxExtractReviewsPerDay = 50;
+    } else {
+        settings.maxExtractReviewsPerDay = Math.max(
+            0,
+            Math.round(settings.maxExtractReviewsPerDay),
+        );
     }
 
     if (

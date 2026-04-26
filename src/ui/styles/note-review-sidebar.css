@@ -1259,6 +1259,89 @@ body.sr-timeline-resize-active {
     border-color: var(--sr-timeline-accent);
 }
 
+.sr-timeline-extracts {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sr-timeline-extracts-title {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.sr-timeline-extract-entry {
+    position: relative;
+    display: flex;
+    padding: 6px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    cursor: pointer;
+}
+
+.sr-timeline-extract-entry:hover {
+    background: var(--background-modifier-hover);
+}
+
+.sr-timeline-extract-dot {
+    border-color: var(--text-muted);
+}
+
+.sr-timeline-extract-content {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sr-timeline-extract-text {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--text-normal);
+    font-size: var(--sr-syro-timeline-message-font-size, 13px);
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+}
+
+.sr-timeline-extract-memo {
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.sr-timeline-extract-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--text-faint);
+    font-size: 11px;
+}
+
+.sr-timeline-extract-priority {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-muted);
+}
+
+.sr-timeline-extract-priority select {
+    height: 22px;
+    min-height: 22px;
+    padding: 0 4px;
+    font-size: 11px;
+}
+
 /* 时间线圆点 */
 .sr-timeline-dot {
     position: absolute;

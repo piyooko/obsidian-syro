@@ -69,6 +69,14 @@ export default class Commands {
         // });
 
         plugin.addCommand({
+            id: "create-extract-from-selection",
+            name: t("CMD_CREATE_EXTRACT_FROM_SELECTION"),
+            editorCallback: (editor) => {
+                void plugin.createExtractFromEditorSelection(editor);
+            },
+        });
+
+        plugin.addCommand({
             id: "global-sync-full",
             name: t("CMD_GLOBAL_SYNC_FULL"),
             callback: async () => {

@@ -9,6 +9,7 @@ export interface SyroSessionRecordLike {
 export interface SyroSessionReplaySummary {
     cardsRuntimeChanged: boolean;
     noteReviewChanged: boolean;
+    extractReviewChanged?: boolean;
     timelineChanged: boolean;
     dailyStateChanged: boolean;
     requiresGlobalSync: boolean;
@@ -87,6 +88,7 @@ export function createEmptySyroSessionReplaySummary(): SyroSessionReplaySummary 
     return {
         cardsRuntimeChanged: false,
         noteReviewChanged: false,
+        extractReviewChanged: false,
         timelineChanged: false,
         dailyStateChanged: false,
         requiresGlobalSync: false,
@@ -108,6 +110,7 @@ export function mergeSyroSessionReplaySummary(
     return {
         cardsRuntimeChanged: left.cardsRuntimeChanged || right.cardsRuntimeChanged,
         noteReviewChanged: left.noteReviewChanged || right.noteReviewChanged,
+        extractReviewChanged: !!left.extractReviewChanged || !!right.extractReviewChanged,
         timelineChanged: left.timelineChanged || right.timelineChanged,
         dailyStateChanged: left.dailyStateChanged || right.dailyStateChanged,
         requiresGlobalSync: left.requiresGlobalSync || right.requiresGlobalSync,
@@ -175,6 +178,14 @@ export function classifySyroSessionRecordImpact(
         return "runtime-only";
     }
 
+    if (
+        record.domain === "extracts" &&
+        record.entityType === "extract-item" &&
+        record.opType === "review"
+    ) {
+        return "runtime-only";
+    }
+
     if (record.domain === "timeline" && record.entityType === "timeline-entry") {
         return "runtime-only";
     }
@@ -186,6 +197,7 @@ export function hasSyroSessionReplayChanges(summary: SyroSessionReplaySummary): 
     return (
         summary.cardsRuntimeChanged ||
         summary.noteReviewChanged ||
+        !!summary.extractReviewChanged ||
         summary.timelineChanged ||
         summary.dailyStateChanged ||
         summary.requiresGlobalSync

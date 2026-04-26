@@ -1,6 +1,7 @@
 import {
     App,
     DataAdapter,
+    Editor,
     getAllTags,
     Menu,
     Notice,
@@ -23,7 +24,6 @@ import {
     SRSettings,
     SyncProgressDisplayMode,
     upgradeSettings,
-    WeightedMultiplierSettings,
 } from "src/settings";
 import {
     REACT_REVIEW_QUEUE_VIEW_TYPE as REVIEW_QUEUE_VIEW_TYPE,
@@ -58,6 +58,13 @@ import { NoteEaseList } from "./NoteEaseList";
 import { QuestionPostponementList } from "./QuestionPostponementList";
 import { TextDirection } from "./util/TextDirection";
 import { convertToStringOrEmpty } from "./util/utils";
+import {
+    parseIrExtracts,
+    removeExtractWrapperKeepInnerContent,
+    replaceExtractInnerMarkdown,
+    wrapSelectionAsExtract,
+    type IrExtractMatch,
+} from "./util/irExtractParser";
 import { setDebugParser } from "src/parser";
 
 // Legacy migration note retained from the pre-Syro codebase.
@@ -93,6 +100,13 @@ import {
     parseNoteReviewStoreSnapshots,
     type NoteReviewEntrySnapshot,
 } from "./dataStore/noteReviewStore";
+import {
+    EXTRACT_ITEM_ENTITY_TYPE,
+    ExtractStore,
+    parseExtractStoreSnapshots,
+    type ExtractItem,
+    type ExtractSnapshot,
+} from "./dataStore/extractStore";
 import { replaySyroSessionRecords } from "./dataStore/syroSessionReplay";
 import {
     applyDailyState,
@@ -205,6 +219,7 @@ import {
 import { SyroDeleteInvalidDeviceModal } from "src/ui/modals/SyroDeleteInvalidDeviceModal";
 import { SyroDeleteValidDeviceModal } from "src/ui/modals/SyroDeleteValidDeviceModal";
 import { clozeDecorationPlugin, initializeClozeDecoration } from "./editor/cloze-decoration";
+import { createIrExtractDecorationExtensions } from "./editor/ir-extract-decoration";
 import { latexPopoverExtension, initializeLatexPopover } from "./editor/latex-popover-manager";
 import { latexClozePreprocessorPlugin } from "./editor/latex-cloze-preprocessor";
 import { clozePostProcessor } from "./editor/cloze-postprocessor";
@@ -460,7 +475,7 @@ export default class SRPlugin extends Plugin {
     private inlineTitleReviewButtonManager: InlineTitleReviewButtonManager | null = null;
     public data: PluginData;
     cardAlgorithm: SrsAlgorithm;
-    noteAlgorithm: SrsAlgorithm;
+    noteAlgorithm: WeightedMultiplierAlgorithm;
 
     getAlgorithmForItem(itemType: RPITEMTYPE): SrsAlgorithm {
         return itemType === RPITEMTYPE.CARD ? this.cardAlgorithm : this.noteAlgorithm;
@@ -548,6 +563,7 @@ export default class SRPlugin extends Plugin {
     private syroLayout: SyroPersistenceLayout | null = null;
     private pendingOverlayStore: PendingOverlayStore | null = null;
     private deckOptionsStore: DeckOptionsStore | null = null;
+    public extractStore: ExtractStore | null = null;
     private fileIdentityStore: SyroFileIdentityStore | null = null;
     private sharedSettingsStore: SyroJsonStateStore<PersistedSharedSettingsState> | null = null;
     private trackingRulesStore: SyroJsonStateStore<PersistedTrackingRulesState> | null = null;
@@ -1505,6 +1521,7 @@ export default class SRPlugin extends Plugin {
         this.hasPerformedInitialGC = false;
         this.store = null;
         this.noteReviewStore = null;
+        this.extractStore = null;
         this.reviewCommitStore = null;
         this.reviewPersistenceCoordinator = null;
         this.reviewStateCommitCoordinator = null;
@@ -1622,6 +1639,7 @@ export default class SRPlugin extends Plugin {
 
         initializeClozeDecoration(this.app);
         this.registerEditorExtension(clozeDecorationPlugin);
+        this.registerEditorExtension(createIrExtractDecorationExtensions(this));
 
         initializeLatexPopover(this.app, {
             isEnabled: () => this.data.settings.enableLatexPopover === true,
@@ -1647,8 +1665,7 @@ export default class SRPlugin extends Plugin {
 
         this.noteAlgorithm = new WeightedMultiplierAlgorithm();
         this.noteAlgorithm.updateSettings(settings.weightedMultiplierSettings);
-        settings.weightedMultiplierSettings = this.noteAlgorithm
-            .settings as WeightedMultiplierSettings;
+        settings.weightedMultiplierSettings = this.noteAlgorithm.settings;
 
         this.pendingFirstRunTutorialInitialization = obsidianJustInstalled;
         await this.initializeSyroDataBackedRuntimeIfReady("startup");
@@ -1663,6 +1680,20 @@ export default class SRPlugin extends Plugin {
         if (this.data.settings.showSchedulingDebugMessages) {
             this.commands.addDebugCommands();
         }
+        this.registerEvent(
+            this.app.workspace.on("editor-menu", (menu: Menu, editor: Editor) => {
+                menu.addItem((item) => {
+                    item.setTitle(t("CMD_CREATE_EXTRACT_FROM_SELECTION"))
+                        .setIcon("text-select")
+                        .onClick(() => {
+                            this.runAsync(
+                                this.createExtractFromEditorSelection(editor),
+                                "create extract from selection",
+                            );
+                        });
+                });
+            }),
+        );
 
         this.reviewFloatBar = new reviewResponseModal(this, settings);
         this.reviewFloatBar.submitCallback = (resp) => {
@@ -2034,6 +2065,324 @@ export default class SRPlugin extends Plugin {
         this.reviewFloatBar.close();
         this.inlineTitleReviewButtonManager?.destroy();
         this.inlineTitleReviewButtonManager = null;
+    }
+
+    private getExtractDeckNameForFile(file: TFile): string {
+        return this.noteReviewStore?.getDeckName(file.path) ?? DEFAULT_DECKNAME;
+    }
+
+    private async syncExtractsFromVaultFiles(files?: TFile[]): Promise<void> {
+        if (!this.extractStore || this.data.settings.enableExtracts === false) {
+            return;
+        }
+
+        const markdownFiles = files ?? this.app.vault.getMarkdownFiles();
+        const added: ExtractSnapshot[] = [];
+        const updated: ExtractSnapshot[] = [];
+        const graduated: ExtractSnapshot[] = [];
+        for (const file of markdownFiles) {
+            if (file.extension !== "md") {
+                continue;
+            }
+            const text = await this.app.vault.cachedRead(file);
+            const result = this.extractStore.syncFileExtracts(
+                file.path,
+                text,
+                this.getExtractDeckNameForFile(file),
+            );
+            added.push(...result.added.map((item) => ({ item })));
+            updated.push(...result.updated.map((item) => ({ item })));
+            graduated.push(...result.graduated.map((item) => ({ item })));
+        }
+
+        if (added.length === 0 && updated.length === 0 && graduated.length === 0) {
+            return;
+        }
+
+        await Promise.all([
+            ...added.map((snapshot) => this.appendSyroExtractUpsert(snapshot, "create")),
+            ...updated.map((snapshot) => this.appendSyroExtractUpsert(snapshot, "sync")),
+            ...graduated.map((snapshot) => this.appendSyroExtractGraduate(snapshot)),
+        ]);
+        await this.extractStore.save();
+        this.syncEvents.emit("extracts-updated");
+    }
+
+    private async appendExtractSyncResult(result: {
+        added: ExtractItem[];
+        updated: ExtractItem[];
+        graduated: ExtractItem[];
+    }): Promise<void> {
+        await Promise.all([
+            ...result.added.map((item) => this.appendSyroExtractUpsert({ item }, "create")),
+            ...result.updated.map((item) => this.appendSyroExtractUpsert({ item }, "sync")),
+            ...result.graduated.map((item) => this.appendSyroExtractGraduate({ item })),
+        ]);
+    }
+
+    private resolveExtractSourceFile(item: ExtractItem): TFile | null {
+        const abstractFile = this.app.vault.getAbstractFileByPath(item.sourcePath);
+        return abstractFile instanceof TFile && abstractFile.extension === "md"
+            ? abstractFile
+            : null;
+    }
+
+    private findCurrentExtractMatch(item: ExtractItem, sourceText: string): IrExtractMatch | null {
+        const matches = parseIrExtracts(sourceText);
+        const ordinalMatch = matches[item.sourceAnchor.ordinal];
+        return (
+            matches.find(
+                (match) =>
+                    match.start === item.sourceAnchor.start &&
+                    match.end === item.sourceAnchor.end &&
+                    match.anchor.contentHash === item.sourceAnchor.contentHash,
+            ) ??
+            matches.find(
+                (match) =>
+                    match.rawMarkdown === item.rawMarkdown &&
+                    match.anchor.prefix === item.sourceAnchor.prefix &&
+                    match.anchor.suffix === item.sourceAnchor.suffix,
+            ) ??
+            (ordinalMatch?.rawMarkdown === item.rawMarkdown ? ordinalMatch : null) ??
+            null
+        );
+    }
+
+    private getExtractReviewLimits(): { maxNew: number; maxDue: number } {
+        return {
+            maxNew: Math.max(0, Math.round(this.data.settings.maxNewExtractsPerDay ?? 10)),
+            maxDue: Math.max(0, Math.round(this.data.settings.maxExtractReviewsPerDay ?? 50)),
+        };
+    }
+
+    public getExtractReviewCandidates(
+        deckPath: string | null = null,
+        applyDailyLimits = true,
+    ): ExtractItem[] {
+        if (!this.extractStore || this.data.settings.enableExtracts === false) {
+            return [];
+        }
+        return this.extractStore.getReviewCandidates(
+            deckPath,
+            applyDailyLimits ? this.getExtractReviewLimits() : undefined,
+        );
+    }
+
+    public getExtractReviewIntervals(uuid: string): string[] {
+        const intervals = this.extractStore?.getReviewButtonIntervals(uuid, this.noteAlgorithm);
+        if (!intervals) {
+            return ["-", "-", "-", "-"];
+        }
+        return intervals.map((interval) => textInterval(interval, false));
+    }
+
+    public async reviewExtract(uuid: string, response: ReviewResponse): Promise<ExtractItem | null> {
+        if (!this.extractStore || this.data.settings.enableExtracts === false) {
+            return null;
+        }
+        const reviewed = this.extractStore.review(uuid, response, this.noteAlgorithm);
+        if (!reviewed) {
+            return null;
+        }
+        await this.extractStore.save();
+        await this.appendSyroExtractUpsert({ item: reviewed }, "review");
+        this.syncEvents.emit("extracts-updated");
+        this.updateStatusBar();
+        return reviewed;
+    }
+
+    public async updateExtractMemo(uuid: string, memo: string): Promise<ExtractItem | null> {
+        if (!this.extractStore) {
+            return null;
+        }
+        const updated = this.extractStore.setMemo(uuid, memo);
+        if (!updated) {
+            return null;
+        }
+        await this.extractStore.save();
+        await this.appendSyroExtractUpsert({ item: updated }, "memo");
+        this.syncEvents.emit("extracts-updated");
+        return updated;
+    }
+
+    public async updateExtractPriority(
+        uuid: string,
+        priority: number,
+    ): Promise<ExtractItem | null> {
+        if (!this.extractStore) {
+            return null;
+        }
+        const updated = this.extractStore.setPriority(uuid, priority);
+        if (!updated) {
+            return null;
+        }
+        await this.extractStore.save();
+        await this.appendSyroExtractUpsert({ item: updated }, "priority");
+        this.syncEvents.emit("extracts-updated");
+        return updated;
+    }
+
+    public async updateExtractRawMarkdown(
+        uuid: string,
+        rawMarkdown: string,
+    ): Promise<ExtractItem | null> {
+        if (!this.extractStore) {
+            return null;
+        }
+        const item = this.extractStore.get(uuid);
+        if (!item || item.stage !== "active") {
+            return null;
+        }
+        const sourceFile = this.resolveExtractSourceFile(item);
+        if (!sourceFile) {
+            const graduated = this.extractStore.graduate(uuid);
+            if (graduated) {
+                await this.extractStore.save();
+                await this.appendSyroExtractGraduate({ item: graduated });
+                this.syncEvents.emit("extracts-updated");
+            }
+            return null;
+        }
+
+        const sourceText = await this.app.vault.read(sourceFile);
+        const match = this.findCurrentExtractMatch(item, sourceText);
+        if (!match) {
+            const result = this.extractStore.syncFileExtracts(
+                sourceFile.path,
+                sourceText,
+                this.getExtractDeckNameForFile(sourceFile),
+            );
+            await this.appendExtractSyncResult(result);
+            await this.extractStore.save();
+            this.syncEvents.emit("extracts-updated");
+            return null;
+        }
+
+        const nextText = replaceExtractInnerMarkdown(sourceText, match, rawMarkdown);
+        await this.app.vault.modify(sourceFile, nextText);
+        const result = this.extractStore.syncFileExtracts(
+            sourceFile.path,
+            nextText,
+            this.getExtractDeckNameForFile(sourceFile),
+        );
+        await this.appendExtractSyncResult(result);
+        await this.extractStore.save();
+        this.syncEvents.emit("extracts-updated");
+        return this.extractStore.get(uuid);
+    }
+
+    public async createNestedExtractFromRawRange(
+        uuid: string,
+        from: number,
+        to: number,
+    ): Promise<ExtractItem | null> {
+        const item = this.extractStore?.get(uuid);
+        if (!item || item.stage !== "active") {
+            return null;
+        }
+        const wrapped = wrapSelectionAsExtract(item.rawMarkdown, from, to);
+        return this.updateExtractRawMarkdown(uuid, wrapped.text);
+    }
+
+    private async preserveGraduatedExtractMemo(item: ExtractItem): Promise<void> {
+        if (!this.reviewCommitStore || !item.memo.trim()) {
+            return;
+        }
+        const commit = await this.reviewCommitStore.addCommit(item.sourcePath, item.memo.trim(), {
+            textSnippet: item.rawMarkdown.slice(0, 160),
+            offset: item.sourceAnchor.start,
+        });
+        await this.appendSyroTimelineAdd(item.sourcePath, commit);
+    }
+
+    public async graduateExtract(uuid: string): Promise<ExtractItem | null> {
+        if (!this.extractStore) {
+            return null;
+        }
+        const item = this.extractStore.get(uuid);
+        if (!item) {
+            return null;
+        }
+        const sourceFile = this.resolveExtractSourceFile(item);
+        if (sourceFile && item.stage === "active") {
+            const sourceText = await this.app.vault.read(sourceFile);
+            const match = this.findCurrentExtractMatch(item, sourceText);
+            if (match) {
+                const nextText = removeExtractWrapperKeepInnerContent(sourceText, match);
+                await this.app.vault.modify(sourceFile, nextText);
+                const result = this.extractStore.syncFileExtracts(
+                    sourceFile.path,
+                    nextText,
+                    this.getExtractDeckNameForFile(sourceFile),
+                );
+                await this.appendExtractSyncResult(result);
+                await this.extractStore.save();
+                await this.preserveGraduatedExtractMemo(item);
+                this.syncEvents.emit("extracts-updated");
+                this.syncEvents.emit("note-review-updated");
+                return this.extractStore.get(uuid) ?? item;
+            }
+        }
+
+        const graduated = this.extractStore.graduate(uuid);
+        if (!graduated) {
+            return null;
+        }
+        await this.extractStore.save();
+        await this.appendSyroExtractGraduate({ item: graduated });
+        await this.preserveGraduatedExtractMemo(graduated);
+        this.syncEvents.emit("extracts-updated");
+        this.syncEvents.emit("note-review-updated");
+        return graduated;
+    }
+
+    public async createExtractFromEditorSelection(editor: Editor): Promise<boolean> {
+        if (!this.guardSyroDataReady("flashcard-review")) {
+            return false;
+        }
+        if (!this.extractStore) {
+            return false;
+        }
+        if (this.data.settings.enableExtracts === false) {
+            return false;
+        }
+
+        const file = this.app.workspace.getActiveFile();
+        if (!file || file.extension !== "md") {
+            return false;
+        }
+
+        const selection = editor.getSelection();
+        if (!selection) {
+            new Notice(t("NOTICE_TEXT_SELECTION_REQUIRED"));
+            return false;
+        }
+
+        const fromCursor = editor.getCursor("from");
+        const toCursor = editor.getCursor("to");
+        const from = editor.posToOffset(fromCursor);
+        const to = editor.posToOffset(toCursor);
+        if (from === to) {
+            new Notice(t("NOTICE_TEXT_SELECTION_REQUIRED"));
+            return false;
+        }
+
+        const sourceText = editor.getValue();
+        const wrapped = wrapSelectionAsExtract(sourceText, from, to);
+        const replacement = wrapped.text.slice(wrapped.from, wrapped.to);
+        editor.replaceRange(
+            replacement,
+            editor.offsetToPos(wrapped.replaceFrom),
+            editor.offsetToPos(wrapped.replaceTo),
+        );
+
+        const deckName = this.getExtractDeckNameForFile(file);
+        const result = this.extractStore.syncFileExtracts(file.path, wrapped.text, deckName);
+        await this.appendExtractSyncResult(result);
+        await this.extractStore.save();
+        this.syncEvents.emit("extracts-updated");
+        new Notice(t("NOTICE_EXTRACT_CREATED"));
+        return true;
     }
 
     insertAnkiCloze(editor: import("obsidian").Editor, type: "same" | "new"): void {
@@ -2472,6 +2821,10 @@ export default class SRPlugin extends Plugin {
 
         if (replayImpact.noteReviewChanged) {
             await this.refreshNoteReview({ trigger: "remote-poll" });
+        }
+
+        if (replayImpact.extractReviewChanged) {
+            await this.reloadOpenReviewSessions();
         }
 
         this.syncEvents.emit("sync-complete");
@@ -2983,6 +3336,7 @@ export default class SRPlugin extends Plugin {
     private applySyroReadOnlyState(): void {
         this.store?.setReadOnly(this.syroReadOnlyReason);
         this.noteReviewStore?.setReadOnly(this.syroReadOnlyReason);
+        this.extractStore?.setReadOnly(this.syroReadOnlyReason);
         this.reviewCommitStore?.setReadOnly(this.syroReadOnlyReason);
         this.deckOptionsStore?.setReadOnly(this.syroReadOnlyReason);
         this.fileIdentityStore?.setReadOnly(this.syroReadOnlyReason);
@@ -3192,6 +3546,7 @@ export default class SRPlugin extends Plugin {
         const fileIdentitiesChanged =
             this.fileIdentityStore?.pruneSyncEntities(retentionMs) ?? false;
         const notesChanged = this.noteReviewStore?.pruneSyncEntities(retentionMs) ?? false;
+        const extractsChanged = this.extractStore?.pruneSyncEntities(retentionMs) ?? false;
         const timelineChanged = this.reviewCommitStore?.pruneSyncEntities(retentionMs) ?? false;
         const deckOptionsChanged = this.deckOptionsStore?.pruneSyncEntities(retentionMs) ?? false;
         const sharedSettingsChanged = pruneTimestampMap(
@@ -3222,6 +3577,9 @@ export default class SRPlugin extends Plugin {
         }
         if (notesChanged) {
             await this.noteReviewStore?.save();
+        }
+        if (extractsChanged) {
+            await this.extractStore?.save();
         }
         if (timelineChanged) {
             await this.reviewCommitStore?.save();
@@ -3272,6 +3630,7 @@ export default class SRPlugin extends Plugin {
             !this.deckOptionsStore ||
             !this.store ||
             !this.noteReviewStore ||
+            !this.extractStore ||
             !this.reviewCommitStore
         ) {
             return null;
@@ -3300,6 +3659,7 @@ export default class SRPlugin extends Plugin {
 
         let cardsChanged = false;
         let notesChanged = false;
+        let extractsChanged = false;
         let timelineChanged = false;
         let deckOptionsChanged = false;
         let sharedSettingsChanged = false;
@@ -3389,6 +3749,16 @@ export default class SRPlugin extends Plugin {
                             pathHint,
                         }) || notesChanged;
                     break;
+                case "extracts":
+                    extractsChanged =
+                        this.extractStore.markSyncEntity({
+                            targetUuid,
+                            updatedAt,
+                            deleted,
+                            entityType,
+                            pathHint,
+                        }) || extractsChanged;
+                    break;
                 case "timeline":
                     timelineChanged =
                         this.reviewCommitStore.markSyncEntity({
@@ -3417,6 +3787,9 @@ export default class SRPlugin extends Plugin {
         }
         if (notesChanged) {
             await this.noteReviewStore.save();
+        }
+        if (extractsChanged) {
+            await this.extractStore.save();
         }
         if (timelineChanged) {
             await this.reviewCommitStore.save();
@@ -4226,7 +4599,10 @@ export default class SRPlugin extends Plugin {
         loadRemoteCardsSnapshots: (
             deviceId: string,
         ) => Promise<ReturnType<typeof parseTrackedCardsStoreSnapshots> | null>,
-        collectAliasGroups: (domain: "cards" | "notes", groups: SyroUuidAliasGroup[]) => void,
+        collectAliasGroups: (
+            domain: "cards" | "notes" | "extracts",
+            groups: SyroUuidAliasGroup[],
+        ) => void,
         reason: string,
     ): Promise<FirstMeetingImportPreparationResult> {
         if (
@@ -4535,9 +4911,17 @@ export default class SRPlugin extends Plugin {
             string,
             ReturnType<typeof parseNoteReviewStoreSnapshots>
         >();
-        const aliasGroupsByDomain: Record<"cards" | "notes", Map<string, SyroUuidAliasGroup>> = {
+        const remoteExtractsCache = new Map<
+            string,
+            ReturnType<typeof parseExtractStoreSnapshots>
+        >();
+        const aliasGroupsByDomain: Record<
+            "cards" | "notes" | "extracts",
+            Map<string, SyroUuidAliasGroup>
+        > = {
             cards: new Map<string, SyroUuidAliasGroup>(),
             notes: new Map<string, SyroUuidAliasGroup>(),
+            extracts: new Map<string, SyroUuidAliasGroup>(),
         };
         let preImportReplayImpact = createEmptySyroSessionReplaySummary();
         const buildAliasGroupKey = (group: SyroUuidAliasGroup): string => {
@@ -4547,7 +4931,7 @@ export default class SRPlugin extends Plugin {
             return `${group.entityType}:${normalized.join("|")}`;
         };
         const collectAliasGroups = (
-            domain: "cards" | "notes",
+            domain: "cards" | "notes" | "extracts",
             groups: SyroUuidAliasGroup[],
         ): void => {
             for (const group of groups) {
@@ -4574,6 +4958,29 @@ export default class SRPlugin extends Plugin {
                 return parsed;
             } catch {
                 remoteCardsCache.set(deviceId, null);
+                return null;
+            }
+        };
+        const loadRemoteExtractsSnapshots = async (deviceId: string) => {
+            if (remoteExtractsCache.has(deviceId)) {
+                return remoteExtractsCache.get(deviceId) ?? null;
+            }
+
+            const validDevice = validDevicesById.get(deviceId);
+            if (!validDevice) {
+                remoteExtractsCache.set(deviceId, null);
+                return null;
+            }
+
+            try {
+                const raw = await this.app.vault.adapter.read(
+                    `${validDevice.deviceRoot}/extracts.json`,
+                );
+                const parsed = parseExtractStoreSnapshots(raw);
+                remoteExtractsCache.set(deviceId, parsed);
+                return parsed;
+            } catch {
+                remoteExtractsCache.set(deviceId, null);
                 return null;
             }
         };
@@ -4625,6 +5032,7 @@ export default class SRPlugin extends Plugin {
                     store: this.store,
                     fileIdentityStore: this.fileIdentityStore,
                     noteReviewStore: this.noteReviewStore,
+                    extractStore: this.extractStore,
                     reviewCommitStore: this.reviewCommitStore,
                     deckOptionsStore: this.deckOptionsStore,
                     sharedSettingsStore: this.sharedSettingsStore,
@@ -4637,6 +5045,7 @@ export default class SRPlugin extends Plugin {
                     currentDeviceReviewCount: this.currentDeviceReviewCount,
                     loadRemoteCardsSnapshots,
                     loadRemoteNotesSnapshots,
+                    loadRemoteExtractsSnapshots,
                     collectAliasGroups,
                     collectReplayReceipt: (receipt) => {
                         if (!hasSyroSessionReplayReceiptEntries(receipt)) {
@@ -4690,7 +5099,7 @@ export default class SRPlugin extends Plugin {
             result.replayImpact,
             preImportReplayImpact,
         );
-        for (const domain of ["cards", "notes"] as const) {
+        for (const domain of ["cards", "notes", "extracts"] as const) {
             const groups = [...aliasGroupsByDomain[domain].values()];
             if (groups.length === 0) {
                 continue;
@@ -5126,8 +5535,43 @@ export default class SRPlugin extends Plugin {
         return appended;
     }
 
+    private async appendSyroExtractSnapshot(
+        opType: string,
+        snapshot: ExtractSnapshot,
+    ): Promise<boolean> {
+        if (this.syroReadOnlyReason) {
+            return false;
+        }
+
+        const item = snapshot.item;
+        const targetUuid = item.uuid;
+        const updatedAt = getCurrentIsoTimestamp();
+        const appended =
+            (await this.syroSessionManager?.appendRecord({
+                domain: "extracts",
+                entityType: EXTRACT_ITEM_ENTITY_TYPE,
+                opType,
+                targetUuid,
+                payload: {
+                    item,
+                },
+                pathHint: item.sourcePath,
+                updatedAt,
+            })) ?? false;
+        if (appended) {
+            this.extractStore?.markSyncEntity({
+                targetUuid,
+                updatedAt,
+                deleted: opType === "remove" || opType === "graduate",
+                entityType: EXTRACT_ITEM_ENTITY_TYPE,
+                pathHint: item.sourcePath,
+            });
+        }
+        return appended;
+    }
+
     private async appendSyroUuidAliasBatch(
-        domain: "cards" | "notes",
+        domain: "cards" | "notes" | "extracts",
         groups: SyroUuidAliasGroup[],
     ): Promise<boolean> {
         if (this.syroReadOnlyReason || groups.length === 0) {
@@ -5230,6 +5674,28 @@ export default class SRPlugin extends Plugin {
         }
 
         return this.appendSyroTrackedFileSnapshot("delete-file", snapshot);
+    }
+
+    public async appendSyroExtractUpsert(
+        snapshot: ExtractSnapshot | null,
+        opType = "upsert",
+    ): Promise<boolean> {
+        if (!snapshot) {
+            return false;
+        }
+
+        return this.appendSyroExtractSnapshot(opType, snapshot);
+    }
+
+    public async appendSyroExtractGraduate(
+        snapshot: ExtractSnapshot | null,
+        opType = "graduate",
+    ): Promise<boolean> {
+        if (!snapshot) {
+            return false;
+        }
+
+        return this.appendSyroExtractSnapshot(opType, snapshot);
     }
 
     public async appendSyroTimelineAdd(
@@ -6223,8 +6689,11 @@ export default class SRPlugin extends Plugin {
                 await this.savePluginData();
             }
 
-            let notes: TFile[] = this.app.vault.getMarkdownFiles();
-            notes = notes.filter((noteFile) => {
+            const allMarkdownNotes: TFile[] = this.app.vault.getMarkdownFiles();
+            if (typeof this.syncExtractsFromVaultFiles === "function") {
+                await this.syncExtractsFromVaultFiles(allMarkdownNotes);
+            }
+            let notes: TFile[] = allMarkdownNotes.filter((noteFile) => {
                 const fileCachedData = this.app.metadataCache.getFileCache(noteFile) || {};
                 const tags = getAllTags(fileCachedData) || [];
                 return (
@@ -7291,6 +7760,11 @@ export default class SRPlugin extends Plugin {
             await this.noteReviewStore.save();
             await this.fileIdentityStore?.save();
         }
+        this.extractStore = new ExtractStore(this.data.settings, {
+            extractsPath: this.syroLayout.extractsPath,
+        });
+        this.applySyroReadOnlyState();
+        await this.extractStore.load();
         this.reviewCommitStore = new ReviewCommitStore(this.data.settings, {
             timelinePath: this.syroLayout.timelinePath,
         });
@@ -7302,6 +7776,7 @@ export default class SRPlugin extends Plugin {
             this.fileIdentityStore.lastLoadError ??
             this.store.lastLoadError ??
             this.noteReviewStore.lastLoadError ??
+            this.extractStore.lastLoadError ??
             this.reviewCommitStore.lastLoadError;
         if (syroLoadError) {
             this.enableSyroReadOnly(syroLoadError);

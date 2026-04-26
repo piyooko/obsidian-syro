@@ -448,6 +448,7 @@ describe("replaySyroSessionRecords", () => {
             cardsRuntimeChanged: false,
             noteReviewChanged: true,
             timelineChanged: true,
+            extractReviewChanged: false,
             dailyStateChanged: false,
             requiresGlobalSync: true,
         });
@@ -1059,6 +1060,7 @@ describe("replaySyroSessionRecords", () => {
             cardsRuntimeChanged: false,
             noteReviewChanged: false,
             timelineChanged: false,
+            extractReviewChanged: false,
             dailyStateChanged: true,
             requiresGlobalSync: true,
         });
@@ -1268,6 +1270,7 @@ describe("replaySyroSessionRecords", () => {
             cardsRuntimeChanged: true,
             noteReviewChanged: false,
             timelineChanged: false,
+            extractReviewChanged: false,
             dailyStateChanged: false,
             requiresGlobalSync: false,
         });
@@ -1712,6 +1715,7 @@ describe("replaySyroSessionRecords", () => {
             cardsRuntimeChanged: false,
             noteReviewChanged: false,
             timelineChanged: false,
+            extractReviewChanged: false,
             dailyStateChanged: false,
             requiresGlobalSync: false,
         });

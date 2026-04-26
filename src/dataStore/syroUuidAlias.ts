@@ -1,4 +1,8 @@
-export type SyroUuidAliasEntityType = "tracked-file" | "card-item" | "note-review";
+export type SyroUuidAliasEntityType =
+    | "tracked-file"
+    | "card-item"
+    | "note-review"
+    | "extract-item";
 
 export type SyroUuidAliasMatchedBy =
     | "canonical-hit"
@@ -6,6 +10,7 @@ export type SyroUuidAliasMatchedBy =
     | "file-identity"
     | "tracked-file-match"
     | "note-path"
+    | "extract-anchor"
     | "snapshot-reconcile";
 
 export interface SyroUuidAliasEvidence {
@@ -75,6 +80,12 @@ export function getEquivalentUuidSet(
 
 export function getUuidAliasBatchDomain(
     entityType: SyroUuidAliasEntityType,
-): "cards" | "notes" {
-    return entityType === "note-review" ? "notes" : "cards";
+): "cards" | "notes" | "extracts" {
+    if (entityType === "note-review") {
+        return "notes";
+    }
+    if (entityType === "extract-item") {
+        return "extracts";
+    }
+    return "cards";
 }
