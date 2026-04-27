@@ -32,21 +32,9 @@ import { Deck } from "src/Deck";
 import { ReviewResponse, textInterval } from "src/scheduling";
 import { CardType } from "src/Question";
 import { CardFrontBackUtil, type CardReviewTarget } from "src/question-type";
-import type { QuestionContextBreadcrumb } from "src/SRFile";
+import { SrTFile, type QuestionContextBreadcrumb } from "src/SRFile";
 import { resolveDeckOptionsPreset } from "src/settings";
 import type { ExtractItem } from "src/dataStore/extractStore";
-import {
-    BookOpen,
-    Check,
-    Edit3,
-    FileText,
-    GraduationCap,
-    RotateCcw,
-    Save,
-    TextSelect,
-    ThumbsDown,
-    Zap,
-} from "lucide-react";
 import {
     applyReviewMobileHeaderCover,
     applyReviewMobileNavbarCover,
@@ -1112,7 +1100,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                             }}
                         >
                             {activeReviewItem?.kind === "extract" ? (
-                                <ExtractReviewView
+                                <ExtractLinearCardReview
                                     plugin={plugin}
                                     extractUuid={activeReviewItem.uuid}
                                     deckPath={activeDeckPathRef.current}
@@ -1121,10 +1109,13 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                                     onAnswer={(rating) => {
                                         void handleAnswer(rating);
                                     }}
-                                    onExit={handleExitReview}
-                                    onGraduate={() => {
+                                    onUndo={() => {
+                                        void handleUndo();
+                                    }}
+                                    onDelete={() => {
                                         void handleDelete();
                                     }}
+                                    onExit={handleExitReview}
                                     uiResetToken={reviewUiResetToken}
                                     overlayMobileNavbar={shouldOverlayMobileNavbarForReview}
                                 />
@@ -1384,210 +1375,120 @@ const DeckListView: React.FC<DeckListViewProps> = ({
 };
 
 // ==========================================
-// Extract Review
+// Extract Review adapter
 // ==========================================
 
-interface ExtractReviewViewProps {
+interface ExtractLinearCardReviewProps {
     plugin: SRPlugin;
     extractUuid: string;
     deckPath: string | null;
     markdownOwner: Component;
     clearReviewMobileChromeCover: () => void;
     onAnswer: (rating: number) => void;
+    onUndo: () => void;
+    onDelete: () => void;
     onExit: () => void;
-    onGraduate: () => void;
     uiResetToken: number;
     overlayMobileNavbar: boolean;
 }
 
-const ExtractMarkdownPreview: React.FC<{
-    plugin: SRPlugin;
-    markdownOwner: Component;
-    sourcePath: string;
-    content: string;
-}> = ({ plugin, markdownOwner, sourcePath, content }) => {
-    const containerRef = useRef<HTMLDivElement>(null);
+function basenameFromPath(path: string, fallback: string): string {
+    const normalizedPath = path.replace(/\\/g, "/");
+    const basename = normalizedPath.split("/").filter(Boolean).pop();
+    return (basename || fallback).replace(/\.md$/i, "");
+}
 
-    useEffect(() => {
-        const container = containerRef.current;
-        if (!container) {
-            return;
-        }
-
-        container.replaceChildren();
-        const renderComponent = new Component();
-        renderComponent.load();
-        let cancelled = false;
-
-        const render = async () => {
-            const buffer = document.createElement("div");
-            await MarkdownRenderer.render(plugin.app, content, buffer, sourcePath, markdownOwner);
-            if (cancelled) {
-                return;
-            }
-            container.replaceChildren(...Array.from(buffer.childNodes));
-        };
-
-        void render().catch((error) => {
-            if (cancelled) {
-                return;
-            }
-            console.error("[SR-Extract] Failed to render extract markdown", error);
-            container.textContent = content;
-        });
-
-        return () => {
-            cancelled = true;
-            renderComponent.unload();
-        };
-    }, [content, markdownOwner, plugin.app, sourcePath]);
-
-    return (
-        <div
-            className="sr-extract-markdown markdown-preview-view markdown-rendered"
-            ref={containerRef}
-        />
-    );
-};
-
-const ExtractReviewButton: React.FC<{
-    icon: React.ReactNode;
-    label: string;
-    sub: string;
-    shortcut: string;
-    variant: "reset" | "hard" | "good" | "easy";
-    onClick: () => void;
-}> = ({ icon, label, sub, shortcut, variant, onClick }) => (
-    <button
-        type="button"
-        className={`sr-linear-btn is-${variant} sr-extract-review-button sr-extract-review-button--${variant}`}
-        onClick={onClick}
-    >
-        <span className="sr-linear-btn-shortcut sr-extract-review-button__shortcut">
-            {shortcut}
-        </span>
-        <span className="sr-linear-btn-icon-wrapper sr-extract-review-button__icon">
-            {icon}
-        </span>
-        <span className="sr-linear-btn-content sr-extract-review-button__text">
-            <span className="sr-linear-btn-label">{label}</span>
-            <span className="sr-linear-btn-sub">{sub}</span>
-        </span>
-    </button>
-);
-
-const ExtractReviewView: React.FC<ExtractReviewViewProps> = ({
+const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     plugin,
     extractUuid,
     deckPath,
     markdownOwner,
     clearReviewMobileChromeCover,
     onAnswer,
+    onUndo,
+    onDelete,
     onExit,
-    onGraduate,
     uiResetToken,
     overlayMobileNavbar,
 }) => {
     const extract = plugin.extractStore?.get(extractUuid) ?? null;
     const [body, setBody] = useState(extract?.rawMarkdown ?? "");
-    const [memo, setMemo] = useState(extract?.memo ?? "");
-    const [priority, setPriority] = useState(extract?.priority ?? 5);
-    const [isEditingBody, setIsEditingBody] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
-    const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
     const bodyValueRef = useRef(body);
-    const memoValueRef = useRef(memo);
     const bodyDirtyRef = useRef(false);
-    const memoDirtyRef = useRef(false);
     const bodySaveTimerRef = useRef<number | null>(null);
-    const memoSaveTimerRef = useRef<number | null>(null);
 
     const sourcePath = extract?.sourcePath ?? "";
+    const sourceFile = useMemo(() => {
+        if (!sourcePath) {
+            return null;
+        }
+        const abstractFile = plugin.app.vault.getAbstractFileByPath(sourcePath);
+        return abstractFile instanceof TFile ? abstractFile : null;
+    }, [plugin.app.vault, sourcePath]);
+    const anchorLine = Math.max(0, extract?.sourceAnchor.startLine ?? 0);
+    const filename = sourceFile?.basename ?? basenameFromPath(sourcePath, t("EXTRACT_SOURCE_MISSING"));
+
     const reviewIntervals = useMemo(
         () => plugin.getExtractReviewIntervals(extractUuid),
         [extractUuid, plugin, uiResetToken],
     );
-    const extractStats = useMemo(() => {
-        const stats = plugin.extractStore?.getStats(deckPath) ?? {
-            newCount: 0,
-            dueCount: 0,
-            totalCount: 0,
-        };
-        return stats;
-    }, [deckPath, plugin.extractStore, uiResetToken]);
+    const extractStats = useMemo(
+        () =>
+            plugin.extractStore?.getStats(deckPath) ?? {
+                newCount: 0,
+                dueCount: 0,
+                totalCount: 0,
+            },
+        [deckPath, plugin.extractStore, uiResetToken],
+    );
+    const breadcrumbs = useMemo(() => {
+        if (!sourceFile) {
+            return [];
+        }
+        return new SrTFile(plugin.app.vault, plugin.app.metadataCache, sourceFile).getQuestionContext(
+            anchorLine,
+        );
+    }, [anchorLine, plugin.app.metadataCache, plugin.app.vault, sourceFile]);
 
     useEffect(() => {
         const nextExtract = plugin.extractStore?.get(extractUuid) ?? null;
-        setBody(nextExtract?.rawMarkdown ?? "");
-        setMemo(nextExtract?.memo ?? "");
-        setPriority(nextExtract?.priority ?? 5);
-        setIsEditingBody(false);
-        bodyValueRef.current = nextExtract?.rawMarkdown ?? "";
-        memoValueRef.current = nextExtract?.memo ?? "";
+        const nextBody = nextExtract?.rawMarkdown ?? "";
+        setBody(nextBody);
+        bodyValueRef.current = nextBody;
         bodyDirtyRef.current = false;
-        memoDirtyRef.current = false;
     }, [extractUuid, plugin.extractStore, uiResetToken]);
 
     useEffect(() => {
         bodyValueRef.current = body;
     }, [body]);
 
-    useEffect(() => {
-        memoValueRef.current = memo;
-    }, [memo]);
-
-    const clearSaveTimer = useCallback((ref: { current: number | null }) => {
-        if (ref.current !== null) {
-            window.clearTimeout(ref.current);
-            ref.current = null;
+    const clearSaveTimer = useCallback(() => {
+        if (bodySaveTimerRef.current !== null) {
+            window.clearTimeout(bodySaveTimerRef.current);
+            bodySaveTimerRef.current = null;
         }
     }, []);
 
     const saveBodyNow = useCallback(async () => {
-        clearSaveTimer(bodySaveTimerRef);
+        clearSaveTimer();
         if (!bodyDirtyRef.current) {
             return;
         }
         bodyDirtyRef.current = false;
-        setIsSaving(true);
-        try {
-            const updated = await plugin.updateExtractRawMarkdown(extractUuid, bodyValueRef.current);
-            if (updated) {
-                setBody(updated.rawMarkdown);
-                bodyValueRef.current = updated.rawMarkdown;
-            }
-        } finally {
-            setIsSaving(false);
+        const updated = await plugin.updateExtractRawMarkdown(extractUuid, bodyValueRef.current);
+        if (updated) {
+            setBody(updated.rawMarkdown);
+            bodyValueRef.current = updated.rawMarkdown;
         }
     }, [clearSaveTimer, extractUuid, plugin]);
 
-    const saveMemoNow = useCallback(async () => {
-        clearSaveTimer(memoSaveTimerRef);
-        if (!memoDirtyRef.current) {
-            return;
-        }
-        memoDirtyRef.current = false;
-        setIsSaving(true);
-        try {
-            const updated = await plugin.updateExtractMemo(extractUuid, memoValueRef.current);
-            if (updated) {
-                setMemo(updated.memo);
-                memoValueRef.current = updated.memo;
-            }
-        } finally {
-            setIsSaving(false);
-        }
-    }, [clearSaveTimer, extractUuid, plugin]);
-
-    const flushSaves = useCallback(async () => {
+    const flushBodySave = useCallback(async () => {
         await saveBodyNow();
-        await saveMemoNow();
-    }, [saveBodyNow, saveMemoNow]);
+    }, [saveBodyNow]);
 
     useEffect(() => {
         return () => {
-            clearSaveTimer(bodySaveTimerRef);
-            clearSaveTimer(memoSaveTimerRef);
+            clearSaveTimer();
         };
     }, [clearSaveTimer]);
 
@@ -1596,7 +1497,7 @@ const ExtractReviewView: React.FC<ExtractReviewViewProps> = ({
             setBody(value);
             bodyValueRef.current = value;
             bodyDirtyRef.current = true;
-            clearSaveTimer(bodySaveTimerRef);
+            clearSaveTimer();
             bodySaveTimerRef.current = window.setTimeout(() => {
                 void saveBodyNow().catch((error) => {
                     console.error("[SR-Extract] Failed to save extract body", error);
@@ -1607,88 +1508,39 @@ const ExtractReviewView: React.FC<ExtractReviewViewProps> = ({
         [clearSaveTimer, saveBodyNow],
     );
 
-    const scheduleMemoSave = useCallback(
-        (value: string) => {
-            setMemo(value);
-            memoValueRef.current = value;
-            memoDirtyRef.current = true;
-            clearSaveTimer(memoSaveTimerRef);
-            memoSaveTimerRef.current = window.setTimeout(() => {
-                void saveMemoNow().catch((error) => {
-                    console.error("[SR-Extract] Failed to save extract memo", error);
-                    new Notice(t("EXTRACT_SAVE_FAILED"));
-                });
-            }, 500);
-        },
-        [clearSaveTimer, saveMemoNow],
-    );
-
-    const handlePriorityChange = useCallback(
-        (event: React.ChangeEvent<HTMLSelectElement>) => {
-            const nextPriority = Number(event.target.value);
-            setPriority(nextPriority);
-            void plugin.updateExtractPriority(extractUuid, nextPriority).catch((error) => {
-                console.error("[SR-Extract] Failed to update priority", error);
-                new Notice(t("EXTRACT_SAVE_FAILED"));
-            });
-        },
-        [extractUuid, plugin],
-    );
-
     const handleAnswer = useCallback(
         async (rating: number) => {
             try {
-                await flushSaves();
+                await flushBodySave();
             } catch (error) {
                 console.error("[SR-Extract] Failed to flush before review", error);
                 new Notice(t("EXTRACT_SAVE_FAILED"));
             }
             onAnswer(rating);
         },
-        [flushSaves, onAnswer],
+        [flushBodySave, onAnswer],
     );
 
-    const handleContinueExtract = useCallback(async () => {
-        const textarea = bodyTextareaRef.current;
-        if (!textarea || textarea.selectionStart === textarea.selectionEnd) {
-            new Notice(t("EXTRACT_SELECT_TEXT_REQUIRED"));
-            return;
-        }
-
+    const handleDelete = useCallback(async () => {
         try {
-            const updated = await plugin.createNestedExtractFromRawRange(
-                extractUuid,
-                textarea.selectionStart,
-                textarea.selectionEnd,
-            );
-            if (updated) {
-                setBody(updated.rawMarkdown);
-                bodyValueRef.current = updated.rawMarkdown;
-                bodyDirtyRef.current = false;
-            }
-            new Notice(t("EXTRACT_NESTED_CREATED"));
+            await flushBodySave();
         } catch (error) {
-            console.error("[SR-Extract] Failed to create nested extract", error);
+            console.error("[SR-Extract] Failed to flush before graduation", error);
             new Notice(t("EXTRACT_SAVE_FAILED"));
         }
-    }, [extractUuid, plugin]);
+        onDelete();
+    }, [flushBodySave, onDelete]);
 
     const handleOpenSource = useCallback(
         async (options?: { newTab?: boolean }) => {
-            if (!extract) {
-                return;
-            }
-            const abstractFile = plugin.app.vault.getAbstractFileByPath(extract.sourcePath);
-            if (!(abstractFile instanceof TFile)) {
+            if (!extract || !sourceFile) {
                 new Notice(t("EXTRACT_SOURCE_MISSING"));
                 return;
             }
 
             clearReviewMobileChromeCover();
-            const leaf = resolveNavigationLeaf(plugin, abstractFile, options);
-            const sourceText = await plugin.app.vault.read(abstractFile);
-            const line = sourceText.slice(0, extract.sourceAnchor.start).split("\n").length - 1;
-            await leaf.openFile(abstractFile, buildOpenStateForLine(Math.max(0, line)));
+            const leaf = resolveNavigationLeaf(plugin, sourceFile, options);
+            await leaf.openFile(sourceFile, buildOpenStateForLine(anchorLine));
             await plugin.app.workspace.revealLeaf?.(leaf);
             plugin.app.workspace.setActiveLeaf(leaf, { focus: true });
             if (hasEditor(leaf.view)) {
@@ -1701,289 +1553,124 @@ const ExtractReviewView: React.FC<ExtractReviewViewProps> = ({
                 leaf.view.editor.scrollIntoView({ from: cursor, to: cursor }, true);
             }
         },
-        [clearReviewMobileChromeCover, extract, plugin],
+        [anchorLine, clearReviewMobileChromeCover, extract, plugin, sourceFile],
     );
 
-    const handleGraduate = useCallback(async () => {
-        try {
-            await flushSaves();
-        } catch (error) {
-            console.error("[SR-Extract] Failed to flush before graduation", error);
-            new Notice(t("EXTRACT_SAVE_FAILED"));
-        }
-        onGraduate();
-    }, [flushSaves, onGraduate]);
-
-    useEffect(() => {
-        const keyHandler = (event: KeyboardEvent) => {
-            if (event.defaultPrevented) {
+    const handleOpenBreadcrumb = useCallback(
+        async (breadcrumb: QuestionContextBreadcrumb, options?: { newTab?: boolean }) => {
+            if (!sourceFile) {
+                new Notice(t("EXTRACT_SOURCE_MISSING"));
                 return;
             }
-            const activeElement = document.activeElement;
-            if (
-                activeElement instanceof HTMLTextAreaElement ||
-                activeElement instanceof HTMLInputElement ||
-                activeElement instanceof HTMLSelectElement
-            ) {
-                return;
-            }
-            if (event.key === "1") {
-                event.preventDefault();
-                void handleAnswer(0);
-            } else if (event.key === "2") {
-                event.preventDefault();
-                void handleAnswer(1);
-            } else if (event.key === "3") {
-                event.preventDefault();
-                void handleAnswer(2);
-            } else if (event.key === "4") {
-                event.preventDefault();
-                void handleAnswer(3);
-            }
-        };
-        window.addEventListener("keydown", keyHandler);
-        return () => window.removeEventListener("keydown", keyHandler);
-    }, [handleAnswer]);
 
-    if (!extract) {
-        return (
-            <div className="sr-card-review-view sr-extract-review-view">
-                <div
-                    className={[
-                        "sr-linear-card-wrapper",
-                        "sr-extract-linear-card-wrapper",
-                        Platform.isPhone ? "sr-phone-layout sr-mobile-maximized" : "",
-                        overlayMobileNavbar ? "sr-overlay-mobile-navbar" : "",
-                    ]
-                        .filter(Boolean)
-                        .join(" ")}
-                >
-                    <div className="sr-linear-card sr-extract-card sr-extract-card--empty">
-                        {t("EXTRACT_NO_ACTIVE_ITEMS")}
-                    </div>
-                </div>
-            </div>
-        );
-    }
+            clearReviewMobileChromeCover();
+            const activeLeaf = resolveNavigationLeaf(plugin, sourceFile, options);
+            await activeLeaf.openFile(sourceFile, buildOpenStateForLine(breadcrumb.line));
+            await plugin.app.workspace.revealLeaf?.(activeLeaf);
+            plugin.app.workspace.setActiveLeaf(activeLeaf, { focus: true });
+            const safeLine =
+                hasEditor(activeLeaf.view) && activeLeaf.view.editor.lineCount() > 0
+                    ? Math.max(
+                          0,
+                          Math.min(
+                              breadcrumb.line,
+                              Math.max(0, activeLeaf.view.editor.lineCount() - 1),
+                          ),
+                      )
+                    : Math.max(0, breadcrumb.line);
+            focusLeafEditorRange(activeLeaf, { startLine: safeLine, endLine: safeLine });
+        },
+        [clearReviewMobileChromeCover, plugin, sourceFile],
+    );
+
+    const renderExtractMarkdown = useCallback(
+        (text: string, el: HTMLElement) =>
+            MarkdownRenderer.render(plugin.app, text, el, sourcePath, markdownOwner),
+        [markdownOwner, plugin.app, sourcePath],
+    );
+
+    const cardState: CardState = useMemo(
+        () => ({
+            front: body || t("EXTRACT_NO_ACTIVE_ITEMS"),
+            back: "",
+            responseButtonLabels: reviewIntervals,
+        }),
+        [body, reviewIntervals],
+    );
+    const reviewStats = useMemo(
+        () => ({
+            new: extractStats.newCount,
+            learning: 0,
+            due: extractStats.dueCount,
+        }),
+        [extractStats.dueCount, extractStats.newCount],
+    );
+    const settings = plugin.data.settings;
+    const isPhoneLayout = Platform.isPhone;
+    const allowResize = !isPhoneLayout;
+    const cardType: "new" | "learning" | "due" = extract?.timesReviewed === 0 ? "new" : "due";
+
+    const handleResize = (width: number, height: number) => {
+        settings.reactFlashcardWidth = width;
+        settings.reactFlashcardHeight = height;
+        void plugin.savePluginData();
+    };
 
     return (
         <div
-            className={[
-                "sr-card-review-view",
-                "sr-extract-review-view",
-                Platform.isPhone ? "sr-extract-review-view--phone" : "",
-                overlayMobileNavbar ? "sr-extract-review-view--overlay-mobile-navbar" : "",
-            ]
-                .filter(Boolean)
-                .join(" ")}
+            className="sr-card-review-view"
+            style={{
+                height: "100%",
+                display: "flex",
+                justifyContent: "center",
+                pointerEvents: "auto",
+                alignItems: "center",
+            }}
         >
-            <div
-                className={[
-                    "sr-linear-card-wrapper",
-                    "sr-extract-linear-card-wrapper",
-                    Platform.isPhone ? "sr-phone-layout sr-mobile-maximized" : "",
-                    overlayMobileNavbar ? "sr-overlay-mobile-navbar" : "",
-                ]
-                    .filter(Boolean)
-                    .join(" ")}
-            >
-                <div className="sr-linear-card sr-extract-card">
-                    <div className="sr-card-highlight" />
-                    <header className="sr-card-header sr-extract-header">
-                        <div className="sr-header-left sr-extract-header-left">
-                            <button
-                                type="button"
-                                className="sr-filename-badge sr-extract-source"
-                                onClick={() => {
-                                    void handleOpenSource();
-                                }}
-                                onMouseDown={(event) => {
-                                    if (event.button !== 1) {
-                                        return;
-                                    }
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    void handleOpenSource({ newTab: true });
-                                }}
-                                title={t("EXTRACT_OPEN_SOURCE")}
-                            >
-                                <FileText size={14} />
-                                <span>{sourcePath || t("EXTRACT_SOURCE_MISSING")}</span>
-                            </button>
-                        </div>
-                        <div className="sr-header-right sr-extract-header-stats">
-                            <span>
-                                {t("EXTRACT_STATS_LABEL", { count: extractStats.totalCount })}
-                            </span>
-                            <button
-                                type="button"
-                                className="sr-header-btn sr-extract-header-button"
-                                onClick={onExit}
-                            >
-                                {t("BACK")}
-                            </button>
-                        </div>
-                    </header>
-
-                    <section className="sr-card-content-area sr-extract-content-area">
-                        <div className="sr-card-content-scroll sr-extract-content-scroll">
-                            <section className="sr-extract-meta-row">
-                                <label className="sr-extract-priority-control">
-                                    <span>{t("EXTRACT_PRIORITY_LABEL")}</span>
-                                    <select value={priority} onChange={handlePriorityChange}>
-                                        {Array.from(
-                                            { length: 10 },
-                                            (_, index) => index + 1,
-                                        ).map((value) => (
-                                            <option key={value} value={value}>
-                                                {value}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </label>
-                                <span className="sr-extract-save-state">
-                                    {isSaving ? t("EXTRACT_SAVING") : t("EXTRACT_SAVED")}
-                                </span>
-                            </section>
-
-                            <section className="sr-extract-memo-section">
-                                <label>{t("EXTRACT_MEMO_LABEL")}</label>
-                                <textarea
-                                    value={memo}
-                                    onChange={(event) => scheduleMemoSave(event.target.value)}
-                                    placeholder={t("EXTRACT_MEMO_PLACEHOLDER")}
-                                />
-                            </section>
-
-                            <section className="sr-extract-body-section">
-                                <div className="sr-extract-section-title">
-                                    <span>{t("EXTRACT_BODY_LABEL")}</span>
-                                    <div className="sr-extract-actions">
-                                        <button
-                                            type="button"
-                                            className="sr-header-btn sr-extract-action-button"
-                                            onClick={() => setIsEditingBody((value) => !value)}
-                                        >
-                                            {isEditingBody ? (
-                                                <Save size={14} />
-                                            ) : (
-                                                <Edit3 size={14} />
-                                            )}
-                                            <span>
-                                                {isEditingBody
-                                                    ? t("EXTRACT_FINISH_EDIT")
-                                                    : t("EXTRACT_EDIT_BODY")}
-                                            </span>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="sr-header-btn sr-extract-action-button"
-                                            onClick={() => {
-                                                void handleContinueExtract();
-                                            }}
-                                        >
-                                            <TextSelect size={14} />
-                                            <span>{t("EXTRACT_CONTINUE_EXTRACT")}</span>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="sr-header-btn sr-extract-action-button"
-                                            onClick={() => {
-                                                void handleGraduate();
-                                            }}
-                                        >
-                                            <GraduationCap size={14} />
-                                            <span>{t("EXTRACT_GRADUATE")}</span>
-                                        </button>
-                                    </div>
-                                </div>
-                                {isEditingBody ? (
-                                    <textarea
-                                        ref={bodyTextareaRef}
-                                        className="sr-extract-body-editor"
-                                        value={body}
-                                        onChange={(event) => scheduleBodySave(event.target.value)}
-                                    />
-                                ) : (
-                                    <ExtractMarkdownPreview
-                                        plugin={plugin}
-                                        markdownOwner={markdownOwner}
-                                        sourcePath={sourcePath}
-                                        content={body}
-                                    />
-                                )}
-                            </section>
-                        </div>
-                    </section>
-
-                    <footer className="sr-card-footer sr-extract-footer">
-                        <div className="sr-rating-buttons sr-extract-rating-buttons">
-                            <ExtractReviewButton
-                                icon={<RotateCcw size={13} />}
-                                label={t("UI_RESET")}
-                                sub={reviewIntervals[0] ?? "-"}
-                                shortcut="1"
-                                variant="reset"
-                                onClick={() => {
-                                    void handleAnswer(0);
-                                }}
-                            />
-                            <ExtractReviewButton
-                                icon={<ThumbsDown size={13} />}
-                                label={t("UI_HARD")}
-                                sub={reviewIntervals[1] ?? "-"}
-                                shortcut="2"
-                                variant="hard"
-                                onClick={() => {
-                                    void handleAnswer(1);
-                                }}
-                            />
-                            <ExtractReviewButton
-                                icon={<Check size={13} />}
-                                label={t("UI_GOOD")}
-                                sub={reviewIntervals[2] ?? "-"}
-                                shortcut="3"
-                                variant="good"
-                                onClick={() => {
-                                    void handleAnswer(2);
-                                }}
-                            />
-                            <ExtractReviewButton
-                                icon={<Zap size={13} />}
-                                label={t("UI_EASY")}
-                                sub={reviewIntervals[3] ?? "-"}
-                                shortcut="4"
-                                variant="easy"
-                                onClick={() => {
-                                    void handleAnswer(3);
-                                }}
-                            />
-                        </div>
-                        <button
-                            type="button"
-                            className="sr-linear-btn sr-extract-open-source-button"
-                            onClick={() => {
-                                void handleOpenSource();
-                            }}
-                        >
-                            <span className="sr-linear-btn-icon-wrapper">
-                                <BookOpen size={14} />
-                            </span>
-                            <span className="sr-linear-btn-content">
-                                <span className="sr-linear-btn-label">
-                                    {t("EXTRACT_OPEN_SOURCE")}
-                                </span>
-                            </span>
-                        </button>
-                    </footer>
-                </div>
-            </div>
+            <LinearCard
+                reviewKind="extract"
+                card={cardState}
+                uiResetToken={uiResetToken}
+                deckPath={deckPath ?? undefined}
+                stats={reviewStats}
+                cardType={cardType}
+                type="basic"
+                filename={filename}
+                breadcrumbs={breadcrumbs}
+                autoAdvanceSeconds={0}
+                showProgressBar={false}
+                progressBarStyle={settings.progressBarStyle}
+                onAnswer={(rating) => {
+                    void handleAnswer(rating);
+                }}
+                onUndo={onUndo}
+                onOpenNote={(options) => {
+                    void handleOpenSource(options);
+                }}
+                onOpenBreadcrumb={(breadcrumb, options) => {
+                    void handleOpenBreadcrumb(breadcrumb, options);
+                }}
+                onDelete={() => {
+                    void handleDelete();
+                }}
+                onExit={onExit}
+                onResize={handleResize}
+                renderMarkdown={renderExtractMarkdown}
+                width={settings.reactFlashcardWidth}
+                height={settings.reactFlashcardHeight}
+                isMobile={isPhoneLayout}
+                allowResize={allowResize}
+                overlayMobileNavbar={overlayMobileNavbar}
+                plugin={plugin}
+                rawContent={body}
+                onUpdateContent={scheduleBodySave}
+            />
         </div>
     );
 };
 
 // ==========================================
-// ?????????Card Review
+// Card Review
 // ==========================================
 
 interface CardReviewViewProps {

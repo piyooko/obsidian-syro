@@ -1,4 +1,4 @@
-﻿/** @jsxImportSource react */
+/** @jsxImportSource react */
 import React, {
     CSSProperties,
     useState,
@@ -65,11 +65,14 @@ export interface OpenNoteTargetOptions {
     newTab?: boolean;
 }
 
+type LinearCardReviewKind = "card" | "extract";
+
 interface LinearCardProps {
     card?: CardState;
     uiResetToken?: number | string;
     deckPath?: string;
     stats?: { new: number; learning: number; due: number };
+    reviewKind?: LinearCardReviewKind;
     type?: "basic" | "cloze";
     breadcrumbs?: QuestionContextBreadcrumb[];
     filename?: string;
@@ -318,6 +321,7 @@ export const LinearCard: FC<LinearCardProps> = ({
     card,
     uiResetToken,
     stats: initialStats = { new: 45, learning: 12, due: 68 },
+    reviewKind = "card",
     type = "basic",
     breadcrumbs = [],
     filename = "Card.md",
@@ -346,6 +350,7 @@ export const LinearCard: FC<LinearCardProps> = ({
     plugin,
     onUpdateContent,
 }) => {
+    const isExtractReview = reviewKind === "extract";
     const [size, setSize] = useState({ width, height });
     const wrapperRef = useRef<HTMLDivElement>(null);
     const cardRef = useRef<HTMLDivElement>(null);
@@ -395,7 +400,7 @@ export const LinearCard: FC<LinearCardProps> = ({
             : `${String(uiResetToken)}\u001f${cardContentResetKey}`;
     const lastCardUiResetKeyRef = useRef(cardUiResetKey);
     const isCardUiResetPending = lastCardUiResetKeyRef.current !== cardUiResetKey;
-    const renderIsFlipped = isCardUiResetPending ? false : isFlipped;
+    const renderIsFlipped = isExtractReview || (isCardUiResetPending ? false : isFlipped);
 
     useEffect(() => {
         if (cardType) {
@@ -656,14 +661,14 @@ export const LinearCard: FC<LinearCardProps> = ({
     }, [renderIsFlipped]);
 
     const revealAnswer = useCallback(() => {
-        if (renderIsFlipped) {
+        if (isExtractReview || renderIsFlipped) {
             return;
         }
 
         setPreservedFlipScrollTop(contentScrollRef.current?.scrollTop ?? null);
         setIsFlipped(true);
         onShowAnswer?.();
-    }, [onShowAnswer, renderIsFlipped]);
+    }, [isExtractReview, onShowAnswer, renderIsFlipped]);
 
     useEffect(() => {
         if (renderIsFlipped || autoAdvanceSeconds <= 0) {
@@ -803,6 +808,9 @@ export const LinearCard: FC<LinearCardProps> = ({
             switch (e.key.toLowerCase()) {
                 case " ":
                     e.preventDefault();
+                    if (isExtractReview) {
+                        return;
+                    }
                     if (!renderIsFlipped) {
                         revealAnswer();
                     } else {
@@ -852,6 +860,7 @@ export const LinearCard: FC<LinearCardProps> = ({
         isEditing,
         handleAnswerInternal,
         handleMenuAction,
+        isExtractReview,
         renderIsFlipped,
         revealAnswer,
         showInfo,
@@ -998,6 +1007,13 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             className="sr-header-btn"
                                             tabIndex={-1}
                                         >
+                                            <Edit3 size={16} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="sr-header-btn"
+                                            tabIndex={-1}
+                                        >
                                             <MoreHorizontal size={16} />
                                         </button>
                                     </div>
@@ -1030,6 +1046,13 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             currentType={currentType}
                                             animated={false}
                                         />
+                                        <button
+                                            type="button"
+                                            className="sr-header-btn"
+                                            tabIndex={-1}
+                                        >
+                                            <Edit3 size={16} />
+                                        </button>
                                         <button
                                             type="button"
                                             className="sr-header-btn"
@@ -1072,6 +1095,13 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             className="sr-header-btn"
                                             tabIndex={-1}
                                         >
+                                            <Edit3 size={16} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="sr-header-btn"
+                                            tabIndex={-1}
+                                        >
                                             <MoreHorizontal size={16} />
                                         </button>
                                     </div>
@@ -1105,6 +1135,13 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             compact
                                             animated={false}
                                         />
+                                        <button
+                                            type="button"
+                                            className="sr-header-btn"
+                                            tabIndex={-1}
+                                        >
+                                            <Edit3 size={16} />
+                                        </button>
                                         <button
                                             type="button"
                                             className="sr-header-btn"
@@ -1162,6 +1199,21 @@ export const LinearCard: FC<LinearCardProps> = ({
                                     currentType={currentType}
                                     compact={shouldUseCompactStats}
                                 />
+
+                                <button
+                                    type="button"
+                                    className={`sr-header-btn ${isEditing ? "active" : ""}`}
+                                    onClick={toggleEditMode}
+                                    title={
+                                        isEditing
+                                            ? t("UI_FINISH_EDITING")
+                                            : isExtractReview
+                                              ? t("EXTRACT_EDIT_BODY")
+                                              : t("EDIT_CARD")
+                                    }
+                                >
+                                    <Edit3 size={16} />
+                                </button>
 
                                 <div className="sr-menu-container">
                                     <button
@@ -1271,7 +1323,13 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             onOpenBreadcrumb={onOpenBreadcrumb}
                                         />
                                     )}
-                                    {type === "cloze" ? (
+                                    {isExtractReview ? (
+                                        <ExtractContent
+                                            key={cardUiResetKey}
+                                            content={card?.front || t("EXTRACT_NO_ACTIVE_ITEMS")}
+                                            renderMarkdown={renderMarkdown}
+                                        />
+                                    ) : type === "cloze" ? (
                                         <ClozeContent
                                             key={cardUiResetKey}
                                             isFlipped={renderIsFlipped}
@@ -2298,6 +2356,20 @@ const BasicContent = ({
                 </motion.div>
             )}
         </AnimatePresence>
+    </div>
+);
+
+const ExtractContent = ({
+    content,
+    renderMarkdown,
+}: {
+    content: string;
+    renderMarkdown?: (text: string, el: HTMLElement) => Promise<void> | void;
+}) => (
+    <div className="sr-basic-content">
+        <div className="sr-content-text">
+            <MarkdownDisplay content={content} renderMarkdown={renderMarkdown} />
+        </div>
     </div>
 );
 
