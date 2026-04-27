@@ -445,6 +445,17 @@ function createDeckStatsDebugSnapshot(stats: {
     };
 }
 
+function combineCardAndExtractReviewStats(
+    cardStats: { newCount: number; learningCount: number; dueCount: number },
+    extractStats: { newCount: number; dueCount: number },
+) {
+    return {
+        new: cardStats.newCount + extractStats.newCount,
+        learning: cardStats.learningCount,
+        due: cardStats.dueCount + extractStats.dueCount,
+    };
+}
+
 function getExtractDueAt(item: ExtractItem): number {
     return item.timesReviewed === 0 || item.nextReview === 0 ? 0 : item.nextReview;
 }
@@ -870,7 +881,11 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
 
             if (activeReviewItem?.kind === "extract") {
                 try {
-                    await plugin.reviewExtract(activeReviewItem.uuid, response);
+                    await plugin.reviewExtract(
+                        activeReviewItem.uuid,
+                        response,
+                        activeDeckPathRef.current,
+                    );
                 } catch (error) {
                     console.error("[SR-Extract] Failed to review extract", error);
                 }
@@ -1102,8 +1117,10 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                             {activeReviewItem?.kind === "extract" ? (
                                 <ExtractLinearCardReview
                                     plugin={plugin}
+                                    sequencer={sequencer}
                                     extractUuid={activeReviewItem.uuid}
                                     deckPath={activeDeckPathRef.current}
+                                    applyExtractDailyLimits={reviewMode !== FlashcardReviewMode.Cram}
                                     markdownOwner={markdownOwner}
                                     clearReviewMobileChromeCover={clearReviewMobileChromeCover}
                                     onAnswer={(rating) => {
@@ -1125,6 +1142,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                                     plugin={plugin}
                                     clearReviewMobileChromeCover={clearReviewMobileChromeCover}
                                     markdownOwner={markdownOwner}
+                                    applyExtractDailyLimits={reviewMode !== FlashcardReviewMode.Cram}
                                     onAnswer={(rating) => {
                                         void handleAnswer(rating);
                                     }}
@@ -1380,8 +1398,10 @@ const DeckListView: React.FC<DeckListViewProps> = ({
 
 interface ExtractLinearCardReviewProps {
     plugin: SRPlugin;
+    sequencer: IFlashcardReviewSequencer;
     extractUuid: string;
     deckPath: string | null;
+    applyExtractDailyLimits: boolean;
     markdownOwner: Component;
     clearReviewMobileChromeCover: () => void;
     onAnswer: (rating: number) => void;
@@ -1400,8 +1420,10 @@ function basenameFromPath(path: string, fallback: string): string {
 
 const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     plugin,
+    sequencer,
     extractUuid,
     deckPath,
+    applyExtractDailyLimits,
     markdownOwner,
     clearReviewMobileChromeCover,
     onAnswer,
@@ -1432,14 +1454,10 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
         () => plugin.getExtractReviewIntervals(extractUuid),
         [extractUuid, plugin, uiResetToken],
     );
+    const cardStats = sequencer.getSessionDeckStats();
     const extractStats = useMemo(
-        () =>
-            plugin.extractStore?.getStats(deckPath) ?? {
-                newCount: 0,
-                dueCount: 0,
-                totalCount: 0,
-            },
-        [deckPath, plugin.extractStore, uiResetToken],
+        () => plugin.getExtractReviewStats(deckPath, applyExtractDailyLimits),
+        [applyExtractDailyLimits, deckPath, plugin, uiResetToken],
     );
     const breadcrumbs = useMemo(() => {
         if (!sourceFile) {
@@ -1598,12 +1616,14 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
         [body, reviewIntervals],
     );
     const reviewStats = useMemo(
-        () => ({
-            new: extractStats.newCount,
-            learning: 0,
-            due: extractStats.dueCount,
-        }),
-        [extractStats.dueCount, extractStats.newCount],
+        () => combineCardAndExtractReviewStats(cardStats, extractStats),
+        [
+            cardStats.dueCount,
+            cardStats.learningCount,
+            cardStats.newCount,
+            extractStats.dueCount,
+            extractStats.newCount,
+        ],
     );
     const settings = plugin.data.settings;
     const isPhoneLayout = Platform.isPhone;
@@ -1678,6 +1698,7 @@ interface CardReviewViewProps {
     plugin: SRPlugin;
     clearReviewMobileChromeCover: () => void;
     markdownOwner: Component;
+    applyExtractDailyLimits: boolean;
     onAnswer: (rating: number) => void;
     onUndo: () => void;
     onDelete: () => void;
@@ -1692,11 +1713,12 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     plugin,
     clearReviewMobileChromeCover,
     markdownOwner,
+    applyExtractDailyLimits,
     onAnswer,
     onUndo,
     onDelete,
     onExit,
-    tick: _tick,
+    tick,
     uiResetToken,
     overlayMobileNavbar,
 }) => {
@@ -1754,11 +1776,17 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
         [front, back, review, reviewTarget, btnLabels],
     );
 
+    const deckPath = deck.getTopicPath().path.join("/") || deck.deckName;
+
     // Pull counters from the deck session the user entered from.
-    const stats = sequencer.getSessionDeckStats();
+    const cardStats = sequencer.getSessionDeckStats();
+    const extractStats = useMemo(
+        () => plugin.getExtractReviewStats(deckPath, applyExtractDailyLimits),
+        [applyExtractDailyLimits, deckPath, plugin, tick, uiResetToken],
+    );
     if (settings.showRuntimeDebugMessages) {
         console.debug(
-            `[DEBUG_REVIEW_UI] Card Review UI counters for deck '${deck.deckName}' -> New: ${stats.newCount}, Learning: ${stats.learningCount}, Due: ${stats.dueCount}`,
+            `[DEBUG_REVIEW_UI] Card Review UI counters for deck '${deck.deckName}' -> New: ${cardStats.newCount}, Learning: ${cardStats.learningCount}, Due: ${cardStats.dueCount}, ExtractNew: ${extractStats.newCount}, ExtractDue: ${extractStats.dueCount}`,
         );
     }
     let cardType: "new" | "learning" | "due" = "due";
@@ -1777,8 +1805,6 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     const breadcrumbs = useMemo(() => question.questionContext || [], [question.questionContext]);
     const filename = question.note?.file?.basename || "Unknown";
 
-    // Read the active deck preset to decide auto-advance timing.
-    const deckPath = deck.getTopicPath().path.join("/") || deck.deckName;
     const preset = resolveDeckOptionsPreset(settings, deckPath);
     const autoAdvanceSeconds = preset?.autoAdvance ? preset.autoAdvanceSeconds || 10 : 0;
     const showAutoAdvanceProgressBar = preset?.showProgressBar ?? true;
@@ -1847,12 +1873,14 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     };
 
     const reviewStats = useMemo(
-        () => ({
-            new: stats.newCount,
-            learning: stats.learningCount,
-            due: stats.dueCount,
-        }),
-        [stats.newCount, stats.learningCount, stats.dueCount],
+        () => combineCardAndExtractReviewStats(cardStats, extractStats),
+        [
+            cardStats.dueCount,
+            cardStats.learningCount,
+            cardStats.newCount,
+            extractStats.dueCount,
+            extractStats.newCount,
+        ],
     );
 
     const sourcePath = question.note?.file?.path || "";

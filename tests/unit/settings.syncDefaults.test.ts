@@ -33,6 +33,8 @@ describe("sync progress display defaults", () => {
     test("new deck presets enable auto-advance with the progress bar by default", () => {
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.autoAdvance).toBe(true);
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.showProgressBar).toBe(true);
+        expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.maxNewExtracts).toBe(10);
+        expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.maxExtractReviews).toBe(50);
     });
 
     test("deck option step parser accepts valid values, blanks, and rejects malformed entries", () => {
@@ -126,6 +128,43 @@ describe("sync progress display defaults", () => {
         upgradeSettings(settings);
 
         expect(settings.syncProgressDisplayMode).toBe(DEFAULT_SYNC_PROGRESS_DISPLAY_MODE);
+    });
+
+    test("upgradeSettings migrates legacy global extract limits into missing deck preset limits", () => {
+        const legacyPreset = { ...DEFAULT_SETTINGS.deckOptionsPresets[0] } as Record<string, unknown>;
+        delete legacyPreset.maxNewExtracts;
+        delete legacyPreset.maxExtractReviews;
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            maxNewExtractsPerDay: 7,
+            maxExtractReviewsPerDay: 33,
+            deckOptionsPresets: [legacyPreset],
+        } as unknown as SRSettings;
+
+        upgradeSettings(settings);
+
+        expect(settings.deckOptionsPresets[0]?.maxNewExtracts).toBe(7);
+        expect(settings.deckOptionsPresets[0]?.maxExtractReviews).toBe(33);
+    });
+
+    test("upgradeSettings keeps preset extract limits ahead of legacy global extract limits", () => {
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            maxNewExtractsPerDay: 7,
+            maxExtractReviewsPerDay: 33,
+            deckOptionsPresets: [
+                {
+                    ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                    maxNewExtracts: 3,
+                    maxExtractReviews: 12,
+                },
+            ],
+        } as SRSettings;
+
+        upgradeSettings(settings);
+
+        expect(settings.deckOptionsPresets[0]?.maxNewExtracts).toBe(3);
+        expect(settings.deckOptionsPresets[0]?.maxExtractReviews).toBe(12);
     });
 
     test("anki cloze conversion stays disabled by default when the setting is missing", () => {

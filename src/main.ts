@@ -20,6 +20,7 @@ import {
     DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
     FsrsSettings,
     NoteReviewIgnoreReason,
+    resolveDeckOptionsPreset,
     SettingsUtil,
     SRSettings,
     SyncProgressDisplayMode,
@@ -105,6 +106,7 @@ import {
     ExtractStore,
     parseExtractStoreSnapshots,
     type ExtractItem,
+    type ExtractReviewStats,
     type ExtractSnapshot,
 } from "./dataStore/extractStore";
 import { replaySyroSessionRecords } from "./dataStore/syroSessionReplay";
@@ -2150,10 +2152,11 @@ export default class SRPlugin extends Plugin {
         );
     }
 
-    private getExtractReviewLimits(): { maxNew: number; maxDue: number } {
+    private getExtractReviewLimits(deckPath: string | null): { maxNew: number; maxDue: number } {
+        const preset = resolveDeckOptionsPreset(this.data.settings, deckPath);
         return {
-            maxNew: Math.max(0, Math.round(this.data.settings.maxNewExtractsPerDay ?? 10)),
-            maxDue: Math.max(0, Math.round(this.data.settings.maxExtractReviewsPerDay ?? 50)),
+            maxNew: Math.max(0, Math.round(preset.maxNewExtracts)),
+            maxDue: Math.max(0, Math.round(preset.maxExtractReviews)),
         };
     }
 
@@ -2166,7 +2169,25 @@ export default class SRPlugin extends Plugin {
         }
         return this.extractStore.getReviewCandidates(
             deckPath,
-            applyDailyLimits ? this.getExtractReviewLimits() : undefined,
+            applyDailyLimits ? this.getExtractReviewLimits(deckPath) : undefined,
+        );
+    }
+
+    public getExtractReviewStats(
+        deckPath: string | null = null,
+        applyDailyLimits = true,
+    ): ExtractReviewStats {
+        const emptyStats: ExtractReviewStats = {
+            newCount: 0,
+            dueCount: 0,
+            totalCount: 0,
+        };
+        if (!this.extractStore || this.data.settings.enableExtracts === false) {
+            return emptyStats;
+        }
+        return this.extractStore.getStats(
+            deckPath,
+            applyDailyLimits ? this.getExtractReviewLimits(deckPath) : undefined,
         );
     }
 
@@ -2181,11 +2202,12 @@ export default class SRPlugin extends Plugin {
     public async reviewExtract(
         uuid: string,
         response: ReviewResponse,
+        deckPath: string | null = null,
     ): Promise<ExtractItem | null> {
         if (!this.extractStore || this.data.settings.enableExtracts === false) {
             return null;
         }
-        const reviewed = this.extractStore.review(uuid, response, this.noteAlgorithm);
+        const reviewed = this.extractStore.review(uuid, response, this.noteAlgorithm, deckPath);
         if (!reviewed) {
             return null;
         }
@@ -8328,10 +8350,13 @@ export default class SRPlugin extends Plugin {
 
         for (const deck of this.remainingDeckTree.subdecks) {
             const simulatedDeck = DeckTreeFilter.filterByDailyLimits(deck, this);
+            const deckPath = deck.getTopicPath().path.join("/") || deck.deckName;
+            const extractStats = this.getExtractReviewStats(deckPath, true);
             totalReviewableCards +=
                 simulatedDeck.getDistinctCardCount(CardListType.NewCard, true) +
                 simulatedDeck.getDistinctCardCount(CardListType.DueCard, true) +
-                simulatedDeck.getAvailableLearningCardCount(true, learnAheadMillis);
+                simulatedDeck.getAvailableLearningCardCount(true, learnAheadMillis) +
+                extractStats.totalCount;
         }
 
         return totalReviewableCards;

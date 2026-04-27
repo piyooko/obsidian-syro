@@ -851,6 +851,8 @@ export default {
         "间隔之间用空格分隔（如 1m 10m）。支持 m(分) h(时) d(天)",
     DECK_OPTIONS_MAX_NEW_CARDS: "每日新卡片上限 (张/天)",
     DECK_OPTIONS_MAX_NEW_CARDS_DESC: "该牌组每天显示的新卡片最大数量",
+    DECK_OPTIONS_MAX_NEW_EXTRACTS: "每日新摘录上限",
+    DECK_OPTIONS_MAX_NEW_EXTRACTS_DESC: "该牌组每天引入的新摘录最大数量",
     DECK_OPTIONS_SECTION_LAPSES: "遗忘",
     DECK_OPTIONS_RELEARNING_STEPS: "重学间隔",
     DECK_OPTIONS_RELEARNING_STEPS_DESC:
@@ -860,6 +862,8 @@ export default {
     DECK_OPTIONS_SECTION_REVIEWS: "复习",
     DECK_OPTIONS_MAX_REVIEWS: "每日复习上限 (次/天)",
     DECK_OPTIONS_MAX_REVIEWS_DESC: "该牌组每天进行复习的最大次数",
+    DECK_OPTIONS_MAX_EXTRACT_REVIEWS: "每日摘录复习上限",
+    DECK_OPTIONS_MAX_EXTRACT_REVIEWS_DESC: "该牌组每天显示的到期摘录复习最大数量",
     DECK_OPTIONS_SECTION_AUTO_ADVANCE: "自动前进",
     DECK_OPTIONS_AUTO_ADVANCE: "自动前进",
     DECK_OPTIONS_AUTO_ADVANCE_DESC: "倒计时结束后自动翻转到卡片背面",

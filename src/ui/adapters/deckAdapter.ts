@@ -35,6 +35,9 @@ export function deckToUIState(deck: Deck, plugin?: SRPlugin, depth: number = 0):
         displayNew = simulatedDeck.getCardCount(CardListType.NewCard, true);
         displayDue = simulatedDeck.getCardCount(CardListType.DueCard, true);
         displayLearning = simulatedDeck.getAvailableLearningCardCount(true, learnAheadMillis);
+        const extractStats = plugin.getExtractReviewStats(fullPath, true);
+        displayNew += extractStats.newCount;
+        displayDue += extractStats.dueCount;
     } else {
         // fallback
         displayNew = deck.getCardCount(CardListType.NewCard, true);

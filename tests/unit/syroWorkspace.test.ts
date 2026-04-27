@@ -322,6 +322,9 @@ describe("SyroWorkspace", () => {
 
     beforeEach(() => {
         window.localStorage.clear();
+        jest.spyOn(Date, "now").mockReturnValue(
+            Date.parse("2026-04-18T00:00:00.000Z"),
+        );
         Object.defineProperty(globalThis, "crypto", {
             configurable: true,
             value: {

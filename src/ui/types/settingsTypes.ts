@@ -66,8 +66,6 @@ export interface UISettingsState {
     timelineAutoCommitReviewSelection: boolean; // Auto-write note review selections to timeline
     timelineEnableDurationPrefixSyntax: boolean; // Enable Nd:: prefix parsing and rendering
     enableExtracts: boolean; // Enable incremental reading extracts
-    maxNewExtractsPerDay: number; // Daily new extract limit
-    maxExtractReviewsPerDay: number; // Daily extract review limit
 
     // Weighted Multiplier Algorithm Settings
     fsrsEnableFuzz: boolean;

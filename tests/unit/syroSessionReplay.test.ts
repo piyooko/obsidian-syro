@@ -380,6 +380,8 @@ describe("replaySyroSessionRecords", () => {
             uuid: "deck-preset-reading",
             createdAt: "2026-04-13T12:01:30.000Z",
             name: "Reading",
+            maxNewExtracts: 6,
+            maxExtractReviews: 24,
             fsrs: {
                 ...settings.deckOptionsPresets[0].fsrs,
                 enable_fuzz: false,
@@ -463,6 +465,8 @@ describe("replaySyroSessionRecords", () => {
         );
         expect(resolveDeckOptionsPreset(settings, "Reading").uuid).toBe(readingPreset.uuid);
         expect(resolveDeckOptionsPreset(settings, "Reading").fsrs?.enable_fuzz).toBe(false);
+        expect(resolveDeckOptionsPreset(settings, "Reading").maxNewExtracts).toBe(6);
+        expect(resolveDeckOptionsPreset(settings, "Reading").maxExtractReviews).toBe(24);
         expect(files.get("syro/devices/Desktop--d84f/notes.json")).toContain('"syncEntities"');
         expect(files.get("syro/devices/Desktop--d84f/timeline.json")).toContain(
             '"timeline-entry:commit-1"',

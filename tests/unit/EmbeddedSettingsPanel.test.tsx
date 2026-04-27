@@ -77,8 +77,6 @@ function createSettings(overrides: Partial<UISettingsState> = {}): UISettingsSta
         timelineAutoCommitReviewSelection: true,
         timelineEnableDurationPrefixSyntax: true,
         enableExtracts: true,
-        maxNewExtractsPerDay: 10,
-        maxExtractReviewsPerDay: 50,
         fsrsEnableFuzz: true,
         wmsImpMin: "1",
         wmsImpMax: "2.5",
@@ -401,6 +399,20 @@ describe("EmbeddedSettingsPanel", () => {
             expect(
                 findSettingItemByName(view.container, ["File Path Tooltip Delay"]),
             ).not.toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("keeps extract enablement in global settings but removes extract daily limits", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            openTab(view.container, "Incremental");
+
+            expect(findSettingItemByName(view.container, ["Enable Extracts"])).not.toBeNull();
+            expect(findSettingItemByName(view.container, ["New Extracts/Day"])).toBeNull();
+            expect(findSettingItemByName(view.container, ["Extract Reviews/Day"])).toBeNull();
         } finally {
             view.cleanup();
         }

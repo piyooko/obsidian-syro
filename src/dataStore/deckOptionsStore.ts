@@ -125,6 +125,8 @@ function serializeDeckOptionsPresetForComparison(preset: DeckOptionsPreset): str
         showProgressBar: preset.showProgressBar,
         maxNewCards: preset.maxNewCards,
         maxReviews: preset.maxReviews,
+        maxNewExtracts: preset.maxNewExtracts,
+        maxExtractReviews: preset.maxExtractReviews,
         learningSteps: preset.learningSteps,
         lapseSteps: preset.lapseSteps,
         fsrs: preset.fsrs

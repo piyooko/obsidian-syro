@@ -64,6 +64,46 @@ describe("ExtractStore", () => {
         expect(store.getReviewCandidates("deck", { maxNew: 1, maxDue: 50 })).toHaveLength(0);
     });
 
+    test("reports limited new and due stats without a learning bucket", () => {
+        const store = createStore();
+        const created = store.syncFileExtracts(
+            "notes/source.md",
+            "{{ir::one}}\n{{ir::two}}\n{{ir::three}}",
+            "deck",
+        ).added;
+        const internalItems = (store as unknown as {
+            items: Record<string, { nextReview: number; timesReviewed: number }>;
+        }).items;
+        internalItems[created[0].uuid]!.timesReviewed = 1;
+        internalItems[created[0].uuid]!.nextReview = Date.now() - 1;
+
+        const stats = store.getStats("deck", { maxNew: 1, maxDue: 1 });
+
+        expect(stats).toEqual({
+            newCount: 1,
+            dueCount: 1,
+            totalCount: 2,
+        });
+        expect(stats).not.toHaveProperty("learningCount");
+    });
+
+    test("applies reviewed counts to the entrance deck when provided", () => {
+        const store = createStore();
+        const algorithm = createWms();
+        const [first] = store.syncFileExtracts(
+            "notes/source.md",
+            "{{ir::one}}\n{{ir::two}}",
+            "Parent/Child",
+        ).added;
+
+        store.review(first.uuid, ReviewResponse.Good, algorithm, "Parent");
+
+        expect(store.getReviewCandidates("Parent", { maxNew: 1, maxDue: 50 })).toHaveLength(0);
+        expect(store.getReviewCandidates("Parent/Child", { maxNew: 1, maxDue: 50 })).toHaveLength(
+            1,
+        );
+    });
+
     test("keeps nested extracts as same-level active items with parent source", () => {
         const store = createStore();
         store.syncFileExtracts("notes/source.md", "{{ir::{{ir::t}}e}}", "deck");

@@ -508,7 +508,12 @@ export class ExtractStore {
         return cloneItem(item);
     }
 
-    review(uuid: string, response: ReviewResponse, algorithm: WeightedMultiplierAlgorithm): ExtractItem | null {
+    review(
+        uuid: string,
+        response: ReviewResponse,
+        algorithm: WeightedMultiplierAlgorithm,
+        countDeckName?: string | null,
+    ): ExtractItem | null {
         const item = this.get(uuid);
         if (!item || item.stage !== "active") {
             return null;
@@ -525,7 +530,7 @@ export class ExtractStore {
             repetitionItem.errorStreak += 1;
         }
         applyRepetitionItemState(item, repetitionItem);
-        this.updateReviewedCounts(item);
+        this.updateReviewedCounts(item, countDeckName);
         return cloneItem(item);
     }
 
@@ -548,44 +553,56 @@ export class ExtractStore {
             if (!targetDeck) return true;
             return item.deckName === targetDeck || item.deckName.startsWith(`${targetDeck}/`);
         });
-        const dueRemainingByDeck = new Map<string, number>();
-        const newRemainingByDeck = new Map<string, number>();
-        const takeWithinDailyLimit = (item: ExtractItem, kind: "new" | "due"): boolean => {
+        const countDeckName = targetDeck ?? "root";
+        let dueRemaining: number | null = null;
+        let newRemaining: number | null = null;
+        const takeWithinDailyLimit = (kind: "new" | "due"): boolean => {
             if (!limits) {
                 return true;
             }
-            const deckName = item.deckName || DEFAULT_DECKNAME;
             const limit = Math.max(0, kind === "new" ? limits.maxNew : limits.maxDue);
-            const remainingByDeck = kind === "new" ? newRemainingByDeck : dueRemainingByDeck;
-            const existing = remainingByDeck.get(deckName);
-            const reviewedCounts = this.getReviewedCounts(deckName);
+            const reviewedCounts = this.getReviewedCounts(countDeckName);
             const initialRemaining =
                 kind === "new"
                     ? Math.max(0, limit - reviewedCounts.new)
                     : Math.max(0, limit - reviewedCounts.due);
-            const remaining = existing ?? initialRemaining;
+            const remaining =
+                kind === "new"
+                    ? (newRemaining ?? initialRemaining)
+                    : (dueRemaining ?? initialRemaining);
             if (remaining <= 0) {
-                remainingByDeck.set(deckName, 0);
+                if (kind === "new") {
+                    newRemaining = 0;
+                } else {
+                    dueRemaining = 0;
+                }
                 return false;
             }
-            remainingByDeck.set(deckName, remaining - 1);
+            if (kind === "new") {
+                newRemaining = remaining - 1;
+            } else {
+                dueRemaining = remaining - 1;
+            }
             return true;
         };
         const due = activeItems
             .filter((item) => item.timesReviewed > 0 && item.nextReview <= now)
             .sort((left, right) => left.nextReview - right.nextReview || left.priority - right.priority)
-            .filter((item) => takeWithinDailyLimit(item, "due"))
+            .filter(() => takeWithinDailyLimit("due"))
             .slice(0, Math.max(0, limits?.maxDue ?? Number.POSITIVE_INFINITY));
         const fresh = activeItems
             .filter((item) => item.timesReviewed === 0 || item.nextReview === 0)
             .sort((left, right) => left.priority - right.priority || left.createdAt - right.createdAt)
-            .filter((item) => takeWithinDailyLimit(item, "new"))
+            .filter(() => takeWithinDailyLimit("new"))
             .slice(0, Math.max(0, limits?.maxNew ?? Number.POSITIVE_INFINITY));
         return [...due, ...fresh].map((item) => cloneItem(item));
     }
 
-    getStats(deckPath: string | null = null): ExtractReviewStats {
-        const candidates = this.getReviewCandidates(deckPath);
+    getStats(
+        deckPath: string | null = null,
+        limits?: { maxNew: number; maxDue: number },
+    ): ExtractReviewStats {
+        const candidates = this.getReviewCandidates(deckPath, limits);
         const newCount = candidates.filter((item) => item.timesReviewed === 0 || item.nextReview === 0).length;
         const dueCount = candidates.length - newCount;
         return {
@@ -600,9 +617,9 @@ export class ExtractStore {
         return this.reviewedCounts[`${date}:${deckName || "root"}`] ?? { new: 0, due: 0 };
     }
 
-    private updateReviewedCounts(item: ExtractItem): void {
+    private updateReviewedCounts(item: ExtractItem, countDeckName?: string | null): void {
         const date = getDateKey();
-        const key = `${date}:${item.deckName || "root"}`;
+        const key = `${date}:${countDeckName || item.deckName || "root"}`;
         if (!this.reviewedCounts[key]) {
             this.reviewedCounts[key] = { new: 0, due: 0 };
         }

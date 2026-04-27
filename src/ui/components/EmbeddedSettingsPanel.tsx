@@ -2089,29 +2089,6 @@ const NotesTab: React.FC<TabProps> = ({ settings, onChange }) => {
                     value={settings.enableExtracts}
                     onChange={(v) => onChange("enableExtracts", v)}
                 />
-                <InputRow
-                    label={t("SETTINGS_MAX_NEW_EXTRACTS")}
-                    desc={t("SETTINGS_MAX_NEW_EXTRACTS_DESC")}
-                    type="number"
-                    value={settings.maxNewExtractsPerDay}
-                    disabled={!settings.enableExtracts}
-                    onChange={(v) =>
-                        onChange("maxNewExtractsPerDay", Math.max(0, Math.round(Number(v) || 0)))
-                    }
-                />
-                <InputRow
-                    label={t("SETTINGS_MAX_EXTRACT_REVIEWS")}
-                    desc={t("SETTINGS_MAX_EXTRACT_REVIEWS_DESC")}
-                    type="number"
-                    value={settings.maxExtractReviewsPerDay}
-                    disabled={!settings.enableExtracts}
-                    onChange={(v) =>
-                        onChange(
-                            "maxExtractReviewsPerDay",
-                            Math.max(0, Math.round(Number(v) || 0)),
-                        )
-                    }
-                />
             </Section>
         </div>
     );

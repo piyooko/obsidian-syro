@@ -275,6 +275,29 @@ describe("deckOptionsStore", () => {
         expect(diff.assignmentRemovals).toEqual([]);
     });
 
+    it("diffs extract limit changes on a deck options preset", () => {
+        const previousSettings = cloneSettings();
+        const nextSettings = cloneSettings();
+        nextSettings.deckOptionsPresets[0] = {
+            ...nextSettings.deckOptionsPresets[0],
+            maxNewExtracts: 3,
+            maxExtractReviews: 12,
+        };
+
+        const diff = diffDeckOptionsState(previousSettings, nextSettings);
+
+        expect(diff.presetUpserts).toEqual([
+            expect.objectContaining({
+                uuid: DEFAULT_DECK_OPTIONS_PRESET_UUID,
+                maxNewExtracts: 3,
+                maxExtractReviews: 12,
+            }),
+        ]);
+        expect(diff.presetRemovals).toEqual([]);
+        expect(diff.assignmentUpserts).toEqual([]);
+        expect(diff.assignmentRemovals).toEqual([]);
+    });
+
     it("removes deleted preset uuid assignments from settings", () => {
         const settings = cloneSettings();
         const readingPreset = {

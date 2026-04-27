@@ -1069,6 +1069,8 @@ export default normalizeSentenceCaseLocale({
         "Space separated intervals (e.g. 1m 10m). Supports m(min) h(hour) d(day)",
     DECK_OPTIONS_MAX_NEW_CARDS: "New Cards/Day",
     DECK_OPTIONS_MAX_NEW_CARDS_DESC: "Maximum number of new cards to show per day",
+    DECK_OPTIONS_MAX_NEW_EXTRACTS: "New Extracts/Day",
+    DECK_OPTIONS_MAX_NEW_EXTRACTS_DESC: "Maximum number of new extracts to introduce per day",
     DECK_OPTIONS_SECTION_LAPSES: "Lapses",
     DECK_OPTIONS_RELEARNING_STEPS: "Relearning Steps",
     DECK_OPTIONS_RELEARNING_STEPS_DESC:
@@ -1078,6 +1080,8 @@ export default normalizeSentenceCaseLocale({
     DECK_OPTIONS_SECTION_REVIEWS: "Reviews",
     DECK_OPTIONS_MAX_REVIEWS: "Reviews/Day",
     DECK_OPTIONS_MAX_REVIEWS_DESC: "Maximum number of reviews to show per day",
+    DECK_OPTIONS_MAX_EXTRACT_REVIEWS: "Extract Reviews/Day",
+    DECK_OPTIONS_MAX_EXTRACT_REVIEWS_DESC: "Maximum number of due extract reviews to show per day",
     DECK_OPTIONS_SECTION_AUTO_ADVANCE: "Auto Advance",
     DECK_OPTIONS_AUTO_ADVANCE: "Auto Advance",
     DECK_OPTIONS_AUTO_ADVANCE_DESC: "Automatically flip to back after time limit",

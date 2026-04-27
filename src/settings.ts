@@ -42,6 +42,8 @@ export interface DeckOptionsPreset {
     showProgressBar: boolean; // Whether to show the countdown progress bar
     maxNewCards: number; // Daily new card limit
     maxReviews: number; // Daily review limit
+    maxNewExtracts: number; // Daily new extract limit
+    maxExtractReviews: number; // Daily extract review limit
     learningSteps: string; // Learning steps, e.g. "1m 10m"
     lapseSteps: string; // Relearning steps, e.g. "10m"
     fsrs?: FsrsSettings; // Future runtime truth for preset-scoped FSRS parameters
@@ -111,6 +113,8 @@ const LEGACY_DECK_OPTIONS_CREATED_AT_BASE_MS = Date.parse("1970-01-02T00:00:00.0
 
 export const DEFAULT_DECK_OPTIONS_PRESET_UUID = "deck-preset-default";
 export const DEFAULT_DECK_OPTIONS_PRESET_CREATED_AT = "1970-01-01T00:00:00.000Z";
+export const DEFAULT_MAX_NEW_EXTRACTS = 10;
+export const DEFAULT_MAX_EXTRACT_REVIEWS = 50;
 
 function isFsrsStepUnit(value: unknown): value is tsfsrs.StepUnit {
     return typeof value === "string" && FSRS_STEP_PATTERN.test(value.trim());
@@ -308,6 +312,8 @@ function buildLegacyDeckOptionsPresetSeed(
         showProgressBar: preset.showProgressBar,
         maxNewCards: preset.maxNewCards,
         maxReviews: preset.maxReviews,
+        // Keep legacy preset UUIDs stable: extract limits did not exist when these
+        // UUIDs were derived, so they must not participate in the legacy seed.
         learningSteps: preset.learningSteps,
         lapseSteps: preset.lapseSteps,
         fsrs: preset.fsrs
@@ -339,6 +345,19 @@ export function generateDeckOptionsPresetUuid(): string {
     return `deck-preset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function normalizeDailyLimit(value: unknown, fallback: number): number {
+    const numberValue = typeof value === "number" && Number.isFinite(value) ? value : fallback;
+    return Math.max(0, Math.round(numberValue));
+}
+
+interface DeckOptionsNormalizeOptions {
+    legacyIndex?: number;
+    extractLimitDefaults?: {
+        maxNewExtracts?: number;
+        maxExtractReviews?: number;
+    };
+}
+
 export const DEFAULT_DECK_OPTIONS_PRESET: DeckOptionsPreset = {
     uuid: DEFAULT_DECK_OPTIONS_PRESET_UUID,
     createdAt: DEFAULT_DECK_OPTIONS_PRESET_CREATED_AT,
@@ -348,6 +367,8 @@ export const DEFAULT_DECK_OPTIONS_PRESET: DeckOptionsPreset = {
     showProgressBar: true,
     maxNewCards: 20, // Default daily new card limit
     maxReviews: 200, // Default daily review limit
+    maxNewExtracts: DEFAULT_MAX_NEW_EXTRACTS,
+    maxExtractReviews: DEFAULT_MAX_EXTRACT_REVIEWS,
     learningSteps: "1m 10m", // Default learning steps
     lapseSteps: "10m", // Default relearning steps
     fsrs: createDefaultFsrsSettings(),
@@ -424,9 +445,7 @@ function sortDeckOptionsPresets(
 export function normalizeDeckOptionsPreset(
     preset: unknown,
     fallbackFsrs?: FsrsSettings,
-    options: {
-        legacyIndex?: number;
-    } = {},
+    options: DeckOptionsNormalizeOptions = {},
 ): DeckOptionsPreset {
     const defaultFsrs = fallbackFsrs
         ? cloneFsrsSettings(fallbackFsrs)
@@ -434,6 +453,7 @@ export function normalizeDeckOptionsPreset(
     const rawPreset = isRecord(preset) ? preset : {};
     const rawPresetFsrs = isRecord(rawPreset.fsrs) ? rawPreset.fsrs : undefined;
     const legacyIndex = typeof options.legacyIndex === "number" ? options.legacyIndex : -1;
+    const extractLimitDefaults = options.extractLimitDefaults ?? {};
 
     const normalizedPreset = {
         name: getStringProp(rawPreset, "name") ?? DEFAULT_DECK_OPTIONS_PRESET.name,
@@ -449,6 +469,20 @@ export function normalizeDeckOptionsPreset(
             getNumberProp(rawPreset, "maxNewCards") ?? DEFAULT_DECK_OPTIONS_PRESET.maxNewCards,
         maxReviews:
             getNumberProp(rawPreset, "maxReviews") ?? DEFAULT_DECK_OPTIONS_PRESET.maxReviews,
+        maxNewExtracts: normalizeDailyLimit(
+            getNumberProp(rawPreset, "maxNewExtracts"),
+            normalizeDailyLimit(
+                extractLimitDefaults.maxNewExtracts,
+                DEFAULT_DECK_OPTIONS_PRESET.maxNewExtracts,
+            ),
+        ),
+        maxExtractReviews: normalizeDailyLimit(
+            getNumberProp(rawPreset, "maxExtractReviews"),
+            normalizeDailyLimit(
+                extractLimitDefaults.maxExtractReviews,
+                DEFAULT_DECK_OPTIONS_PRESET.maxExtractReviews,
+            ),
+        ),
         learningSteps:
             getStringProp(rawPreset, "learningSteps") ?? DEFAULT_DECK_OPTIONS_PRESET.learningSteps,
         lapseSteps:
@@ -495,15 +529,28 @@ export function normalizeDeckOptionsPreset(
     });
 }
 
-export function createDefaultDeckOptionsPreset(fallbackFsrs?: FsrsSettings): DeckOptionsPreset {
+export function createDefaultDeckOptionsPreset(
+    fallbackFsrs?: FsrsSettings,
+    options: Omit<DeckOptionsNormalizeOptions, "legacyIndex"> = {},
+): DeckOptionsPreset {
+    const extractLimitDefaults = options.extractLimitDefaults ?? {};
     return normalizeDeckOptionsPreset(
         {
             ...DEFAULT_DECK_OPTIONS_PRESET,
+            maxNewExtracts: normalizeDailyLimit(
+                extractLimitDefaults.maxNewExtracts,
+                DEFAULT_DECK_OPTIONS_PRESET.maxNewExtracts,
+            ),
+            maxExtractReviews: normalizeDailyLimit(
+                extractLimitDefaults.maxExtractReviews,
+                DEFAULT_DECK_OPTIONS_PRESET.maxExtractReviews,
+            ),
             uuid: DEFAULT_DECK_OPTIONS_PRESET_UUID,
             createdAt: DEFAULT_DECK_OPTIONS_PRESET_CREATED_AT,
         },
         fallbackFsrs,
         {
+            ...options,
             legacyIndex: 0,
         },
     );
@@ -576,14 +623,18 @@ export function updateDeckOptionsPresetStepProxy(
 export function normalizeDeckOptionsPresets(
     presets: unknown,
     fallbackFsrs?: FsrsSettings,
+    options: Omit<DeckOptionsNormalizeOptions, "legacyIndex"> = {},
 ): DeckOptionsPreset[] {
     if (!Array.isArray(presets) || presets.length === 0) {
-        return [createDefaultDeckOptionsPreset(fallbackFsrs)];
+        return [createDefaultDeckOptionsPreset(fallbackFsrs, options)];
     }
 
     return sortDeckOptionsPresets(
         presets.map((preset, index) =>
-            normalizeDeckOptionsPreset(preset, fallbackFsrs, { legacyIndex: index }),
+            normalizeDeckOptionsPreset(preset, fallbackFsrs, {
+                ...options,
+                legacyIndex: index,
+            }),
         ),
         fallbackFsrs,
     );
@@ -693,7 +744,16 @@ export function resolveDeckFsrsSettings(
 
 export function syncFsrsSettingsCompatibilityMirror(settings: SRSettings): void {
     const normalizedFsrsSettings = normalizeFsrsSettings(settings.fsrsSettings);
-    settings.deckOptionsPresets = normalizeDeckOptionsPresets(settings.deckOptionsPresets, normalizedFsrsSettings);
+    settings.deckOptionsPresets = normalizeDeckOptionsPresets(
+        settings.deckOptionsPresets,
+        normalizedFsrsSettings,
+        {
+            extractLimitDefaults: {
+                maxNewExtracts: settings.maxNewExtractsPerDay,
+                maxExtractReviews: settings.maxExtractReviewsPerDay,
+            },
+        },
+    );
     settings.deckPresetAssignment = normalizeDeckPresetAssignment(
         settings.deckPresetAssignment,
         settings.deckOptionsPresets,
@@ -954,8 +1014,8 @@ export const DEFAULT_SETTINGS: SRSettings = {
     disableFileMenuReviewOptions: false,
     maxNDaysNotesReviewQueue: 365,
     enableExtracts: true,
-    maxNewExtractsPerDay: 10,
-    maxExtractReviewsPerDay: 50,
+    maxNewExtractsPerDay: DEFAULT_MAX_NEW_EXTRACTS,
+    maxExtractReviewsPerDay: DEFAULT_MAX_EXTRACT_REVIEWS,
 
     // UI settings
     showRibbonIcon: true,
@@ -1183,7 +1243,7 @@ export function upgradeSettings(settings: SRSettings) {
         typeof settings.maxNewExtractsPerDay !== "number" ||
         !Number.isFinite(settings.maxNewExtractsPerDay)
     ) {
-        settings.maxNewExtractsPerDay = 10;
+        settings.maxNewExtractsPerDay = DEFAULT_MAX_NEW_EXTRACTS;
     } else {
         settings.maxNewExtractsPerDay = Math.max(0, Math.round(settings.maxNewExtractsPerDay));
     }
@@ -1191,7 +1251,7 @@ export function upgradeSettings(settings: SRSettings) {
         typeof settings.maxExtractReviewsPerDay !== "number" ||
         !Number.isFinite(settings.maxExtractReviewsPerDay)
     ) {
-        settings.maxExtractReviewsPerDay = 50;
+        settings.maxExtractReviewsPerDay = DEFAULT_MAX_EXTRACT_REVIEWS;
     } else {
         settings.maxExtractReviewsPerDay = Math.max(
             0,

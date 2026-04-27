@@ -144,8 +144,6 @@ export function settingsToUIState(settings: SRSettings): UISettingsState {
         timelineAutoCommitReviewSelection: settings.timelineAutoCommitReviewSelection ?? true,
         timelineEnableDurationPrefixSyntax: settings.timelineEnableDurationPrefixSyntax ?? true,
         enableExtracts: settings.enableExtracts ?? true,
-        maxNewExtractsPerDay: settings.maxNewExtractsPerDay ?? 10,
-        maxExtractReviewsPerDay: settings.maxExtractReviewsPerDay ?? 50,
 
         // Weighted Multiplier Algorithm defaults (convert number to string for UI)
         fsrsEnableFuzz: fsrsSettings.enable_fuzz,
@@ -292,16 +290,6 @@ export function mergeUIStateToSettings(
         merged.timelineEnableDurationPrefixSyntax = uiChanges.timelineEnableDurationPrefixSyntax;
     if (uiChanges.enableExtracts !== undefined)
         merged.enableExtracts = uiChanges.enableExtracts;
-    if (uiChanges.maxNewExtractsPerDay !== undefined)
-        merged.maxNewExtractsPerDay = Math.max(
-            0,
-            Math.round(uiChanges.maxNewExtractsPerDay),
-        );
-    if (uiChanges.maxExtractReviewsPerDay !== undefined)
-        merged.maxExtractReviewsPerDay = Math.max(
-            0,
-            Math.round(uiChanges.maxExtractReviewsPerDay),
-        );
 
     // Update WeightedMultiplier settings if changed
     if (uiChanges.fsrsEnableFuzz !== undefined) {

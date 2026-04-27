@@ -33,6 +33,11 @@ function createPluginForStatusBar(deck: Deck, learnAheadMinutes: number = 15) {
             empty: jest.fn(),
             createSpan: jest.fn(() => ({ classList: { add: jest.fn() } })),
         },
+        getExtractReviewStats: jest.fn(() => ({
+            newCount: 0,
+            dueCount: 0,
+            totalCount: 0,
+        })),
     };
 }
 
@@ -71,6 +76,23 @@ describe("SRPlugin status bar card count", () => {
         const plugin = createPluginForStatusBar(root, 15);
 
         expect((SRPlugin.prototype as any).getStatusBarReviewableCardCount.call(plugin)).toBe(7);
+    });
+
+    test("adds reviewable extracts to the status bar card count", () => {
+        const root = new Deck("root", null);
+        const deckA = new Deck("A", root);
+        root.subdecks.push(deckA);
+        deckA.newFlashcards.push(createCard(1));
+
+        const plugin = createPluginForStatusBar(root, 15);
+        plugin.getExtractReviewStats.mockReturnValue({
+            newCount: 2,
+            dueCount: 3,
+            totalCount: 5,
+        });
+
+        expect((SRPlugin.prototype as any).getStatusBarReviewableCardCount.call(plugin)).toBe(6);
+        expect(plugin.getExtractReviewStats).toHaveBeenCalledWith("A", true);
     });
 
     test("deduplicates cards within each top-level deck total", () => {

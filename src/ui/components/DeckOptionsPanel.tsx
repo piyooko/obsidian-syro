@@ -432,6 +432,20 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                                 updateCurrentPreset((preset) => ({ ...preset, maxNewCards: num }));
                             }}
                         />
+                        <InputRow
+                            label={t("DECK_OPTIONS_MAX_NEW_EXTRACTS")}
+                            desc={t("DECK_OPTIONS_MAX_NEW_EXTRACTS_DESC")}
+                            type="number"
+                            value={currentPreset.maxNewExtracts}
+                            onChange={(value) => {
+                                const num = Number(value);
+                                if (Number.isNaN(num) || num < 0) return;
+                                updateCurrentPreset((preset) => ({
+                                    ...preset,
+                                    maxNewExtracts: num,
+                                }));
+                            }}
+                        />
                     </Section>
 
                     <Section title={t("DECK_OPTIONS_SECTION_LAPSES")}>
@@ -453,6 +467,20 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                                 const num = Number(value);
                                 if (Number.isNaN(num) || num < 0) return;
                                 updateCurrentPreset((preset) => ({ ...preset, maxReviews: num }));
+                            }}
+                        />
+                        <InputRow
+                            label={t("DECK_OPTIONS_MAX_EXTRACT_REVIEWS")}
+                            desc={t("DECK_OPTIONS_MAX_EXTRACT_REVIEWS_DESC")}
+                            type="number"
+                            value={currentPreset.maxExtractReviews}
+                            onChange={(value) => {
+                                const num = Number(value);
+                                if (Number.isNaN(num) || num < 0) return;
+                                updateCurrentPreset((preset) => ({
+                                    ...preset,
+                                    maxExtractReviews: num,
+                                }));
                             }}
                         />
                     </Section>

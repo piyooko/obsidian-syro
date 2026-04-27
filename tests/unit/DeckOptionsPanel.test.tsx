@@ -269,6 +269,31 @@ describe("DeckOptionsPanel", () => {
         }
     });
 
+    it("persists extract limits on the current deck option preset", async () => {
+        const view = renderPanel();
+
+        try {
+            const newExtractsInput = findInputByLabel(
+                view.container,
+                t("DECK_OPTIONS_MAX_NEW_EXTRACTS"),
+            );
+            const extractReviewsInput = findInputByLabel(
+                view.container,
+                t("DECK_OPTIONS_MAX_EXTRACT_REVIEWS"),
+            );
+
+            changeInputValue(newExtractsInput, "4");
+            changeInputValue(extractReviewsInput, "18");
+            await clickButton(findButtonByText(view.container, t("DECK_OPTIONS_BTN_SAVE")));
+
+            expect(view.plugin.saveDeckOptionsAndRequestSync).toHaveBeenCalledTimes(1);
+            expect(view.plugin.data.settings.deckOptionsPresets[0]?.maxNewExtracts).toBe(4);
+            expect(view.plugin.data.settings.deckOptionsPresets[0]?.maxExtractReviews).toBe(18);
+        } finally {
+            view.cleanup();
+        }
+    });
+
     it("creates a preset with a stable uuid and assigns the current deck to it on save", async () => {
         const view = renderPanel();
 
