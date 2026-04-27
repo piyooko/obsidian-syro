@@ -152,9 +152,35 @@ test("Test not parsing reserved curly syntax prefixes as single line cards", () 
     expect(parseT("{{ir::}}", parserOptions)).toEqual([]);
     expect(parseT("{{ir::Extract text}}", parserOptions)).toEqual([]);
     expect(parseT("Before {{ir::Extract text}} after", parserOptions)).toEqual([]);
+    expect(parseT("Before {{ir::Extract text with :: inside}} after", parserOptions)).toEqual([]);
+    expect(parseT("{{ir::outer {{ir::inner :: text}} after}}", parserOptions)).toEqual([]);
+    expect(parseT(["{{ir::", "Question::Answer", "}}"].join("\n"), parserOptions)).toEqual([]);
+    expect(
+        parseT(["{{ir::Question", "", "Still not :: a card", "}}"].join("\n"), parserOptions),
+    ).toEqual([]);
+    expect(
+        parseT(
+            ["{{ir::outer", "{{ir::inner :: text}}", "", "Still not :: a card", "}}"].join("\n"),
+            parserOptions,
+        ),
+    ).toEqual([]);
+    expect(parseT(["{{ir::Question", "?", "Answer}}"].join("\n"), parserOptions)).toEqual([]);
 
     expect(parseT("Question::Answer\n{{ir::Extract text}}", parserOptions)).toEqual([
         [CardType.SingleLineBasic, "Question::Answer", 0, 0],
+    ]);
+    expect(parseT("Question::Answer with {{ir::nested :: ignored}}", parserOptions)).toEqual([
+        [CardType.SingleLineBasic, "Question::Answer with {{ir::nested :: ignored}}", 0, 0],
+    ]);
+    expect(
+        parseT("Before {{ir::Extract text with {{c1::cloze}} inside}} after", parserOptions),
+    ).toEqual([
+        [
+            CardType.Cloze,
+            "Before {{ir::Extract text with {{c1::cloze}} inside}} after",
+            0,
+            0,
+        ],
     ]);
 });
 

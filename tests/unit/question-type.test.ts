@@ -23,12 +23,40 @@ test("CardType.SingleLineBasic", () => {
     expect(CardFrontBackUtil.expand(CardType.SingleLineBasic, "A::B", DEFAULT_SETTINGS)).toEqual([
         new CardFrontBack("A", "B"),
     ]);
+    expect(
+        CardFrontBackUtil.expand(
+            CardType.SingleLineBasic,
+            "- text before {{ir::extract text}} after",
+            DEFAULT_SETTINGS,
+        ),
+    ).toEqual([new CardFrontBack("- text before {{ir::extract text}} after", "")]);
+    expect(
+        CardFrontBackUtil.expand(
+            CardType.SingleLineBasic,
+            "Q::A with {{ir::extract :: text}}",
+            DEFAULT_SETTINGS,
+        ),
+    ).toEqual([new CardFrontBack("Q", "A with {{ir::extract :: text}}")]);
+    expect(
+        CardFrontBackUtil.expand(
+            CardType.SingleLineBasic,
+            "- text before {{ir::outer {{ir::inner :: text}} after}}",
+            DEFAULT_SETTINGS,
+        ),
+    ).toEqual([new CardFrontBack("- text before {{ir::outer {{ir::inner :: text}} after}}", "")]);
 });
 
 test("CardType.SingleLineReversed", () => {
     expect(
         CardFrontBackUtil.expand(CardType.SingleLineReversed, "A:::B", DEFAULT_SETTINGS),
     ).toEqual([new CardFrontBack("A", "B"), new CardFrontBack("B", "A")]);
+    expect(
+        CardFrontBackUtil.expand(
+            CardType.SingleLineReversed,
+            "- text before {{ir::extract text}} after",
+            DEFAULT_SETTINGS,
+        ),
+    ).toEqual([new CardFrontBack("- text before {{ir::extract text}} after", "")]);
 });
 
 describe("CardType.MultiLineBasic", () => {

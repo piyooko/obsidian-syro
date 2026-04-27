@@ -5,7 +5,7 @@ import {
     hasStandardClozeOutsideCode,
     isIndexInsideCodeContext,
 } from "src/util/codeAwareCloze";
-import { stripIrExtractSyntax } from "src/util/irExtractParser";
+import { parseIrExtracts, stripIrExtractSyntax } from "src/util/irExtractParser";
 
 export let debugParser = false;
 
@@ -44,7 +44,21 @@ export class ParsedQuestionInfo {
     }
 }
 
-function hasInlineMarker(text: string, marker: string): boolean {
+interface ExcludedRange {
+    start: number;
+    end: number;
+}
+
+function isIndexInsideExcludedRange(index: number, excludedRanges: ExcludedRange[]): boolean {
+    return excludedRanges.some((range) => index >= range.start && index < range.end);
+}
+
+function hasInlineMarker(
+    text: string,
+    marker: string,
+    lineStartOffset: number,
+    excludedRanges: ExcludedRange[],
+): boolean {
     if (marker.length == 0) return false;
 
     let startIndex = 0;
@@ -55,12 +69,17 @@ function hasInlineMarker(text: string, marker: string): boolean {
 
         if (markerIdx === -1) return false;
 
+        const absoluteMarkerIdx = lineStartOffset + markerIdx;
         const isInsideCode = isIndexInsideCodeContext(markerIdx, codeContexts);
+        const isInsideExcludedRange = isIndexInsideExcludedRange(
+            absoluteMarkerIdx,
+            excludedRanges,
+        );
 
         const prefix = text.substring(0, markerIdx);
         const isInsideReservedCurlyPrefix = /\{\{(?:c\d+|ir)$/i.test(prefix);
 
-        if (!isInsideCode && !isInsideReservedCurlyPrefix) {
+        if (!isInsideCode && !isInsideReservedCurlyPrefix && !isInsideExcludedRange) {
             return true;
         }
 
@@ -95,10 +114,29 @@ export function parse(text: string, options: ParserOptions): ParsedQuestionInfo[
     let firstLineNo = 0,
         lastLineNo = 0;
 
-    const lines: string[] = text.replaceAll("\r\n", "\n").split("\n");
+    const normalizedText = text.replaceAll("\r\n", "\n");
+    const irExtractRanges = parseIrExtracts(normalizedText).map((match) => ({
+        start: match.start,
+        end: match.end,
+    }));
+    const lines: string[] = normalizedText.split("\n");
+    const lineStartOffsets: number[] = [];
+    let lineStartOffset = 0;
+    for (const line of lines) {
+        lineStartOffsets.push(lineStartOffset);
+        lineStartOffset += line.length + 1;
+    }
     for (let i = 0; i < lines.length; i++) {
         const currentLine = lines[i],
             currentTrimmed = lines[i].trim();
+        const currentLineStartOffset = lineStartOffsets[i] ?? 0;
+        const currentTrimmedOffset = currentLine.indexOf(currentTrimmed);
+        const currentTrimmedStartOffset =
+            currentLineStartOffset + Math.max(0, currentTrimmedOffset);
+        const isTrimmedMarkerInsideIr = isIndexInsideExcludedRange(
+            currentTrimmedStartOffset,
+            irExtractRanges,
+        );
 
         // Skip everything in HTML comments
         if (currentLine.startsWith("<!--") && !currentLine.startsWith("<!--SR:")) {
@@ -150,7 +188,14 @@ export function parse(text: string, options: ParserOptions): ParsedQuestionInfo[
 
         if (cardType === null) {
             for (const { separator, type } of inlineSeparators) {
-                if (hasInlineMarker(currentLine, separator)) {
+                if (
+                    hasInlineMarker(
+                        currentLine,
+                        separator,
+                        currentLineStartOffset,
+                        irExtractRanges,
+                    )
+                ) {
                     cardType = type;
                     break;
                 }
@@ -172,13 +217,19 @@ export function parse(text: string, options: ParserOptions): ParsedQuestionInfo[
 
             cardType = null;
             cardText = "";
-        } else if (currentTrimmed === options.multilineCardSeparator) {
+        } else if (
+            currentTrimmed === options.multilineCardSeparator &&
+            !isTrimmedMarkerInsideIr
+        ) {
             // Ignore card if the front of the card is empty
             if (cardText.length > 1) {
                 // Pick up multiline basic cards
                 cardType = CardType.MultiLineBasic;
             }
-        } else if (currentTrimmed === options.multilineReversedCardSeparator) {
+        } else if (
+            currentTrimmed === options.multilineReversedCardSeparator &&
+            !isTrimmedMarkerInsideIr
+        ) {
             // Ignore card if the front of the card is empty
             if (cardText.length > 1) {
                 // Pick up multiline basic cards

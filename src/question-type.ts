@@ -19,6 +19,7 @@ import {
     type AnkiClozeInfo,
 } from "src/util/ankiClozeGrouping";
 import { extractPlainCurlyClozeMatches, stripPlainCurlyClozeSyntax } from "src/util/curlyCloze";
+import { parseIrExtracts } from "src/util/irExtractParser";
 import { findLineIndexOfSearchStringIgnoringWs } from "src/util/utils";
 
 export class CardFrontBack {
@@ -70,6 +71,36 @@ export interface CardExpansionContext {
     lastLineNum?: number;
 }
 
+function findSeparatorOutsideIrExtracts(text: string, separator: string): number {
+    if (!separator) {
+        return -1;
+    }
+
+    const irRanges = parseIrExtracts(text).map((match) => ({
+        start: match.start,
+        end: match.end,
+    }));
+    let startIndex = 0;
+
+    while (startIndex < text.length) {
+        const index = text.indexOf(separator, startIndex);
+        if (index === -1) {
+            return -1;
+        }
+
+        const isInsideIr = irRanges.some((range) => index >= range.start && index < range.end);
+        const prefix = text.substring(0, index);
+        const isInsideReservedCurlyPrefix = /\{\{(?:c\d+|ir)$/i.test(prefix);
+        if (!isInsideIr && !isInsideReservedCurlyPrefix) {
+            return index;
+        }
+
+        startIndex = index + separator.length;
+    }
+
+    return -1;
+}
+
 export class CardFrontBackUtil {
     static expand(
         questionType: CardType,
@@ -94,7 +125,13 @@ export interface IQuestionTypeHandler {
 
 class QuestionTypeSingleLineBasic implements IQuestionTypeHandler {
     expand(questionText: string, settings: SRSettings): CardFrontBack[] {
-        const idx: number = questionText.indexOf(settings.singleLineCardSeparator);
+        const idx: number = findSeparatorOutsideIrExtracts(
+            questionText,
+            settings.singleLineCardSeparator,
+        );
+        if (idx < 0) {
+            return [new CardFrontBack(questionText, "")];
+        }
         const item: CardFrontBack = new CardFrontBack(
             questionText.substring(0, idx),
             questionText.substring(idx + settings.singleLineCardSeparator.length),
@@ -106,7 +143,13 @@ class QuestionTypeSingleLineBasic implements IQuestionTypeHandler {
 
 class QuestionTypeSingleLineReversed implements IQuestionTypeHandler {
     expand(questionText: string, settings: SRSettings): CardFrontBack[] {
-        const idx: number = questionText.indexOf(settings.singleLineReversedCardSeparator);
+        const idx: number = findSeparatorOutsideIrExtracts(
+            questionText,
+            settings.singleLineReversedCardSeparator,
+        );
+        if (idx < 0) {
+            return [new CardFrontBack(questionText, "")];
+        }
         const side1: string = questionText.substring(0, idx),
             side2: string = questionText.substring(
                 idx + settings.singleLineReversedCardSeparator.length,
