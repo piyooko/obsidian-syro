@@ -30,6 +30,7 @@ export class InlineTitleReviewButtonManager {
     private destroyed = false;
     private unsubscribeDeckStats: (() => void) | null = null;
     private unsubscribeSyncComplete: (() => void) | null = null;
+    private unsubscribeExtractsUpdated: (() => void) | null = null;
 
     constructor(plugin: SRPlugin) {
         this.plugin = plugin;
@@ -59,11 +60,16 @@ export class InlineTitleReviewButtonManager {
         this.unsubscribeSyncComplete = this.plugin.syncEvents.on("sync-complete", () =>
             this.refresh(),
         );
+        this.unsubscribeExtractsUpdated = this.plugin.syncEvents.on("extracts-updated", () =>
+            this.refresh(),
+        );
         this.plugin.register(() => {
             this.unsubscribeDeckStats?.();
             this.unsubscribeDeckStats = null;
             this.unsubscribeSyncComplete?.();
             this.unsubscribeSyncComplete = null;
+            this.unsubscribeExtractsUpdated?.();
+            this.unsubscribeExtractsUpdated = null;
             this.destroy();
         });
 
@@ -79,7 +85,7 @@ export class InlineTitleReviewButtonManager {
         this.refreshTimerId = window.setTimeout(() => {
             this.refreshTimerId = null;
             this.refreshQueued = false;
-            void this.runRefresh();
+            this.runRefresh();
         }, 0);
     }
 
@@ -98,7 +104,7 @@ export class InlineTitleReviewButtonManager {
         }
     }
 
-    private async runRefresh(): Promise<void> {
+    private runRefresh(): void {
         if (this.destroyed) {
             return;
         }
@@ -113,17 +119,16 @@ export class InlineTitleReviewButtonManager {
         try {
             do {
                 this.refreshPending = false;
-                await this.refreshVisibleLeaves();
+                this.refreshVisibleLeaves();
             } while (this.refreshPending && !this.destroyed);
         } finally {
             this.refreshRunning = false;
         }
     }
 
-    private async refreshVisibleLeaves(): Promise<void> {
+    private refreshVisibleLeaves(): void {
         const nextContainers = new Set<HTMLElement>();
         const leaves = this.plugin.app.workspace.getLeavesOfType("markdown");
-        const updateTasks: Promise<void>[] = [];
 
         for (const leaf of leaves) {
             if (!(leaf instanceof WorkspaceLeaf) || !(leaf.view instanceof MarkdownView)) {
@@ -151,7 +156,7 @@ export class InlineTitleReviewButtonManager {
             }
 
             const mount = this.ensureMount(containerEl, inlineTitleEl, file);
-            updateTasks.push(this.updateMountStats(mount));
+            this.updateMountStats(mount);
         }
 
         for (const containerEl of Array.from(this.mounts.keys())) {
@@ -159,8 +164,6 @@ export class InlineTitleReviewButtonManager {
                 this.teardownMount(containerEl);
             }
         }
-
-        await Promise.all(updateTasks);
     }
 
     private getLeafContainerEl(leaf: WorkspaceLeaf): HTMLElement | null {
@@ -307,13 +310,11 @@ export class InlineTitleReviewButtonManager {
         return mount;
     }
 
-    private async updateMountStats(mount: MountedInlineTitleButton): Promise<void> {
+    private updateMountStats(mount: MountedInlineTitleButton): void {
         const token = mount.requestToken + 1;
         mount.requestToken = token;
 
-        const { reviewableCount, totalCount } = await this.plugin.getReadonlyNoteCardStats(
-            mount.file,
-        );
+        const { reviewableCount, totalCount } = this.plugin.getReadonlyNoteCardStats(mount.file);
         if (this.destroyed || token !== mount.requestToken) {
             return;
         }

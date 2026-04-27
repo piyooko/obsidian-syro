@@ -104,6 +104,29 @@ describe("ExtractStore", () => {
         expect(stats).not.toHaveProperty("learningCount");
     });
 
+    test("can filter review candidates by a resolved source deck instead of stale stored deck", () => {
+        const store = createStore();
+        const [created] = store.syncFileExtracts(
+            "math.md",
+            "{{ir::one}}",
+            "old-deck",
+        ).added;
+
+        const resolveDeckName = jest.fn((item) =>
+            item.sourcePath === "math.md" ? "数学卡" : item.deckName,
+        );
+
+        expect(store.getReviewCandidates("数学卡", undefined, resolveDeckName)).toEqual([
+            expect.objectContaining({ uuid: created.uuid }),
+        ]);
+        expect(store.getStats("数学卡", undefined, resolveDeckName)).toEqual({
+            newCount: 1,
+            dueCount: 0,
+            totalCount: 1,
+        });
+        expect(store.getReviewCandidates("old-deck", undefined, resolveDeckName)).toHaveLength(0);
+    });
+
     test("applies reviewed counts to the entrance deck when provided", () => {
         const store = createStore();
         const algorithm = createWms();

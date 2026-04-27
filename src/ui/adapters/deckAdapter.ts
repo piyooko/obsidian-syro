@@ -117,7 +117,7 @@ export function buildDeckTreeUIState(rootDeck: Deck, plugin?: SRPlugin): DeckSta
         return states;
     }
 
-    for (const rawPath of plugin.getReviewableExtractDeckPaths(true)) {
+    for (const rawPath of plugin.getActiveExtractDeckPaths()) {
         const normalizedPath = normalizeDeckPath(rawPath);
         if (!normalizedPath) {
             continue;

@@ -2073,18 +2073,41 @@ export default class SRPlugin extends Plugin {
         this.inlineTitleReviewButtonManager = null;
     }
 
-    private getExtractDeckNameForFile(file: TFile): string {
-        const explicitDeckName = this.noteReviewStore?.getDeckName(file.path);
-        if (explicitDeckName) {
-            return explicitDeckName.replace(/\\/g, "/").replace(/^#/, "");
-        }
-
+    public getReviewDeckPathForFile(file: TFile): string {
         const folderTopicPath = TopicPath.getFolderPathFromFilename(
             this.createSrTFile(file),
             this.data.settings,
         );
         const folderDeckName = folderTopicPath.path.join("/");
         return folderDeckName || DEFAULT_DECKNAME;
+    }
+
+    private getExtractDeckNameForFile(file: TFile): string {
+        return this.getReviewDeckPathForFile(file);
+    }
+
+    private normalizeExtractDeckPath(deckPath: string | null | undefined): string {
+        const normalized = (deckPath || DEFAULT_DECKNAME)
+            .replace(/\\/g, "/")
+            .replace(/^#/, "")
+            .replace(/^\/+|\/+$/g, "");
+        return normalized || DEFAULT_DECKNAME;
+    }
+
+    private getExtractDeckNameForItem(
+        extract: Pick<ExtractItem, "deckName" | "sourcePath">,
+    ): string {
+        const fallbackDeckName = this.normalizeExtractDeckPath(extract.deckName);
+        const sourceFile = this.app.vault.getAbstractFileByPath(extract.sourcePath);
+        if (sourceFile instanceof TFile) {
+            const sourceDeckName = this.normalizeExtractDeckPath(
+                this.getReviewDeckPathForFile(sourceFile),
+            );
+            if (sourceDeckName !== DEFAULT_DECKNAME || fallbackDeckName === DEFAULT_DECKNAME) {
+                return sourceDeckName;
+            }
+        }
+        return fallbackDeckName;
     }
 
     private async syncExtractsFromVaultFiles(files?: TFile[]): Promise<void> {
@@ -2122,6 +2145,7 @@ export default class SRPlugin extends Plugin {
         ]);
         await this.extractStore.save();
         this.syncEvents.emit("extracts-updated");
+        this.updateStatusBar();
     }
 
     private async appendExtractSyncResult(result: {
@@ -2182,6 +2206,7 @@ export default class SRPlugin extends Plugin {
         return this.extractStore.getReviewCandidates(
             deckPath,
             applyDailyLimits ? this.getExtractReviewLimits(deckPath) : undefined,
+            (item) => this.getExtractDeckNameForItem(item),
         );
     }
 
@@ -2200,6 +2225,7 @@ export default class SRPlugin extends Plugin {
         return this.extractStore.getStats(
             deckPath,
             applyDailyLimits ? this.getExtractReviewLimits(deckPath) : undefined,
+            (item) => this.getExtractDeckNameForItem(item),
         );
     }
 
@@ -2210,14 +2236,27 @@ export default class SRPlugin extends Plugin {
 
         const deckPaths = new Set<string>();
         for (const extract of this.extractStore.getReviewCandidates(null)) {
-            const deckPath = (extract.deckName || DEFAULT_DECKNAME)
-                .replace(/\\/g, "/")
-                .replace(/^#/, "")
-                .replace(/^\/+|\/+$/g, "");
-            if (!deckPath) {
+            const deckPath = this.getExtractDeckNameForItem(extract);
+            if (this.getExtractReviewStats(deckPath, applyDailyLimits).totalCount > 0) {
+                deckPaths.add(deckPath);
+            }
+        }
+
+        return Array.from(deckPaths).sort((left, right) => left.localeCompare(right));
+    }
+
+    public getActiveExtractDeckPaths(): string[] {
+        if (!this.extractStore || this.data.settings.enableExtracts === false) {
+            return [];
+        }
+
+        const deckPaths = new Set<string>();
+        for (const extract of this.extractStore.list()) {
+            if (extract.stage !== "active") {
                 continue;
             }
-            if (this.getExtractReviewStats(deckPath, applyDailyLimits).totalCount > 0) {
+            const deckPath = this.getExtractDeckNameForItem(extract);
+            if (deckPath) {
                 deckPaths.add(deckPath);
             }
         }
@@ -2381,6 +2420,7 @@ export default class SRPlugin extends Plugin {
                 await this.preserveGraduatedExtractMemo(item);
                 this.syncEvents.emit("extracts-updated");
                 this.syncEvents.emit("note-review-updated");
+                this.updateStatusBar();
                 return this.extractStore.get(uuid) ?? item;
             }
         }
@@ -2394,6 +2434,7 @@ export default class SRPlugin extends Plugin {
         await this.preserveGraduatedExtractMemo(graduated);
         this.syncEvents.emit("extracts-updated");
         this.syncEvents.emit("note-review-updated");
+        this.updateStatusBar();
         return graduated;
     }
 
@@ -2442,6 +2483,7 @@ export default class SRPlugin extends Plugin {
         await this.appendExtractSyncResult(result);
         await this.extractStore.save();
         this.syncEvents.emit("extracts-updated");
+        this.updateStatusBar();
         new Notice(t("NOTICE_EXTRACT_CREATED"));
         return true;
     }
@@ -7047,7 +7089,48 @@ export default class SRPlugin extends Plugin {
         return note;
     }
 
-    public async getReadonlyNoteCardStats(file: TFile): Promise<InlineTitleCardStats> {
+    private findDeckByPath(deckTree: Deck | null | undefined, deckPath: string): Deck | null {
+        if (!deckTree) {
+            return null;
+        }
+        if (!deckPath || deckPath === "root") {
+            return deckTree;
+        }
+
+        const topicPath = new TopicPath(deckPath.split("/").filter(Boolean));
+        return deckTree.getDeck(topicPath);
+    }
+
+    private getReviewDeckInlineTitleStats(deckPath: string): InlineTitleCardStats {
+        const targetDeck = this.findDeckByPath(this.remainingDeckTree, deckPath);
+        const learnAheadMillis = Math.max(0, this.data.settings.learnAheadMinutes ?? 0) * 60 * 1000;
+        const limitedDeck = targetDeck ? DeckTreeFilter.filterByDailyLimits(targetDeck, this) : null;
+        const cardReviewableCount = limitedDeck
+            ? limitedDeck.getCardCount(CardListType.NewCard, true) +
+              limitedDeck.getCardCount(CardListType.DueCard, true) +
+              limitedDeck.getAvailableLearningCardCount(true, learnAheadMillis)
+            : 0;
+        const extractStats = this.getExtractReviewStats(deckPath, true);
+        const reviewableCount = cardReviewableCount + extractStats.totalCount;
+
+        return {
+            reviewableCount,
+            totalCount: reviewableCount,
+        };
+    }
+
+    public getReadonlyNoteCardStats(file: TFile): InlineTitleCardStats {
+        if (!(file instanceof TFile) || file.extension !== "md") {
+            return {
+                reviewableCount: 0,
+                totalCount: 0,
+            };
+        }
+        const deckPath = this.getReviewDeckPathForFile(file);
+        return this.getReviewDeckInlineTitleStats(deckPath);
+    }
+
+    public async getReadonlyNoteLocalCardStats(file: TFile): Promise<InlineTitleCardStats> {
         if (!(file instanceof TFile) || file.extension !== "md") {
             return {
                 reviewableCount: 0,
@@ -8517,11 +8600,7 @@ export default class SRPlugin extends Plugin {
             return;
         }
 
-        const targetDeckTopicPath = TopicPath.getFolderPathFromFilename(
-            this.createSrTFile(file),
-            this.data.settings,
-        );
-        const targetDeckPath = targetDeckTopicPath.path.join("/");
+        const targetDeckPath = this.getReviewDeckPathForFile(file);
         if (!targetDeckPath) {
             new Notice(t("REVIEW_NO_CARDS"));
             return;

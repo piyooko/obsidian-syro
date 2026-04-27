@@ -77,6 +77,8 @@ export interface ExtractReviewStats {
     totalCount: number;
 }
 
+export type ExtractDeckNameResolver = (item: ExtractItem) => string;
+
 export const EXTRACT_ITEM_ENTITY_TYPE = "extract-item";
 const EXTRACT_STORE_VERSION = 1;
 const DEFAULT_EXTRACT_PRIORITY = 5;
@@ -545,13 +547,18 @@ export class ExtractStore {
         return algorithm.calcAllOptsIntervals(toRepetitionItem(item));
     }
 
-    getReviewCandidates(deckPath: string | null = null, limits?: { maxNew: number; maxDue: number }): ExtractItem[] {
+    getReviewCandidates(
+        deckPath: string | null = null,
+        limits?: { maxNew: number; maxDue: number },
+        resolveDeckName?: ExtractDeckNameResolver,
+    ): ExtractItem[] {
         const now = Date.now();
         const targetDeck = deckPath && deckPath !== "root" ? deckPath : null;
         const activeItems = Object.values(this.items).filter((item) => {
             if (item.stage !== "active") return false;
             if (!targetDeck) return true;
-            return item.deckName === targetDeck || item.deckName.startsWith(`${targetDeck}/`);
+            const itemDeckName = resolveDeckName?.(item) ?? item.deckName;
+            return itemDeckName === targetDeck || itemDeckName.startsWith(`${targetDeck}/`);
         });
         const countDeckName = targetDeck ?? "root";
         let dueRemaining: number | null = null;
@@ -601,8 +608,9 @@ export class ExtractStore {
     getStats(
         deckPath: string | null = null,
         limits?: { maxNew: number; maxDue: number },
+        resolveDeckName?: ExtractDeckNameResolver,
     ): ExtractReviewStats {
-        const candidates = this.getReviewCandidates(deckPath, limits);
+        const candidates = this.getReviewCandidates(deckPath, limits, resolveDeckName);
         const newCount = candidates.filter((item) => item.timesReviewed === 0 || item.nextReview === 0).length;
         const dueCount = candidates.length - newCount;
         return {

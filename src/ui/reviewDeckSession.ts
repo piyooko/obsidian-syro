@@ -1,4 +1,4 @@
-import { Deck, DeckTreeFilter } from "src/Deck";
+import { CardListType, Deck, DeckTreeFilter } from "src/Deck";
 import { IFlashcardReviewSequencer } from "src/FlashcardReviewSequencer";
 import type SRPlugin from "src/main";
 import { TopicPath } from "src/TopicPath";
@@ -56,6 +56,17 @@ function createEmptyDeckForPath(fullPath: string): Deck | null {
     return current;
 }
 
+function hasReviewableCards(deck: Deck, plugin: SRPlugin, applyDailyLimits: boolean): boolean {
+    const reviewDeck = applyDailyLimits ? DeckTreeFilter.filterByDailyLimits(deck, plugin) : deck;
+    const learnAheadMillis =
+        Math.max(0, plugin.data?.settings?.learnAheadMinutes ?? 0) * 60 * 1000;
+    return (
+        reviewDeck.getCardCount(CardListType.NewCard, true) > 0 ||
+        reviewDeck.getCardCount(CardListType.DueCard, true) > 0 ||
+        reviewDeck.getAvailableLearningCardCount(true, learnAheadMillis) > 0
+    );
+}
+
 export function activateDeckReviewSession({
     plugin,
     sequencer,
@@ -67,7 +78,10 @@ export function activateDeckReviewSession({
 }: ActivateDeckReviewSessionOptions): ActivateDeckReviewSessionResult | null {
     const existingTargetDeck = findDeckByPath(sourceDeckTree, fullPath);
     const extractStats = plugin.getExtractReviewStats(fullPath, applyDailyLimits);
-    if (!existingTargetDeck && extractStats.totalCount === 0) {
+    if (
+        (!existingTargetDeck || !hasReviewableCards(existingTargetDeck, plugin, applyDailyLimits)) &&
+        extractStats.totalCount === 0
+    ) {
         return null;
     }
 
