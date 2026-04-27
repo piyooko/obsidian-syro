@@ -54,7 +54,6 @@ import {
     clearReviewMobileNavbarCover,
     detectBlockingMobileNavbar,
 } from "./reviewMobileChrome";
-import "../styles/extract-review.css";
 
 // ==========================================
 // Types
@@ -1461,14 +1460,18 @@ const ExtractReviewButton: React.FC<{
 }> = ({ icon, label, sub, shortcut, variant, onClick }) => (
     <button
         type="button"
-        className={`sr-extract-review-button sr-extract-review-button--${variant}`}
+        className={`sr-linear-btn is-${variant} sr-extract-review-button sr-extract-review-button--${variant}`}
         onClick={onClick}
     >
-        <span className="sr-extract-review-button__shortcut">{shortcut}</span>
-        <span className="sr-extract-review-button__icon">{icon}</span>
-        <span className="sr-extract-review-button__text">
-            <span>{label}</span>
-            <span>{sub}</span>
+        <span className="sr-linear-btn-shortcut sr-extract-review-button__shortcut">
+            {shortcut}
+        </span>
+        <span className="sr-linear-btn-icon-wrapper sr-extract-review-button__icon">
+            {icon}
+        </span>
+        <span className="sr-linear-btn-content sr-extract-review-button__text">
+            <span className="sr-linear-btn-label">{label}</span>
+            <span className="sr-linear-btn-sub">{sub}</span>
         </span>
     </button>
 );
@@ -1744,9 +1747,20 @@ const ExtractReviewView: React.FC<ExtractReviewViewProps> = ({
 
     if (!extract) {
         return (
-            <div className="sr-extract-review-view">
-                <div className="sr-extract-card sr-extract-card--empty">
-                    {t("EXTRACT_NO_ACTIVE_ITEMS")}
+            <div className="sr-card-review-view sr-extract-review-view">
+                <div
+                    className={[
+                        "sr-linear-card-wrapper",
+                        "sr-extract-linear-card-wrapper",
+                        Platform.isPhone ? "sr-phone-layout sr-mobile-maximized" : "",
+                        overlayMobileNavbar ? "sr-overlay-mobile-navbar" : "",
+                    ]
+                        .filter(Boolean)
+                        .join(" ")}
+                >
+                    <div className="sr-linear-card sr-extract-card sr-extract-card--empty">
+                        {t("EXTRACT_NO_ACTIVE_ITEMS")}
+                    </div>
                 </div>
             </div>
         );
@@ -1755,6 +1769,7 @@ const ExtractReviewView: React.FC<ExtractReviewViewProps> = ({
     return (
         <div
             className={[
+                "sr-card-review-view",
                 "sr-extract-review-view",
                 Platform.isPhone ? "sr-extract-review-view--phone" : "",
                 overlayMobileNavbar ? "sr-extract-review-view--overlay-mobile-navbar" : "",
@@ -1762,164 +1777,206 @@ const ExtractReviewView: React.FC<ExtractReviewViewProps> = ({
                 .filter(Boolean)
                 .join(" ")}
         >
-            <div className="sr-extract-card">
-                <header className="sr-extract-header">
-                    <button
-                        type="button"
-                        className="sr-extract-source"
-                        onClick={() => {
-                            void handleOpenSource();
-                        }}
-                        onMouseDown={(event) => {
-                            if (event.button !== 1) {
-                                return;
-                            }
-                            event.preventDefault();
-                            event.stopPropagation();
-                            void handleOpenSource({ newTab: true });
-                        }}
-                        title={t("EXTRACT_OPEN_SOURCE")}
-                    >
-                        <FileText size={14} />
-                        <span>{sourcePath || t("EXTRACT_SOURCE_MISSING")}</span>
-                    </button>
-                    <div className="sr-extract-header-stats">
-                        <span>{t("EXTRACT_STATS_LABEL", { count: extractStats.totalCount })}</span>
-                        <button type="button" onClick={onExit}>
-                            {t("BACK")}
-                        </button>
-                    </div>
-                </header>
-
-                <section className="sr-extract-meta-row">
-                    <label className="sr-extract-priority-control">
-                        <span>{t("EXTRACT_PRIORITY_LABEL")}</span>
-                        <select value={priority} onChange={handlePriorityChange}>
-                            {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
-                                <option key={value} value={value}>
-                                    {value}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <span className="sr-extract-save-state">
-                        {isSaving ? t("EXTRACT_SAVING") : t("EXTRACT_SAVED")}
-                    </span>
-                </section>
-
-                <section className="sr-extract-memo-section">
-                    <label>{t("EXTRACT_MEMO_LABEL")}</label>
-                    <textarea
-                        value={memo}
-                        onChange={(event) => scheduleMemoSave(event.target.value)}
-                        placeholder={t("EXTRACT_MEMO_PLACEHOLDER")}
-                    />
-                </section>
-
-                <section className="sr-extract-body-section">
-                    <div className="sr-extract-section-title">
-                        <span>{t("EXTRACT_BODY_LABEL")}</span>
-                        <div className="sr-extract-actions">
+            <div
+                className={[
+                    "sr-linear-card-wrapper",
+                    "sr-extract-linear-card-wrapper",
+                    Platform.isPhone ? "sr-phone-layout sr-mobile-maximized" : "",
+                    overlayMobileNavbar ? "sr-overlay-mobile-navbar" : "",
+                ]
+                    .filter(Boolean)
+                    .join(" ")}
+            >
+                <div className="sr-linear-card sr-extract-card">
+                    <div className="sr-card-highlight" />
+                    <header className="sr-card-header sr-extract-header">
+                        <div className="sr-header-left sr-extract-header-left">
                             <button
                                 type="button"
-                                onClick={() => setIsEditingBody((value) => !value)}
-                            >
-                                {isEditingBody ? <Save size={14} /> : <Edit3 size={14} />}
-                                <span>
-                                    {isEditingBody
-                                        ? t("EXTRACT_FINISH_EDIT")
-                                        : t("EXTRACT_EDIT_BODY")}
-                                </span>
-                            </button>
-                            <button
-                                type="button"
+                                className="sr-filename-badge sr-extract-source"
                                 onClick={() => {
-                                    void handleContinueExtract();
+                                    void handleOpenSource();
                                 }}
-                            >
-                                <TextSelect size={14} />
-                                <span>{t("EXTRACT_CONTINUE_EXTRACT")}</span>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    void handleGraduate();
+                                onMouseDown={(event) => {
+                                    if (event.button !== 1) {
+                                        return;
+                                    }
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    void handleOpenSource({ newTab: true });
                                 }}
+                                title={t("EXTRACT_OPEN_SOURCE")}
                             >
-                                <GraduationCap size={14} />
-                                <span>{t("EXTRACT_GRADUATE")}</span>
+                                <FileText size={14} />
+                                <span>{sourcePath || t("EXTRACT_SOURCE_MISSING")}</span>
                             </button>
                         </div>
-                    </div>
-                    {isEditingBody ? (
-                        <textarea
-                            ref={bodyTextareaRef}
-                            className="sr-extract-body-editor"
-                            value={body}
-                            onChange={(event) => scheduleBodySave(event.target.value)}
-                        />
-                    ) : (
-                        <ExtractMarkdownPreview
-                            plugin={plugin}
-                            markdownOwner={markdownOwner}
-                            sourcePath={sourcePath}
-                            content={body}
-                        />
-                    )}
-                </section>
+                        <div className="sr-header-right sr-extract-header-stats">
+                            <span>
+                                {t("EXTRACT_STATS_LABEL", { count: extractStats.totalCount })}
+                            </span>
+                            <button
+                                type="button"
+                                className="sr-header-btn sr-extract-header-button"
+                                onClick={onExit}
+                            >
+                                {t("BACK")}
+                            </button>
+                        </div>
+                    </header>
 
-                <footer className="sr-extract-footer">
-                    <ExtractReviewButton
-                        icon={<RotateCcw size={13} />}
-                        label={t("UI_RESET")}
-                        sub={reviewIntervals[0] ?? "-"}
-                        shortcut="1"
-                        variant="reset"
-                        onClick={() => {
-                            void handleAnswer(0);
-                        }}
-                    />
-                    <ExtractReviewButton
-                        icon={<ThumbsDown size={13} />}
-                        label={t("UI_HARD")}
-                        sub={reviewIntervals[1] ?? "-"}
-                        shortcut="2"
-                        variant="hard"
-                        onClick={() => {
-                            void handleAnswer(1);
-                        }}
-                    />
-                    <ExtractReviewButton
-                        icon={<Check size={13} />}
-                        label={t("UI_GOOD")}
-                        sub={reviewIntervals[2] ?? "-"}
-                        shortcut="3"
-                        variant="good"
-                        onClick={() => {
-                            void handleAnswer(2);
-                        }}
-                    />
-                    <ExtractReviewButton
-                        icon={<Zap size={13} />}
-                        label={t("UI_EASY")}
-                        sub={reviewIntervals[3] ?? "-"}
-                        shortcut="4"
-                        variant="easy"
-                        onClick={() => {
-                            void handleAnswer(3);
-                        }}
-                    />
-                    <button
-                        type="button"
-                        className="sr-extract-open-source-button"
-                        onClick={() => {
-                            void handleOpenSource();
-                        }}
-                    >
-                        <BookOpen size={14} />
-                        <span>{t("EXTRACT_OPEN_SOURCE")}</span>
-                    </button>
-                </footer>
+                    <section className="sr-card-content-area sr-extract-content-area">
+                        <div className="sr-card-content-scroll sr-extract-content-scroll">
+                            <section className="sr-extract-meta-row">
+                                <label className="sr-extract-priority-control">
+                                    <span>{t("EXTRACT_PRIORITY_LABEL")}</span>
+                                    <select value={priority} onChange={handlePriorityChange}>
+                                        {Array.from(
+                                            { length: 10 },
+                                            (_, index) => index + 1,
+                                        ).map((value) => (
+                                            <option key={value} value={value}>
+                                                {value}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <span className="sr-extract-save-state">
+                                    {isSaving ? t("EXTRACT_SAVING") : t("EXTRACT_SAVED")}
+                                </span>
+                            </section>
+
+                            <section className="sr-extract-memo-section">
+                                <label>{t("EXTRACT_MEMO_LABEL")}</label>
+                                <textarea
+                                    value={memo}
+                                    onChange={(event) => scheduleMemoSave(event.target.value)}
+                                    placeholder={t("EXTRACT_MEMO_PLACEHOLDER")}
+                                />
+                            </section>
+
+                            <section className="sr-extract-body-section">
+                                <div className="sr-extract-section-title">
+                                    <span>{t("EXTRACT_BODY_LABEL")}</span>
+                                    <div className="sr-extract-actions">
+                                        <button
+                                            type="button"
+                                            className="sr-header-btn sr-extract-action-button"
+                                            onClick={() => setIsEditingBody((value) => !value)}
+                                        >
+                                            {isEditingBody ? (
+                                                <Save size={14} />
+                                            ) : (
+                                                <Edit3 size={14} />
+                                            )}
+                                            <span>
+                                                {isEditingBody
+                                                    ? t("EXTRACT_FINISH_EDIT")
+                                                    : t("EXTRACT_EDIT_BODY")}
+                                            </span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="sr-header-btn sr-extract-action-button"
+                                            onClick={() => {
+                                                void handleContinueExtract();
+                                            }}
+                                        >
+                                            <TextSelect size={14} />
+                                            <span>{t("EXTRACT_CONTINUE_EXTRACT")}</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="sr-header-btn sr-extract-action-button"
+                                            onClick={() => {
+                                                void handleGraduate();
+                                            }}
+                                        >
+                                            <GraduationCap size={14} />
+                                            <span>{t("EXTRACT_GRADUATE")}</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                {isEditingBody ? (
+                                    <textarea
+                                        ref={bodyTextareaRef}
+                                        className="sr-extract-body-editor"
+                                        value={body}
+                                        onChange={(event) => scheduleBodySave(event.target.value)}
+                                    />
+                                ) : (
+                                    <ExtractMarkdownPreview
+                                        plugin={plugin}
+                                        markdownOwner={markdownOwner}
+                                        sourcePath={sourcePath}
+                                        content={body}
+                                    />
+                                )}
+                            </section>
+                        </div>
+                    </section>
+
+                    <footer className="sr-card-footer sr-extract-footer">
+                        <div className="sr-rating-buttons sr-extract-rating-buttons">
+                            <ExtractReviewButton
+                                icon={<RotateCcw size={13} />}
+                                label={t("UI_RESET")}
+                                sub={reviewIntervals[0] ?? "-"}
+                                shortcut="1"
+                                variant="reset"
+                                onClick={() => {
+                                    void handleAnswer(0);
+                                }}
+                            />
+                            <ExtractReviewButton
+                                icon={<ThumbsDown size={13} />}
+                                label={t("UI_HARD")}
+                                sub={reviewIntervals[1] ?? "-"}
+                                shortcut="2"
+                                variant="hard"
+                                onClick={() => {
+                                    void handleAnswer(1);
+                                }}
+                            />
+                            <ExtractReviewButton
+                                icon={<Check size={13} />}
+                                label={t("UI_GOOD")}
+                                sub={reviewIntervals[2] ?? "-"}
+                                shortcut="3"
+                                variant="good"
+                                onClick={() => {
+                                    void handleAnswer(2);
+                                }}
+                            />
+                            <ExtractReviewButton
+                                icon={<Zap size={13} />}
+                                label={t("UI_EASY")}
+                                sub={reviewIntervals[3] ?? "-"}
+                                shortcut="4"
+                                variant="easy"
+                                onClick={() => {
+                                    void handleAnswer(3);
+                                }}
+                            />
+                        </div>
+                        <button
+                            type="button"
+                            className="sr-linear-btn sr-extract-open-source-button"
+                            onClick={() => {
+                                void handleOpenSource();
+                            }}
+                        >
+                            <span className="sr-linear-btn-icon-wrapper">
+                                <BookOpen size={14} />
+                            </span>
+                            <span className="sr-linear-btn-content">
+                                <span className="sr-linear-btn-label">
+                                    {t("EXTRACT_OPEN_SOURCE")}
+                                </span>
+                            </span>
+                        </button>
+                    </footer>
+                </div>
             </div>
         </div>
     );

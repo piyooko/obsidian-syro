@@ -12,6 +12,7 @@
    ========================================== */
 @import "./deck-tree.css";
 @import "./linear-card.css";
+@import "./extract-review.css";
 @import "./note-review-sidebar.css";
 @import "./cloze-popover.css";
 @import "./settings-panel.css";
