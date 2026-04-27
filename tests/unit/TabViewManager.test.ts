@@ -110,7 +110,7 @@ describe("TabViewManager", () => {
                 initialView: "review",
             }),
         );
-        expect(reloadedSession?.initialTargetDeckPath).toBeUndefined();
+        expect(reloadedSession?.initialTargetDeckPath).toBe("folder/note");
         expect(existingLeaf.setViewState).not.toHaveBeenCalled();
         expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(existingLeaf);
         expect(mockActivateDeckReviewSession).toHaveBeenCalledWith(
@@ -163,8 +163,29 @@ describe("TabViewManager", () => {
             }),
         );
         expect(result.initialView).toBe("review");
-        expect(result.initialTargetDeckPath).toBeUndefined();
+        expect(result.initialTargetDeckPath).toBe("folder/note");
         expect(result.mode).toBe(FlashcardReviewMode.Review);
+    });
+
+    it("keeps the target deck path after activation so extract-only sessions stay scoped", async () => {
+        const plugin = createPlugin();
+        const manager = new TabViewManager(plugin as never);
+        const viewCreator = plugin.registerView.mock.calls[0][1];
+
+        viewCreator({});
+        const loader = mockTabViewLoaders[0];
+
+        await manager.openSRTabView(FlashcardReviewMode.Review, {
+            targetDeckPath: "摘录测试",
+        });
+        const result = (await loader()) as {
+            initialView: string;
+            initialTargetDeckPath?: string;
+            mode: FlashcardReviewMode;
+        };
+
+        expect(result.initialView).toBe("review");
+        expect(result.initialTargetDeckPath).toBe("摘录测试");
     });
 
     it("keeps global cram sessions on the deck list and omits a target deck", async () => {

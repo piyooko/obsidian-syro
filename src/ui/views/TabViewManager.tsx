@@ -153,6 +153,7 @@ export default class TabViewManager {
                 pendingSession = {
                     ...preparedSession,
                     initialView: "review",
+                    initialTargetDeckPath,
                 };
             }
         }
