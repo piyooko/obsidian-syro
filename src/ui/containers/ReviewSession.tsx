@@ -23,7 +23,7 @@ import { ReviewContext } from "../context/ReviewContext";
 import { DeckOptionsPanel } from "../components/DeckOptionsPanel";
 import { DeckTree } from "../components/DeckTree";
 import { LinearCard, CardState } from "../components/LinearCard";
-import { deckToUIState, saveCollapseState } from "../adapters/deckAdapter";
+import { buildDeckTreeUIState, saveCollapseState } from "../adapters/deckAdapter";
 import { DeckState } from "../types/deckTypes";
 import { activateDeckReviewSession } from "../reviewDeckSession";
 import type SRPlugin from "src/main";
@@ -1230,7 +1230,7 @@ const DeckListView: React.FC<DeckListViewProps> = ({
             return [];
         }
 
-        const result = remainingDeckTree.subdecks.map((deck: Deck) => deckToUIState(deck, plugin));
+        const result = buildDeckTreeUIState(remainingDeckTree, plugin);
         if (plugin.data.settings.showRuntimeDebugMessages) {
             console.debug(
                 `[V3-Scheduler] DeckListView render: tick=${_tick}, decks=${result.length}`,

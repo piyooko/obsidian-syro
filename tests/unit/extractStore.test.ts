@@ -16,7 +16,11 @@ function createWms(): WeightedMultiplierAlgorithm {
 describe("ExtractStore", () => {
     test("syncs handwritten ir markers into active extracts", () => {
         const store = createStore();
-        const result = store.syncFileExtracts("notes/source.md", "{{ir::one}}\n{{ir::two}}", "deck");
+        const result = store.syncFileExtracts(
+            "notes/source.md",
+            "{{ir::one}}\n{{ir::two}}",
+            "deck",
+        );
 
         expect(result.added).toHaveLength(2);
         expect(store.getActiveByPath("notes/source.md").map((item) => item.rawMarkdown)).toEqual([
@@ -34,6 +38,17 @@ describe("ExtractStore", () => {
         expect(second.added).toHaveLength(0);
         expect(second.updated).toHaveLength(0);
         expect(store.getActiveByPath("notes/source.md")).toHaveLength(1);
+    });
+
+    test("moves existing extracts to the current source deck on sync", () => {
+        const store = createStore();
+        const [created] = store.syncFileExtracts("notes/source.md", "{{ir::one}}", "default").added;
+
+        const result = store.syncFileExtracts("notes/source.md", "{{ir::one}}", "notes/source");
+
+        expect(result.added).toHaveLength(0);
+        expect(result.updated.map((item) => item.uuid)).toContain(created.uuid);
+        expect(store.get(created.uuid)?.deckName).toBe("notes/source");
     });
 
     test("graduates active extracts when their source marker disappears", () => {
@@ -71,9 +86,11 @@ describe("ExtractStore", () => {
             "{{ir::one}}\n{{ir::two}}\n{{ir::three}}",
             "deck",
         ).added;
-        const internalItems = (store as unknown as {
-            items: Record<string, { nextReview: number; timesReviewed: number }>;
-        }).items;
+        const internalItems = (
+            store as unknown as {
+                items: Record<string, { nextReview: number; timesReviewed: number }>;
+            }
+        ).items;
         internalItems[created[0].uuid]!.timesReviewed = 1;
         internalItems[created[0].uuid]!.nextReview = Date.now() - 1;
 

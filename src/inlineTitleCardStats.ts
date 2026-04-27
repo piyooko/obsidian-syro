@@ -7,6 +7,49 @@ export interface InlineTitleCardStats {
     totalCount: number;
 }
 
+export interface InlineTitleExtractLike {
+    stage?: string;
+    timesReviewed?: number;
+    nextReview?: number;
+}
+
+export function combineInlineTitleStats(
+    ...statsList: InlineTitleCardStats[]
+): InlineTitleCardStats {
+    return statsList.reduce(
+        (combined, stats) => ({
+            reviewableCount: combined.reviewableCount + stats.reviewableCount,
+            totalCount: combined.totalCount + stats.totalCount,
+        }),
+        { reviewableCount: 0, totalCount: 0 },
+    );
+}
+
+export function countInlineTitleStatsFromExtracts(
+    extracts: InlineTitleExtractLike[],
+    now: number = Date.now(),
+): InlineTitleCardStats {
+    let reviewableCount = 0;
+    let totalCount = 0;
+
+    for (const extract of extracts) {
+        if (extract.stage && extract.stage !== "active") {
+            continue;
+        }
+        totalCount += 1;
+        const timesReviewed = extract.timesReviewed ?? 0;
+        const nextReview = extract.nextReview ?? 0;
+        if (timesReviewed === 0 || nextReview === 0 || nextReview <= now) {
+            reviewableCount += 1;
+        }
+    }
+
+    return {
+        reviewableCount,
+        totalCount,
+    };
+}
+
 function isReviewableCard(
     item: RepetitionItem | null | undefined,
     now: number,

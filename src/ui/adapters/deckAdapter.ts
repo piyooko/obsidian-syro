@@ -62,9 +62,72 @@ export function deckToUIState(deck: Deck, plugin?: SRPlugin, depth: number = 0):
     };
 }
 
-/**
- * 将 Deck 数组转换为 DeckState 数组
- */
+function normalizeDeckPath(path: string): string {
+    return path.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+}
+
+function createExtractOnlyDeckState(
+    fullPath: string,
+    deckName: string,
+    plugin: SRPlugin,
+    depth: number,
+): DeckState {
+    const collapseState = plugin.data?.settings?.deckCollapseState ?? {};
+    const stats = plugin.getExtractReviewStats(fullPath, true);
+    return {
+        deckName,
+        fullPath,
+        newCount: stats.newCount,
+        learningCount: 0,
+        dueCount: stats.dueCount,
+        subdecks: [],
+        isCollapsed: collapseState[fullPath] ?? false,
+        depth,
+    };
+}
+
+function ensureExtractDeckState(
+    states: DeckState[],
+    parts: string[],
+    plugin: SRPlugin,
+    depth: number,
+    prefix: string[] = [],
+): void {
+    if (parts.length === 0) {
+        return;
+    }
+
+    const [deckName, ...remaining] = parts;
+    const fullPath = [...prefix, deckName].join("/");
+    let state = states.find((entry) => entry.deckName === deckName);
+    if (!state) {
+        state = createExtractOnlyDeckState(fullPath, deckName, plugin, depth);
+        states.push(state);
+        states.sort((left, right) => left.deckName.localeCompare(right.deckName));
+    }
+
+    if (remaining.length > 0) {
+        ensureExtractDeckState(state.subdecks, remaining, plugin, depth + 1, [...prefix, deckName]);
+    }
+}
+
+export function buildDeckTreeUIState(rootDeck: Deck, plugin?: SRPlugin): DeckState[] {
+    const states = rootDeck.subdecks.map((deck) => deckToUIState(deck, plugin));
+    if (!plugin) {
+        return states;
+    }
+
+    for (const rawPath of plugin.getReviewableExtractDeckPaths(true)) {
+        const normalizedPath = normalizeDeckPath(rawPath);
+        if (!normalizedPath) {
+            continue;
+        }
+        ensureExtractDeckState(states, normalizedPath.split("/").filter(Boolean), plugin, 0);
+    }
+
+    return states;
+}
+
 /**
  * 根据完整路径查找 Deck 对象
  *

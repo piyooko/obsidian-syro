@@ -38,6 +38,7 @@ function createPluginForStatusBar(deck: Deck, learnAheadMinutes: number = 15) {
             dueCount: 0,
             totalCount: 0,
         })),
+        getReviewableExtractDeckPaths: jest.fn(() => []),
     };
 }
 
@@ -50,11 +51,25 @@ describe("SRPlugin status bar card count", () => {
         jest.restoreAllMocks();
     });
 
-    test("returns 0 when there are no deck-tree subdecks", () => {
+    test("returns 0 when there are no deck-tree subdecks or extract-only decks", () => {
         const root = new Deck("root", null);
         const plugin = createPluginForStatusBar(root);
 
         expect((SRPlugin.prototype as any).getStatusBarReviewableCardCount.call(plugin)).toBe(0);
+    });
+
+    test("counts extract-only decks even when the card deck tree is empty", () => {
+        const root = new Deck("root", null);
+        const plugin = createPluginForStatusBar(root);
+        plugin.getReviewableExtractDeckPaths.mockReturnValue(["摘录测试"]);
+        plugin.getExtractReviewStats.mockReturnValue({
+            newCount: 2,
+            dueCount: 1,
+            totalCount: 3,
+        });
+
+        expect((SRPlugin.prototype as any).getStatusBarReviewableCardCount.call(plugin)).toBe(3);
+        expect(plugin.getExtractReviewStats).toHaveBeenCalledWith("摘录测试", true);
     });
 
     test("sums reviewable counts across top-level decks for the status bar card count", () => {

@@ -40,6 +40,22 @@ export function wrapDeckWithRoot(fullPath: string, isolatedDeck: Deck): Deck {
     return root;
 }
 
+function createEmptyDeckForPath(fullPath: string): Deck | null {
+    const parts = fullPath.split("/").filter(Boolean);
+    if (parts.length === 0) {
+        return null;
+    }
+
+    const root = new Deck("Root", null);
+    let current = root;
+    for (const part of parts) {
+        const next = new Deck(part, current);
+        current.subdecks.push(next);
+        current = next;
+    }
+    return current;
+}
+
 export function activateDeckReviewSession({
     plugin,
     sequencer,
@@ -49,7 +65,13 @@ export function activateDeckReviewSession({
     globalRemainingDeckTree = sourceDeckTree,
     applyDailyLimits = true,
 }: ActivateDeckReviewSessionOptions): ActivateDeckReviewSessionResult | null {
-    const rawTargetDeck = findDeckByPath(sourceDeckTree, fullPath);
+    const existingTargetDeck = findDeckByPath(sourceDeckTree, fullPath);
+    const extractStats = plugin.getExtractReviewStats(fullPath, applyDailyLimits);
+    if (!existingTargetDeck && extractStats.totalCount === 0) {
+        return null;
+    }
+
+    const rawTargetDeck = existingTargetDeck ?? createEmptyDeckForPath(fullPath);
     if (!rawTargetDeck) {
         return null;
     }

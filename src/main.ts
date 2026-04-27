@@ -264,6 +264,8 @@ import { autoCommitReviewResponseToTimeline } from "src/ui/timeline/reviewRespon
 import {
     InlineTitleCardStats,
     cloneTrackedFileForInlineTitleStats,
+    combineInlineTitleStats,
+    countInlineTitleStatsFromExtracts,
     countInlineTitleStatsFromNote,
     countInlineTitleStatsFromTrackedFile,
 } from "src/inlineTitleCardStats";
@@ -2072,7 +2074,17 @@ export default class SRPlugin extends Plugin {
     }
 
     private getExtractDeckNameForFile(file: TFile): string {
-        return this.noteReviewStore?.getDeckName(file.path) ?? DEFAULT_DECKNAME;
+        const explicitDeckName = this.noteReviewStore?.getDeckName(file.path);
+        if (explicitDeckName) {
+            return explicitDeckName.replace(/\\/g, "/").replace(/^#/, "");
+        }
+
+        const folderTopicPath = TopicPath.getFolderPathFromFilename(
+            this.createSrTFile(file),
+            this.data.settings,
+        );
+        const folderDeckName = folderTopicPath.path.join("/");
+        return folderDeckName || DEFAULT_DECKNAME;
     }
 
     private async syncExtractsFromVaultFiles(files?: TFile[]): Promise<void> {
@@ -2189,6 +2201,28 @@ export default class SRPlugin extends Plugin {
             deckPath,
             applyDailyLimits ? this.getExtractReviewLimits(deckPath) : undefined,
         );
+    }
+
+    public getReviewableExtractDeckPaths(applyDailyLimits = true): string[] {
+        if (!this.extractStore || this.data.settings.enableExtracts === false) {
+            return [];
+        }
+
+        const deckPaths = new Set<string>();
+        for (const extract of this.extractStore.getReviewCandidates(null)) {
+            const deckPath = (extract.deckName || DEFAULT_DECKNAME)
+                .replace(/\\/g, "/")
+                .replace(/^#/, "")
+                .replace(/^\/+|\/+$/g, "");
+            if (!deckPath) {
+                continue;
+            }
+            if (this.getExtractReviewStats(deckPath, applyDailyLimits).totalCount > 0) {
+                deckPaths.add(deckPath);
+            }
+        }
+
+        return Array.from(deckPaths).sort((left, right) => left.localeCompare(right));
     }
 
     public getExtractReviewIntervals(uuid: string): string[] {
@@ -7036,11 +7070,18 @@ export default class SRPlugin extends Plugin {
 
         const now = Date.now();
         const learnAheadMillis = Math.max(0, this.data.settings.learnAheadMinutes ?? 0) * 60 * 1000;
+        const extractStats = countInlineTitleStatsFromExtracts(
+            this.extractStore?.getActiveByPath(file.path) ?? [],
+            now,
+        );
         const cacheEntry = this.noteCache.get(file.path);
         const mtime = file.stat?.mtime ?? 0;
 
         if (cacheEntry && cacheEntry.mtime === mtime) {
-            return countInlineTitleStatsFromNote(cacheEntry.note, now, learnAheadMillis);
+            return combineInlineTitleStats(
+                countInlineTitleStatsFromNote(cacheEntry.note, now, learnAheadMillis),
+                extractStats,
+            );
         }
 
         try {
@@ -7051,11 +7092,14 @@ export default class SRPlugin extends Plugin {
             );
             trackedFile.syncNoteCardsIndex(fileText, this.data.settings);
 
-            return countInlineTitleStatsFromTrackedFile(
-                trackedFile,
-                (id) => store.getItembyID(id),
-                now,
-                learnAheadMillis,
+            return combineInlineTitleStats(
+                countInlineTitleStatsFromTrackedFile(
+                    trackedFile,
+                    (id) => store.getItembyID(id),
+                    now,
+                    learnAheadMillis,
+                ),
+                extractStats,
             );
         } catch (error) {
             console.warn(
@@ -8341,22 +8385,29 @@ export default class SRPlugin extends Plugin {
     }
 
     private getStatusBarReviewableCardCount(): number {
-        if (!this.remainingDeckTree?.subdecks?.length) {
-            return 0;
-        }
-
         const learnAheadMillis = Math.max(0, this.data.settings.learnAheadMinutes ?? 0) * 60 * 1000;
         let totalReviewableCards = 0;
+        const countedExtractDecks = new Set<string>();
 
-        for (const deck of this.remainingDeckTree.subdecks) {
+        for (const deck of this.remainingDeckTree?.subdecks ?? []) {
             const simulatedDeck = DeckTreeFilter.filterByDailyLimits(deck, this);
             const deckPath = deck.getTopicPath().path.join("/") || deck.deckName;
             const extractStats = this.getExtractReviewStats(deckPath, true);
+            countedExtractDecks.add(deckPath);
             totalReviewableCards +=
                 simulatedDeck.getDistinctCardCount(CardListType.NewCard, true) +
                 simulatedDeck.getDistinctCardCount(CardListType.DueCard, true) +
                 simulatedDeck.getAvailableLearningCardCount(true, learnAheadMillis) +
                 extractStats.totalCount;
+        }
+
+        for (const deckPath of this.getReviewableExtractDeckPaths(true)) {
+            const topLevelDeckPath = deckPath.split("/").filter(Boolean)[0] ?? deckPath;
+            if (!topLevelDeckPath || countedExtractDecks.has(topLevelDeckPath)) {
+                continue;
+            }
+            countedExtractDecks.add(topLevelDeckPath);
+            totalReviewableCards += this.getExtractReviewStats(topLevelDeckPath, true).totalCount;
         }
 
         return totalReviewableCards;

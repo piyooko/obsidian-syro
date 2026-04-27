@@ -404,7 +404,7 @@ export class ExtractStore {
                 ordinal,
             };
             if (existing) {
-                const nextDeckName = existing.deckName || deckName || DEFAULT_DECKNAME;
+                const nextDeckName = deckName || existing.deckName || DEFAULT_DECKNAME;
                 const changed =
                     JSON.stringify(existing.sourceAnchor) !== JSON.stringify(sourceAnchor) ||
                     existing.rawMarkdown !== match.rawMarkdown ||
