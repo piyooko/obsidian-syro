@@ -148,6 +148,16 @@ test("Test parsing of single line reversed cards", () => {
     ).toEqual([]);
 });
 
+test("Test not parsing reserved curly syntax prefixes as single line cards", () => {
+    expect(parseT("{{ir::}}", parserOptions)).toEqual([]);
+    expect(parseT("{{ir::Extract text}}", parserOptions)).toEqual([]);
+    expect(parseT("Before {{ir::Extract text}} after", parserOptions)).toEqual([]);
+
+    expect(parseT("Question::Answer\n{{ir::Extract text}}", parserOptions)).toEqual([
+        [CardType.SingleLineBasic, "Question::Answer", 0, 0],
+    ]);
+});
+
 test("Test parsing of multi line basic cards", () => {
     // standard symbols
     expect(parseT("Question\n?\nAnswer", parserOptions)).toEqual([

@@ -5,6 +5,7 @@ import {
     hasStandardClozeOutsideCode,
     isIndexInsideCodeContext,
 } from "src/util/codeAwareCloze";
+import { stripIrExtractSyntax } from "src/util/irExtractParser";
 
 export let debugParser = false;
 
@@ -57,9 +58,9 @@ function hasInlineMarker(text: string, marker: string): boolean {
         const isInsideCode = isIndexInsideCodeContext(markerIdx, codeContexts);
 
         const prefix = text.substring(0, markerIdx);
-        const isInsideAnki = /\{\{c\d+$/.test(prefix);
+        const isInsideReservedCurlyPrefix = /\{\{(?:c\d+|ir)$/i.test(prefix);
 
-        if (!isInsideCode && !isInsideAnki) {
+        if (!isInsideCode && !isInsideReservedCurlyPrefix) {
             return true;
         }
 
@@ -220,12 +221,14 @@ export function parse(text: string, options: ParserOptions): ParsedQuestionInfo[
                 // Keep ordinary code block contents inside a multi-line card.
                 cardText += "\n" + codeBlockContent + codeBlockClose;
             }
-        } else if (
-            cardType === null &&
-            (hasStandardClozeOutsideCode(currentLine, options.clozePatterns) ||
-                hasNonStandardClozeOutsideCode(currentLine, options.clozePatterns))
-        ) {
-            cardType = CardType.Cloze;
+        } else if (cardType === null) {
+            const clozeDetectionLine = stripIrExtractSyntax(currentLine);
+            if (
+                hasStandardClozeOutsideCode(clozeDetectionLine, options.clozePatterns) ||
+                hasNonStandardClozeOutsideCode(clozeDetectionLine, options.clozePatterns)
+            ) {
+                cardType = CardType.Cloze;
+            }
         }
     }
 
