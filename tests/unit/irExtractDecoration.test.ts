@@ -5,6 +5,7 @@ import {
     findActiveIrExtractSourceMatch,
     findIrExtractEditingRoot,
     findIrExtractSourceMatches,
+    findIrExtractSourceMatchesAtPoint,
     getIrExtractLayerInset,
     getIrExtractLayerVerticalInset,
     getIrExtractLineRanges,
@@ -164,13 +165,45 @@ describe("irExtractDecoration helpers", () => {
         expect(active?.end).toBe(text.length - 2);
     });
 
-    test("shows source when the cursor is on an extract visual line but outside the extract syntax", () => {
-        const text = "prefix {{ir::target}} suffix";
+    test("shows source for every extract on the current source line", () => {
+        const text = "prefix {{ir::one}} middle {{ir::two}} suffix";
         const matches = parseIrExtracts(text);
         const cursor = text.indexOf("prefix");
         const sourceMatches = findIrExtractSourceMatches(text, matches, cursor, cursor);
 
-        expect(sourceMatches.map((match) => match.rawMarkdown)).toEqual(["target"]);
+        expect(sourceMatches.map((match) => match.rawMarkdown)).toEqual(["one", "two"]);
+        expect(findActiveIrExtractSourceMatch(text, matches, cursor, cursor)).toBeNull();
+    });
+
+    test("shows source only for extract blocks hit by the cursor point", () => {
+        const text = "prefix {{ir::one}} middle {{ir::two}} suffix";
+        const matches = parseIrExtracts(text);
+        const blocks = [
+            { start: matches[0].start, left: 10, top: 0, width: 30, height: 20 },
+            { start: matches[1].start, left: 60, top: 0, width: 30, height: 20 },
+        ];
+
+        expect(findIrExtractSourceMatchesAtPoint(matches, blocks, 45, 10)).toEqual([]);
+        expect(
+            findIrExtractSourceMatchesAtPoint(matches, blocks, 65, 10).map(
+                (match) => match.rawMarkdown,
+            ),
+        ).toEqual(["two"]);
+    });
+
+    test("shows source for nested extract blocks hit by the cursor point", () => {
+        const text = "{{ir::outer {{ir::inner}} text}}";
+        const matches = parseIrExtracts(text);
+        const blocks = [
+            { start: matches[0].start, left: 0, top: 0, width: 100, height: 40 },
+            { start: matches[1].start, left: 20, top: 10, width: 50, height: 20 },
+        ];
+
+        expect(
+            findIrExtractSourceMatchesAtPoint(matches, blocks, 30, 20).map(
+                (match) => match.rawMarkdown,
+            ),
+        ).toEqual(["outer {{ir::inner}} text", "inner"]);
     });
 
     test("selects the outer extract when the selection crosses an inner extract", () => {

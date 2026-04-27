@@ -1,4 +1,4 @@
-import { RangeSetBuilder, type Extension } from "@codemirror/state";
+import { RangeSetBuilder, StateEffect, type Extension } from "@codemirror/state";
 import {
     Decoration,
     type DecorationSet,
@@ -49,6 +49,13 @@ interface PendingMeasuredExtractBlock {
     maxDepth: number;
 }
 
+interface IrExtractMeasureReadResult {
+    overlayBlocks: MeasuredExtractBlock[];
+    pointSourceStarts: number[];
+    selectionFrom: number;
+    selectionTo: number;
+}
+
 export interface IrExtractVerticalInsetBlock {
     rawTop: number;
     rawBottom: number;
@@ -92,6 +99,7 @@ const ATX_HEADING_INNER_PREFIX = /^(#{1,6})[ \t]+/;
 const WRAPPED_BLOCK_PREFIX =
     /^(#{1,6}[ \t]+|[-+*][ \t]+\[[ xX]\][ \t]+|[-+*][ \t]+|\d{1,9}[.)][ \t]+|>[ \t]*)/;
 const NESTED_BLOCK_GAP = 1;
+const irExtractPointSourceStartsEffect = StateEffect.define<number[]>();
 
 function isLivePreview(view: EditorView): boolean {
     return !!view.dom.closest(".is-live-preview");
@@ -151,6 +159,35 @@ export function findIrExtractSourceMatches(
         .sort((left, right) => left.start - right.start || right.end - left.end);
 }
 
+function findIrExtractDirectSourceMatches(
+    matches: IrExtractMatch[],
+    selectionFrom: number,
+    selectionTo: number,
+): IrExtractMatch[] {
+    return matches
+        .filter((match) => selectionTouchesRange(selectionFrom, selectionTo, match.start, match.end))
+        .sort((left, right) => left.start - right.start || right.end - left.end);
+}
+
+export function findIrExtractSourceMatchesAtPoint(
+    matches: IrExtractMatch[],
+    blocks: Pick<MeasuredExtractBlock, "start" | "left" | "top" | "width" | "height">[],
+    x: number,
+    y: number,
+): IrExtractMatch[] {
+    const byStart = new Map(matches.map((match) => [match.start, match]));
+    return blocks
+        .filter((block) =>
+            x >= block.left &&
+            x <= block.left + block.width &&
+            y >= block.top &&
+            y <= block.top + block.height,
+        )
+        .map((block) => byStart.get(block.start))
+        .filter((match): match is IrExtractMatch => match !== undefined)
+        .sort((left, right) => left.start - right.start || right.end - left.end);
+}
+
 function distanceToRange(offset: number, rangeFrom: number, rangeTo: number): number {
     if (offset >= rangeFrom && offset <= rangeTo) {
         return 0;
@@ -159,12 +196,21 @@ function distanceToRange(offset: number, rangeFrom: number, rangeTo: number): nu
 }
 
 export function findActiveIrExtractSourceMatch(
-    text: string,
+    _text: string,
     matches: IrExtractMatch[],
     selectionFrom: number,
     selectionTo: number,
 ): IrExtractMatch | null {
-    const candidates = findIrExtractSourceMatches(text, matches, selectionFrom, selectionTo);
+    const candidates = findIrExtractDirectSourceMatches(matches, selectionFrom, selectionTo);
+    return pickActiveIrExtractSourceMatch(matches, candidates, selectionFrom, selectionTo);
+}
+
+function pickActiveIrExtractSourceMatch(
+    matches: IrExtractMatch[],
+    candidates: IrExtractMatch[],
+    selectionFrom: number,
+    selectionTo: number,
+): IrExtractMatch | null {
     if (candidates.length === 0) {
         return null;
     }
@@ -485,7 +531,72 @@ export function alignNestedIrExtractBlocksHorizontally<T extends MeasuredExtract
     return nextBlocks;
 }
 
-function buildIrExtractDecorations(view: EditorView): {
+function uniqueIrExtractMatchesByStart(matches: IrExtractMatch[]): IrExtractMatch[] {
+    const seen = new Set<number>();
+    const uniqueMatches: IrExtractMatch[] = [];
+    for (const match of matches) {
+        if (seen.has(match.start)) {
+            continue;
+        }
+        seen.add(match.start);
+        uniqueMatches.push(match);
+    }
+    return uniqueMatches;
+}
+
+function getSelectionPointInScrollCoordinates(
+    view: EditorView,
+    selection: { from: number; to: number },
+): { x: number; y: number } | null {
+    if (selection.from !== selection.to) {
+        return null;
+    }
+
+    const coords = view.coordsAtPos(selection.from);
+    if (!coords) {
+        return null;
+    }
+
+    const scrollRect = view.scrollDOM.getBoundingClientRect();
+    return {
+        x: (coords.left + coords.right) / 2 - scrollRect.left + view.scrollDOM.scrollLeft,
+        y: (coords.top + coords.bottom) / 2 - scrollRect.top + view.scrollDOM.scrollTop,
+    };
+}
+
+function findIrExtractSourceStartsAtSelectionPoint(
+    matches: IrExtractMatch[],
+    selection: { from: number; to: number },
+    blocks: Pick<MeasuredExtractBlock, "start" | "left" | "top" | "width" | "height">[],
+    point: { x: number; y: number } | null,
+): number[] {
+    if (!point) {
+        return [];
+    }
+    if (selection.from !== selection.to) {
+        return [];
+    }
+    return findIrExtractSourceMatchesAtPoint(matches, blocks, point.x, point.y).map(
+        (match) => match.start,
+    );
+}
+
+function areNumberSetsEqual(left: Set<number>, right: Set<number>): boolean {
+    if (left.size !== right.size) {
+        return false;
+    }
+    for (const value of left) {
+        if (!right.has(value)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function buildIrExtractDecorations(
+    view: EditorView,
+    pointSourceStarts: Set<number> = new Set(),
+): {
     decorations: DecorationSet;
     renderExtracts: RenderExtract[];
 } {
@@ -497,14 +608,32 @@ function buildIrExtractDecorations(view: EditorView): {
     const text = view.state.doc.toString();
     const matches = parseIrExtracts(text);
     const selection = view.state.selection.main;
-    const sourceStarts = new Set(
-        findIrExtractSourceMatches(text, matches, selection.from, selection.to).map(
-            (match) => match.start,
-        ),
-    );
-    const activeSourceMatch = findActiveIrExtractSourceMatch(
+    const lineSourceMatches = findIrExtractSourceMatches(
         text,
         matches,
+        selection.from,
+        selection.to,
+    );
+    const activeDirectSourceMatches = findIrExtractDirectSourceMatches(
+        matches,
+        selection.from,
+        selection.to,
+    );
+    const pointSourceMatches = matches.filter((match) => pointSourceStarts.has(match.start));
+    const sourceMatches = uniqueIrExtractMatchesByStart(
+        lineSourceMatches.sort(
+            (left, right) => left.start - right.start || right.end - left.end,
+        ),
+    );
+    const activeSourceMatches = uniqueIrExtractMatchesByStart(
+        [...activeDirectSourceMatches, ...pointSourceMatches].sort(
+            (left, right) => left.start - right.start || right.end - left.end,
+        ),
+    );
+    const sourceStarts = new Set(sourceMatches.map((match) => match.start));
+    const activeSourceMatch = pickActiveIrExtractSourceMatch(
+        matches,
+        activeSourceMatches,
         selection.from,
         selection.to,
     );
@@ -833,10 +962,11 @@ function createIrExtractDecorationPlugin(): Extension {
         class {
             decorations: DecorationSet;
             private renderExtracts: RenderExtract[];
+            private pointSourceStarts = new Set<number>();
             private readonly overlay: HTMLElement;
 
             constructor(view: EditorView) {
-                const state = buildIrExtractDecorations(view);
+                const state = buildIrExtractDecorations(view, this.pointSourceStarts);
                 this.decorations = state.decorations;
                 this.renderExtracts = state.renderExtracts;
                 this.overlay = document.createElement("div");
@@ -846,13 +976,36 @@ function createIrExtractDecorationPlugin(): Extension {
             }
 
             update(update: ViewUpdate): void {
-                if (
+                let receivedPointSourceStarts = false;
+                for (const transaction of update.transactions) {
+                    for (const effect of transaction.effects) {
+                        if (effect.is(irExtractPointSourceStartsEffect)) {
+                            this.pointSourceStarts = new Set(effect.value);
+                            receivedPointSourceStarts = true;
+                        }
+                    }
+                }
+
+                const shouldRebuild =
                     update.docChanged ||
                     update.viewportChanged ||
                     update.selectionSet ||
-                    update.focusChanged
+                    update.focusChanged ||
+                    receivedPointSourceStarts;
+
+                if (
+                    shouldRebuild
                 ) {
-                    const state = buildIrExtractDecorations(update.view);
+                    if (
+                        !receivedPointSourceStarts &&
+                        (update.docChanged ||
+                            update.viewportChanged ||
+                            update.selectionSet ||
+                            update.focusChanged)
+                    ) {
+                        this.pointSourceStarts = new Set();
+                    }
+                    const state = buildIrExtractDecorations(update.view, this.pointSourceStarts);
                     this.decorations = state.decorations;
                     this.renderExtracts = state.renderExtracts;
                     this.scheduleMeasure(update.view);
@@ -875,11 +1028,46 @@ function createIrExtractDecorationPlugin(): Extension {
                 }
 
                 view.requestMeasure({
-                    read: () => measureExtractBlocks(view, this.renderExtracts),
-                    write: (blocks) => {
+                    read: (): IrExtractMeasureReadResult => {
+                        const overlayBlocks = measureExtractBlocks(view, this.renderExtracts);
+                        const selection = view.state.selection.main;
+                        const matches = parseIrExtracts(view.state.doc.toString());
+                        const point = getSelectionPointInScrollCoordinates(view, selection);
+                        return {
+                            overlayBlocks,
+                            pointSourceStarts: findIrExtractSourceStartsAtSelectionPoint(
+                                matches,
+                                selection,
+                                overlayBlocks,
+                                point,
+                            ),
+                            selectionFrom: selection.from,
+                            selectionTo: selection.to,
+                        };
+                    },
+                    write: (result) => {
                         this.overlay.style.width = `${view.scrollDOM.scrollWidth}px`;
                         this.overlay.style.height = `${view.scrollDOM.scrollHeight}px`;
-                        renderOverlayBlocks(this.overlay, blocks);
+                        renderOverlayBlocks(this.overlay, result.overlayBlocks);
+
+                        const nextPointSourceStarts = new Set(result.pointSourceStarts);
+                        if (!areNumberSetsEqual(this.pointSourceStarts, nextPointSourceStarts)) {
+                            this.pointSourceStarts = nextPointSourceStarts;
+                            const nextStarts = [...nextPointSourceStarts];
+                            window.requestAnimationFrame(() => {
+                                const selection = view.state.selection.main;
+                                if (
+                                    !view.dom.isConnected ||
+                                    selection.from !== result.selectionFrom ||
+                                    selection.to !== result.selectionTo
+                                ) {
+                                    return;
+                                }
+                                view.dispatch({
+                                    effects: irExtractPointSourceStartsEffect.of(nextStarts),
+                                });
+                            });
+                        }
                     },
                 });
             }
