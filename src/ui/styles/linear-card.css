@@ -2284,3 +2284,46 @@ body.syro-mobile-review-square-corners
     background: var(--background-modifier-hover);
     border-color: var(--text-faint);
 }
+
+.sr-extract-context-editor {
+    height: 100%;
+    width: 100%;
+}
+
+.sr-extract-context-editor .sr-cm-container {
+    height: 100%;
+    width: 100%;
+}
+
+.sr-extract-context-editor .cm-editor {
+    height: 100%;
+    background: var(--background-primary);
+}
+
+.sr-extract-context-editor .cm-scroller {
+    font-family: var(--font-text);
+    line-height: 1.6;
+}
+
+.sr-extract-context-readonly .cm-cursor,
+.sr-extract-context-readonly .cm-selectionBackground {
+    display: none;
+}
+
+.sr-rating-buttons .is-set {
+    border-color: color-mix(in srgb, var(--interactive-accent) 35%, transparent);
+}
+
+.sr-rating-buttons .is-graduate {
+    border-color: rgba(70, 180, 120, 0.35);
+}
+
+.sr-extract-rating-buttons {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 640px) {
+    .sr-extract-rating-buttons {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

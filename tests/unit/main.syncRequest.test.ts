@@ -673,6 +673,7 @@ describe("SRPlugin sync request orchestration", () => {
                 path: inputFile.path,
                 getAllTagsFromCache: () => [],
             })),
+            getReviewDeckPathForFile: jest.fn(() => "folder/note"),
             tabViewManager: {
                 openSRTabView: jest.fn(async () => undefined),
             },

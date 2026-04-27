@@ -405,6 +405,7 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
 
             if (store.isTrackedCardfile(file.path) && trackedFile) {
                 const fileText = await plugin.app.vault.read(file);
+                await plugin.syncExtractsFromFile(file);
                 const result = trackedFile.syncNoteCardsIndex(fileText, plugin.data.settings);
 
                 if (result.removedIds.length > 0) {
@@ -426,6 +427,7 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
 
             let shouldSyncCards = false;
             const fileText = await plugin.app.vault.read(file);
+            await plugin.syncExtractsFromFile(file);
             const settings = plugin.data.settings;
 
             const hasInlineSeparator =

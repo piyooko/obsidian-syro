@@ -13,8 +13,10 @@ import type { FC } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     RotateCcw,
+    CalendarDays,
     ThumbsDown,
     Check,
+    GraduationCap,
     Zap,
     ChevronRight,
     Eye,
@@ -31,9 +33,12 @@ import {
 import { CardDebugModal } from "./CardDebugModal";
 import type { CardDebugData } from "./CardDebugModal";
 import { CardEditorView } from "./CardEditorView";
+import { ExtractContextEditorView } from "./ExtractContextEditorView";
 import type SRPlugin from "src/main";
 import type { CardReviewTarget } from "src/question-type";
 import type { QuestionContextBreadcrumb } from "src/SRFile";
+import type { ExtractReviewContext } from "src/util/irExtractContext";
+import type { ExtractContextUpdate } from "src/editor/extract-context-decoration";
 import "../styles/linear-card.css";
 import { t } from "src/lang/helpers";
 import { DEFAULT_PROGRESS_BAR_STYLE, type ProgressBarStyle } from "src/settings";
@@ -103,6 +108,16 @@ interface LinearCardProps {
     rawContent?: string;
     plugin?: SRPlugin;
     onUpdateContent?: (text: string) => void;
+    extractContext?: ExtractReviewContext | null;
+    extractContextDraft?: ExtractContextUpdate | null;
+    onUpdateExtractContext?: (update: ExtractContextUpdate) => void;
+    onSetExtractDate?: () => void;
+    extractActionLabels?: {
+        again: string;
+        good: string;
+        set: string;
+        graduate: string;
+    };
 }
 
 interface InlineBreadcrumbsProps {
@@ -349,6 +364,11 @@ export const LinearCard: FC<LinearCardProps> = ({
     rawContent = "",
     plugin,
     onUpdateContent,
+    extractContext,
+    extractContextDraft,
+    onUpdateExtractContext,
+    onSetExtractDate,
+    extractActionLabels,
 }) => {
     const isExtractReview = reviewKind === "extract";
     const [size, setSize] = useState({ width, height });
@@ -787,6 +807,11 @@ export const LinearCard: FC<LinearCardProps> = ({
                     onPostpone?.();
                     break;
                 case "DELETE":
+                    if (isExtractReview) {
+                        showToast(t("EXTRACT_REVIEW_GRADUATE"), <GraduationCap size={14} />);
+                        onDelete?.();
+                        break;
+                    }
                     setIsDeleted(true);
                     setTimeout(() => {
                         setIsDeleted(false);
@@ -796,7 +821,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                     break;
             }
         },
-        [showToast, onUndo, onOpenNote, onEditCard, onPostpone, onDelete],
+        [isExtractReview, showToast, onUndo, onOpenNote, onEditCard, onPostpone, onDelete],
     );
 
     useEffect(() => {
@@ -824,16 +849,24 @@ export const LinearCard: FC<LinearCardProps> = ({
                     }
                     break;
                 case "1":
-                    if (renderIsFlipped) handleAnswerInternal(0);
+                    if (isExtractReview || renderIsFlipped) handleAnswerInternal(0);
                     break;
                 case "2":
-                    if (renderIsFlipped) handleAnswerInternal(1);
+                    if (isExtractReview || renderIsFlipped) handleAnswerInternal(1);
                     break;
                 case "3":
-                    if (renderIsFlipped) handleAnswerInternal(2);
+                    if (isExtractReview) {
+                        onSetExtractDate?.();
+                    } else if (renderIsFlipped) {
+                        handleAnswerInternal(2);
+                    }
                     break;
                 case "4":
-                    if (renderIsFlipped) handleAnswerInternal(3);
+                    if (isExtractReview) {
+                        handleMenuAction("DELETE");
+                    } else if (renderIsFlipped) {
+                        handleAnswerInternal(3);
+                    }
                     break;
                 case "o":
                     handleMenuAction("OPEN");
@@ -861,6 +894,7 @@ export const LinearCard: FC<LinearCardProps> = ({
         handleAnswerInternal,
         handleMenuAction,
         isExtractReview,
+        onSetExtractDate,
         renderIsFlipped,
         revealAnswer,
         showInfo,
@@ -877,6 +911,12 @@ export const LinearCard: FC<LinearCardProps> = ({
         .filter(Boolean)
         .join(" ");
     const cardClassName = "sr-linear-card";
+    const extractLabels = extractActionLabels ?? {
+        again: t("EXTRACT_REVIEW_AGAIN"),
+        good: t("EXTRACT_REVIEW_GOOD"),
+        set: t("EXTRACT_REVIEW_SET_DATE"),
+        graduate: t("EXTRACT_REVIEW_GRADUATE"),
+    };
 
     return (
         <div className={wrapperClassName} ref={wrapperRef}>
@@ -1276,7 +1316,11 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                                 handleMenuAction("DELETE")
                                                             }
                                                             icon={<Trash2 size={14} />}
-                                                            label={t("UI_DELETE_CARD")}
+                                                            label={
+                                                                isExtractReview
+                                                                    ? t("EXTRACT_REVIEW_GRADUATE")
+                                                                    : t("UI_DELETE_CARD")
+                                                            }
                                                             intent="danger"
                                                             kbd="Del"
                                                         />
@@ -1306,15 +1350,28 @@ export const LinearCard: FC<LinearCardProps> = ({
 
                         <div className={`sr-card-content-area ${isEditing ? "sr-is-editing" : ""}`}>
                             {isEditing && plugin ? (
-                                <CardEditorView
-                                    value={editText}
-                                    onChange={(val) => {
-                                        setEditText(val);
-                                        onUpdateContent?.(val);
-                                    }}
-                                    onExit={toggleEditMode}
-                                    plugin={plugin}
-                                />
+                                isExtractReview && extractContext && extractContextDraft ? (
+                                    <ExtractContextEditorView
+                                        value={extractContextDraft.markdown}
+                                        ranges={extractContextDraft.ranges}
+                                        editable={true}
+                                        onChange={(update) => {
+                                            onUpdateExtractContext?.(update);
+                                        }}
+                                        onExit={toggleEditMode}
+                                        plugin={plugin}
+                                    />
+                                ) : (
+                                    <CardEditorView
+                                        value={editText}
+                                        onChange={(val) => {
+                                            setEditText(val);
+                                            onUpdateContent?.(val);
+                                        }}
+                                        onExit={toggleEditMode}
+                                        plugin={plugin}
+                                    />
+                                )
                             ) : (
                                 <div className="sr-card-content-scroll" ref={contentScrollRef}>
                                     {shouldInlineBreadcrumbs && (
@@ -1323,7 +1380,18 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             onOpenBreadcrumb={onOpenBreadcrumb}
                                         />
                                     )}
-                                    {isExtractReview ? (
+                                    {isExtractReview && extractContext && extractContextDraft && plugin ? (
+                                        <ExtractContextEditorView
+                                            value={extractContextDraft.markdown}
+                                            ranges={extractContextDraft.ranges}
+                                            editable={false}
+                                            onChange={(update) => {
+                                                onUpdateExtractContext?.(update);
+                                            }}
+                                            onExit={toggleEditMode}
+                                            plugin={plugin}
+                                        />
+                                    ) : isExtractReview ? (
                                         <ExtractContent
                                             key={cardUiResetKey}
                                             content={card?.front || t("EXTRACT_NO_ACTIVE_ITEMS")}
@@ -1386,43 +1454,86 @@ export const LinearCard: FC<LinearCardProps> = ({
                                     <span className="sr-kbd">SPACE</span>
                                 </button>
                             ) : (
-                                <div className="sr-rating-buttons">
-                                    <LinearButton
-                                        icon={<RotateCcw size={12} />}
-                                        label={t("UI_RESET")}
-                                        sub={card?.responseButtonLabels?.[0] || "1m"}
-                                        shortcut="1"
-                                        className="is-reset"
-                                        variant="reset"
-                                        onClick={() => handleAnswerInternal(0)}
-                                    />
-                                    <LinearButton
-                                        icon={<ThumbsDown size={12} />}
-                                        label={t("UI_HARD")}
-                                        sub={card?.responseButtonLabels?.[1] || "10m"}
-                                        shortcut="2"
-                                        className="is-hard"
-                                        variant="hard"
-                                        onClick={() => handleAnswerInternal(1)}
-                                    />
-                                    <LinearButton
-                                        icon={<Check size={12} />}
-                                        label={t("UI_GOOD")}
-                                        sub={card?.responseButtonLabels?.[2] || "3d"}
-                                        shortcut="3"
-                                        className="is-good"
-                                        variant="good"
-                                        onClick={() => handleAnswerInternal(2)}
-                                    />
-                                    <LinearButton
-                                        icon={<Zap size={12} />}
-                                        label={t("UI_EASY")}
-                                        sub={card?.responseButtonLabels?.[3] || "7d"}
-                                        shortcut="4"
-                                        className="is-easy"
-                                        variant="easy"
-                                        onClick={() => handleAnswerInternal(3)}
-                                    />
+                                <div
+                                    className={`sr-rating-buttons ${
+                                        isExtractReview ? "sr-extract-rating-buttons" : ""
+                                    }`}
+                                >
+                                    {isExtractReview ? (
+                                        <>
+                                            <LinearButton
+                                                icon={<RotateCcw size={12} />}
+                                                label={extractLabels.again}
+                                                sub={card?.responseButtonLabels?.[0] || ""}
+                                                shortcut="1"
+                                                variant="reset"
+                                                onClick={() => handleAnswerInternal(0)}
+                                            />
+                                            <LinearButton
+                                                icon={<Check size={12} />}
+                                                label={extractLabels.good}
+                                                sub={card?.responseButtonLabels?.[1] || ""}
+                                                shortcut="2"
+                                                variant="good"
+                                                onClick={() => handleAnswerInternal(1)}
+                                            />
+                                            <LinearButton
+                                                icon={<CalendarDays size={12} />}
+                                                label={extractLabels.set}
+                                                sub=""
+                                                shortcut="3"
+                                                variant="set"
+                                                onClick={() => onSetExtractDate?.()}
+                                            />
+                                            <LinearButton
+                                                icon={<GraduationCap size={12} />}
+                                                label={extractLabels.graduate}
+                                                sub=""
+                                                shortcut="4"
+                                                variant="graduate"
+                                                onClick={() => handleMenuAction("DELETE")}
+                                            />
+                                        </>
+                                    ) : (
+                                        <>
+                                            <LinearButton
+                                                icon={<RotateCcw size={12} />}
+                                                label={t("UI_RESET")}
+                                                sub={card?.responseButtonLabels?.[0] || "1m"}
+                                                shortcut="1"
+                                                className="is-reset"
+                                                variant="reset"
+                                                onClick={() => handleAnswerInternal(0)}
+                                            />
+                                            <LinearButton
+                                                icon={<ThumbsDown size={12} />}
+                                                label={t("UI_HARD")}
+                                                sub={card?.responseButtonLabels?.[1] || "10m"}
+                                                shortcut="2"
+                                                className="is-hard"
+                                                variant="hard"
+                                                onClick={() => handleAnswerInternal(1)}
+                                            />
+                                            <LinearButton
+                                                icon={<Check size={12} />}
+                                                label={t("UI_GOOD")}
+                                                sub={card?.responseButtonLabels?.[2] || "3d"}
+                                                shortcut="3"
+                                                className="is-good"
+                                                variant="good"
+                                                onClick={() => handleAnswerInternal(2)}
+                                            />
+                                            <LinearButton
+                                                icon={<Zap size={12} />}
+                                                label={t("UI_EASY")}
+                                                sub={card?.responseButtonLabels?.[3] || "7d"}
+                                                shortcut="4"
+                                                className="is-easy"
+                                                variant="easy"
+                                                onClick={() => handleAnswerInternal(3)}
+                                            />
+                                        </>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -1518,7 +1629,7 @@ interface LinearButtonProps {
     onClick: () => void;
     className?: string;
     colorClass?: string;
-    variant?: "reset" | "hard" | "good" | "easy";
+    variant?: "reset" | "hard" | "good" | "easy" | "set" | "graduate";
 }
 
 const LinearButton: FC<LinearButtonProps> = ({
@@ -1536,6 +1647,8 @@ const LinearButton: FC<LinearButtonProps> = ({
         hard: "is-hard",
         good: "is-good",
         easy: "is-easy",
+        set: "is-set",
+        graduate: "is-graduate",
     };
 
     const activeClass = variant ? variantClasses[variant] : "";

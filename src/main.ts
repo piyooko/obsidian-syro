@@ -66,6 +66,13 @@ import {
     wrapSelectionAsExtract,
     type IrExtractMatch,
 } from "./util/irExtractParser";
+import {
+    buildExtractReviewContext,
+    hasCurrentExtractWrapper,
+    replaceExtractReviewContext,
+    type ExtractReviewContext,
+} from "./util/irExtractContext";
+import type { ExtractContextUpdate } from "./editor/extract-context-decoration";
 import { setDebugParser } from "src/parser";
 
 // Legacy migration note retained from the pre-Syro codebase.
@@ -2148,6 +2155,35 @@ export default class SRPlugin extends Plugin {
         this.updateStatusBar();
     }
 
+    public async syncExtractsFromFile(file: TFile): Promise<void> {
+        if (
+            !this.extractStore ||
+            this.data.settings.enableExtracts === false ||
+            file.extension !== "md"
+        ) {
+            return;
+        }
+
+        const text = await this.app.vault.cachedRead(file);
+        const result = this.extractStore.syncFileExtracts(
+            file.path,
+            text,
+            this.getExtractDeckNameForFile(file),
+        );
+        if (
+            result.added.length === 0 &&
+            result.updated.length === 0 &&
+            result.graduated.length === 0
+        ) {
+            return;
+        }
+
+        await this.appendExtractSyncResult(result);
+        await this.extractStore.save();
+        this.syncEvents.emit("extracts-updated");
+        this.updateStatusBar();
+    }
+
     private async appendExtractSyncResult(result: {
         added: ExtractItem[];
         updated: ExtractItem[];
@@ -2272,6 +2308,31 @@ export default class SRPlugin extends Plugin {
         return intervals.map((interval) => textInterval(interval, false));
     }
 
+    public async getExtractReviewContext(uuid: string): Promise<ExtractReviewContext | null> {
+        const item = this.extractStore?.get(uuid);
+        if (!item || item.stage !== "active") {
+            return null;
+        }
+        const sourceFile = this.resolveExtractSourceFile(item);
+        if (!sourceFile) {
+            return null;
+        }
+        const sourceText = await this.app.vault.read(sourceFile);
+        const match = this.findCurrentExtractMatch(item, sourceText);
+        if (!match) {
+            const result = this.extractStore.syncFileExtracts(
+                sourceFile.path,
+                sourceText,
+                this.getExtractDeckNameForFile(sourceFile),
+            );
+            await this.appendExtractSyncResult(result);
+            await this.extractStore.save();
+            this.syncEvents.emit("extracts-updated");
+            return null;
+        }
+        return buildExtractReviewContext(sourceText, match);
+    }
+
     public async reviewExtract(
         uuid: string,
         response: ReviewResponse,
@@ -2289,6 +2350,25 @@ export default class SRPlugin extends Plugin {
         this.syncEvents.emit("extracts-updated");
         this.updateStatusBar();
         return reviewed;
+    }
+
+    public async setExtractReviewDate(
+        uuid: string,
+        dueAt: number,
+        deckPath: string | null = null,
+    ): Promise<ExtractItem | null> {
+        if (!this.extractStore || this.data.settings.enableExtracts === false) {
+            return null;
+        }
+        const updated = this.extractStore.setNextReviewDate(uuid, dueAt, deckPath);
+        if (!updated) {
+            return null;
+        }
+        await this.extractStore.save();
+        await this.appendSyroExtractUpsert({ item: updated }, "review");
+        this.syncEvents.emit("extracts-updated");
+        this.updateStatusBar();
+        return updated;
     }
 
     public async updateExtractMemo(uuid: string, memo: string): Promise<ExtractItem | null> {
@@ -2371,6 +2451,58 @@ export default class SRPlugin extends Plugin {
         return this.extractStore.get(uuid);
     }
 
+    public async updateExtractContextMarkdown(
+        uuid: string,
+        previousContext: ExtractReviewContext | null,
+        update: ExtractContextUpdate,
+    ): Promise<ExtractItem | null> {
+        void previousContext;
+        if (!hasCurrentExtractWrapper(update.markdown, update.ranges)) {
+            new Notice(t("EXTRACT_CONTEXT_SAVE_FAILED"));
+            return null;
+        }
+        if (!this.extractStore) {
+            return null;
+        }
+        const item = this.extractStore.get(uuid);
+        if (!item || item.stage !== "active") {
+            return null;
+        }
+
+        const sourceFile = this.resolveExtractSourceFile(item);
+        if (!sourceFile) {
+            return null;
+        }
+
+        const sourceText = await this.app.vault.read(sourceFile);
+        const match = this.findCurrentExtractMatch(item, sourceText);
+        if (!match) {
+            const result = this.extractStore.syncFileExtracts(
+                sourceFile.path,
+                sourceText,
+                this.getExtractDeckNameForFile(sourceFile),
+            );
+            await this.appendExtractSyncResult(result);
+            await this.extractStore.save();
+            this.syncEvents.emit("extracts-updated");
+            new Notice(t("EXTRACT_CONTEXT_SAVE_FAILED"));
+            return null;
+        }
+
+        const currentContext = buildExtractReviewContext(sourceText, match);
+        const nextText = replaceExtractReviewContext(sourceText, currentContext, update.markdown);
+        await this.app.vault.modify(sourceFile, nextText);
+        const result = this.extractStore.syncFileExtracts(
+            sourceFile.path,
+            nextText,
+            this.getExtractDeckNameForFile(sourceFile),
+        );
+        await this.appendExtractSyncResult(result);
+        await this.extractStore.save();
+        this.syncEvents.emit("extracts-updated");
+        return this.extractStore.get(uuid);
+    }
+
     public async createNestedExtractFromRawRange(
         uuid: string,
         from: number,
@@ -2395,7 +2527,10 @@ export default class SRPlugin extends Plugin {
         await this.appendSyroTimelineAdd(item.sourcePath, commit);
     }
 
-    public async graduateExtract(uuid: string): Promise<ExtractItem | null> {
+    public async graduateExtract(
+        uuid: string,
+        deckPath: string | null = null,
+    ): Promise<ExtractItem | null> {
         if (!this.extractStore) {
             return null;
         }
@@ -2410,22 +2545,26 @@ export default class SRPlugin extends Plugin {
             if (match) {
                 const nextText = removeExtractWrapperKeepInnerContent(sourceText, match);
                 await this.app.vault.modify(sourceFile, nextText);
+                const graduated = this.extractStore.graduateWithReviewCount(uuid, deckPath);
                 const result = this.extractStore.syncFileExtracts(
                     sourceFile.path,
                     nextText,
                     this.getExtractDeckNameForFile(sourceFile),
                 );
                 await this.appendExtractSyncResult(result);
+                if (graduated) {
+                    await this.appendSyroExtractGraduate({ item: graduated });
+                }
                 await this.extractStore.save();
-                await this.preserveGraduatedExtractMemo(item);
+                await this.preserveGraduatedExtractMemo(graduated ?? item);
                 this.syncEvents.emit("extracts-updated");
                 this.syncEvents.emit("note-review-updated");
                 this.updateStatusBar();
-                return this.extractStore.get(uuid) ?? item;
+                return this.extractStore.get(uuid) ?? graduated ?? item;
             }
         }
 
-        const graduated = this.extractStore.graduate(uuid);
+        const graduated = this.extractStore.graduateWithReviewCount(uuid, deckPath);
         if (!graduated) {
             return null;
         }

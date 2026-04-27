@@ -30,6 +30,9 @@ import type SRPlugin from "src/main";
 import { FlashcardReviewMode, IFlashcardReviewSequencer } from "src/FlashcardReviewSequencer";
 import { Deck } from "src/Deck";
 import { ReviewResponse, textInterval } from "src/scheduling";
+import type { ExtractContextUpdate } from "src/editor/extract-context-decoration";
+import type { ExtractReviewContext } from "src/util/irExtractContext";
+import { ExtractReviewDateModal } from "src/ui/modals/ExtractReviewDateModal";
 import { CardType } from "src/Question";
 import { CardFrontBackUtil, type CardReviewTarget } from "src/question-type";
 import { SrTFile, type QuestionContextBreadcrumb } from "src/SRFile";
@@ -877,7 +880,11 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 ReviewResponse.Good,
                 ReviewResponse.Easy,
             ];
-            const response = responseMap[rating] ?? ReviewResponse.Good;
+            const extractResponseMap = [ReviewResponse.Reset, ReviewResponse.Good];
+            const response =
+                activeReviewItem?.kind === "extract"
+                    ? extractResponseMap[rating] ?? ReviewResponse.Good
+                    : responseMap[rating] ?? ReviewResponse.Good;
 
             if (activeReviewItem?.kind === "extract") {
                 try {
@@ -1016,7 +1023,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     // Remove the current card from tracking and leave review if nothing remains.
     const handleDelete = useCallback(async () => {
         if (activeReviewItem?.kind === "extract") {
-            await plugin.graduateExtract(activeReviewItem.uuid);
+            await plugin.graduateExtract(activeReviewItem.uuid, activeDeckPathRef.current);
             const nextReviewItem = resolveNextReviewItem(activeDeckPathRef.current);
             if (nextReviewItem) {
                 setActiveReviewItem(nextReviewItem);
@@ -1036,6 +1043,28 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             handleExitReview();
         }
     }, [activeReviewItem, forceUpdate, handleExitReview, plugin, resolveNextReviewItem, sequencer]);
+
+    const handleSetExtractDate = useCallback(
+        async (dueAt: number) => {
+            if (activeReviewItem?.kind !== "extract") {
+                return;
+            }
+            await plugin.setExtractReviewDate(
+                activeReviewItem.uuid,
+                dueAt,
+                activeDeckPathRef.current,
+            );
+            const nextReviewItem = resolveNextReviewItem(activeDeckPathRef.current);
+            if (nextReviewItem) {
+                setActiveReviewItem(nextReviewItem);
+                setReviewUiResetToken((value) => value + 1);
+                forceUpdate();
+            } else {
+                handleExitReview();
+            }
+        },
+        [activeReviewItem, forceUpdate, handleExitReview, plugin, resolveNextReviewItem],
+    );
 
     // Persist tree collapse changes.
     const handleCollapseChange = useCallback(
@@ -1131,6 +1160,9 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                                     }}
                                     onDelete={() => {
                                         void handleDelete();
+                                    }}
+                                    onSetExtractDate={(dueAt) => {
+                                        void handleSetExtractDate(dueAt);
                                     }}
                                     onExit={handleExitReview}
                                     uiResetToken={reviewUiResetToken}
@@ -1407,6 +1439,7 @@ interface ExtractLinearCardReviewProps {
     onAnswer: (rating: number) => void;
     onUndo: () => void;
     onDelete: () => void;
+    onSetExtractDate: (dueAt: number) => void;
     onExit: () => void;
     uiResetToken: number;
     overlayMobileNavbar: boolean;
@@ -1429,14 +1462,20 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     onAnswer,
     onUndo,
     onDelete,
+    onSetExtractDate,
     onExit,
     uiResetToken,
     overlayMobileNavbar,
 }) => {
     const extract = plugin.extractStore?.get(extractUuid) ?? null;
     const [body, setBody] = useState(extract?.rawMarkdown ?? "");
+    const [context, setContext] = useState<ExtractReviewContext | null>(null);
+    const [contextDraft, setContextDraft] = useState<ExtractContextUpdate | null>(null);
     const bodyValueRef = useRef(body);
     const bodyDirtyRef = useRef(false);
+    const contextRef = useRef<ExtractReviewContext | null>(null);
+    const contextDraftRef = useRef<ExtractContextUpdate | null>(null);
+    const contextDirtyRef = useRef(false);
     const bodySaveTimerRef = useRef<number | null>(null);
 
     const sourcePath = extract?.sourcePath ?? "";
@@ -1469,11 +1508,33 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     }, [anchorLine, plugin.app.metadataCache, plugin.app.vault, sourceFile]);
 
     useEffect(() => {
+        let cancelled = false;
         const nextExtract = plugin.extractStore?.get(extractUuid) ?? null;
         const nextBody = nextExtract?.rawMarkdown ?? "";
         setBody(nextBody);
         bodyValueRef.current = nextBody;
         bodyDirtyRef.current = false;
+        contextRef.current = null;
+        contextDraftRef.current = null;
+        contextDirtyRef.current = false;
+        setContext(null);
+        setContextDraft(null);
+        void plugin.getExtractReviewContext(extractUuid).then((nextContext) => {
+            if (cancelled) {
+                return;
+            }
+            setContext(nextContext);
+            contextRef.current = nextContext;
+            const nextDraft = nextContext
+                ? { markdown: nextContext.markdown, ranges: nextContext }
+                : null;
+            setContextDraft(nextDraft);
+            contextDraftRef.current = nextDraft;
+            contextDirtyRef.current = false;
+        });
+        return () => {
+            cancelled = true;
+        };
     }, [extractUuid, plugin.extractStore, uiResetToken]);
 
     useEffect(() => {
@@ -1489,6 +1550,27 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
 
     const saveBodyNow = useCallback(async () => {
         clearSaveTimer();
+        if (contextDirtyRef.current && contextRef.current && contextDraftRef.current) {
+            contextDirtyRef.current = false;
+            const updated = await plugin.updateExtractContextMarkdown(
+                extractUuid,
+                contextRef.current,
+                contextDraftRef.current,
+            );
+            if (updated) {
+                setBody(updated.rawMarkdown);
+                bodyValueRef.current = updated.rawMarkdown;
+                const nextContext = await plugin.getExtractReviewContext(extractUuid);
+                setContext(nextContext);
+                contextRef.current = nextContext;
+                const nextDraft = nextContext
+                    ? { markdown: nextContext.markdown, ranges: nextContext }
+                    : null;
+                setContextDraft(nextDraft);
+                contextDraftRef.current = nextDraft;
+            }
+            return;
+        }
         if (!bodyDirtyRef.current) {
             return;
         }
@@ -1526,6 +1608,22 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
         [clearSaveTimer, saveBodyNow],
     );
 
+    const scheduleContextSave = useCallback(
+        (update: ExtractContextUpdate) => {
+            setContextDraft(update);
+            contextDraftRef.current = update;
+            contextDirtyRef.current = true;
+            clearSaveTimer();
+            bodySaveTimerRef.current = window.setTimeout(() => {
+                void saveBodyNow().catch((error) => {
+                    console.error("[SR-Extract] Failed to save extract context", error);
+                    new Notice(t("EXTRACT_CONTEXT_SAVE_FAILED"));
+                });
+            }, 700);
+        },
+        [clearSaveTimer, saveBodyNow],
+    );
+
     const handleAnswer = useCallback(
         async (rating: number) => {
             try {
@@ -1548,6 +1646,21 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
         }
         onDelete();
     }, [flushBodySave, onDelete]);
+
+    const handleSetExtractDate = useCallback(() => {
+        new ExtractReviewDateModal(plugin.app, (dueAt) => {
+            void (async () => {
+                try {
+                    await flushBodySave();
+                } catch (error) {
+                    console.error("[SR-Extract] Failed to flush before custom review date", error);
+                    new Notice(t("EXTRACT_SAVE_FAILED"));
+                    return;
+                }
+                onSetExtractDate(dueAt);
+            })();
+        }).open();
+    }, [flushBodySave, onSetExtractDate, plugin.app]);
 
     const handleOpenSource = useCallback(
         async (options?: { newTab?: boolean }) => {
@@ -1673,6 +1786,7 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
                 onDelete={() => {
                     void handleDelete();
                 }}
+                onSetExtractDate={handleSetExtractDate}
                 onExit={onExit}
                 onResize={handleResize}
                 renderMarkdown={renderExtractMarkdown}
@@ -1684,6 +1798,15 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
                 plugin={plugin}
                 rawContent={body}
                 onUpdateContent={scheduleBodySave}
+                extractContext={context}
+                extractContextDraft={contextDraft}
+                onUpdateExtractContext={scheduleContextSave}
+                extractActionLabels={{
+                    again: t("EXTRACT_REVIEW_AGAIN"),
+                    good: t("EXTRACT_REVIEW_GOOD"),
+                    set: t("EXTRACT_REVIEW_SET_DATE"),
+                    graduate: t("EXTRACT_REVIEW_GRADUATE"),
+                }}
             />
         </div>
     );

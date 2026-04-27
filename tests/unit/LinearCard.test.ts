@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { CardType } from "src/Question";
 import { CardFrontBackUtil } from "src/question-type";
 import { DEFAULT_PROGRESS_BAR_STYLE, DEFAULT_SETTINGS, SRSettings } from "src/settings";
+import { hasCurrentExtractWrapper } from "src/ui/components/ExtractContextEditorView";
 import { LinearCard, CardState } from "src/ui/components/LinearCard";
 
 (
@@ -65,6 +66,78 @@ const FORMULA_LABEL = "**\u6838\u5fc3\u516c\u5f0f**:";
 const PLAIN_FORMULA_LABEL = "\u6838\u5fc3\u516c\u5f0f:";
 const FORMULA_LATEX =
     "$f'(x) = \\\\lim_{\\\\Delta x \\\\to 0} \\\\frac{f(x + \\\\Delta x) - f(x)}{\\\\Delta x}$";
+
+test("validates the hidden current extract wrapper before saving", () => {
+    const markdown = "before {{ir::target}} after";
+    const ranges = {
+        currentOuterFrom: 7,
+        currentOuterTo: 21,
+        currentInnerFrom: 13,
+        currentInnerTo: 19,
+        currentOpenTokenFrom: 7,
+        currentOpenTokenTo: 13,
+        currentCloseTokenFrom: 19,
+        currentCloseTokenTo: 21,
+    };
+
+    expect(hasCurrentExtractWrapper(markdown, ranges)).toBe(true);
+    expect(hasCurrentExtractWrapper("before target after", ranges)).toBe(false);
+});
+
+test("extract review renders direct actions without show-answer or hard/easy labels", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onAnswer = jest.fn();
+    const onSetExtractDate = jest.fn();
+    const onDelete = jest.fn();
+
+    act(() => {
+        root.render(
+            React.createElement(LinearCard, {
+                reviewKind: "extract",
+                card: {
+                    front: "{{ir::text}}",
+                    back: "",
+                    responseButtonLabels: ["1m", "3d"],
+                },
+                renderMarkdown: (content: string, el: HTMLElement) => {
+                    el.textContent = content;
+                },
+                onAnswer,
+                onSetExtractDate,
+                onDelete,
+                extractActionLabels: {
+                    again: "重来",
+                    good: "良好",
+                    set: "指定",
+                    graduate: "毕业",
+                },
+            }),
+        );
+    });
+
+    expect(container.querySelector(".sr-show-answer-btn")).toBeNull();
+    expect(container.textContent).toContain("重来");
+    expect(container.textContent).toContain("良好");
+    expect(container.textContent).toContain("指定");
+    expect(container.textContent).toContain("毕业");
+    expect(container.textContent).not.toContain("较难");
+    expect(container.textContent).not.toContain("简单");
+
+    const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>(".sr-linear-btn"));
+    act(() => {
+        buttons[0].click();
+        buttons[1].click();
+        buttons[2].click();
+        buttons[3].click();
+    });
+
+    expect(onAnswer).toHaveBeenNthCalledWith(1, 0);
+    expect(onAnswer).toHaveBeenNthCalledWith(2, 1);
+    expect(onSetExtractDate).toHaveBeenCalled();
+    expect(onDelete).toHaveBeenCalled();
+});
 
 function createDeferredRenderMarkdown() {
     const pending: PendingRender[] = [];

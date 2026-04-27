@@ -3,6 +3,7 @@ import {
     clampIrExtractVerticalInsetsForAdjacentBlocks,
     containNestedIrExtractBlocks,
     findActiveIrExtractSourceMatch,
+    buildIrExtractRenderExtractsForTest,
     findIrExtractEditingRoot,
     findIrExtractSourceMatches,
     findIrExtractSourceMatchesAtPoint,
@@ -277,5 +278,16 @@ describe("irExtractDecoration helpers", () => {
             "d}}",
         ]);
         expect(lines.map((line) => line.line)).toEqual([2, 3, 4]);
+    });
+
+    test("excludes the current outer extract block while keeping nested extract blocks", () => {
+        const source = "before {{ir::outer {{ir::inner}} text}} after";
+        const matches = parseIrExtracts(source);
+
+        const renderExtracts = buildIrExtractRenderExtractsForTest(source, matches, {
+            excludedStarts: new Set([matches[0].start]),
+        });
+
+        expect(renderExtracts.map((item) => item.start)).toEqual([matches[1].start]);
     });
 });

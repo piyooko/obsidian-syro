@@ -321,4 +321,56 @@ describe("trackFileEvents syro session hooks", () => {
         expect(plugin.requestSync).toHaveBeenCalledWith({ trigger: "file-event" });
         expect(plugin.refreshNoteReview).toHaveBeenCalledWith({ trigger: "file-event" });
     });
+
+    test("modify syncs extracts for the changed markdown file", async () => {
+        const modifyHandlers: Array<(file: { path: string; extension: string }) => Promise<void>> =
+            [];
+        const file = createMarkdownFile("摘录测试.md") as { path: string; extension: string };
+        file.extension = "md";
+
+        const plugin = {
+            data: {
+                settings: {
+                    showRuntimeDebugMessages: false,
+                    convertCurlyBracketsToClozes: false,
+                    singleLineCardSeparator: "::",
+                    singleLineReversedCardSeparator: ":::",
+                    multilineCardSeparator: "?",
+                    multilineReversedCardSeparator: "??",
+                },
+            },
+            registerEvent: jest.fn(),
+            guardSyroDataReady: jest.fn(() => true),
+            app: {
+                vault: {
+                    on: jest.fn((event, handler) => {
+                        if (event === "modify") {
+                            modifyHandlers.push(handler);
+                        }
+                        return {};
+                    }),
+                    read: jest.fn(() => Promise.resolve("{{ir::one}}")),
+                },
+            },
+            store: {
+                getTrackedFile: jest.fn(() => null),
+                isTrackedCardfile: jest.fn(() => false),
+            },
+            noteReviewStore: {
+                isTracked: jest.fn(() => false),
+            },
+            getResolvedFolderTrackingRule: jest.fn(() => null),
+            syncExtractsFromFile: jest.fn(() => Promise.resolve()),
+            loadNote: jest.fn(() => Promise.resolve({ questionList: [] })),
+            markSyncDirty: jest.fn(),
+            requestSync: jest.fn(() => Promise.resolve()),
+            redrawReviewQueueView: jest.fn(),
+            refreshNoteReview: jest.fn(() => Promise.resolve()),
+        };
+
+        registerTrackFileEvents(plugin as never);
+        await modifyHandlers[0](file);
+
+        expect(plugin.syncExtractsFromFile).toHaveBeenCalledWith(file);
+    });
 });

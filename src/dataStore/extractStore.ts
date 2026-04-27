@@ -26,6 +26,8 @@ import {
 import { mergeEquivalentUuids, normalizeUuidAliases } from "./syroUuidAlias";
 
 export type ExtractStage = "active" | "graduated";
+export type ExtractSourceMode = "manual-ir" | "auto-slice";
+export type ExtractSliceRule = "manual-ir" | "heading" | "blank-block";
 
 export interface ExtractSourceAnchor extends IrExtractAnchor {
     ordinal: number;
@@ -40,6 +42,9 @@ export interface ExtractItem {
     rawMarkdown: string;
     memo: string;
     deckName: string;
+    sourceMode: ExtractSourceMode;
+    sliceRule: ExtractSliceRule;
+    autoSliceKey?: string;
     priority: number;
     nextReview: number;
     timesReviewed: number;
@@ -168,6 +173,15 @@ function normalizeExtractItem(value: unknown): ExtractItem | null {
         rawMarkdown: String(raw.rawMarkdown ?? ""),
         memo: String(raw.memo ?? ""),
         deckName: raw.deckName || DEFAULT_DECKNAME,
+        sourceMode: raw.sourceMode === "auto-slice" ? "auto-slice" : "manual-ir",
+        sliceRule:
+            raw.sliceRule === "heading" || raw.sliceRule === "blank-block"
+                ? raw.sliceRule
+                : "manual-ir",
+        autoSliceKey:
+            typeof raw.autoSliceKey === "string" && raw.autoSliceKey.trim()
+                ? raw.autoSliceKey
+                : undefined,
         priority: normalizePriority(raw.priority ?? DEFAULT_EXTRACT_PRIORITY),
         nextReview: typeof raw.nextReview === "number" ? raw.nextReview : 0,
         timesReviewed: typeof raw.timesReviewed === "number" ? raw.timesReviewed : 0,
@@ -434,6 +448,8 @@ export class ExtractStore {
                 rawMarkdown: match.rawMarkdown,
                 memo: "",
                 deckName: deckName || DEFAULT_DECKNAME,
+                sourceMode: "manual-ir",
+                sliceRule: "manual-ir",
                 priority: DEFAULT_EXTRACT_PRIORITY,
                 nextReview: 0,
                 timesReviewed: 0,
@@ -504,6 +520,33 @@ export class ExtractStore {
     graduate(uuid: string): ExtractItem | null {
         const item = this.get(uuid);
         if (!item) return null;
+        item.stage = "graduated";
+        item.graduatedAt = Date.now();
+        item.updatedAt = item.graduatedAt;
+        return cloneItem(item);
+    }
+
+    setNextReviewDate(
+        uuid: string,
+        dueAt: number,
+        countDeckName?: string | null,
+    ): ExtractItem | null {
+        const item = this.get(uuid);
+        if (!item || item.stage !== "active" || !Number.isFinite(dueAt)) {
+            return null;
+        }
+        this.countReviewedItem(item, countDeckName);
+        item.nextReview = dueAt;
+        item.updatedAt = Date.now();
+        return cloneItem(item);
+    }
+
+    graduateWithReviewCount(uuid: string, countDeckName?: string | null): ExtractItem | null {
+        const item = this.get(uuid);
+        if (!item) return null;
+        if (item.stage === "active") {
+            this.countReviewedItem(item, countDeckName);
+        }
         item.stage = "graduated";
         item.graduatedAt = Date.now();
         item.updatedAt = item.graduatedAt;
@@ -636,6 +679,11 @@ export class ExtractStore {
         } else {
             this.reviewedCounts[key].due++;
         }
+    }
+
+    private countReviewedItem(item: ExtractItem, countDeckName?: string | null): void {
+        item.timesReviewed += 1;
+        this.updateReviewedCounts(item, countDeckName);
     }
 
     renamePathPrefix(oldPath: string, newPath: string): ExtractSnapshot[] {

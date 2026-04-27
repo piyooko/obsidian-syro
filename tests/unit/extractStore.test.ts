@@ -152,4 +152,45 @@ describe("ExtractStore", () => {
         expect(active.map((item) => item.rawMarkdown)).toEqual(["{{ir::t}}e", "t"]);
         expect(active[1].parentUuid).toBe(active[0].uuid);
     });
+
+    test("normalizes legacy extracts as manual IR source items", () => {
+        const store = createStore();
+        const [created] = store.syncFileExtracts("notes/source.md", "{{ir::one}}", "deck").added;
+
+        const item = store.get(created.uuid);
+
+        expect(item?.sourceMode).toBe("manual-ir");
+        expect(item?.sliceRule).toBe("manual-ir");
+        expect(item?.autoSliceKey).toBeUndefined();
+    });
+
+    test("sets a custom next review date and counts the extract as reviewed", () => {
+        const store = createStore();
+        const [created] = store.syncFileExtracts("notes/source.md", "{{ir::one}}", "deck").added;
+        const dueAt = Date.now() + 3 * 24 * 60 * 60 * 1000;
+
+        const updated = store.setNextReviewDate(created.uuid, dueAt, "deck");
+
+        expect(updated?.nextReview).toBe(dueAt);
+        expect(updated?.timesReviewed).toBe(1);
+        expect(updated?.timesCorrect).toBe(0);
+        expect(updated?.errorStreak).toBe(0);
+        expect(store.getReviewCandidates("deck", { maxNew: 1, maxDue: 50 })).toHaveLength(0);
+    });
+
+    test("graduates an extract while counting today's review quota", () => {
+        const store = createStore();
+        const [created] = store.syncFileExtracts(
+            "notes/source.md",
+            "{{ir::one}}\n{{ir::two}}",
+            "deck",
+        ).added;
+
+        const graduated = store.graduateWithReviewCount(created.uuid, "deck");
+
+        expect(graduated?.stage).toBe("graduated");
+        expect(graduated?.timesReviewed).toBe(1);
+        expect(graduated?.graduatedAt).toEqual(expect.any(Number));
+        expect(store.getReviewCandidates("deck", { maxNew: 1, maxDue: 50 })).toHaveLength(0);
+    });
 });

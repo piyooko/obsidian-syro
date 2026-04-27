@@ -26,6 +26,11 @@ export interface RenderExtract {
     showSource: boolean;
 }
 
+export interface IrExtractDecorationOptions {
+    isLivePreviewHost?: (view: EditorView) => boolean;
+    getExcludedStarts?: () => ReadonlySet<number>;
+}
+
 export interface MeasuredExtractBlock {
     start: number;
     parentStart?: number;
@@ -101,8 +106,8 @@ const WRAPPED_BLOCK_PREFIX =
 const NESTED_BLOCK_GAP = 1;
 const irExtractPointSourceStartsEffect = StateEffect.define<number[]>();
 
-function isLivePreview(view: EditorView): boolean {
-    return !!view.dom.closest(".is-live-preview");
+function isLivePreview(view: EditorView, options: IrExtractDecorationOptions = {}): boolean {
+    return !!view.dom.closest(".is-live-preview") || options.isLivePreviewHost?.(view) === true;
 }
 
 function selectionTouchesRange(
@@ -377,13 +382,15 @@ function getRootStartForMatch(match: IrExtractMatch, byStart: Map<number, IrExtr
 function createRenderExtracts(
     matches: IrExtractMatch[],
     sourceStarts: Set<number>,
+    excludedStarts: ReadonlySet<number> = new Set(),
 ): RenderExtract[] {
-    const byStart = new Map(matches.map((match) => [match.start, match]));
+    const visibleMatches = matches.filter((match) => !excludedStarts.has(match.start));
+    const byStart = new Map(visibleMatches.map((match) => [match.start, match]));
     const depths = new Map<IrExtractMatch, number>();
     const rootStarts = new Map<IrExtractMatch, number>();
     const maxDepthByRoot = new Map<number, number>();
 
-    for (const match of matches) {
+    for (const match of visibleMatches) {
         const depth = getDepthForMatch(match, byStart);
         const rootStart = getRootStartForMatch(match, byStart);
         depths.set(match, depth);
@@ -391,7 +398,7 @@ function createRenderExtracts(
         maxDepthByRoot.set(rootStart, Math.max(maxDepthByRoot.get(rootStart) ?? 1, depth));
     }
 
-    return matches.map((match) => {
+    return visibleMatches.map((match) => {
         const rootStart = rootStarts.get(match) ?? match.start;
         return {
             match,
@@ -400,6 +407,17 @@ function createRenderExtracts(
             showSource: sourceStarts.has(match.start),
         };
     });
+}
+
+export function buildIrExtractRenderExtractsForTest(
+    _text: string,
+    matches: IrExtractMatch[],
+    options: { excludedStarts?: ReadonlySet<number> } = {},
+): Array<{ start: number; parentStart?: number }> {
+    return createRenderExtracts(matches, new Set(), options.excludedStarts).map((renderExtract) => ({
+        start: renderExtract.match.start,
+        parentStart: renderExtract.match.parentStart,
+    }));
 }
 
 export function getIrExtractRenderRange(renderExtract: RenderExtract): { from: number; to: number } {
@@ -596,30 +614,33 @@ function areNumberSetsEqual(left: Set<number>, right: Set<number>): boolean {
 function buildIrExtractDecorations(
     view: EditorView,
     pointSourceStarts: Set<number> = new Set(),
+    options: IrExtractDecorationOptions = {},
 ): {
     decorations: DecorationSet;
     renderExtracts: RenderExtract[];
 } {
     const builder = new RangeSetBuilder<Decoration>();
-    if (!isLivePreview(view)) {
+    if (!isLivePreview(view, options)) {
         return { decorations: builder.finish(), renderExtracts: [] };
     }
 
     const text = view.state.doc.toString();
+    const excludedStarts = options.getExcludedStarts?.() ?? new Set<number>();
     const matches = parseIrExtracts(text);
+    const visibleMatches = matches.filter((match) => !excludedStarts.has(match.start));
     const selection = view.state.selection.main;
     const lineSourceMatches = findIrExtractSourceMatches(
         text,
-        matches,
+        visibleMatches,
         selection.from,
         selection.to,
     );
     const activeDirectSourceMatches = findIrExtractDirectSourceMatches(
-        matches,
+        visibleMatches,
         selection.from,
         selection.to,
     );
-    const pointSourceMatches = matches.filter((match) => pointSourceStarts.has(match.start));
+    const pointSourceMatches = visibleMatches.filter((match) => pointSourceStarts.has(match.start));
     const sourceMatches = uniqueIrExtractMatchesByStart(
         lineSourceMatches.sort(
             (left, right) => left.start - right.start || right.end - left.end,
@@ -632,15 +653,15 @@ function buildIrExtractDecorations(
     );
     const sourceStarts = new Set(sourceMatches.map((match) => match.start));
     const activeSourceMatch = pickActiveIrExtractSourceMatch(
-        matches,
+        visibleMatches,
         activeSourceMatches,
         selection.from,
         selection.to,
     );
-    const renderExtracts = createRenderExtracts(matches, sourceStarts);
+    const renderExtracts = createRenderExtracts(matches, sourceStarts, excludedStarts);
     const decorations: DecorationItem[] = [];
 
-    for (const match of matches) {
+    for (const match of visibleMatches) {
         if (sourceStarts.has(match.start)) {
             continue;
         }
@@ -957,7 +978,7 @@ function renderOverlayBlocks(overlay: HTMLElement, blocks: MeasuredExtractBlock[
     overlay.replaceChildren(fragment);
 }
 
-function createIrExtractDecorationPlugin(): Extension {
+function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {}): Extension {
     return ViewPlugin.fromClass(
         class {
             decorations: DecorationSet;
@@ -966,7 +987,7 @@ function createIrExtractDecorationPlugin(): Extension {
             private readonly overlay: HTMLElement;
 
             constructor(view: EditorView) {
-                const state = buildIrExtractDecorations(view, this.pointSourceStarts);
+                const state = buildIrExtractDecorations(view, this.pointSourceStarts, options);
                 this.decorations = state.decorations;
                 this.renderExtracts = state.renderExtracts;
                 this.overlay = document.createElement("div");
@@ -1005,7 +1026,11 @@ function createIrExtractDecorationPlugin(): Extension {
                     ) {
                         this.pointSourceStarts = new Set();
                     }
-                    const state = buildIrExtractDecorations(update.view, this.pointSourceStarts);
+                    const state = buildIrExtractDecorations(
+                        update.view,
+                        this.pointSourceStarts,
+                        options,
+                    );
                     this.decorations = state.decorations;
                     this.renderExtracts = state.renderExtracts;
                     this.scheduleMeasure(update.view);
@@ -1022,7 +1047,7 @@ function createIrExtractDecorationPlugin(): Extension {
             }
 
             private scheduleMeasure(view: EditorView): void {
-                if (!isLivePreview(view) || this.renderExtracts.length === 0) {
+                if (!isLivePreview(view, options) || this.renderExtracts.length === 0) {
                     this.overlay.replaceChildren();
                     return;
                 }
@@ -1108,5 +1133,9 @@ const irExtractDecorationTheme = EditorView.baseTheme({
 });
 
 export function createIrExtractDecorationExtensions(_host: unknown = null): Extension[] {
-    return [createIrExtractDecorationPlugin(), irExtractDecorationTheme];
+    const options =
+        _host && typeof _host === "object"
+            ? (_host as IrExtractDecorationOptions)
+            : {};
+    return [createIrExtractDecorationPlugin(options), irExtractDecorationTheme];
 }
