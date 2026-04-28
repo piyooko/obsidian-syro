@@ -183,6 +183,7 @@ export const SHARED_SETTINGS_FIELDS = [
     "enableExtracts",
     "maxNewExtractsPerDay",
     "maxExtractReviewsPerDay",
+    "autoExtractRules",
     "weightedMultiplierSettings",
     "noteResponseTexts",
     "loadBalance",

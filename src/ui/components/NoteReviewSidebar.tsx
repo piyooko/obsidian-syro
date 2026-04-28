@@ -1143,6 +1143,13 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
                                                         )}
                                                         <div className="sr-timeline-extract-meta">
                                                             <span>
+                                                                {extract.sourceMode === "auto-slice"
+                                                                    ? extract.sliceRule === "heading"
+                                                                        ? t("EXTRACT_SOURCE_AUTO_HEADING")
+                                                                        : t("EXTRACT_SOURCE_AUTO_PARAGRAPH")
+                                                                    : t("EXTRACT_SOURCE_MANUAL")}
+                                                            </span>
+                                                            <span>
                                                                 {formatTimestamp(extract.createdAt)}
                                                             </span>
                                                             <label

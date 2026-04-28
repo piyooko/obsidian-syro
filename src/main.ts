@@ -20,11 +20,15 @@ import {
     DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
     FsrsSettings,
     NoteReviewIgnoreReason,
+    normalizeAutoExtractRule,
     resolveDeckOptionsPreset,
     SettingsUtil,
     SRSettings,
     SyncProgressDisplayMode,
     upgradeSettings,
+    type AutoExtractHeadingLevel,
+    type AutoExtractRule,
+    type AutoExtractRuleKind,
 } from "src/settings";
 import {
     REACT_REVIEW_QUEUE_VIEW_TYPE as REVIEW_QUEUE_VIEW_TYPE,
@@ -67,11 +71,13 @@ import {
     type IrExtractMatch,
 } from "./util/irExtractParser";
 import {
+    buildAutoExtractReviewContext,
     buildExtractReviewContext,
     hasCurrentExtractWrapper,
     replaceExtractReviewContext,
     type ExtractReviewContext,
 } from "./util/irExtractContext";
+import { buildAutoExtractSlices, type AutoExtractSlice } from "./util/autoExtractSlices";
 import type { ExtractContextUpdate } from "./editor/extract-context-decoration";
 import { setDebugParser } from "src/parser";
 
@@ -2101,6 +2107,20 @@ export default class SRPlugin extends Plugin {
         return normalized || DEFAULT_DECKNAME;
     }
 
+    private normalizeAutoExtractPath(path: string): string {
+        return path.replace(/\\/g, "/").replace(/\/+/g, "/");
+    }
+
+    public getAutoExtractRuleForPath(path: string): AutoExtractRule | null {
+        const normalizedPath = this.normalizeAutoExtractPath(path);
+        const rule = this.data.settings.autoExtractRules?.[normalizedPath];
+        return rule?.enabled ? rule : null;
+    }
+
+    public hasAutoExtractRuleForFile(file: TFile): boolean {
+        return !!this.getAutoExtractRuleForPath(file.path);
+    }
+
     private getExtractDeckNameForItem(
         extract: Pick<ExtractItem, "deckName" | "sourcePath">,
     ): string {
@@ -2117,39 +2137,84 @@ export default class SRPlugin extends Plugin {
         return fallbackDeckName;
     }
 
+    private emptyExtractSyncResult(): {
+        added: ExtractItem[];
+        updated: ExtractItem[];
+        graduated: ExtractItem[];
+    } {
+        return { added: [], updated: [], graduated: [] };
+    }
+
+    private mergeExtractSyncResults(
+        ...results: Array<{ added: ExtractItem[]; updated: ExtractItem[]; graduated: ExtractItem[] }>
+    ): { added: ExtractItem[]; updated: ExtractItem[]; graduated: ExtractItem[] } {
+        return {
+            added: results.flatMap((result) => result.added),
+            updated: results.flatMap((result) => result.updated),
+            graduated: results.flatMap((result) => result.graduated),
+        };
+    }
+
+    private syncExtractTextForFile(
+        file: TFile,
+        text: string,
+        options: { manual?: boolean; auto?: boolean; autoRuleOverride?: AutoExtractRule | null } = {},
+    ): { added: ExtractItem[]; updated: ExtractItem[]; graduated: ExtractItem[] } {
+        if (!this.extractStore || this.data.settings.enableExtracts === false) {
+            return this.emptyExtractSyncResult();
+        }
+        const manualEnabled = options.manual !== false;
+        const autoEnabled = options.auto !== false;
+        const manualResult = manualEnabled
+            ? this.extractStore.syncFileExtracts(
+                  file.path,
+                  text,
+                  this.getExtractDeckNameForFile(file),
+              )
+            : this.emptyExtractSyncResult();
+        const autoRule =
+            options.autoRuleOverride === undefined
+                ? this.getAutoExtractRuleForPath(file.path)
+                : options.autoRuleOverride;
+        const autoResult =
+            autoEnabled && autoRule
+                ? this.extractStore.syncAutoExtractsForFile(
+                      file.path,
+                      text,
+                      this.getExtractDeckNameForFile(file),
+                      autoRule,
+                  )
+                : this.emptyExtractSyncResult();
+        return this.mergeExtractSyncResults(manualResult, autoResult);
+    }
+
     private async syncExtractsFromVaultFiles(files?: TFile[]): Promise<void> {
         if (!this.extractStore || this.data.settings.enableExtracts === false) {
             return;
         }
 
         const markdownFiles = files ?? this.app.vault.getMarkdownFiles();
-        const added: ExtractSnapshot[] = [];
-        const updated: ExtractSnapshot[] = [];
-        const graduated: ExtractSnapshot[] = [];
+        const combined = this.emptyExtractSyncResult();
         for (const file of markdownFiles) {
             if (file.extension !== "md") {
                 continue;
             }
             const text = await this.app.vault.cachedRead(file);
-            const result = this.extractStore.syncFileExtracts(
-                file.path,
-                text,
-                this.getExtractDeckNameForFile(file),
-            );
-            added.push(...result.added.map((item) => ({ item })));
-            updated.push(...result.updated.map((item) => ({ item })));
-            graduated.push(...result.graduated.map((item) => ({ item })));
+            const result = this.syncExtractTextForFile(file, text);
+            combined.added.push(...result.added);
+            combined.updated.push(...result.updated);
+            combined.graduated.push(...result.graduated);
         }
 
-        if (added.length === 0 && updated.length === 0 && graduated.length === 0) {
+        if (
+            combined.added.length === 0 &&
+            combined.updated.length === 0 &&
+            combined.graduated.length === 0
+        ) {
             return;
         }
 
-        await Promise.all([
-            ...added.map((snapshot) => this.appendSyroExtractUpsert(snapshot, "create")),
-            ...updated.map((snapshot) => this.appendSyroExtractUpsert(snapshot, "sync")),
-            ...graduated.map((snapshot) => this.appendSyroExtractGraduate(snapshot)),
-        ]);
+        await this.appendExtractSyncResult(combined);
         await this.extractStore.save();
         this.syncEvents.emit("extracts-updated");
         this.updateStatusBar();
@@ -2165,11 +2230,7 @@ export default class SRPlugin extends Plugin {
         }
 
         const text = await this.app.vault.cachedRead(file);
-        const result = this.extractStore.syncFileExtracts(
-            file.path,
-            text,
-            this.getExtractDeckNameForFile(file),
-        );
+        const result = this.syncExtractTextForFile(file, text);
         if (
             result.added.length === 0 &&
             result.updated.length === 0 &&
@@ -2182,6 +2243,130 @@ export default class SRPlugin extends Plugin {
         await this.extractStore.save();
         this.syncEvents.emit("extracts-updated");
         this.updateStatusBar();
+    }
+
+    public async syncAutoExtractsFromFile(
+        file: TFile,
+        ruleOverride?: AutoExtractRule | null,
+    ): Promise<void> {
+        if (
+            !this.extractStore ||
+            this.data.settings.enableExtracts === false ||
+            file.extension !== "md"
+        ) {
+            return;
+        }
+
+        const rule =
+            ruleOverride === undefined ? this.getAutoExtractRuleForPath(file.path) : ruleOverride;
+        if (!rule) {
+            return;
+        }
+
+        const text = await this.app.vault.cachedRead(file);
+        const result = this.syncExtractTextForFile(file, text, {
+            manual: false,
+            auto: true,
+            autoRuleOverride: rule,
+        });
+        if (
+            result.added.length === 0 &&
+            result.updated.length === 0 &&
+            result.graduated.length === 0
+        ) {
+            return;
+        }
+
+        await this.appendExtractSyncResult(result);
+        await this.extractStore.save();
+        this.syncEvents.emit("extracts-updated");
+        this.updateStatusBar();
+    }
+
+    public async enableAutoExtractRule(
+        file: TFile,
+        ruleInput: { rule: AutoExtractRuleKind; headingLevel?: AutoExtractHeadingLevel },
+    ): Promise<AutoExtractRule | null> {
+        if (file.extension !== "md") {
+            return null;
+        }
+        const now = Date.now();
+        const normalizedPath = this.normalizeAutoExtractPath(file.path);
+        const existing = this.data.settings.autoExtractRules?.[normalizedPath] ?? null;
+        const nextRule = normalizeAutoExtractRule(
+            {
+                sourcePath: normalizedPath,
+                rule: ruleInput.rule,
+                headingLevel: ruleInput.headingLevel,
+                enabled: true,
+                createdAt: existing?.createdAt ?? now,
+                updatedAt: now,
+            },
+            normalizedPath,
+        );
+        if (!nextRule) {
+            return null;
+        }
+        this.data.settings.autoExtractRules = {
+            ...(this.data.settings.autoExtractRules ?? {}),
+            [normalizedPath]: nextRule,
+        };
+        await this.savePluginData({ domains: ["shared-settings"] });
+        await this.syncAutoExtractsFromFile(file, nextRule);
+        this.syncEvents.emit("note-review-updated");
+        return nextRule;
+    }
+
+    public async disableAutoExtractRule(file: TFile): Promise<boolean> {
+        const normalizedPath = this.normalizeAutoExtractPath(file.path);
+        const existing = this.data.settings.autoExtractRules?.[normalizedPath];
+        if (!existing) {
+            return false;
+        }
+        const nextRules = { ...(this.data.settings.autoExtractRules ?? {}) };
+        delete nextRules[normalizedPath];
+        this.data.settings.autoExtractRules = nextRules;
+        await this.savePluginData({ domains: ["shared-settings"] });
+        await this.syncAutoExtractsFromFile(file, {
+            ...existing,
+            enabled: false,
+            updatedAt: Date.now(),
+        });
+        this.syncEvents.emit("note-review-updated");
+        return true;
+    }
+
+    public renameAutoExtractRulePath(oldPath: string, newPath: string): boolean {
+        const normalizedOldPath = this.normalizeAutoExtractPath(oldPath);
+        const normalizedNewPath = this.normalizeAutoExtractPath(newPath);
+        const rules = this.data.settings.autoExtractRules ?? {};
+        const existing = rules[normalizedOldPath];
+        if (!existing) {
+            return false;
+        }
+        const nextRules = { ...rules };
+        delete nextRules[normalizedOldPath];
+        nextRules[normalizedNewPath] = {
+            ...existing,
+            sourcePath: normalizedNewPath,
+            updatedAt: Date.now(),
+        };
+        this.data.settings.autoExtractRules = nextRules;
+        this.requestPluginDataSave({ delayMs: 0, domains: ["shared-settings"] });
+        return true;
+    }
+
+    public removeAutoExtractRulePath(deletedPath: string): boolean {
+        const normalizedPath = this.normalizeAutoExtractPath(deletedPath);
+        const rules = this.data.settings.autoExtractRules ?? {};
+        if (!rules[normalizedPath]) {
+            return false;
+        }
+        const nextRules = { ...rules };
+        delete nextRules[normalizedPath];
+        this.data.settings.autoExtractRules = nextRules;
+        this.requestPluginDataSave({ delayMs: 0, domains: ["shared-settings"] });
+        return true;
     }
 
     private async appendExtractSyncResult(result: {
@@ -2221,6 +2406,37 @@ export default class SRPlugin extends Plugin {
             ) ??
             (ordinalMatch?.rawMarkdown === item.rawMarkdown ? ordinalMatch : null) ??
             null
+        );
+    }
+
+    private findCurrentAutoExtractSlice(
+        item: ExtractItem,
+        sourceText: string,
+    ): AutoExtractSlice | null {
+        if (item.sourceMode !== "auto-slice" || item.sliceRule === "manual-ir") {
+            return null;
+        }
+        const headingLevelMatch = item.autoSliceKey?.match(/^heading:(\d):/);
+        const headingLevel = headingLevelMatch
+            ? (Number(headingLevelMatch[1]) as AutoExtractHeadingLevel)
+            : undefined;
+        const slices = buildAutoExtractSlices(sourceText, {
+            sourcePath: item.sourcePath,
+            rule: item.sliceRule,
+            headingLevel,
+            enabled: true,
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
+        });
+
+        return (
+            slices.find((slice) => slice.key === item.autoSliceKey) ??
+            slices.find(
+                (slice) => slice.sourceAnchor.contentHash === item.sourceAnchor.contentHash,
+            ) ??
+            (slices.filter((slice) => slice.rawMarkdown === item.rawMarkdown).length === 1
+                ? slices.find((slice) => slice.rawMarkdown === item.rawMarkdown) ?? null
+                : null)
         );
     }
 
@@ -2318,6 +2534,17 @@ export default class SRPlugin extends Plugin {
             return null;
         }
         const sourceText = await this.app.vault.read(sourceFile);
+        if (item.sourceMode === "auto-slice") {
+            const slice = this.findCurrentAutoExtractSlice(item, sourceText);
+            if (!slice) {
+                await this.syncAutoExtractsFromFile(sourceFile);
+                return null;
+            }
+            return buildAutoExtractReviewContext(sourceText, {
+                ...slice.sourceAnchor,
+                ordinal: item.sourceAnchor.ordinal,
+            }, item.sliceRule);
+        }
         const match = this.findCurrentExtractMatch(item, sourceText);
         if (!match) {
             const result = this.extractStore.syncFileExtracts(
@@ -2457,15 +2684,18 @@ export default class SRPlugin extends Plugin {
         update: ExtractContextUpdate,
     ): Promise<ExtractItem | null> {
         void previousContext;
-        if (!hasCurrentExtractWrapper(update.markdown, update.ranges)) {
-            new Notice(t("EXTRACT_CONTEXT_SAVE_FAILED"));
-            return null;
-        }
         if (!this.extractStore) {
             return null;
         }
         const item = this.extractStore.get(uuid);
         if (!item || item.stage !== "active") {
+            return null;
+        }
+        if (
+            item.sourceMode !== "auto-slice" &&
+            !hasCurrentExtractWrapper(update.markdown, update.ranges)
+        ) {
+            new Notice(t("EXTRACT_CONTEXT_SAVE_FAILED"));
             return null;
         }
 
@@ -2475,6 +2705,26 @@ export default class SRPlugin extends Plugin {
         }
 
         const sourceText = await this.app.vault.read(sourceFile);
+        if (item.sourceMode === "auto-slice") {
+            const slice = this.findCurrentAutoExtractSlice(item, sourceText);
+            if (!slice) {
+                await this.syncAutoExtractsFromFile(sourceFile);
+                new Notice(t("EXTRACT_CONTEXT_SAVE_FAILED"));
+                return null;
+            }
+            const currentContext = buildAutoExtractReviewContext(
+                sourceText,
+                { ...slice.sourceAnchor, ordinal: item.sourceAnchor.ordinal },
+                item.sliceRule,
+            );
+            const nextText = replaceExtractReviewContext(sourceText, currentContext, update.markdown);
+            await this.app.vault.modify(sourceFile, nextText);
+            const result = this.syncExtractTextForFile(sourceFile, nextText);
+            await this.appendExtractSyncResult(result);
+            await this.extractStore.save();
+            this.syncEvents.emit("extracts-updated");
+            return this.extractStore.get(uuid);
+        }
         const match = this.findCurrentExtractMatch(item, sourceText);
         if (!match) {
             const result = this.extractStore.syncFileExtracts(
@@ -2537,6 +2787,19 @@ export default class SRPlugin extends Plugin {
         const item = this.extractStore.get(uuid);
         if (!item) {
             return null;
+        }
+        if (item.sourceMode === "auto-slice") {
+            const graduated = this.extractStore.graduateWithReviewCount(uuid, deckPath);
+            if (!graduated) {
+                return null;
+            }
+            await this.extractStore.save();
+            await this.appendSyroExtractGraduate({ item: graduated });
+            await this.preserveGraduatedExtractMemo(graduated);
+            this.syncEvents.emit("extracts-updated");
+            this.syncEvents.emit("note-review-updated");
+            this.updateStatusBar();
+            return graduated;
         }
         const sourceFile = this.resolveExtractSourceFile(item);
         if (sourceFile && item.stage === "active") {

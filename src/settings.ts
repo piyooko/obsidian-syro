@@ -30,7 +30,77 @@ export type SyncProgressDisplayMode = "always" | "full-only" | "never";
 export type SidebarProgressIndicatorMode = "ring" | "percentage";
 export type SidebarProgressRingDirection = "clockwise" | "counterclockwise";
 export type NoteReviewIgnoreReason = "ignored-folder" | "ignored-tag";
+export type AutoExtractRuleKind = "heading" | "blank-block";
+export type AutoExtractHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 export const DEFAULT_SYNC_PROGRESS_DISPLAY_MODE: SyncProgressDisplayMode = "full-only";
+
+export interface AutoExtractRule {
+    sourcePath: string;
+    rule: AutoExtractRuleKind;
+    headingLevel?: AutoExtractHeadingLevel;
+    enabled: boolean;
+    createdAt: number;
+    updatedAt: number;
+}
+
+function normalizePathKey(path: string): string {
+    return path.replace(/\\/g, "/").replace(/\/+/g, "/");
+}
+
+function normalizeAutoExtractHeadingLevel(value: unknown): AutoExtractHeadingLevel | undefined {
+    const level = typeof value === "number" && Number.isFinite(value) ? Math.round(value) : 0;
+    return level >= 1 && level <= 6 ? (level as AutoExtractHeadingLevel) : undefined;
+}
+
+export function normalizeAutoExtractRule(value: unknown, pathHint = ""): AutoExtractRule | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+
+    const ruleKind = getStringProp(value, "rule");
+    if (ruleKind !== "heading" && ruleKind !== "blank-block") {
+        return null;
+    }
+
+    const rawSourcePath = getStringProp(value, "sourcePath") ?? pathHint;
+    const sourcePath = normalizePathKey(rawSourcePath.trim());
+    if (!sourcePath) {
+        return null;
+    }
+
+    const now = Date.now();
+    const createdAt = getNumberProp(value, "createdAt");
+    const updatedAt = getNumberProp(value, "updatedAt");
+    const normalized: AutoExtractRule = {
+        sourcePath,
+        rule: ruleKind,
+        enabled: getBooleanProp(value, "enabled") ?? true,
+        createdAt: createdAt !== undefined && Number.isFinite(createdAt) ? createdAt : now,
+        updatedAt: updatedAt !== undefined && Number.isFinite(updatedAt) ? updatedAt : now,
+    };
+
+    if (ruleKind === "heading") {
+        normalized.headingLevel = normalizeAutoExtractHeadingLevel(value.headingLevel) ?? 1;
+    }
+
+    return normalized;
+}
+
+export function normalizeAutoExtractRules(value: unknown): Record<string, AutoExtractRule> {
+    if (!isRecord(value)) {
+        return {};
+    }
+
+    const normalized: Record<string, AutoExtractRule> = {};
+    for (const [path, rule] of Object.entries(value)) {
+        const normalizedRule = normalizeAutoExtractRule(rule, path);
+        if (!normalizedRule) {
+            continue;
+        }
+        normalized[normalizePathKey(normalizedRule.sourcePath)] = normalizedRule;
+    }
+    return normalized;
+}
 // ============ Deck Option Presets ===========
 // Per-preset configuration.
 export interface DeckOptionsPreset {
@@ -857,6 +927,7 @@ export interface SRSettings {
     enableExtracts: boolean;
     maxNewExtractsPerDay: number;
     maxExtractReviewsPerDay: number;
+    autoExtractRules: Record<string, AutoExtractRule>;
 
     // UI preferences
     showRibbonIcon: boolean;
@@ -1016,6 +1087,7 @@ export const DEFAULT_SETTINGS: SRSettings = {
     enableExtracts: true,
     maxNewExtractsPerDay: DEFAULT_MAX_NEW_EXTRACTS,
     maxExtractReviewsPerDay: DEFAULT_MAX_EXTRACT_REVIEWS,
+    autoExtractRules: {},
 
     // UI settings
     showRibbonIcon: true,
@@ -1239,6 +1311,7 @@ export function upgradeSettings(settings: SRSettings) {
     if (settings.enableExtracts === undefined) {
         settings.enableExtracts = true;
     }
+    settings.autoExtractRules = normalizeAutoExtractRules(settings.autoExtractRules);
     if (
         typeof settings.maxNewExtractsPerDay !== "number" ||
         !Number.isFinite(settings.maxNewExtractsPerDay)

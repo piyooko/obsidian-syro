@@ -1,6 +1,8 @@
 import { TFile } from "obsidian";
 import { Deck, DeckTreeFilter } from "src/Deck";
+import { ExtractStore } from "src/dataStore/extractStore";
 import SRPlugin from "src/main";
+import { DEFAULT_SETTINGS } from "src/settings";
 import { parseIrExtracts } from "src/util/irExtractParser";
 
 function createTFile(path: string): TFile {
@@ -405,6 +407,191 @@ describe("SRPlugin extract deck paths", () => {
             "摘录测试",
         );
         expect(plugin.extractStore.save).toHaveBeenCalled();
+        expect(emit).toHaveBeenCalledWith("extracts-updated");
+        expect(updateStatusBar).toHaveBeenCalled();
+    });
+
+    test("syncs automatic extracts from a single markdown file", async () => {
+        const file = createTFile("摘录测试.md");
+        const emit = jest.fn();
+        const updateStatusBar = jest.fn();
+        const rule = {
+            sourcePath: "摘录测试.md",
+            rule: "heading" as const,
+            headingLevel: 1 as const,
+            enabled: true,
+            createdAt: 1,
+            updatedAt: 1,
+        };
+
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: {
+                settings: {
+                    enableExtracts: true,
+                    autoExtractRules: {
+                        "摘录测试.md": rule,
+                    },
+                    convertFoldersToDecks: true,
+                    trackedNoteToDecks: false,
+                },
+            },
+            app: {
+                vault: {
+                    cachedRead: jest.fn(() => Promise.resolve("# A\none")),
+                },
+            },
+            getExtractDeckNameForFile: jest.fn(() => "摘录测试"),
+            extractStore: {
+                syncAutoExtractsForFile: jest.fn(() => ({
+                    added: [{ uuid: "auto_1" }],
+                    updated: [],
+                    graduated: [],
+                })),
+                save: jest.fn(() => Promise.resolve()),
+            },
+            appendExtractSyncResult: jest.fn(() => Promise.resolve()),
+            syncEvents: { emit },
+            updateStatusBar,
+        });
+
+        await SRPlugin.prototype.syncAutoExtractsFromFile.call(plugin, file);
+
+        expect(plugin.extractStore.syncAutoExtractsForFile).toHaveBeenCalledWith(
+            "摘录测试.md",
+            "# A\none",
+            "摘录测试",
+            rule,
+        );
+        expect(plugin.extractStore.save).toHaveBeenCalled();
+        expect(emit).toHaveBeenCalledWith("extracts-updated");
+        expect(updateStatusBar).toHaveBeenCalled();
+    });
+
+    test("keeps automatic extracts in deck stats after repeated file sync", async () => {
+        const file = createTFile("知识.md");
+        const rule = {
+            sourcePath: "知识.md",
+            rule: "heading" as const,
+            headingLevel: 1 as const,
+            enabled: true,
+            createdAt: 1,
+            updatedAt: 1,
+        };
+        const extractStore = new ExtractStore(DEFAULT_SETTINGS, { extractsPath: "extracts.json" });
+        extractStore.save = jest.fn(() => Promise.resolve());
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    enableExtracts: true,
+                    autoExtractRules: {
+                        "知识.md": rule,
+                    },
+                    convertFoldersToDecks: true,
+                    trackedNoteToDecks: false,
+                },
+            },
+            app: {
+                vault: {
+                    cachedRead: jest.fn(() => Promise.resolve("# A\none")),
+                    getAbstractFileByPath: jest.fn(() => file),
+                },
+            },
+            createSrTFile: jest.fn((inputFile: TFile) => ({
+                path: inputFile.path,
+                getAllTagsFromCache: () => [],
+            })),
+            extractStore,
+            appendExtractSyncResult: jest.fn(() => Promise.resolve()),
+            syncEvents: { emit: jest.fn() },
+            updateStatusBar: jest.fn(),
+        });
+
+        await SRPlugin.prototype.syncExtractsFromFile.call(plugin, file);
+        await SRPlugin.prototype.syncExtractsFromFile.call(plugin, file);
+
+        expect(SRPlugin.prototype.getActiveExtractDeckPaths.call(plugin)).toEqual(["知识"]);
+        expect(SRPlugin.prototype.getExtractReviewStats.call(plugin, "知识", true)).toEqual({
+            newCount: 1,
+            dueCount: 0,
+            totalCount: 1,
+        });
+    });
+
+    test("enables an automatic extract rule and immediately syncs the file", async () => {
+        const file = createTFile("摘录测试.md");
+        const syncAutoExtractsFromFile = jest.fn(() => Promise.resolve());
+        const savePluginData = jest.fn(() => Promise.resolve());
+        const emit = jest.fn();
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: {
+                settings: {
+                    autoExtractRules: {},
+                },
+            },
+            savePluginData,
+            syncAutoExtractsFromFile,
+            syncEvents: { emit },
+        });
+
+        const rule = await SRPlugin.prototype.enableAutoExtractRule.call(plugin, file, {
+            rule: "heading",
+            headingLevel: 2,
+        });
+
+        expect(rule).toEqual(
+            expect.objectContaining({
+                sourcePath: "摘录测试.md",
+                rule: "heading",
+                headingLevel: 2,
+                enabled: true,
+            }),
+        );
+        expect(plugin.data.settings.autoExtractRules["摘录测试.md"]).toBe(rule);
+        expect(savePluginData).toHaveBeenCalledWith({ domains: ["shared-settings"] });
+        expect(syncAutoExtractsFromFile).toHaveBeenCalledWith(file, rule);
+        expect(emit).toHaveBeenCalledWith("note-review-updated");
+    });
+
+    test("automatic extract graduation does not edit source markdown", async () => {
+        const graduated = {
+            uuid: "auto_1",
+            sourceMode: "auto-slice",
+            sliceRule: "heading",
+            stage: "graduated",
+            memo: "",
+            sourcePath: "摘录测试.md",
+            rawMarkdown: "# A\none",
+            sourceAnchor: { start: 0, end: 7 },
+        };
+        const emit = jest.fn();
+        const updateStatusBar = jest.fn();
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            app: {
+                vault: {
+                    read: jest.fn(),
+                    modify: jest.fn(),
+                },
+            },
+            extractStore: {
+                get: jest.fn(() => ({
+                    ...graduated,
+                    stage: "active",
+                })),
+                graduateWithReviewCount: jest.fn(() => graduated),
+                save: jest.fn(() => Promise.resolve()),
+            },
+            appendSyroExtractGraduate: jest.fn(() => Promise.resolve()),
+            reviewCommitStore: null,
+            syncEvents: { emit },
+            updateStatusBar,
+        });
+
+        await SRPlugin.prototype.graduateExtract.call(plugin, "auto_1", "deck");
+
+        expect(plugin.app.vault.modify).not.toHaveBeenCalled();
+        expect(plugin.extractStore.graduateWithReviewCount).toHaveBeenCalledWith("auto_1", "deck");
+        expect(plugin.appendSyroExtractGraduate).toHaveBeenCalledWith({ item: graduated });
         expect(emit).toHaveBeenCalledWith("extracts-updated");
         expect(updateStatusBar).toHaveBeenCalled();
     });

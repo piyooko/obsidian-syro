@@ -7,7 +7,8 @@ import { CardQueue, RepetitionItem, RPITEMTYPE } from "src/dataStore/repetitionI
 import type { ExtractStorePathConfig } from "src/dataStore/syroWorkspace";
 import { renamePathPrefix } from "src/folderTracking";
 import type { ReviewResponse } from "src/scheduling";
-import type { SRSettings } from "src/settings";
+import type { AutoExtractRule, SRSettings } from "src/settings";
+import { buildAutoExtractSlices, type AutoExtractSlice } from "src/util/autoExtractSlices";
 import {
     parseIrExtracts,
     type IrExtractAnchor,
@@ -382,7 +383,11 @@ export class ExtractStore {
         usedUuids: Set<string>,
     ): ExtractItem | null {
         const candidates = Object.values(this.items).filter(
-            (item) => item.stage === "active" && item.sourcePath === sourcePath && !usedUuids.has(item.uuid),
+            (item) =>
+                item.stage === "active" &&
+                item.sourceMode === "manual-ir" &&
+                item.sourcePath === sourcePath &&
+                !usedUuids.has(item.uuid),
         );
 
         return (
@@ -401,6 +406,50 @@ export class ExtractStore {
             (candidates.filter((item) => item.rawMarkdown === match.rawMarkdown).length === 1
                 ? candidates.find((item) => item.rawMarkdown === match.rawMarkdown) ?? null
                 : null)
+        );
+    }
+
+    private matchAutoExtract(
+        sourcePath: string,
+        slice: AutoExtractSlice,
+        usedUuids: Set<string>,
+    ): ExtractItem | null {
+        const candidates = Object.values(this.items).filter(
+            (item) =>
+                item.stage === "active" &&
+                item.sourceMode === "auto-slice" &&
+                item.sourcePath === sourcePath &&
+                !usedUuids.has(item.uuid),
+        );
+
+        return (
+            candidates.find(
+                (item) => item.sliceRule === slice.rule && item.autoSliceKey === slice.key,
+            ) ??
+            candidates.find(
+                (item) =>
+                    item.sliceRule === slice.rule &&
+                    item.sourceAnchor.contentHash === slice.sourceAnchor.contentHash,
+            ) ??
+            (candidates.filter(
+                (item) => item.sliceRule === slice.rule && item.rawMarkdown === slice.rawMarkdown,
+            ).length === 1
+                ? candidates.find(
+                      (item) =>
+                          item.sliceRule === slice.rule && item.rawMarkdown === slice.rawMarkdown,
+                  ) ?? null
+                : null)
+        );
+    }
+
+    private hasGraduatedAutoExtract(sourcePath: string, slice: AutoExtractSlice): boolean {
+        return Object.values(this.items).some(
+            (item) =>
+                item.stage === "graduated" &&
+                item.sourceMode === "auto-slice" &&
+                item.sourcePath === sourcePath &&
+                item.sliceRule === slice.rule &&
+                item.autoSliceKey === slice.key,
         );
     }
 
@@ -480,7 +529,104 @@ export class ExtractStore {
 
         const graduated: ExtractItem[] = [];
         for (const item of Object.values(this.items)) {
-            if (item.stage !== "active" || item.sourcePath !== sourcePath || usedUuids.has(item.uuid)) {
+            if (
+                item.stage !== "active" ||
+                item.sourceMode !== "manual-ir" ||
+                item.sourcePath !== sourcePath ||
+                usedUuids.has(item.uuid)
+            ) {
+                continue;
+            }
+            item.stage = "graduated";
+            item.graduatedAt = now;
+            item.updatedAt = now;
+            graduated.push(cloneItem(item));
+        }
+
+        return { added, updated, graduated };
+    }
+
+    syncAutoExtractsForFile(
+        path: string,
+        text: string,
+        deckName: string = DEFAULT_DECKNAME,
+        rule: AutoExtractRule,
+    ): { added: ExtractItem[]; updated: ExtractItem[]; graduated: ExtractItem[] } {
+        const sourcePath = normalizePath(path);
+        const now = Date.now();
+        const slices = buildAutoExtractSlices(text, rule);
+        const usedUuids = new Set<string>();
+        const added: ExtractItem[] = [];
+        const updated: ExtractItem[] = [];
+
+        slices.forEach((slice, ordinal) => {
+            const existing = this.matchAutoExtract(sourcePath, slice, usedUuids);
+            const sourceAnchor: ExtractSourceAnchor = {
+                ...slice.sourceAnchor,
+                ordinal,
+            };
+
+            if (existing) {
+                const nextDeckName = deckName || existing.deckName || DEFAULT_DECKNAME;
+                const changed =
+                    JSON.stringify(existing.sourceAnchor) !== JSON.stringify(sourceAnchor) ||
+                    existing.rawMarkdown !== slice.rawMarkdown ||
+                    existing.deckName !== nextDeckName ||
+                    existing.sliceRule !== slice.rule ||
+                    existing.autoSliceKey !== slice.key;
+                existing.sourceAnchor = sourceAnchor;
+                existing.rawMarkdown = slice.rawMarkdown;
+                existing.deckName = nextDeckName;
+                existing.sourceMode = "auto-slice";
+                existing.sliceRule = slice.rule;
+                existing.autoSliceKey = slice.key;
+                if (changed) {
+                    existing.updatedAt = now;
+                    updated.push(cloneItem(existing));
+                }
+                usedUuids.add(existing.uuid);
+                return;
+            }
+
+            if (this.hasGraduatedAutoExtract(sourcePath, slice)) {
+                return;
+            }
+
+            const item: ExtractItem = {
+                id: this.nextItemId++,
+                uuid: createUuid(),
+                aliases: [],
+                sourcePath,
+                sourceAnchor,
+                rawMarkdown: slice.rawMarkdown,
+                memo: "",
+                deckName: deckName || DEFAULT_DECKNAME,
+                sourceMode: "auto-slice",
+                sliceRule: slice.rule,
+                autoSliceKey: slice.key,
+                priority: DEFAULT_EXTRACT_PRIORITY,
+                nextReview: 0,
+                timesReviewed: 0,
+                timesCorrect: 0,
+                errorStreak: 0,
+                stage: "active",
+                createdAt: now,
+                updatedAt: now,
+                data: { currentInterval: 1 },
+            };
+            this.items[item.uuid] = item;
+            usedUuids.add(item.uuid);
+            added.push(cloneItem(item));
+        });
+
+        const graduated: ExtractItem[] = [];
+        for (const item of Object.values(this.items)) {
+            if (
+                item.stage !== "active" ||
+                item.sourceMode !== "auto-slice" ||
+                item.sourcePath !== sourcePath ||
+                usedUuids.has(item.uuid)
+            ) {
                 continue;
             }
             item.stage = "graduated";

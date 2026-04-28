@@ -1,4 +1,5 @@
 import type { IrExtractMatch } from "src/util/irExtractParser";
+import type { ExtractSliceRule, ExtractSourceAnchor } from "src/dataStore/extractStore";
 
 export interface ExtractReviewContext {
     sourceFrom: number;
@@ -75,6 +76,67 @@ export function buildExtractReviewContext(
         currentOpenTokenTo: match.innerStart - sourceFrom,
         currentCloseTokenFrom: match.innerEnd - sourceFrom,
         currentCloseTokenTo: match.end - sourceFrom,
+    };
+}
+
+export function buildAutoExtractReviewContext(
+    sourceText: string,
+    anchor: ExtractSourceAnchor,
+    sliceRule: ExtractSliceRule,
+): ExtractReviewContext {
+    const current = {
+        start: Math.max(0, Math.min(anchor.start, sourceText.length)),
+        end: Math.max(0, Math.min(anchor.end, sourceText.length)),
+    };
+    if (sliceRule !== "blank-block") {
+        return {
+            sourceFrom: current.start,
+            sourceTo: current.end,
+            markdown: sourceText.slice(current.start, current.end),
+            currentOuterFrom: 0,
+            currentOuterTo: current.end - current.start,
+            currentInnerFrom: 0,
+            currentInnerTo: current.end - current.start,
+            currentOpenTokenFrom: 0,
+            currentOpenTokenTo: 0,
+            currentCloseTokenFrom: current.end - current.start,
+            currentCloseTokenTo: current.end - current.start,
+        };
+    }
+
+    const blocks = getBlankBlockRanges(sourceText);
+    const blockIndex = blocks.findIndex(
+        (block) => current.start >= block.from && current.end <= block.to,
+    );
+    const safeIndex =
+        blockIndex >= 0
+            ? blockIndex
+            : Math.max(
+                  0,
+                  blocks.findIndex(
+                      (block) => current.start < block.to && current.end > block.from,
+                  ),
+              );
+    const fromBlock = blocks[Math.max(0, safeIndex - 1)] ?? { from: current.start, to: current.end };
+    const toBlock =
+        blocks[Math.min(blocks.length - 1, safeIndex + 1)] ?? fromBlock;
+    const sourceFrom = fromBlock.from;
+    const sourceTo = toBlock.to;
+    const currentFrom = current.start - sourceFrom;
+    const currentTo = current.end - sourceFrom;
+
+    return {
+        sourceFrom,
+        sourceTo,
+        markdown: sourceText.slice(sourceFrom, sourceTo),
+        currentOuterFrom: currentFrom,
+        currentOuterTo: currentTo,
+        currentInnerFrom: currentFrom,
+        currentInnerTo: currentTo,
+        currentOpenTokenFrom: currentFrom,
+        currentOpenTokenTo: currentFrom,
+        currentCloseTokenFrom: currentTo,
+        currentCloseTokenTo: currentTo,
     };
 }
 

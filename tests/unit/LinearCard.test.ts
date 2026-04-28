@@ -139,6 +139,85 @@ test("extract review renders direct actions without show-answer or hard/easy lab
     expect(onDelete).toHaveBeenCalled();
 });
 
+test("extract review menu hides card info", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+        root.render(
+            React.createElement(LinearCard, {
+                reviewKind: "extract",
+                card: {
+                    front: "{{ir::text}}",
+                    back: "",
+                },
+                renderMarkdown: (content: string, el: HTMLElement) => {
+                    el.textContent = content;
+                },
+                extractActionLabels: {
+                    again: "重来",
+                    good: "良好",
+                    set: "指定",
+                    graduate: "毕业",
+                },
+            }),
+        );
+    });
+
+    const menuButton = Array.from(container.querySelectorAll<HTMLButtonElement>(".sr-header-btn"))
+        .at(-1);
+    expect(menuButton).toBeDefined();
+
+    act(() => {
+        menuButton?.click();
+    });
+
+    expect(container.textContent).not.toContain("Card info");
+    expect(container.textContent).not.toContain("卡片信息");
+});
+
+test("Alt+E toggles edit mode and Escape does not exit edit mode", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+        root.render(
+            React.createElement(LinearCard, {
+                card: {
+                    front: "front",
+                    back: "back",
+                },
+                renderMarkdown: (content: string, el: HTMLElement) => {
+                    el.textContent = content;
+                },
+                type: "basic",
+            }),
+        );
+    });
+
+    expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+
+    act(() => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+    });
+
+    expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+
+    act(() => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+
+    expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+
+    act(() => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+    });
+
+    expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+});
+
 function createDeferredRenderMarkdown() {
     const pending: PendingRender[] = [];
     const renderMarkdown = jest.fn((content: string, el: HTMLElement) => {

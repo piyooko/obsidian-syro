@@ -85,7 +85,7 @@ export const CardEditorView: FC<CardEditorViewProps> = ({ value, onChange, onExi
 
         const customKeymap = keymap.of([
             {
-                key: "Escape",
+                key: "Alt-e",
                 run: () => {
                     onExitRef.current();
                     return true;
@@ -166,10 +166,11 @@ export const CardEditorView: FC<CardEditorViewProps> = ({ value, onChange, onExi
                     "&": {
                         height: "100%",
                         fontSize: "15px",
-                        backgroundColor: "var(--background-primary)",
+                        backgroundColor: "transparent",
                     },
                     ".cm-content": {
-                        padding: "24px 32px",
+                        padding:
+                            "var(--sr-review-editor-content-padding-y, var(--syro-desktop-review-content-padding-y, 24px)) var(--sr-review-editor-content-padding-x, var(--syro-desktop-review-content-padding-x, 40px))",
                         fontFamily: "var(--font-text)",
                         caretColor: "var(--text-accent)",
                     },

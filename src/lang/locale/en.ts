@@ -200,6 +200,9 @@ export default normalizeSentenceCaseLocale({
     EXTRACT_SET_DATE_TITLE: "Set next extract review date",
     EXTRACT_SET_DATE_LABEL: "Review date",
     EXTRACT_SET_DATE_INVALID: "Choose a future review date",
+    EXTRACT_SOURCE_AUTO_HEADING: "Auto · heading",
+    EXTRACT_SOURCE_AUTO_PARAGRAPH: "Auto · paragraph",
+    EXTRACT_SOURCE_MANUAL: "Manual extract",
     EXTRACT_STATS_LABEL: "${count} extract(s)",
     EXTRACT_TIMELINE_ACTIVE_TITLE: "Active extracts",
     NOTICE_CLOZE_CREATED: "Cloze c${nextId} created",
@@ -620,6 +623,12 @@ export default normalizeSentenceCaseLocale({
     MENU_FOLDER_TRACKING_SETTINGS: "Folder Tracking Settings",
     MENU_TRACK_NOTE: "Track Note",
     MENU_UNTRACK_NOTE: "Untrack Note",
+    AUTO_EXTRACT_MENU_TITLE: "Smart slice full note",
+    AUTO_EXTRACT_BY_HEADING_LEVEL: "Slice by H${level} headings",
+    AUTO_EXTRACT_BY_PARAGRAPH: "Slice by paragraphs",
+    AUTO_EXTRACT_DISABLE: "Disable smart slicing",
+    AUTO_EXTRACT_RULE_ENABLED: "Smart slicing enabled",
+    AUTO_EXTRACT_RULE_DISABLED: "Smart slicing disabled",
 
     // data.ts
     DATA_TAGGED_FILE_CANT_UNTRACK:
@@ -1142,7 +1151,8 @@ export default normalizeSentenceCaseLocale({
     UI_EDITOR_MODE_LABEL: "Editor mode",
     UI_ITALIC_KEY_HINT: "Ctrl+I Italic",
     UI_CLOZE_KEY_HINT: "Alt+Shift+C Cloze",
-    UI_EXIT_KEY_HINT: "Esc Exit",
+    UI_EDIT_TOGGLE_KEY_HINT: "Alt+E",
+    UI_EXIT_KEY_HINT: "Alt+E Exit",
     WMS_IMP_MIN_ERROR: "Please enter a value between 0.1 and 5.0.",
     WMS_IMP_MAX_ERROR: "Please enter a value between 0.1 and 10.0.",
     WMS_IMP_ORDER_ERROR: "Maximum multiplier must be greater than or equal to minimum multiplier.",

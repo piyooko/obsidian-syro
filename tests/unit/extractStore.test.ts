@@ -193,4 +193,151 @@ describe("ExtractStore", () => {
         expect(graduated?.graduatedAt).toEqual(expect.any(Number));
         expect(store.getReviewCandidates("deck", { maxNew: 1, maxDue: 50 })).toHaveLength(0);
     });
+
+    test("syncs heading auto slices without touching manual IR extracts", () => {
+        const store = createStore();
+        const manual = store.syncFileExtracts("notes/source.md", "{{ir::manual}}", "deck")
+            .added[0];
+        const result = store.syncAutoExtractsForFile(
+            "notes/source.md",
+            "# A\none\n## A\nchild\n# B\ntwo",
+            "deck",
+            {
+                sourcePath: "notes/source.md",
+                rule: "heading",
+                headingLevel: 1,
+                enabled: true,
+                createdAt: 1,
+                updatedAt: 1,
+            },
+        );
+
+        expect(result.added).toHaveLength(2);
+        expect(result.added[0]).toEqual(
+            expect.objectContaining({
+                sourceMode: "auto-slice",
+                sliceRule: "heading",
+                autoSliceKey: "heading:1:A:0",
+                rawMarkdown: "# A\none\n## A\nchild",
+            }),
+        );
+        expect(store.get(manual.uuid)?.stage).toBe("active");
+    });
+
+    test("manual IR sync does not graduate active auto slices from the same file", () => {
+        const store = createStore();
+        const rule = {
+            sourcePath: "notes/source.md",
+            rule: "heading" as const,
+            headingLevel: 1 as const,
+            enabled: true,
+            createdAt: 1,
+            updatedAt: 1,
+        };
+        const [auto] = store.syncAutoExtractsForFile(
+            "notes/source.md",
+            "# A\none",
+            "deck",
+            rule,
+        ).added;
+
+        const result = store.syncFileExtracts("notes/source.md", "# A\none", "deck");
+
+        expect(result.graduated).toHaveLength(0);
+        expect(store.get(auto.uuid)?.stage).toBe("active");
+        expect(store.getReviewCandidates("deck")).toEqual([
+            expect.objectContaining({
+                uuid: auto.uuid,
+                sourceMode: "auto-slice",
+            }),
+        ]);
+    });
+
+    test("keeps blank-block auto slice state when a new block is inserted before it", () => {
+        const store = createStore();
+        const rule = {
+            sourcePath: "notes/source.md",
+            rule: "blank-block" as const,
+            enabled: true,
+            createdAt: 1,
+            updatedAt: 1,
+        };
+        const [first, second] = store.syncAutoExtractsForFile(
+            "notes/source.md",
+            "alpha\n\nbeta",
+            "deck",
+            rule,
+        ).added;
+
+        const result = store.syncAutoExtractsForFile(
+            "notes/source.md",
+            "new\n\nalpha\n\nbeta",
+            "deck",
+            rule,
+        );
+
+        expect(result.added).toHaveLength(1);
+        expect(store.get(first.uuid)?.stage).toBe("active");
+        expect(store.get(second.uuid)?.stage).toBe("active");
+        expect(store.get(first.uuid)?.rawMarkdown).toBe("alpha");
+        expect(store.get(second.uuid)?.rawMarkdown).toBe("beta");
+    });
+
+    test("does not recreate a graduated auto slice on later sync", () => {
+        const store = createStore();
+        const rule = {
+            sourcePath: "notes/source.md",
+            rule: "blank-block" as const,
+            enabled: true,
+            createdAt: 1,
+            updatedAt: 1,
+        };
+        const [created] = store.syncAutoExtractsForFile(
+            "notes/source.md",
+            "alpha",
+            "deck",
+            rule,
+        ).added;
+
+        store.graduate(created.uuid);
+        const result = store.syncAutoExtractsForFile("notes/source.md", "alpha", "deck", rule);
+
+        expect(result.added).toHaveLength(0);
+        expect(store.get(created.uuid)?.stage).toBe("graduated");
+        expect(store.getActiveByPath("notes/source.md")).toHaveLength(0);
+    });
+
+    test("switching auto slice rules graduates old active auto slices", () => {
+        const store = createStore();
+        const [heading] = store.syncAutoExtractsForFile(
+            "notes/source.md",
+            "# A\none\n\npara",
+            "deck",
+            {
+                sourcePath: "notes/source.md",
+                rule: "heading",
+                headingLevel: 1,
+                enabled: true,
+                createdAt: 1,
+                updatedAt: 1,
+            },
+        ).added;
+
+        const result = store.syncAutoExtractsForFile(
+            "notes/source.md",
+            "# A\none\n\npara",
+            "deck",
+            {
+                sourcePath: "notes/source.md",
+                rule: "blank-block",
+                enabled: true,
+                createdAt: 2,
+                updatedAt: 2,
+            },
+        );
+
+        expect(result.graduated.map((item) => item.uuid)).toContain(heading.uuid);
+        expect(result.added.every((item) => item.sliceRule === "blank-block")).toBe(true);
+        expect(store.get(heading.uuid)?.stage).toBe("graduated");
+    });
 });

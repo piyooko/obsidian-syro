@@ -25,6 +25,9 @@
    容器与背景
    ========================================== */
 .sr-linear-card-wrapper {
+    --sr-review-editor-content-padding-y: var(--syro-desktop-review-content-padding-y, 24px);
+    --sr-review-editor-content-padding-x: var(--syro-desktop-review-content-padding-x, 40px);
+
     width: 100%;
     height: 100%;
     box-sizing: border-box;
@@ -1604,6 +1607,9 @@ body.syro-desktop-review-square-corners
 /* 核心容器：用于定位和限制区域 */
 /* 使用 position: fixed 逃离模态框可能的定位问题 */
 .sr-linear-card-wrapper.sr-phone-layout {
+    --sr-review-editor-content-padding-y: var(--syro-mobile-review-content-padding-y, 16px);
+    --sr-review-editor-content-padding-x: var(--syro-mobile-review-content-padding-x, 16px);
+
     position: fixed !important;
     inset: 0 !important;
     /* 占满整个屏幕 */
@@ -2297,12 +2303,13 @@ body.syro-mobile-review-square-corners
 
 .sr-extract-context-editor .cm-editor {
     height: 100%;
-    background: var(--background-primary);
+    background: transparent;
 }
 
 .sr-extract-context-editor .cm-scroller {
     font-family: var(--font-text);
     line-height: 1.6;
+    background: transparent;
 }
 
 .sr-extract-context-readonly .cm-cursor,

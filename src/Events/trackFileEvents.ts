@@ -1,4 +1,4 @@
-import { Menu, TAbstractFile, TFile, TFolder, debounce } from "obsidian";
+import { Menu, Notice, TAbstractFile, TFile, TFolder, debounce } from "obsidian";
 import { t } from "src/lang/helpers";
 import {
     createDeterministicFileIdentityUuid,
@@ -155,6 +155,9 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                 noteChanged = true;
             }
             if (plugin.renameDeckOptionsAssignments(oldPath, file.path)) {
+                noteChanged = true;
+            }
+            if (plugin.renameAutoExtractRulePath?.(oldPath, file.path)) {
                 noteChanged = true;
             }
 
@@ -320,6 +323,9 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
             if (plugin.removeDeckOptionsAssignments(file.path)) {
                 noteChanged = true;
             }
+            if (plugin.removeAutoExtractRulePath?.(file.path)) {
+                noteChanged = true;
+            }
 
             const removedTimeline = reviewCommitStore.deleteFileWithSnapshot(file.path);
             const removedTimelineByPrefix = reviewCommitStore.deletePathPrefixWithSnapshots(
@@ -479,6 +485,46 @@ export function addFileMenuEvt(plugin: SRPlugin, menu: Menu, fileish: TAbstractF
 
     if (!plugin.isSyroDataReady() || !plugin.noteReviewStore) {
         return;
+    }
+
+    if (fileish.extension === "md") {
+        menu.addSeparator();
+        menu.addItem((item) => {
+            item.setIcon("list-tree");
+            item.setTitle(t("AUTO_EXTRACT_MENU_TITLE"));
+        });
+        for (const level of [1, 2, 3, 4, 5, 6] as const) {
+            menu.addItem((item) => {
+                item.setIcon("heading");
+                item.setTitle(t("AUTO_EXTRACT_BY_HEADING_LEVEL", { level }));
+                item.onClick(async () => {
+                    await plugin.enableAutoExtractRule(fileish, {
+                        rule: "heading",
+                        headingLevel: level,
+                    });
+                    new Notice(t("AUTO_EXTRACT_RULE_ENABLED"));
+                });
+            });
+        }
+        menu.addItem((item) => {
+            item.setIcon("pilcrow");
+            item.setTitle(t("AUTO_EXTRACT_BY_PARAGRAPH"));
+            item.onClick(async () => {
+                await plugin.enableAutoExtractRule(fileish, { rule: "blank-block" });
+                new Notice(t("AUTO_EXTRACT_RULE_ENABLED"));
+            });
+        });
+        if (plugin.hasAutoExtractRuleForFile(fileish)) {
+            menu.addItem((item) => {
+                item.setIcon("x");
+                item.setTitle(t("AUTO_EXTRACT_DISABLE"));
+                item.onClick(async () => {
+                    await plugin.disableAutoExtractRule(fileish);
+                    new Notice(t("AUTO_EXTRACT_RULE_DISABLED"));
+                });
+            });
+        }
+        menu.addSeparator();
     }
 
     if (plugin.noteReviewStore.isTracked(fileish.path)) {

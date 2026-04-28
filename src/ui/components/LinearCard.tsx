@@ -826,6 +826,11 @@ export const LinearCard: FC<LinearCardProps> = ({
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.altKey && e.key.toLowerCase() === "e") {
+                e.preventDefault();
+                toggleEditMode();
+                return;
+            }
             if (isEditing) return;
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)
                 return;
@@ -872,7 +877,9 @@ export const LinearCard: FC<LinearCardProps> = ({
                     handleMenuAction("OPEN");
                     break;
                 case "i":
-                    handleMenuAction("INFO");
+                    if (!isExtractReview) {
+                        handleMenuAction("INFO");
+                    }
                     break;
                 case "p":
                     handleMenuAction("POSTPONE");
@@ -899,6 +906,7 @@ export const LinearCard: FC<LinearCardProps> = ({
         revealAnswer,
         showInfo,
         showMenu,
+        toggleEditMode,
     ]);
 
     const wrapperClassName = [
@@ -1296,12 +1304,16 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                             label={t("UI_OPEN_LOCATION")}
                                                             kbd="O"
                                                         />
-                                                        <MenuItem
-                                                            onClick={() => handleMenuAction("INFO")}
-                                                            icon={<Info size={14} />}
-                                                            label={t("UI_CARD_INFO")}
-                                                            kbd="I"
-                                                        />
+                                                        {!isExtractReview && (
+                                                            <MenuItem
+                                                                onClick={() =>
+                                                                    handleMenuAction("INFO")
+                                                                }
+                                                                icon={<Info size={14} />}
+                                                                label={t("UI_CARD_INFO")}
+                                                                kbd="I"
+                                                            />
+                                                        )}
                                                         <MenuItem
                                                             onClick={() =>
                                                                 handleMenuAction("POSTPONE")
@@ -1446,7 +1458,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                     className="sr-show-answer-btn sr-exit-edit-btn"
                                 >
                                     <Save size={16} /> {t("UI_FINISH_EDITING")}{" "}
-                                    <span className="sr-kbd">ESC</span>
+                                    <span className="sr-kbd">{t("UI_EDIT_TOGGLE_KEY_HINT")}</span>
                                 </button>
                             ) : !renderIsFlipped ? (
                                 <button onClick={revealAnswer} className="sr-show-answer-btn">
