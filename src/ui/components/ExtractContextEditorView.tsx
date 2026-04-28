@@ -63,14 +63,18 @@ export const ExtractContextEditorView: FC<ExtractContextEditorViewProps> = ({
                 EditorView.lineWrapping,
                 drawSelection(),
                 dropCursor(),
-                keymap.of([
-                    {
-                        key: "Alt-e",
-                        run: () => {
+                EditorView.domEventHandlers({
+                    keydown: (event) => {
+                        if (event.altKey && event.key.toLowerCase() === "e") {
+                            event.preventDefault();
+                            event.stopPropagation();
                             onExitRef.current();
                             return true;
-                        },
+                        }
+                        return false;
                     },
+                }),
+                keymap.of([
                     {
                         key: "Mod-Enter",
                         run: () => {

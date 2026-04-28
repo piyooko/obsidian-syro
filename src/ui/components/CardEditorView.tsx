@@ -85,13 +85,6 @@ export const CardEditorView: FC<CardEditorViewProps> = ({ value, onChange, onExi
 
         const customKeymap = keymap.of([
             {
-                key: "Alt-e",
-                run: () => {
-                    onExitRef.current();
-                    return true;
-                },
-            },
-            {
                 key: "Mod-Enter",
                 run: () => {
                     onExitRef.current();
@@ -150,6 +143,17 @@ export const CardEditorView: FC<CardEditorViewProps> = ({ value, onChange, onExi
                 EditorView.lineWrapping,
                 drawSelection(),
                 dropCursor(),
+                EditorView.domEventHandlers({
+                    keydown: (event) => {
+                        if (event.altKey && event.key.toLowerCase() === "e") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onExitRef.current();
+                            return true;
+                        }
+                        return false;
+                    },
+                }),
 
                 customKeymap,
 

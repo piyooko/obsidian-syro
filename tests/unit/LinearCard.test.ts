@@ -1,8 +1,11 @@
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { CardType } from "src/Question";
 import { CardFrontBackUtil } from "src/question-type";
 import { DEFAULT_PROGRESS_BAR_STYLE, DEFAULT_SETTINGS, SRSettings } from "src/settings";
+import type SRPlugin from "src/main";
 import { hasCurrentExtractWrapper } from "src/ui/components/ExtractContextEditorView";
 import { LinearCard, CardState } from "src/ui/components/LinearCard";
 
@@ -66,6 +69,34 @@ const FORMULA_LABEL = "**\u6838\u5fc3\u516c\u5f0f**:";
 const PLAIN_FORMULA_LABEL = "\u6838\u5fc3\u516c\u5f0f:";
 const FORMULA_LATEX =
     "$f'(x) = \\\\lim_{\\\\Delta x \\\\to 0} \\\\frac{f(x + \\\\Delta x) - f(x)}{\\\\Delta x}$";
+
+function createManualExtractContext(markdown: string, outerFrom: number, outerTo: number) {
+    const openToken = "{{ir::";
+    return {
+        sourceFrom: 0,
+        sourceTo: markdown.length,
+        markdown,
+        currentOuterFrom: outerFrom,
+        currentOuterTo: outerTo,
+        currentInnerFrom: outerFrom + openToken.length,
+        currentInnerTo: outerTo - 2,
+        currentOpenTokenFrom: outerFrom,
+        currentOpenTokenTo: outerFrom + openToken.length,
+        currentCloseTokenFrom: outerTo - 2,
+        currentCloseTokenTo: outerTo,
+    };
+}
+
+function createMinimalPlugin(): SRPlugin {
+    return {
+        data: {
+            settings: {
+                isPro: true,
+                showRuntimeDebugMessages: false,
+            },
+        },
+    } as unknown as SRPlugin;
+}
 
 test("validates the hidden current extract wrapper before saving", () => {
     const markdown = "before {{ir::target}} after";
@@ -177,6 +208,87 @@ test("extract review menu hides card info", () => {
     expect(container.textContent).not.toContain("卡片信息");
 });
 
+test("readonly extract context uses card markdown renderer instead of CodeMirror", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const before = "before **context**\n\n";
+    const wrapped = "{{ir::outer {{ir::inner}} text\n\n| A | B |\n| - | - |\n| 1 | **two** |}}";
+    const markdown = `${before}${wrapped}\n\nafter`;
+    const context = createManualExtractContext(markdown, before.length, before.length + wrapped.length);
+    const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
+        if (content.includes("| A | B |")) {
+            el.innerHTML =
+                "<table><tbody><tr><td>A</td><td>B</td></tr><tr><td>1</td><td><strong>two</strong></td></tr></tbody></table>";
+            return;
+        }
+        el.innerHTML = content.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    });
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: wrapped, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown,
+                }),
+            );
+        });
+
+        await flushEffects();
+        await flushEffects();
+
+        expect(container.querySelector(".cm-editor")).toBeNull();
+        expect(renderMarkdown).toHaveBeenCalled();
+        expect(container.querySelector("table")).not.toBeNull();
+        expect(container.querySelector("strong")?.textContent).toBe("context");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("readonly extract context strips only the current outer IR wrapper", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const before = "before\n\n";
+    const wrapped = "{{ir::outer {{ir::inner}} text}}";
+    const markdown = `${before}${wrapped}\n\nafter`;
+    const context = createManualExtractContext(markdown, before.length, before.length + wrapped.length);
+    const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
+        el.textContent = content;
+    });
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: wrapped, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown,
+                }),
+            );
+        });
+
+        await flushEffects();
+        await flushEffects();
+
+        const renderedMarkdown = renderMarkdown.mock.calls.map(([content]) => content).join("\n");
+        expect(renderedMarkdown).not.toContain("{{ir::outer");
+        expect(renderedMarkdown).not.toContain("text}}");
+        expect(renderedMarkdown).toContain("outer {{ir::inner}} text");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
 test("Alt+E toggles edit mode and Escape does not exit edit mode", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -216,6 +328,59 @@ test("Alt+E toggles edit mode and Escape does not exit edit mode", () => {
     });
 
     expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+});
+
+test("Alt+E exits edit mode once from CodeMirror", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    card: {
+                        front: "front",
+                        back: "back",
+                    },
+                    plugin: createMinimalPlugin(),
+                    rawContent: "front",
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    type: "basic",
+                }),
+            );
+        });
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+        });
+        await flushEffects();
+
+        const editor = container.querySelector<HTMLElement>(".cm-content");
+        expect(editor).not.toBeNull();
+
+        act(() => {
+            editor?.dispatchEvent(
+                new KeyboardEvent("keydown", { key: "e", altKey: true, bubbles: true }),
+            );
+        });
+        await flushEffects();
+
+        expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+        expect(container.textContent).toContain("Exited edit mode");
+        expect(container.textContent).not.toContain("Entered edit mode");
+        expect(container.textContent).not.toContain("Esc to exit");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("editing mode does not add a left border indicator", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+
+    expect(css).not.toMatch(/\.sr-card-content-area\.sr-is-editing\s*\{[^}]*border-left/s);
 });
 
 function createDeferredRenderMarkdown() {

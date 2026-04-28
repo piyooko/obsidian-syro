@@ -135,6 +135,7 @@ type ClozeRenderFace = "single" | "front" | "back";
 type HeaderBreadcrumbPlacement = "header" | "inline";
 type HeaderBreadcrumbDisplay = "expanded" | "truncated";
 type HeaderStatsMode = "regular" | "compact";
+type ExtractContextPreviewSegmentKind = "before" | "current" | "after";
 
 type HeaderLayoutState = {
     breadcrumbPlacement: HeaderBreadcrumbPlacement;
@@ -752,24 +753,33 @@ export const LinearCard: FC<LinearCardProps> = ({
         }, 2000);
     }, []);
 
-    const toggleEditMode = useCallback(() => {
-        console.debug("[LinearCard] toggleEditMode called", {
-            isEditing,
-            plugin: !!plugin,
-            rawContent: rawContent?.substring(0, 30),
-        });
+    const showEditToast = useCallback((text: string, icon: ReactNode) => {
+        const id = Date.now();
+        setToasts([{ text, icon, id }]);
+        setTimeout(() => {
+            setToasts((prev) => prev.filter((t) => t.id !== id));
+        }, 2000);
+    }, []);
 
+    const enterEditMode = useCallback(() => {
+        setEditText(rawContent);
+        setIsEditing(true);
+        setIsFlipped(true);
+        showEditToast(t("UI_ENTER_EDIT_MODE"), <Edit3 size={14} />);
+    }, [rawContent, showEditToast]);
+
+    const exitEditMode = useCallback(() => {
+        setIsEditing(false);
+        showEditToast(t("UI_EXIT_EDIT_MODE"), <Check size={14} />);
+    }, [showEditToast]);
+
+    const toggleEditMode = useCallback(() => {
         if (isEditing) {
-            setIsEditing(false);
-            showToast(t("UI_EXIT_EDIT_MODE"), <Check size={14} />);
-        } else {
-            console.debug("[LinearCard] Entering edit mode, plugin:", plugin);
-            setEditText(rawContent);
-            setIsEditing(true);
-            setIsFlipped(true);
-            showToast(t("UI_ENTER_EDIT_MODE"), <Edit3 size={14} />);
+            exitEditMode();
+            return;
         }
-    }, [isEditing, rawContent, showToast, plugin]);
+        enterEditMode();
+    }, [enterEditMode, exitEditMode, isEditing]);
 
     const handleAnswerInternal = useCallback(
         (rating: number) => {
@@ -827,6 +837,9 @@ export const LinearCard: FC<LinearCardProps> = ({
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.altKey && e.key.toLowerCase() === "e") {
+                if (isEditableKeyboardTarget(e.target)) {
+                    return;
+                }
                 e.preventDefault();
                 toggleEditMode();
                 return;
@@ -1392,16 +1405,11 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             onOpenBreadcrumb={onOpenBreadcrumb}
                                         />
                                     )}
-                                    {isExtractReview && extractContext && extractContextDraft && plugin ? (
-                                        <ExtractContextEditorView
-                                            value={extractContextDraft.markdown}
+                                    {isExtractReview && extractContext && extractContextDraft ? (
+                                        <ExtractContextMarkdownPreview
+                                            markdown={extractContextDraft.markdown}
                                             ranges={extractContextDraft.ranges}
-                                            editable={false}
-                                            onChange={(update) => {
-                                                onUpdateExtractContext?.(update);
-                                            }}
-                                            onExit={toggleEditMode}
-                                            plugin={plugin}
+                                            renderMarkdown={renderMarkdown}
                                         />
                                     ) : isExtractReview ? (
                                         <ExtractContent
@@ -2165,6 +2173,18 @@ function getInactivePreRenderedFaceStyle(): CSSProperties {
     };
 }
 
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) {
+        return false;
+    }
+
+    return (
+        target.matches("input, textarea, select") ||
+        target.isContentEditable ||
+        !!target.closest("[contenteditable='true'], .cm-editor")
+    );
+}
+
 const ClozeContent = ({
     isFlipped,
     card,
@@ -2483,6 +2503,68 @@ const BasicContent = ({
         </AnimatePresence>
     </div>
 );
+
+function hasVisibleManualIrWrapper(
+    markdown: string,
+    ranges: ExtractContextUpdate["ranges"],
+): boolean {
+    return (
+        markdown.slice(ranges.currentOpenTokenFrom, ranges.currentOpenTokenTo) === "{{ir::" &&
+        markdown.slice(ranges.currentCloseTokenFrom, ranges.currentCloseTokenTo) === "}}"
+    );
+}
+
+function splitExtractContextPreviewSegments(
+    markdown: string,
+    ranges: ExtractContextUpdate["ranges"],
+): Array<{ kind: ExtractContextPreviewSegmentKind; markdown: string }> {
+    const hasWrapper = hasVisibleManualIrWrapper(markdown, ranges);
+    const currentFrom = hasWrapper ? ranges.currentInnerFrom : ranges.currentOuterFrom;
+    const currentTo = hasWrapper ? ranges.currentInnerTo : ranges.currentOuterTo;
+    const segments: Array<{ kind: ExtractContextPreviewSegmentKind; markdown: string }> = [
+        {
+            kind: "before",
+            markdown: markdown.slice(0, ranges.currentOuterFrom),
+        },
+        {
+            kind: "current",
+            markdown: markdown.slice(currentFrom, currentTo),
+        },
+        {
+            kind: "after",
+            markdown: markdown.slice(ranges.currentOuterTo),
+        },
+    ];
+
+    return segments.filter((segment) => segment.markdown.length > 0);
+}
+
+const ExtractContextMarkdownPreview = ({
+    markdown,
+    ranges,
+    renderMarkdown,
+}: {
+    markdown: string;
+    ranges: ExtractContextUpdate["ranges"];
+    renderMarkdown?: (text: string, el: HTMLElement) => Promise<void> | void;
+}) => {
+    const segments = splitExtractContextPreviewSegments(markdown, ranges);
+
+    return (
+        <div className="sr-extract-context-preview">
+            {segments.map((segment, index) => (
+                <div
+                    key={`${segment.kind}-${index}`}
+                    className={`sr-extract-context-segment sr-extract-context-${segment.kind} ${
+                        segment.kind === "current" ? "" : "sr-extract-context-muted"
+                    }`}
+                >
+                    <MarkdownDisplay content={segment.markdown} renderMarkdown={renderMarkdown} />
+                </div>
+            ))}
+        </div>
+    );
+};
 
 const ExtractContent = ({
     content,
