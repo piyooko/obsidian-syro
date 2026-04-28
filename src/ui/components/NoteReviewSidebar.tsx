@@ -38,7 +38,6 @@ import {
     getTimelineReviewResponsePrefixText,
     materializeTimelineReviewResponseEditMessage,
 } from "src/ui/timeline/reviewResponseTimeline";
-import type { ExtractItem } from "src/dataStore/extractStore";
 import type { SidebarProgressIndicatorMode, SidebarProgressRingDirection } from "src/settings";
 
 const TIMELINE_MIN_HEIGHT_PX = 100;
@@ -814,9 +813,6 @@ interface TimelinePaneProps {
     onStartEdit?: (commitId: string) => void;
     onCancelEdit?: () => void;
     onCommitSelect?: (log: ReviewCommitLog) => void;
-    activeExtracts?: ExtractItem[];
-    onExtractSelect?: (extract: ExtractItem) => void;
-    onExtractPriorityChange?: (extract: ExtractItem, priority: number) => void;
     showScrollPercentage?: boolean;
 }
 
@@ -986,9 +982,6 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
     onStartEdit: _onStartEdit,
     onCancelEdit,
     onCommitSelect,
-    activeExtracts = [],
-    onExtractSelect,
-    onExtractPriorityChange,
     showScrollPercentage = true,
 }) => {
     const [message, setMessage] = useState("");
@@ -1119,78 +1112,6 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
                             {/* Timeline List */}
                             <div className="sr-timeline-list-scroll">
                                 <div className="sr-timeline-track">
-                                    {activeExtracts.length > 0 && (
-                                        <div className="sr-timeline-extracts">
-                                            <div className="sr-timeline-extracts-title">
-                                                {t("EXTRACT_TIMELINE_ACTIVE_TITLE")}
-                                            </div>
-                                            {activeExtracts.map((extract) => (
-                                                <div
-                                                    key={extract.uuid}
-                                                    className="sr-timeline-extract-entry"
-                                                    title={extract.rawMarkdown}
-                                                    onClick={() => onExtractSelect?.(extract)}
-                                                >
-                                                    <div className="sr-timeline-dot sr-timeline-extract-dot" />
-                                                    <div className="sr-timeline-extract-content">
-                                                        <div className="sr-timeline-extract-text">
-                                                            {extract.rawMarkdown}
-                                                        </div>
-                                                        {extract.memo.trim() && (
-                                                            <div className="sr-timeline-extract-memo">
-                                                                {extract.memo}
-                                                            </div>
-                                                        )}
-                                                        <div className="sr-timeline-extract-meta">
-                                                            <span>
-                                                                {extract.sourceMode === "auto-slice"
-                                                                    ? extract.sliceRule === "heading"
-                                                                        ? t("EXTRACT_SOURCE_AUTO_HEADING")
-                                                                        : t("EXTRACT_SOURCE_AUTO_PARAGRAPH")
-                                                                    : t("EXTRACT_SOURCE_MANUAL")}
-                                                            </span>
-                                                            <span>
-                                                                {formatTimestamp(extract.createdAt)}
-                                                            </span>
-                                                            <label
-                                                                className="sr-timeline-extract-priority"
-                                                                onClick={(event) =>
-                                                                    event.stopPropagation()
-                                                                }
-                                                            >
-                                                                <span>
-                                                                    {t("EXTRACT_PRIORITY_LABEL")}
-                                                                </span>
-                                                                <select
-                                                                    value={extract.priority}
-                                                                    onChange={(event) =>
-                                                                        onExtractPriorityChange?.(
-                                                                            extract,
-                                                                            Number(
-                                                                                event.target.value,
-                                                                            ),
-                                                                        )
-                                                                    }
-                                                                >
-                                                                    {Array.from(
-                                                                        { length: 10 },
-                                                                        (_, index) => index + 1,
-                                                                    ).map((priority) => (
-                                                                        <option
-                                                                            key={priority}
-                                                                            value={priority}
-                                                                        >
-                                                                            {priority}
-                                                                        </option>
-                                                                    ))}
-                                                                </select>
-                                                            </label>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
                                     {logs.map((log) => {
                                         const isEditing = editingId === log.id;
                                         return (
@@ -1891,9 +1812,6 @@ interface NoteReviewSidebarProps {
     onStartEdit?: (commitId: string) => void;
     onCancelEdit?: () => void;
     onCommitSelect?: (log: ReviewCommitLog) => void;
-    activeExtracts?: ExtractItem[];
-    onExtractSelect?: (extract: ExtractItem) => void;
-    onExtractPriorityChange?: (extract: ExtractItem, priority: number) => void;
     isLoading?: boolean;
     showScrollPercentage?: boolean;
     enableDurationPrefixSyntax?: boolean;
@@ -1944,9 +1862,6 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     onStartEdit: _onStartEdit,
     onCancelEdit,
     onCommitSelect,
-    activeExtracts = [],
-    onExtractSelect,
-    onExtractPriorityChange,
     isLoading: _isLoading = false,
     showScrollPercentage = true,
     enableDurationPrefixSyntax = false,
@@ -2260,47 +2175,22 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
 
     useLayoutEffect(() => {
         if (!autoRevealTargetPath || autoRevealRequestKey <= 0) {
-            logRuntimeDebug("[TimelineAutoFollow] sidebar:auto-reveal:skip", {
-                reason: !autoRevealTargetPath ? "missingTargetPath" : "nonPositiveRequestKey",
-                autoRevealTargetPath,
-                autoRevealRequestKey,
-                autoRevealDebugSource,
-            });
             return;
         }
 
         if (autoRevealRequestKey <= lastHandledAutoRevealRequestKeyRef.current) {
-            logRuntimeDebug("[TimelineAutoFollow] sidebar:auto-reveal:skip", {
-                reason: "requestAlreadyHandled",
-                autoRevealTargetPath,
-                autoRevealRequestKey,
-                autoRevealDebugSource,
-            });
             return;
         }
 
         const contentEl = contentRef.current;
         const sidebarEl = sidebarRef.current;
         if (!(contentEl instanceof HTMLElement) || !(sidebarEl instanceof HTMLElement)) {
-            logRuntimeDebug("[TimelineAutoFollow] sidebar:auto-reveal:skip", {
-                reason: "missingSidebarElements",
-                autoRevealTargetPath,
-                autoRevealRequestKey,
-                autoRevealDebugSource,
-            });
             return;
         }
 
         const noteSelector = `[data-note-path="${escapeNotePathForSelector(autoRevealTargetPath)}"]`;
         const noteEl = sidebarEl.querySelector(noteSelector);
         if (!(noteEl instanceof HTMLElement)) {
-            logRuntimeDebug("[TimelineAutoFollow] sidebar:auto-reveal:skip", {
-                reason: "targetElementNotFound",
-                autoRevealTargetPath,
-                autoRevealRequestKey,
-                autoRevealDebugSource,
-                noteSelector,
-            });
             return;
         }
 
@@ -2313,21 +2203,10 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
 
         if (isFullyVisible) {
             lastHandledAutoRevealRequestKeyRef.current = autoRevealRequestKey;
-            logRuntimeDebug("[TimelineAutoFollow] sidebar:auto-reveal:skip", {
-                reason: "targetAlreadyVisible",
-                autoRevealTargetPath,
-                autoRevealRequestKey,
-                autoRevealDebugSource,
-            });
             return;
         }
 
         lastHandledAutoRevealRequestKeyRef.current = autoRevealRequestKey;
-        logRuntimeDebug("[TimelineAutoFollow] sidebar:auto-reveal:scroll", {
-            autoRevealTargetPath,
-            autoRevealRequestKey,
-            autoRevealDebugSource,
-        });
         noteEl.scrollIntoView({
             behavior: "smooth",
             block: "center",
@@ -2879,9 +2758,6 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                     onStartEdit={_onStartEdit}
                     onCancelEdit={onCancelEdit}
                     onCommitSelect={onCommitSelect}
-                    activeExtracts={activeExtracts}
-                    onExtractSelect={onExtractSelect}
-                    onExtractPriorityChange={onExtractPriorityChange}
                     showScrollPercentage={showScrollPercentage}
                 />
             </div>
