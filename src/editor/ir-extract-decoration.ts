@@ -570,6 +570,10 @@ function getSelectionPointInScrollCoordinates(
         return null;
     }
 
+    if (!canMeasureDomRanges()) {
+        return null;
+    }
+
     const coords = view.coordsAtPos(selection.from);
     if (!coords) {
         return null;
@@ -790,7 +794,22 @@ function createDomRange(view: EditorView, from: number, to: number): Range | nul
     }
 }
 
+function canMeasureDomRanges(): boolean {
+    try {
+        const range = document.createRange();
+        const supported = typeof range.getClientRects === "function";
+        range.detach();
+        return supported;
+    } catch {
+        return false;
+    }
+}
+
 function getRangeClientRects(view: EditorView, from: number, to: number): DOMRect[] {
+    if (!canMeasureDomRanges()) {
+        return [];
+    }
+
     if (to > from) {
         const range = createDomRange(view, from, to);
         if (range) {

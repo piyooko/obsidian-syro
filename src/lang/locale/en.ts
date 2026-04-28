@@ -653,7 +653,7 @@ export default normalizeSentenceCaseLocale({
     DATA_LOST_WARNING: "have some data lost, see console for details.",
     // LinearCard.tsx
     UI_EXIT_EDIT_MODE: "Exited edit mode",
-    UI_ENTER_EDIT_MODE: "Entered edit mode (Alt+E to exit)",
+    UI_ENTER_EDIT_MODE: "Entered edit mode",
     UI_UNDO_LAST_ACTION: "Undid last action",
     UI_OPEN_IN_OBSIDIAN: "Opened in Obsidian",
     UI_CARD_POSTPONED: "Card postponed 1 day",

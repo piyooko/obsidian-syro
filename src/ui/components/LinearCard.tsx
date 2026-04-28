@@ -33,7 +33,7 @@ import {
 import { CardDebugModal } from "./CardDebugModal";
 import type { CardDebugData } from "./CardDebugModal";
 import { CardEditorView } from "./CardEditorView";
-import { ExtractContextEditorView } from "./ExtractContextEditorView";
+import { ExtractHybridMarkdownEditorView } from "./ExtractHybridMarkdownEditorView";
 import type SRPlugin from "src/main";
 import type { CardReviewTarget } from "src/question-type";
 import type { QuestionContextBreadcrumb } from "src/SRFile";
@@ -42,16 +42,10 @@ import type { ExtractContextUpdate } from "src/editor/extract-context-decoration
 import "../styles/linear-card.css";
 import { t } from "src/lang/helpers";
 import { DEFAULT_PROGRESS_BAR_STYLE, type ProgressBarStyle } from "src/settings";
-import { transformLatex } from "../../utils/latexTransformer";
-import { createSanitizedHtmlFragment } from "src/util/safeHtml";
 import {
-    decodeUnifiedMarkerPayload,
-    normalizeSrMarkers,
-    postProcessMarkers,
-    preTokenizeSrMarkers,
-    toFallbackText,
-    tryDecodeSrMarkerText,
-} from "./linearCardMarkers";
+    renderSyroMarkdownToElement,
+    requiresFlipAwareMathRender,
+} from "src/ui/markdown/renderSyroMarkdown";
 import {
     buildScrollPositionInput,
     getCenteredScrollTop,
@@ -415,10 +409,11 @@ export const LinearCard: FC<LinearCardProps> = ({
     const cardContentResetKey = [card?.front || "", card?.back || "", card?.review || ""].join(
         "\u001f",
     );
-    const cardUiResetKey =
-        uiResetToken === undefined
-            ? cardContentResetKey
-            : `${String(uiResetToken)}\u001f${cardContentResetKey}`;
+    const cardUiResetKey = isExtractReview
+        ? String(uiResetToken ?? "")
+        : uiResetToken === undefined
+          ? cardContentResetKey
+          : `${String(uiResetToken)}\u001f${cardContentResetKey}`;
     const lastCardUiResetKeyRef = useRef(cardUiResetKey);
     const isCardUiResetPending = lastCardUiResetKeyRef.current !== cardUiResetKey;
     const renderIsFlipped = isExtractReview || (isCardUiResetPending ? false : isFlipped);
@@ -1374,29 +1369,28 @@ export const LinearCard: FC<LinearCardProps> = ({
                         </div>
 
                         <div className={`sr-card-content-area ${isEditing ? "sr-is-editing" : ""}`}>
-                            {isEditing && plugin ? (
-                                isExtractReview && extractContext && extractContextDraft ? (
-                                    <ExtractContextEditorView
-                                        value={extractContextDraft.markdown}
-                                        ranges={extractContextDraft.ranges}
-                                        editable={true}
-                                        onChange={(update) => {
-                                            onUpdateExtractContext?.(update);
-                                        }}
-                                        onExit={toggleEditMode}
-                                        plugin={plugin}
-                                    />
-                                ) : (
-                                    <CardEditorView
-                                        value={editText}
-                                        onChange={(val) => {
-                                            setEditText(val);
-                                            onUpdateContent?.(val);
-                                        }}
-                                        onExit={toggleEditMode}
-                                        plugin={plugin}
-                                    />
-                                )
+                            {isExtractReview && extractContext && extractContextDraft && plugin ? (
+                                <ExtractHybridMarkdownEditorView
+                                    value={extractContextDraft.markdown}
+                                    ranges={extractContextDraft.ranges}
+                                    mode={isEditing ? "edit" : "review"}
+                                    onChange={(update) => {
+                                        onUpdateExtractContext?.(update);
+                                    }}
+                                    onExit={toggleEditMode}
+                                    plugin={plugin}
+                                    renderMarkdown={renderMarkdown}
+                                />
+                            ) : isEditing && plugin ? (
+                                <CardEditorView
+                                    value={editText}
+                                    onChange={(val) => {
+                                        setEditText(val);
+                                        onUpdateContent?.(val);
+                                    }}
+                                    onExit={toggleEditMode}
+                                    plugin={plugin}
+                                />
                             ) : (
                                 <div className="sr-card-content-scroll" ref={contentScrollRef}>
                                     {shouldInlineBreadcrumbs && (
@@ -1465,8 +1459,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                     onClick={toggleEditMode}
                                     className="sr-show-answer-btn sr-exit-edit-btn"
                                 >
-                                    <Save size={16} /> {t("UI_FINISH_EDITING")}{" "}
-                                    <span className="sr-kbd">{t("UI_EDIT_TOGGLE_KEY_HINT")}</span>
+                                    <Save size={16} /> {t("UI_FINISH_EDITING")}
                                 </button>
                             ) : !renderIsFlipped ? (
                                 <button onClick={revealAnswer} className="sr-show-answer-btn">
@@ -1781,81 +1774,16 @@ const MarkdownDisplay = ({
                 ref.current === target &&
                 renderGenerationRef.current === renderGeneration;
 
-            const clozeMatch = content.match(/<!--SR_CODE_CLOZE:(\d+):(\d+)-->/);
-            let clozeLine = clozeMatch ? parseInt(clozeMatch[1]) : null;
-            let startLine = clozeMatch ? parseInt(clozeMatch[2]) : 1;
-
-            let cleanContent = content.replace(/<!--SR_CODE_CLOZE:\d+:\d+-->\n?/, "");
-            cleanContent = normalizeSrMarkers(cleanContent);
-
-            const hasCodeBlock = cleanContent.includes("```") || cleanContent.includes("~~~");
-            const hasPlaceholder =
-                cleanContent.includes("««SR_CLOZE:") || cleanContent.includes("««SR_");
-
-            if (!clozeMatch && hasCodeBlock && hasPlaceholder) {
-                const lines = cleanContent.split("\n");
-                for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].includes("««SR_CLOZE:") || lines[i].includes("««SR_")) {
-                        clozeLine = i + 1;
-                        break;
-                    }
-                }
-                startLine = 1;
-            }
-
-            cleanContent = preprocessMathCloze(
-                cleanContent,
-                shouldRefreshForFlip ? (showAnswer ? "highlight" : "mask") : "highlight",
-            );
-
-            const fallbackText = toFallbackText(cleanContent, { showAnswer });
-            const tokenizedContent = preTokenizeSrMarkers(cleanContent);
-
-            if (!renderMarkdown) {
-                if (!isRenderCurrent()) {
-                    return;
-                }
-                target.replaceChildren(document.createTextNode(fallbackText));
-                onRenderedRef.current?.(target);
-                return;
-            }
-
             const buffer = document.createElement("div");
+            await renderSyroMarkdownToElement({
+                markdown: content,
+                renderMarkdown,
+                showAnswer: shouldRefreshForFlip ? showAnswer : false,
+                target: buffer,
+            });
 
-            try {
-                await renderMarkdown(tokenizedContent.content, buffer);
-
-                if (!isRenderCurrent()) {
-                    return;
-                }
-
-                await postProcessMarkers(buffer, renderMarkdown, tokenizedContent.tokens);
-
-                if (!isRenderCurrent()) {
-                    return;
-                }
-
-                if (clozeLine !== null || (hasCodeBlock && hasPlaceholder)) {
-                    postProcessCodeBlock(buffer, clozeLine || 1, startLine);
-                }
-
-                const renderedNodes = Array.from(buffer.childNodes);
-                if (renderedNodes.length > 0 || buffer.textContent?.trim()) {
-                    target.replaceChildren(...renderedNodes);
-                } else {
-                    target.replaceChildren(document.createTextNode(fallbackText));
-                }
-
-                if (isRenderCurrent()) {
-                    onRenderedRef.current?.(target);
-                }
-            } catch (error) {
-                if (!isRenderCurrent()) {
-                    return;
-                }
-
-                console.error("[LinearCard] Failed to render markdown", error);
-                target.replaceChildren(document.createTextNode(fallbackText));
+            if (isRenderCurrent()) {
+                target.replaceChildren(...Array.from(buffer.childNodes));
                 onRenderedRef.current?.(target);
             }
         };
@@ -1874,221 +1802,6 @@ const MarkdownDisplay = ({
         />
     );
 };
-
-function containsMathExpression(content: string): boolean {
-    return /\$\$[\s\S]*?\$\$|(?<!\\)\$(?!\$)[^$\n]+?(?<!\\)\$(?!\$)/.test(content);
-}
-
-function requiresFlipAwareMathRender(content: string): boolean {
-    const normalized = normalizeSrMarkers(content.replace(/<!--SR_CODE_CLOZE:\d+:\d+-->\n?/g, ""));
-    return normalized.includes("««SR_C:") && containsMathExpression(normalized);
-}
-
-function preprocessMathCloze(
-    content: string,
-    latexMode: "highlight" | "mask" = "highlight",
-): string {
-    content = normalizeSrMarkers(content);
-
-    const hasMath = content.includes("$");
-    const hasMarker = content.includes("««SR_");
-    const hasAnkiCloze = content.includes("{{c");
-    if (!hasMath || (!hasMarker && !hasAnkiCloze)) return content;
-
-    let result = content;
-
-    result = result.replace(/\$\$([\s\S]*?)\$\$/g, (_fullMatch: string, inner: string) => {
-        return `$$${transformLatex(inner, latexMode, null)}$$`;
-    });
-
-    result = result.replace(
-        /(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g,
-        (_fullMatch: string, inner: string) => `$${transformLatex(inner, latexMode, null)}$`,
-    );
-
-    return result;
-}
-
-const CODE_LINE_HTML_OPTIONS = {
-    allowedTags: ["span"],
-    allowedAttributes: {
-        span: ["class"],
-    },
-} as const;
-
-function setCodeLineContent(target: HTMLElement, html: string) {
-    if (!html) {
-        target.textContent = " ";
-        return;
-    }
-
-    const fragment = createSanitizedHtmlFragment(html, CODE_LINE_HTML_OPTIONS);
-    if (!fragment.hasChildNodes()) {
-        target.textContent = html;
-        return;
-    }
-
-    target.replaceChildren(fragment);
-}
-
-function postProcessCodeBlock(container: HTMLElement, _clozeLine: number, startLine: number) {
-    console.debug("[SR Debug] postProcessCodeBlock called");
-
-    const preElements = container.querySelectorAll("pre");
-    console.debug("[SR Debug] Found pre elements:", preElements.length);
-
-    if (preElements.length === 0) {
-        console.debug("[SR Debug] No pre elements, trying to process container directly");
-        console.debug("[SR Debug] Container innerHTML:", container.innerHTML.substring(0, 500));
-        return;
-    }
-
-    preElements.forEach((pre, preIndex) => {
-        const codeEl = pre.querySelector("code");
-        console.debug("[SR Debug] Pre", preIndex, "has code element:", !!codeEl);
-
-        if (!codeEl) {
-            console.debug("[SR Debug] No code element, using pre innerHTML");
-        }
-
-        let codeContent = codeEl ? codeEl.innerHTML : pre.innerHTML;
-        console.debug("[SR Debug] Original codeContent:", codeContent.substring(0, 200));
-
-        codeContent = codeContent
-            .replace(/&laquo;/g, "«")
-            .replace(/&raquo;/g, "»")
-            .replace(/&#171;/g, "«")
-            .replace(/&#187;/g, "»");
-
-        console.debug("[SR Debug] After entity decode:", codeContent.substring(0, 200));
-        console.debug(
-            "[SR Debug] Contains placeholder marker:",
-            codeContent.includes("««SR_CLOZE:"),
-        );
-
-        const clozeLineIndices: Set<number> = new Set();
-
-        const rawLines = codeContent.split("\n");
-        rawLines.forEach((line, idx) => {
-            const cleanLine = line.replace(/<[^>]+>/g, "");
-            if (cleanLine.includes("««SR_CLOZE:") || cleanLine.includes("««SR_C:")) {
-                clozeLineIndices.add(idx);
-            }
-        });
-
-        codeContent = codeContent.replace(/««[\s\S]*?»»/g, (match) => {
-            const cleanMatch = match.replace(/<[^>]+>/g, "");
-            if (cleanMatch.startsWith("««SR_CLOZE:")) {
-                const encoded = cleanMatch.substring(11, cleanMatch.length - 2);
-                const decoded = tryDecodeSrMarkerText(encoded);
-                if (decoded === null) {
-                    return match;
-                }
-
-                return `<span class="sr-cloze-wrapper"><span class="sr-cloze-placeholder">[...]</span><span class="sr-cloze-answer">${decoded}</span></span>`;
-            }
-            if (cleanMatch.startsWith("««SR_C:")) {
-                const decoded = decodeUnifiedMarkerPayload(
-                    cleanMatch.substring(6, cleanMatch.length - 2),
-                );
-                if (!decoded) {
-                    return match;
-                }
-
-                return `<span class="sr-cloze-wrapper"><span class="sr-cloze-placeholder">${decoded.placeholderText}</span><span class="sr-cloze-answer">${decoded.answerText}</span></span>`;
-            }
-            return match;
-        });
-
-        codeContent = codeContent.replace(
-            /««SR_CLOZE_FRONT»»/g,
-            '<span class="sr-cloze-placeholder">[...]</span>',
-        );
-        codeContent = codeContent.replace(
-            /««SR_CLOZE_BACK:([^»]+)»»/g,
-            (match: string, encoded: string) => {
-                try {
-                    const decoded = decodeURIComponent(encoded);
-                    return `<span class="sr-cloze-answer">${decoded}</span>`;
-                } catch {
-                    return match;
-                }
-            },
-        );
-
-        const lines = codeContent.split("\n");
-
-        const wrapper = document.createElement("div");
-        wrapper.className = "sr-code-block-card";
-
-        let currentRealLine = startLine;
-        let maxLineNumberDigits = 1;
-        let firstClozeDiv: HTMLElement | null = null;
-
-        lines.forEach((lineContent, index) => {
-            const trimmedLine = lineContent.trim();
-            if (trimmedLine.startsWith("```") || trimmedLine.startsWith("~~~")) {
-                return;
-            }
-
-            if (trimmedLine.startsWith("// ...")) {
-                const lineDiv = document.createElement("div");
-                lineDiv.className = "sr-code-context-line sr-code-ellipsis";
-                const lineNumSpan = document.createElement("span");
-                lineNumSpan.className = "sr-code-line-number";
-
-                const lineContentSpan = document.createElement("span");
-                lineContentSpan.className = "sr-code-line-content sr-code-line-content-ellipsis";
-                setCodeLineContent(lineContentSpan, lineContent);
-
-                lineDiv.appendChild(lineNumSpan);
-                lineDiv.appendChild(lineContentSpan);
-                wrapper.appendChild(lineDiv);
-                return;
-            }
-
-            const isCloze = clozeLineIndices.has(index);
-
-            const lineDiv = document.createElement("div");
-            lineDiv.className = isCloze ? "sr-code-cloze-line" : "sr-code-context-line";
-            lineDiv.dataset.line = String(currentRealLine);
-
-            const lineNumSpan = document.createElement("span");
-            lineNumSpan.className = "sr-code-line-number";
-            lineNumSpan.textContent = String(currentRealLine);
-            maxLineNumberDigits = Math.max(maxLineNumberDigits, lineNumSpan.textContent.length);
-
-            const lineContentSpan = document.createElement("span");
-            lineContentSpan.className = "sr-code-line-content";
-            setCodeLineContent(lineContentSpan, lineContent);
-
-            lineDiv.appendChild(lineNumSpan);
-            lineDiv.appendChild(lineContentSpan);
-            wrapper.appendChild(lineDiv);
-
-            if (isCloze && !firstClozeDiv) {
-                firstClozeDiv = lineDiv;
-            }
-
-            currentRealLine++;
-        });
-
-        wrapper.style.setProperty("--sr-code-line-number-digits", String(maxLineNumberDigits));
-
-        pre.parentNode?.replaceChild(wrapper, pre);
-
-        if (firstClozeDiv) {
-            setTimeout(() => {
-                if (typeof firstClozeDiv.scrollIntoView === "function") {
-                    firstClozeDiv.scrollIntoView({
-                        block: "center",
-                        behavior: "auto",
-                    });
-                }
-            }, 10);
-        }
-    });
-}
 
 function getScrollContainer(container: HTMLElement | null): HTMLElement | null {
     return container?.closest(".sr-card-content-scroll") ?? null;

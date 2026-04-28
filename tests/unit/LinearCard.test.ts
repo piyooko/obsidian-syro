@@ -87,6 +87,22 @@ function createManualExtractContext(markdown: string, outerFrom: number, outerTo
     };
 }
 
+function createAutoExtractContext(markdown: string) {
+    return {
+        sourceFrom: 0,
+        sourceTo: markdown.length,
+        markdown,
+        currentOuterFrom: 0,
+        currentOuterTo: markdown.length,
+        currentInnerFrom: 0,
+        currentInnerTo: markdown.length,
+        currentOpenTokenFrom: 0,
+        currentOpenTokenTo: 0,
+        currentCloseTokenFrom: markdown.length,
+        currentCloseTokenTo: markdown.length,
+    };
+}
+
 function createMinimalPlugin(): SRPlugin {
     return {
         data: {
@@ -196,8 +212,9 @@ test("extract review menu hides card info", () => {
         );
     });
 
-    const menuButton = Array.from(container.querySelectorAll<HTMLButtonElement>(".sr-header-btn"))
-        .at(-1);
+    const menuButton = Array.from(
+        container.querySelectorAll<HTMLButtonElement>(".sr-header-btn"),
+    ).at(-1);
     expect(menuButton).toBeDefined();
 
     act(() => {
@@ -208,14 +225,18 @@ test("extract review menu hides card info", () => {
     expect(container.textContent).not.toContain("卡片信息");
 });
 
-test("readonly extract context uses card markdown renderer instead of CodeMirror", async () => {
+test("readonly extract context uses persistent hybrid markdown renderer", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
     const before = "before **context**\n\n";
     const wrapped = "{{ir::outer {{ir::inner}} text\n\n| A | B |\n| - | - |\n| 1 | **two** |}}";
     const markdown = `${before}${wrapped}\n\nafter`;
-    const context = createManualExtractContext(markdown, before.length, before.length + wrapped.length);
+    const context = createManualExtractContext(
+        markdown,
+        before.length,
+        before.length + wrapped.length,
+    );
     const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
         if (content.includes("| A | B |")) {
             el.innerHTML =
@@ -242,10 +263,17 @@ test("readonly extract context uses card markdown renderer instead of CodeMirror
         await flushEffects();
         await flushEffects();
 
-        expect(container.querySelector(".cm-editor")).toBeNull();
+        const hybridHost = container.querySelector(".sr-hybrid-markdown-source");
+        expect(hybridHost).not.toBeNull();
+        expect(hybridHost?.classList.contains("markdown-source-view")).toBe(true);
+        expect(hybridHost?.classList.contains("cm-s-obsidian")).toBe(true);
+        expect(hybridHost?.classList.contains("mod-cm6")).toBe(true);
+        expect(hybridHost?.classList.contains("is-live-preview")).toBe(true);
+        expect(hybridHost?.classList.contains("is-readable-line-width")).toBe(false);
+        expect(container.querySelector(".cm-editor")).not.toBeNull();
         expect(renderMarkdown).toHaveBeenCalled();
         expect(container.querySelector("table")).not.toBeNull();
-        expect(container.querySelector("strong")?.textContent).toBe("context");
+        expect(container.querySelector(".cm-strong")?.textContent).toBe("context");
     } finally {
         act(() => root.unmount());
     }
@@ -258,7 +286,11 @@ test("readonly extract context strips only the current outer IR wrapper", async 
     const before = "before\n\n";
     const wrapped = "{{ir::outer {{ir::inner}} text}}";
     const markdown = `${before}${wrapped}\n\nafter`;
-    const context = createManualExtractContext(markdown, before.length, before.length + wrapped.length);
+    const context = createManualExtractContext(
+        markdown,
+        before.length,
+        before.length + wrapped.length,
+    );
     const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
         el.textContent = content;
     });
@@ -280,10 +312,365 @@ test("readonly extract context strips only the current outer IR wrapper", async 
         await flushEffects();
         await flushEffects();
 
-        const renderedMarkdown = renderMarkdown.mock.calls.map(([content]) => content).join("\n");
-        expect(renderedMarkdown).not.toContain("{{ir::outer");
-        expect(renderedMarkdown).not.toContain("text}}");
-        expect(renderedMarkdown).toContain("outer {{ir::inner}} text");
+        const visibleText = container.textContent ?? "";
+        expect(visibleText).not.toContain("{{ir::outer");
+        expect(visibleText).not.toContain("text}}");
+        expect(visibleText).toContain("outer {{ir::inner}} text");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("extract hybrid editor keeps the same CodeMirror node across review and edit mode", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "before\n\n{{ir::target}}\n\nafter";
+    const context = createManualExtractContext(
+        markdown,
+        "before\n\n".length,
+        "before\n\n{{ir::target}}".length,
+    );
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "{{ir::target}}", back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editorBefore = container.querySelector(".cm-editor");
+        expect(editorBefore).not.toBeNull();
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+        });
+        await flushEffects();
+
+        expect(container.querySelector(".cm-editor")).toBe(editorBefore);
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+
+        const content = container.querySelector<HTMLElement>(".cm-content");
+        act(() => {
+            content?.dispatchEvent(
+                new KeyboardEvent("keydown", { key: "e", altKey: true, bubbles: true }),
+            );
+        });
+        await flushEffects();
+
+        expect(container.querySelector(".cm-editor")).toBe(editorBefore);
+        expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("extract hybrid table cells edit as rendered table and write back markdown", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "| A | B |\n| - | - |\n| 1 | two |";
+    const context = createAutoExtractContext(markdown);
+    const onUpdateExtractContext = jest.fn();
+    const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
+        if (content.includes("| A | B |")) {
+            el.innerHTML =
+                "<table><thead><tr><th>A</th><th>B</th></tr></thead><tbody><tr><td>1</td><td>two</td></tr></tbody></table>";
+            return;
+        }
+        el.textContent = content;
+    });
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown,
+                }),
+            );
+        });
+        await flushEffects();
+        await flushEffects();
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+        });
+        await flushEffects();
+        await flushEffects();
+
+        const tableWidget = container.querySelector(".cm-embed-block.cm-table-widget");
+        const tableWrapper = container.querySelector(".table-wrapper");
+        const table = container.querySelector("table.table-editor");
+        const cell = Array.from(container.querySelectorAll<HTMLElement>("td")).find(
+            (element) => element.textContent === "two",
+        );
+        expect(tableWidget).not.toBeNull();
+        expect(tableWrapper).not.toBeNull();
+        expect(table).not.toBeNull();
+        expect(cell).not.toBeNull();
+
+        act(() => {
+            if (cell) {
+                cell.textContent = "changed";
+                cell.dispatchEvent(
+                    new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+                );
+            }
+        });
+        await flushEffects();
+
+        expect(onUpdateExtractContext).toHaveBeenCalled();
+        expect(onUpdateExtractContext.mock.calls.at(-1)?.[0].markdown).toContain("| 1 | changed |");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("extract hybrid edit mode keeps list rendering instead of exposing the whole source block", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "1. **绳镖**: first\n2. **火狱瞬移**: second";
+    const context = createAutoExtractContext(markdown);
+    const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
+        el.textContent = content;
+    });
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown,
+                }),
+            );
+        });
+        await flushEffects();
+        await flushEffects();
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+        });
+        await flushEffects();
+        await flushEffects();
+
+        expect(
+            container.querySelector('.sr-hybrid-rendered-block[data-sr-hybrid-block-kind="list"]'),
+        ).toBeNull();
+        expect(container.querySelector(".HyperMD-list-line")).not.toBeNull();
+        expect(container.querySelector(".cm-formatting-list-ol")).not.toBeNull();
+        expect(container.querySelector(".cm-strong")?.textContent).toBe("绳镖");
+        expect(container.textContent).not.toContain("**绳镖**");
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("extract hybrid table blur keeps edit mode and waits for an explicit commit", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "| A | B |\n| - | - |\n| 1 | two |";
+    const context = createAutoExtractContext(markdown);
+    const onUpdateExtractContext = jest.fn();
+    const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
+        if (content.includes("| A | B |")) {
+            el.innerHTML =
+                "<table><thead><tr><th>A</th><th>B</th></tr></thead><tbody><tr><td>1</td><td>two</td></tr></tbody></table>";
+            return;
+        }
+        el.textContent = content;
+    });
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown,
+                }),
+            );
+        });
+        await flushEffects();
+        await flushEffects();
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+        });
+        await flushEffects();
+        await flushEffects();
+
+        const cell = Array.from(container.querySelectorAll<HTMLElement>("td")).find(
+            (element) => element.textContent === "two",
+        );
+        expect(cell).not.toBeNull();
+
+        act(() => {
+            if (cell) {
+                cell.textContent = "changed";
+                cell.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
+            }
+        });
+        await flushEffects();
+
+        expect(onUpdateExtractContext).not.toHaveBeenCalled();
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+        expect(container.querySelector("table.table-editor")).not.toBeNull();
+
+        act(() => {
+            cell?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        });
+        await flushEffects();
+
+        expect(onUpdateExtractContext).toHaveBeenCalled();
+        expect(onUpdateExtractContext.mock.calls.at(-1)?.[0].markdown).toContain("| 1 | changed |");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("extract hybrid table draft flushes when exiting edit mode with Alt+E", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "| A | B |\n| - | - |\n| 1 | two |";
+    const context = createAutoExtractContext(markdown);
+    const onUpdateExtractContext = jest.fn();
+    const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
+        if (content.includes("| A | B |")) {
+            el.innerHTML =
+                "<table><thead><tr><th>A</th><th>B</th></tr></thead><tbody><tr><td>1</td><td>two</td></tr></tbody></table>";
+            return;
+        }
+        el.textContent = content;
+    });
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown,
+                }),
+            );
+        });
+        await flushEffects();
+        await flushEffects();
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+        });
+        await flushEffects();
+        await flushEffects();
+
+        const cell = Array.from(container.querySelectorAll<HTMLElement>("td")).find(
+            (element) => element.textContent === "two",
+        );
+        const editor = container.querySelector<HTMLElement>(".cm-content");
+        expect(cell).not.toBeNull();
+        expect(editor).not.toBeNull();
+
+        act(() => {
+            if (cell) {
+                cell.textContent = "changed";
+                cell.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            }
+            editor?.dispatchEvent(
+                new KeyboardEvent("keydown", { key: "e", altKey: true, bubbles: true }),
+            );
+        });
+        await flushEffects();
+
+        expect(onUpdateExtractContext).toHaveBeenCalled();
+        expect(onUpdateExtractContext.mock.calls.at(-1)?.[0].markdown).toContain("| 1 | changed |");
+        expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("extract card content updates do not reset the active edit session", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const firstMarkdown = "before\n\nactive extract";
+    const nextMarkdown = "before\n\nactive extract edited";
+    const firstContext = createAutoExtractContext(firstMarkdown);
+    const nextContext = createAutoExtractContext(nextMarkdown);
+    const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
+        el.textContent = content;
+    });
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    uiResetToken: 1,
+                    card: { front: firstMarkdown, back: "" },
+                    extractContext: firstContext,
+                    extractContextDraft: { markdown: firstMarkdown, ranges: firstContext },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown,
+                }),
+            );
+        });
+        await flushEffects();
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+        });
+        await flushEffects();
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    uiResetToken: 1,
+                    card: { front: nextMarkdown, back: "" },
+                    extractContext: nextContext,
+                    extractContextDraft: { markdown: nextMarkdown, ranges: nextContext },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown,
+                }),
+            );
+        });
+        await flushEffects();
+
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+        expect(container.querySelector(".cm-editor")).not.toBeNull();
     } finally {
         act(() => root.unmount());
     }
@@ -381,6 +768,33 @@ test("editing mode does not add a left border indicator", () => {
     const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
 
     expect(css).not.toMatch(/\.sr-card-content-area\.sr-is-editing\s*\{[^}]*border-left/s);
+});
+
+test("hybrid editor content uses the same padding variables as review content", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+
+    expect(css).toMatch(
+        /\.sr-hybrid-markdown-source\.markdown-source-view\.mod-cm6\s+\.cm-content\s*\{[^}]*max-width:\s*none\s*!important;[^}]*width:\s*100%\s*!important;[^}]*box-sizing:\s*border-box;[^}]*padding:\s*var\(--syro-desktop-review-content-padding-y,\s*24px\)\s+var\(--syro-desktop-review-content-padding-x,\s*40px\)\s*!important/s,
+    );
+});
+
+test("hybrid rendered blocks keep preview classes without preview layout padding", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+
+    expect(css).toMatch(
+        /\.sr-hybrid-rendered-block\.markdown-preview-view\s*\{[^}]*max-width:\s*none\s*!important;[^}]*margin:\s*0\s*!important;[^}]*padding:\s*0\s*!important/s,
+    );
+});
+
+test("hybrid editor initializes detached before appending to avoid first paint jump", () => {
+    const source = readFileSync(
+        join(process.cwd(), "src/ui/components/ExtractHybridMarkdownEditorView.tsx"),
+        "utf8",
+    );
+
+    expect(source).not.toMatch(/new EditorView\s*\(\s*\{[^}]*parent:\s*container/s);
+    expect(source).toMatch(/view\.dispatch\s*\(\s*\{[^}]*setExtractContextRangesEffect\.of\(ranges\)[^}]*setHybridModeEffect\.of\(mode\)/s);
+    expect(source).toMatch(/container\.appendChild\(view\.dom\)/);
 });
 
 function createDeferredRenderMarkdown() {

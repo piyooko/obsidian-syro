@@ -2331,6 +2331,75 @@ body.syro-mobile-review-square-corners
     display: none;
 }
 
+.sr-hybrid-markdown-source {
+    height: 100%;
+    width: 100%;
+    background: transparent;
+}
+
+.sr-hybrid-markdown-source .sr-cm-container,
+.sr-hybrid-markdown-source .cm-editor {
+    height: 100%;
+    background: transparent;
+}
+
+.sr-hybrid-markdown-source .cm-scroller {
+    height: 100%;
+    overflow: auto;
+    background: transparent;
+}
+
+.sr-hybrid-markdown-source.markdown-source-view.mod-cm6 .cm-content {
+    max-width: none !important;
+    width: 100% !important;
+    box-sizing: border-box;
+    padding: var(--syro-desktop-review-content-padding-y, 24px)
+        var(--syro-desktop-review-content-padding-x, 40px) !important;
+    margin-inline: 0 !important;
+}
+
+.sr-hybrid-markdown-source.markdown-source-view.mod-cm6 .cm-contentContainer,
+.sr-hybrid-markdown-source.markdown-source-view.mod-cm6 .cm-line {
+    max-width: none !important;
+    width: 100% !important;
+    box-sizing: border-box;
+    margin-inline: 0 !important;
+}
+
+.sr-hybrid-markdown-source.markdown-source-view.mod-cm6 .cm-line {
+    padding-inline: 0 !important;
+}
+
+.sr-hybrid-markdown-source[data-sr-hybrid-mode="review"] .cm-cursor,
+.sr-hybrid-markdown-source[data-sr-hybrid-mode="review"] .cm-selectionBackground {
+    display: none;
+}
+
+.sr-hybrid-rendered-block.markdown-preview-view {
+    max-width: none !important;
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout
+    .sr-hybrid-markdown-source.markdown-source-view.mod-cm6
+    .cm-content {
+    padding: var(--syro-mobile-review-content-padding-y, 16px)
+        var(--syro-mobile-review-content-padding-x, 16px) !important;
+}
+
+.sr-hybrid-table-cell-editable {
+    cursor: text;
+}
+
+.sr-hybrid-table-cell-editable:focus {
+    outline: 1px solid var(--interactive-accent);
+    outline-offset: -1px;
+}
+
 .sr-rating-buttons .is-set {
     border-color: color-mix(in srgb, var(--interactive-accent) 35%, transparent);
 }

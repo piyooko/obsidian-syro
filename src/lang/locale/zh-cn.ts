@@ -469,7 +469,7 @@ export default {
     DATA_FILE_MOVE_FAILED: "Unable to move data file!",
     DATA_LOST_WARNING: "have some data lost, see console for details.",
     UI_EXIT_EDIT_MODE: "已退出编辑模式",
-    UI_ENTER_EDIT_MODE: "进入编辑模式 (Alt+E 退出)",
+    UI_ENTER_EDIT_MODE: "进入编辑模式",
     UI_UNDO_LAST_ACTION: "已撤销上一次操作",
     UI_OPEN_IN_OBSIDIAN: "已在 Obsidian 中打开",
     UI_CARD_POSTPONED: "卡片已推迟 1 天",
