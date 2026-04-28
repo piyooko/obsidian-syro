@@ -54,16 +54,16 @@ describe("autoExtractSlices", () => {
         expect(slices[0].rawMarkdown).toBe("# Real\n```md\n# Code\n```\ntext");
     });
 
-    test("cuts blank-block slices on empty lines", () => {
-        const slices = buildAutoExtractSlices("alpha\n\n  \n\nbeta\nline\n\n", {
+    test("does not create slices when heading rules are disabled", () => {
+        const slices = buildAutoExtractSlices("# A\ntext", {
             sourcePath: "note.md",
-            rule: "blank-block",
-            enabled: true,
+            rule: "heading",
+            headingLevel: 1,
+            enabled: false,
             createdAt: 1,
             updatedAt: 1,
         });
 
-        expect(slices.map((slice) => slice.rawMarkdown)).toEqual(["alpha", "beta\nline"]);
-        expect(slices.every((slice) => slice.key.startsWith("blank-block:"))).toBe(true);
+        expect(slices).toHaveLength(0);
     });
 });

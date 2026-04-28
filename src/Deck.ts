@@ -467,12 +467,6 @@ export class DeckTreeFilter {
         currentLimits.newCards = Math.min(currentLimits.newCards, myNewQuota);
         currentLimits.dueCards = Math.min(currentLimits.dueCards, myDueQuota);
 
-        if (settings.showRuntimeDebugMessages) {
-            console.debug(
-                `[SR-Debug] _applyTopDownLimits: deck='${deckPath}', myQuota={new:${myNewQuota}, due:${myDueQuota}}, effectiveLimit={new:${currentLimits.newCards}, due:${currentLimits.dueCards}}`,
-            );
-        }
-
         const result = new Deck(node.deckName, null);
         result.learningFlashcards = [...node.learningFlashcards];
 

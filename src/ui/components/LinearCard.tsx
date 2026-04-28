@@ -129,7 +129,6 @@ type ClozeRenderFace = "single" | "front" | "back";
 type HeaderBreadcrumbPlacement = "header" | "inline";
 type HeaderBreadcrumbDisplay = "expanded" | "truncated";
 type HeaderStatsMode = "regular" | "compact";
-type ExtractContextPreviewSegmentKind = "before" | "current" | "after";
 
 type HeaderLayoutState = {
     breadcrumbPlacement: HeaderBreadcrumbPlacement;
@@ -757,11 +756,16 @@ export const LinearCard: FC<LinearCardProps> = ({
     }, []);
 
     const enterEditMode = useCallback(() => {
+        if (isExtractReview && (!extractContext || !extractContextDraft || !plugin)) {
+            showEditToast(t("EXTRACT_CONTEXT_NOT_READY"), <Edit3 size={14} />);
+            return;
+        }
+
         setEditText(rawContent);
         setIsEditing(true);
         setIsFlipped(true);
         showEditToast(t("UI_ENTER_EDIT_MODE"), <Edit3 size={14} />);
-    }, [rawContent, showEditToast]);
+    }, [extractContext, extractContextDraft, isExtractReview, plugin, rawContent, showEditToast]);
 
     const exitEditMode = useCallback(() => {
         setIsEditing(false);
@@ -1369,18 +1373,34 @@ export const LinearCard: FC<LinearCardProps> = ({
                         </div>
 
                         <div className={`sr-card-content-area ${isEditing ? "sr-is-editing" : ""}`}>
-                            {isExtractReview && extractContext && extractContextDraft && plugin ? (
-                                <ExtractHybridMarkdownEditorView
-                                    value={extractContextDraft.markdown}
-                                    ranges={extractContextDraft.ranges}
-                                    mode={isEditing ? "edit" : "review"}
-                                    onChange={(update) => {
-                                        onUpdateExtractContext?.(update);
-                                    }}
-                                    onExit={toggleEditMode}
-                                    plugin={plugin}
-                                    renderMarkdown={renderMarkdown}
-                                />
+                            {isExtractReview ? (
+                                extractContext && extractContextDraft && plugin ? (
+                                    <ExtractHybridMarkdownEditorView
+                                        value={extractContextDraft.markdown}
+                                        ranges={extractContextDraft.ranges}
+                                        mode={isEditing ? "edit" : "review"}
+                                        onChange={(update) => {
+                                            onUpdateExtractContext?.(update);
+                                        }}
+                                        onExit={exitEditMode}
+                                        plugin={plugin}
+                                        renderMarkdown={renderMarkdown}
+                                    />
+                                ) : (
+                                    <div className="sr-card-content-scroll" ref={contentScrollRef}>
+                                        {shouldInlineBreadcrumbs && (
+                                            <InlineBreadcrumbs
+                                                breadcrumbs={breadcrumbs}
+                                                onOpenBreadcrumb={onOpenBreadcrumb}
+                                            />
+                                        )}
+                                        <ExtractContent
+                                            key={cardUiResetKey}
+                                            content={card?.front || t("EXTRACT_NO_ACTIVE_ITEMS")}
+                                            renderMarkdown={renderMarkdown}
+                                        />
+                                    </div>
+                                )
                             ) : isEditing && plugin ? (
                                 <CardEditorView
                                     value={editText}
@@ -1388,7 +1408,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                         setEditText(val);
                                         onUpdateContent?.(val);
                                     }}
-                                    onExit={toggleEditMode}
+                                    onExit={exitEditMode}
                                     plugin={plugin}
                                 />
                             ) : (
@@ -1399,19 +1419,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             onOpenBreadcrumb={onOpenBreadcrumb}
                                         />
                                     )}
-                                    {isExtractReview && extractContext && extractContextDraft ? (
-                                        <ExtractContextMarkdownPreview
-                                            markdown={extractContextDraft.markdown}
-                                            ranges={extractContextDraft.ranges}
-                                            renderMarkdown={renderMarkdown}
-                                        />
-                                    ) : isExtractReview ? (
-                                        <ExtractContent
-                                            key={cardUiResetKey}
-                                            content={card?.front || t("EXTRACT_NO_ACTIVE_ITEMS")}
-                                            renderMarkdown={renderMarkdown}
-                                        />
-                                    ) : type === "cloze" ? (
+                                    {type === "cloze" ? (
                                         <ClozeContent
                                             key={cardUiResetKey}
                                             isFlipped={renderIsFlipped}
@@ -2216,68 +2224,6 @@ const BasicContent = ({
         </AnimatePresence>
     </div>
 );
-
-function hasVisibleManualIrWrapper(
-    markdown: string,
-    ranges: ExtractContextUpdate["ranges"],
-): boolean {
-    return (
-        markdown.slice(ranges.currentOpenTokenFrom, ranges.currentOpenTokenTo) === "{{ir::" &&
-        markdown.slice(ranges.currentCloseTokenFrom, ranges.currentCloseTokenTo) === "}}"
-    );
-}
-
-function splitExtractContextPreviewSegments(
-    markdown: string,
-    ranges: ExtractContextUpdate["ranges"],
-): Array<{ kind: ExtractContextPreviewSegmentKind; markdown: string }> {
-    const hasWrapper = hasVisibleManualIrWrapper(markdown, ranges);
-    const currentFrom = hasWrapper ? ranges.currentInnerFrom : ranges.currentOuterFrom;
-    const currentTo = hasWrapper ? ranges.currentInnerTo : ranges.currentOuterTo;
-    const segments: Array<{ kind: ExtractContextPreviewSegmentKind; markdown: string }> = [
-        {
-            kind: "before",
-            markdown: markdown.slice(0, ranges.currentOuterFrom),
-        },
-        {
-            kind: "current",
-            markdown: markdown.slice(currentFrom, currentTo),
-        },
-        {
-            kind: "after",
-            markdown: markdown.slice(ranges.currentOuterTo),
-        },
-    ];
-
-    return segments.filter((segment) => segment.markdown.length > 0);
-}
-
-const ExtractContextMarkdownPreview = ({
-    markdown,
-    ranges,
-    renderMarkdown,
-}: {
-    markdown: string;
-    ranges: ExtractContextUpdate["ranges"];
-    renderMarkdown?: (text: string, el: HTMLElement) => Promise<void> | void;
-}) => {
-    const segments = splitExtractContextPreviewSegments(markdown, ranges);
-
-    return (
-        <div className="sr-extract-context-preview">
-            {segments.map((segment, index) => (
-                <div
-                    key={`${segment.kind}-${index}`}
-                    className={`sr-extract-context-segment sr-extract-context-${segment.kind} ${
-                        segment.kind === "current" ? "" : "sr-extract-context-muted"
-                    }`}
-                >
-                    <MarkdownDisplay content={segment.markdown} renderMarkdown={renderMarkdown} />
-                </div>
-            ))}
-        </div>
-    );
-};
 
 const ExtractContent = ({
     content,

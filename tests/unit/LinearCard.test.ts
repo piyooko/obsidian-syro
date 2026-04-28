@@ -225,6 +225,46 @@ test("extract review menu hides card info", () => {
     expect(container.textContent).not.toContain("卡片信息");
 });
 
+test("extract review without context never falls back to the plain card editor", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "{{ir::text}}", back: "" },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    extractActionLabels: {
+                        again: "重来",
+                        good: "良好",
+                        set: "指定",
+                        graduate: "毕业",
+                    },
+                }),
+            );
+        });
+        await flushEffects();
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+        });
+        await flushEffects();
+
+        expect(container.querySelector(".sr-editor-hint")).toBeNull();
+        expect(container.querySelector(".cm-editor")).toBeNull();
+        expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+        expect(container.textContent).toContain("{{ir::text}}");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
 test("readonly extract context uses persistent hybrid markdown renderer", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -424,13 +464,16 @@ test("extract hybrid table cells edit as rendered table and write back markdown"
         expect(tableWrapper).not.toBeNull();
         expect(table).not.toBeNull();
         expect(cell).not.toBeNull();
+        expect(container.querySelector(".table-cell-wrapper")).not.toBeNull();
+        expect(container.querySelector(".table-col-drag-handle")).not.toBeNull();
+        expect(container.querySelector(".table-row-drag-handle")).not.toBeNull();
+        expect(container.querySelector(".table-row-btn")).not.toBeNull();
+        expect(container.querySelector(".table-col-btn")).not.toBeNull();
 
         act(() => {
             if (cell) {
                 cell.textContent = "changed";
-                cell.dispatchEvent(
-                    new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-                );
+                cell.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
             }
         });
         await flushEffects();
@@ -479,6 +522,7 @@ test("extract hybrid edit mode keeps list rendering instead of exposing the whol
         ).toBeNull();
         expect(container.querySelector(".HyperMD-list-line")).not.toBeNull();
         expect(container.querySelector(".cm-formatting-list-ol")).not.toBeNull();
+        expect(container.querySelector(".list-number")).not.toBeNull();
         expect(container.querySelector(".cm-strong")?.textContent).toBe("绳镖");
         expect(container.textContent).not.toContain("**绳镖**");
         expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
@@ -793,7 +837,9 @@ test("hybrid editor initializes detached before appending to avoid first paint j
     );
 
     expect(source).not.toMatch(/new EditorView\s*\(\s*\{[^}]*parent:\s*container/s);
-    expect(source).toMatch(/view\.dispatch\s*\(\s*\{[^}]*setExtractContextRangesEffect\.of\(ranges\)[^}]*setHybridModeEffect\.of\(mode\)/s);
+    expect(source).toMatch(
+        /view\.dispatch\s*\(\s*\{[^}]*setExtractContextRangesEffect\.of\(ranges\)[^}]*setHybridModeEffect\.of\(mode\)/s,
+    );
     expect(source).toMatch(/container\.appendChild\(view\.dom\)/);
 });
 

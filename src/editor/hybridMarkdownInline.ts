@@ -1,6 +1,6 @@
 import type { EditorSelection } from "@codemirror/state";
 import { RangeSetBuilder } from "@codemirror/state";
-import { Decoration, type DecorationSet } from "@codemirror/view";
+import { Decoration, type DecorationSet, WidgetType } from "@codemirror/view";
 import {
     findHybridMarkdownBlocks,
     type HybridMarkdownBlock,
@@ -11,6 +11,8 @@ export interface HybridInlineTokenForTest {
     from: number;
     hidden?: boolean;
     to: number;
+    widget?: "list-bullet" | "list-number";
+    widgetText?: string;
 }
 
 interface SelectionRangeLike {
@@ -70,7 +72,7 @@ function getSelectionRanges(selection: EditorSelection | SelectionLike): Selecti
     return [{ from: 0, to: 0 }];
 }
 
-function isTokenActive(
+function isFormattingGroupActive(
     from: number,
     to: number,
     selection: EditorSelection | SelectionLike,
@@ -98,6 +100,8 @@ function pushFormattingToken(
     to: number,
     selection: EditorSelection | SelectionLike,
     hiddenByDefault = true,
+    activeFrom = from,
+    activeTo = to,
 ): void {
     if (from >= to) {
         return;
@@ -105,7 +109,7 @@ function pushFormattingToken(
     tokens.push({
         className,
         from,
-        hidden: hiddenByDefault ? !isTokenActive(from, to, selection) : false,
+        hidden: hiddenByDefault ? !isFormattingGroupActive(activeFrom, activeTo, selection) : false,
         to,
     });
 }
@@ -120,6 +124,41 @@ function pushMarkToken(
         return;
     }
     tokens.push({ className, from, to });
+}
+
+function pushListMarkerWidgetToken(
+    tokens: HybridInlineTokenForTest[],
+    className: string,
+    from: number,
+    to: number,
+    widget: "list-bullet" | "list-number",
+    widgetText: string,
+): void {
+    if (from >= to) {
+        return;
+    }
+    tokens.push({ className, from, to, widget, widgetText });
+}
+
+function appendClassName(className: string, extra: string): string {
+    return className.split(/\s+/).includes(extra) ? className : `${className} ${extra}`;
+}
+
+function addListDepthClasses(
+    tokens: HybridInlineTokenForTest[],
+    blocks: HybridMarkdownBlock[],
+): void {
+    const listBlocks = blocks.filter((block) => block.kind === "list" && block.depth);
+
+    for (const token of tokens) {
+        const listBlock = listBlocks.find(
+            (block) => token.from >= block.from && token.to <= block.to,
+        );
+        if (!listBlock?.depth) {
+            continue;
+        }
+        token.className = appendClassName(token.className, `cm-list-${listBlock.depth}`);
+    }
 }
 
 function collectLineFormattingTokens(
@@ -163,15 +202,15 @@ function collectLineFormattingTokens(
         if (list) {
             const ordered = /^\d/.test(list[2]);
             const depth = Math.max(1, Math.floor(list[1].replace(/\t/g, "    ").length / 2) + 1);
-            pushFormattingToken(
+            pushListMarkerWidgetToken(
                 tokens,
                 `cm-formatting cm-formatting-list ${
                     ordered ? "cm-formatting-list-ol" : "cm-formatting-list-ul"
                 } cm-list-${depth}`,
                 lineFrom + list[1].length,
                 lineFrom + list[1].length + list[2].length,
-                selection,
-                false,
+                ordered ? "list-number" : "list-bullet",
+                list[2],
             );
         }
 
@@ -217,6 +256,9 @@ function collectStrongTokens(
             from,
             innerFrom,
             selection,
+            true,
+            from,
+            to,
         );
         pushMarkToken(tokens, "cm-strong", innerFrom, innerTo);
         pushFormattingToken(
@@ -225,6 +267,9 @@ function collectStrongTokens(
             innerTo,
             to,
             selection,
+            true,
+            from,
+            to,
         );
     }
 }
@@ -245,9 +290,27 @@ function collectInlineCodeTokens(
             continue;
         }
 
-        pushFormattingToken(tokens, "cm-formatting cm-formatting-code", from, from + 1, selection);
+        pushFormattingToken(
+            tokens,
+            "cm-formatting cm-formatting-code",
+            from,
+            from + 1,
+            selection,
+            true,
+            from,
+            to,
+        );
         pushMarkToken(tokens, "cm-inline-code", from + 1, to - 1);
-        pushFormattingToken(tokens, "cm-formatting cm-formatting-code", to - 1, to, selection);
+        pushFormattingToken(
+            tokens,
+            "cm-formatting cm-formatting-code",
+            to - 1,
+            to,
+            selection,
+            true,
+            from,
+            to,
+        );
     }
 }
 
@@ -269,9 +332,27 @@ function collectMarkdownLinkTokens(
 
         const textFrom = from + 1;
         const textTo = textFrom + match[1].length;
-        pushFormattingToken(tokens, "cm-formatting cm-formatting-link", from, textFrom, selection);
+        pushFormattingToken(
+            tokens,
+            "cm-formatting cm-formatting-link",
+            from,
+            textFrom,
+            selection,
+            true,
+            from,
+            to,
+        );
         pushMarkToken(tokens, "cm-link", textFrom, textTo);
-        pushFormattingToken(tokens, "cm-formatting cm-formatting-link", textTo, to, selection);
+        pushFormattingToken(
+            tokens,
+            "cm-formatting cm-formatting-link",
+            textTo,
+            to,
+            selection,
+            true,
+            from,
+            to,
+        );
     }
 }
 
@@ -293,14 +374,95 @@ function collectWikiLinkTokens(
 
         const hasAlias = typeof match[2] === "string";
         const displayText = hasAlias ? match[2] : match[1];
-        const displayFrom = hasAlias
-            ? from + 2 + match[1].length + 1
-            : from + 2;
+        const displayFrom = hasAlias ? from + 2 + match[1].length + 1 : from + 2;
         const displayTo = displayFrom + displayText.length;
 
-        pushFormattingToken(tokens, "cm-formatting cm-formatting-link", from, displayFrom, selection);
+        pushFormattingToken(
+            tokens,
+            "cm-formatting cm-formatting-link",
+            from,
+            displayFrom,
+            selection,
+            true,
+            from,
+            to,
+        );
         pushMarkToken(tokens, "cm-link", displayFrom, displayTo);
-        pushFormattingToken(tokens, "cm-formatting cm-formatting-link", displayTo, to, selection);
+        pushFormattingToken(
+            tokens,
+            "cm-formatting cm-formatting-link",
+            displayTo,
+            to,
+            selection,
+            true,
+            from,
+            to,
+        );
+    }
+}
+
+function collectBareReferenceTokens(
+    markdown: string,
+    skipRanges: Array<Pick<HybridMarkdownBlock, "from" | "to">>,
+    tokens: HybridInlineTokenForTest[],
+): void {
+    const referencePattern = /\[(\d+(?:\s*,\s*\d+)*)\]/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = referencePattern.exec(markdown)) !== null) {
+        const from = match.index;
+        const to = from + match[0].length;
+        if (
+            isEscaped(markdown, from) ||
+            intersectsRange(from, to, skipRanges) ||
+            markdown[to] === "("
+        ) {
+            continue;
+        }
+
+        pushMarkToken(
+            tokens,
+            "cm-formatting cm-formatting-link cm-hmd-barelink cm-link",
+            from,
+            from + 1,
+        );
+        pushMarkToken(tokens, "cm-hmd-barelink cm-link", from + 1, to - 1);
+        pushMarkToken(
+            tokens,
+            "cm-formatting cm-formatting-link cm-hmd-barelink cm-link",
+            to - 1,
+            to,
+        );
+    }
+}
+
+class ListMarkerWidget extends WidgetType {
+    constructor(
+        private readonly className: string,
+        private readonly kind: "list-bullet" | "list-number",
+        private readonly text: string,
+    ) {
+        super();
+    }
+
+    eq(other: ListMarkerWidget): boolean {
+        return (
+            other.className === this.className &&
+            other.kind === this.kind &&
+            other.text === this.text
+        );
+    }
+
+    toDOM(): HTMLElement {
+        const marker = document.createElement("span");
+        marker.className = this.className;
+
+        const inner = document.createElement("span");
+        inner.className = this.kind;
+        inner.textContent = this.text;
+        marker.appendChild(inner);
+
+        return marker;
     }
 }
 
@@ -318,8 +480,12 @@ export function collectHybridInlineTokensForTest(
     collectInlineCodeTokens(markdown, selection, skipRanges, tokens);
     collectMarkdownLinkTokens(markdown, selection, skipRanges, tokens);
     collectWikiLinkTokens(markdown, selection, skipRanges, tokens);
+    collectBareReferenceTokens(markdown, skipRanges, tokens);
+    addListDepthClasses(tokens, blocks);
 
-    return tokens.sort((a, b) => a.from - b.from || a.to - b.to || a.className.localeCompare(b.className));
+    return tokens.sort(
+        (a, b) => a.from - b.from || a.to - b.to || a.className.localeCompare(b.className),
+    );
 }
 
 export function collectHybridInlineDecorations(
@@ -331,6 +497,22 @@ export function collectHybridInlineDecorations(
     const tokens = collectHybridInlineTokensForTest(markdown, selection, { blocks });
 
     for (const token of tokens) {
+        if (token.widget) {
+            builder.add(
+                token.from,
+                token.to,
+                Decoration.replace({
+                    inclusive: false,
+                    widget: new ListMarkerWidget(
+                        token.className,
+                        token.widget,
+                        token.widgetText ?? "",
+                    ),
+                }),
+            );
+            continue;
+        }
+
         if (token.hidden) {
             builder.add(token.from, token.to, Decoration.replace({ inclusive: false }));
             continue;

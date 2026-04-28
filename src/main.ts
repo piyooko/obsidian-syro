@@ -120,6 +120,7 @@ import {
     parseExtractStoreSnapshots,
     type ExtractItem,
     type ExtractReviewStats,
+    type ExtractSyncResult,
     type ExtractSnapshot,
 } from "./dataStore/extractStore";
 import { replaySyroSessionRecords } from "./dataStore/syroSessionReplay";
@@ -270,6 +271,13 @@ import {
     SerializedNote,
     validateCachedNoteBindings,
 } from "src/cache/noteCacheStore";
+import {
+    buildAutoHeadingLocators,
+    buildManualIrLocators,
+    normalizePersistedExtractNoteCache,
+    type ManualIrLocator,
+    type PersistedExtractNoteCache,
+} from "src/cache/extractNoteCache";
 import { ReviewCommitStore, type ReviewCommitLog } from "src/dataStore/reviewCommitStore";
 import { ReviewPersistenceCoordinator } from "src/services/reviewPersistenceCoordinator";
 import { ReviewStateCommitCoordinator } from "src/services/reviewStateCommitCoordinator";
@@ -520,6 +528,7 @@ export default class SRPlugin extends Plugin {
     public deckTree: Deck = new Deck("root", null);
     public remainingDeckTree: Deck;
     public noteCache: Map<string, { mtime: number; note: Note }> = new Map();
+    public noteExtractCache: Map<string, PersistedExtractNoteCache> = new Map();
     private noteCacheSignature: string = "";
     public cardStats: Stats;
     public noteStats: Stats;
@@ -1588,6 +1597,7 @@ export default class SRPlugin extends Plugin {
         this.deckTree = new Deck("root", null);
         this.remainingDeckTree = new Deck("root", null);
         this.noteCache.clear();
+        this.noteExtractCache.clear();
         this.noteCacheSignature = "";
         this.cardStats = new Stats();
         this.noteStats = new Stats();
@@ -2111,6 +2121,13 @@ export default class SRPlugin extends Plugin {
         return path.replace(/\\/g, "/").replace(/\/+/g, "/");
     }
 
+    private getNoteExtractCache(): Map<string, PersistedExtractNoteCache> {
+        if (!this.noteExtractCache) {
+            this.noteExtractCache = new Map();
+        }
+        return this.noteExtractCache;
+    }
+
     public getAutoExtractRuleForPath(path: string): AutoExtractRule | null {
         const normalizedPath = this.normalizeAutoExtractPath(path);
         const rule = this.data.settings.autoExtractRules?.[normalizedPath];
@@ -2137,21 +2154,18 @@ export default class SRPlugin extends Plugin {
         return fallbackDeckName;
     }
 
-    private emptyExtractSyncResult(): {
-        added: ExtractItem[];
-        updated: ExtractItem[];
-        graduated: ExtractItem[];
-    } {
+    private emptyExtractSyncResult(): ExtractSyncResult {
         return { added: [], updated: [], graduated: [] };
     }
 
     private mergeExtractSyncResults(
-        ...results: Array<{ added: ExtractItem[]; updated: ExtractItem[]; graduated: ExtractItem[] }>
-    ): { added: ExtractItem[]; updated: ExtractItem[]; graduated: ExtractItem[] } {
+        ...results: ExtractSyncResult[]
+    ): ExtractSyncResult {
         return {
             added: results.flatMap((result) => result.added),
             updated: results.flatMap((result) => result.updated),
             graduated: results.flatMap((result) => result.graduated),
+            manualIrCache: results.find((result) => result.manualIrCache)?.manualIrCache,
         };
     }
 
@@ -2159,23 +2173,32 @@ export default class SRPlugin extends Plugin {
         file: TFile,
         text: string,
         options: { manual?: boolean; auto?: boolean; autoRuleOverride?: AutoExtractRule | null } = {},
-    ): { added: ExtractItem[]; updated: ExtractItem[]; graduated: ExtractItem[] } {
-        if (!this.extractStore || this.data.settings.enableExtracts === false) {
+    ): ExtractSyncResult {
+        if (!this.extractStore || this.data?.settings?.enableExtracts === false) {
             return this.emptyExtractSyncResult();
         }
         const manualEnabled = options.manual !== false;
         const autoEnabled = options.auto !== false;
+        const cachedManualIr = this.getNoteExtractCache().get(file.path)?.manualIr;
         const manualResult = manualEnabled
-            ? this.extractStore.syncFileExtracts(
-                  file.path,
-                  text,
-                  this.getExtractDeckNameForFile(file),
-              )
+            ? cachedManualIr
+                ? this.extractStore.syncFileExtracts(
+                      file.path,
+                      text,
+                      this.getExtractDeckNameForFile(file),
+                      { manualIrCache: cachedManualIr },
+                  )
+                : this.extractStore.syncFileExtracts(
+                      file.path,
+                      text,
+                      this.getExtractDeckNameForFile(file),
+                  )
             : this.emptyExtractSyncResult();
-        const autoRule =
-            options.autoRuleOverride === undefined
+        const autoRule = autoEnabled
+            ? options.autoRuleOverride === undefined
                 ? this.getAutoExtractRuleForPath(file.path)
-                : options.autoRuleOverride;
+                : options.autoRuleOverride
+            : null;
         const autoResult =
             autoEnabled && autoRule
                 ? this.extractStore.syncAutoExtractsForFile(
@@ -2185,7 +2208,17 @@ export default class SRPlugin extends Plugin {
                       autoRule,
                   )
                 : this.emptyExtractSyncResult();
-        return this.mergeExtractSyncResults(manualResult, autoResult);
+        const result = this.mergeExtractSyncResults(manualResult, autoResult);
+        this.getNoteExtractCache().set(file.path, {
+            scannedAt: Date.now(),
+            fileMtime: file.stat?.mtime ?? 0,
+            fileSize: file.stat?.size,
+            manualIr: manualResult.manualIrCache,
+            autoHeadings: autoRule?.rule === "heading"
+                ? buildAutoHeadingLocators(text, autoRule) ?? undefined
+                : undefined,
+        });
+        return result;
     }
 
     private async syncExtractsFromVaultFiles(files?: TFile[]): Promise<void> {
@@ -2241,6 +2274,7 @@ export default class SRPlugin extends Plugin {
 
         await this.appendExtractSyncResult(result);
         await this.extractStore.save();
+        await this.saveNoteExtractCacheToDiskIfEnabled();
         this.syncEvents.emit("extracts-updated");
         this.updateStatusBar();
     }
@@ -2279,6 +2313,7 @@ export default class SRPlugin extends Plugin {
 
         await this.appendExtractSyncResult(result);
         await this.extractStore.save();
+        await this.saveNoteExtractCacheToDiskIfEnabled();
         this.syncEvents.emit("extracts-updated");
         this.updateStatusBar();
     }
@@ -2390,8 +2425,50 @@ export default class SRPlugin extends Plugin {
 
     private findCurrentExtractMatch(item: ExtractItem, sourceText: string): IrExtractMatch | null {
         const matches = parseIrExtracts(sourceText);
+        const cachedLocator = this.getNoteExtractCache().get(item.sourcePath)?.manualIr?.locators[item.uuid];
+        const uuidByStart = new Map<number, string>(
+            matches.map((match) => [match.start, `match:${match.start}`]),
+        );
+        const currentLocators = buildManualIrLocators(sourceText, matches, uuidByStart);
+        const currentLocatorByStart = new Map<number, ManualIrLocator>();
+        for (const locator of Object.values(currentLocators.locators)) {
+            const start = Number(locator.uuid.slice("match:".length));
+            if (Number.isFinite(start)) {
+                currentLocatorByStart.set(start, locator);
+            }
+        }
         const ordinalMatch = matches[item.sourceAnchor.ordinal];
         return (
+            matches.find(
+                (match) =>
+                    match.start === item.sourceAnchor.start &&
+                    match.end === item.sourceAnchor.end,
+            ) ??
+            matches.find(
+                (match) =>
+                    cachedLocator?.outerStart === match.start &&
+                    cachedLocator?.outerEnd === match.end,
+            ) ??
+            matches.find((match) => {
+                const locator = currentLocatorByStart.get(match.start);
+                return (
+                    !!cachedLocator &&
+                    !!locator &&
+                    cachedLocator.startLine === locator.startLine &&
+                    cachedLocator.lineOrdinal === locator.lineOrdinal &&
+                    cachedLocator.depth === locator.depth
+                );
+            }) ??
+            matches.find((match) => {
+                const locator = currentLocatorByStart.get(match.start);
+                return (
+                    !!cachedLocator &&
+                    !!locator &&
+                    Math.abs(cachedLocator.startLine - locator.startLine) <= 5 &&
+                    cachedLocator.lineOrdinal === locator.lineOrdinal &&
+                    cachedLocator.depth === locator.depth
+                );
+            }) ??
             matches.find(
                 (match) =>
                     match.start === item.sourceAnchor.start &&
@@ -2413,7 +2490,7 @@ export default class SRPlugin extends Plugin {
         item: ExtractItem,
         sourceText: string,
     ): AutoExtractSlice | null {
-        if (item.sourceMode !== "auto-slice" || item.sliceRule === "manual-ir") {
+        if (item.sourceMode !== "auto-slice" || item.sliceRule !== "heading") {
             return null;
         }
         const headingLevelMatch = item.autoSliceKey?.match(/^heading:(\d):/);
@@ -2527,19 +2604,40 @@ export default class SRPlugin extends Plugin {
     public async getExtractReviewContext(uuid: string): Promise<ExtractReviewContext | null> {
         const item = this.extractStore?.get(uuid);
         if (!item || item.stage !== "active") {
+            this.logRuntimeDebug("[SR-ExtractSave] getExtractReviewContext:skip", {
+                uuid,
+                reason: !item ? "missing-item" : "inactive-item",
+                stage: item?.stage ?? null,
+            });
             return null;
         }
         const sourceFile = this.resolveExtractSourceFile(item);
         if (!sourceFile) {
+            this.logRuntimeDebug("[SR-ExtractSave] getExtractReviewContext:skip", {
+                uuid,
+                reason: "missing-source-file",
+                sourcePath: item.sourcePath,
+            });
             return null;
         }
         const sourceText = await this.app.vault.read(sourceFile);
         if (item.sourceMode === "auto-slice") {
             const slice = this.findCurrentAutoExtractSlice(item, sourceText);
             if (!slice) {
+                this.logRuntimeDebug("[SR-ExtractSave] getExtractReviewContext:auto-slice-miss", {
+                    uuid,
+                    sourcePath: sourceFile.path,
+                    autoSliceKey: item.autoSliceKey ?? null,
+                });
                 await this.syncAutoExtractsFromFile(sourceFile);
                 return null;
             }
+            this.logRuntimeDebug("[SR-ExtractSave] getExtractReviewContext:auto-slice-hit", {
+                uuid,
+                sourcePath: sourceFile.path,
+                autoSliceKey: item.autoSliceKey ?? null,
+                rawMarkdownLength: slice.rawMarkdown.length,
+            });
             return buildAutoExtractReviewContext(sourceText, {
                 ...slice.sourceAnchor,
                 ordinal: item.sourceAnchor.ordinal,
@@ -2547,16 +2645,27 @@ export default class SRPlugin extends Plugin {
         }
         const match = this.findCurrentExtractMatch(item, sourceText);
         if (!match) {
-            const result = this.extractStore.syncFileExtracts(
-                sourceFile.path,
-                sourceText,
-                this.getExtractDeckNameForFile(sourceFile),
-            );
+            this.logRuntimeDebug("[SR-ExtractSave] getExtractReviewContext:manual-match-miss", {
+                uuid,
+                sourcePath: sourceFile.path,
+                sourceAnchorStart: item.sourceAnchor.start,
+                sourceAnchorEnd: item.sourceAnchor.end,
+                rawMarkdownLength: item.rawMarkdown.length,
+            });
+            const result = this.syncExtractTextForFile(sourceFile, sourceText, { auto: false });
             await this.appendExtractSyncResult(result);
             await this.extractStore.save();
+            await this.saveNoteExtractCacheToDiskIfEnabled();
             this.syncEvents.emit("extracts-updated");
             return null;
         }
+        this.logRuntimeDebug("[SR-ExtractSave] getExtractReviewContext:manual-match-hit", {
+            uuid,
+            sourcePath: sourceFile.path,
+            matchStart: match.start,
+            matchEnd: match.end,
+            rawMarkdownLength: match.rawMarkdown.length,
+        });
         return buildExtractReviewContext(sourceText, match);
     }
 
@@ -2654,26 +2763,20 @@ export default class SRPlugin extends Plugin {
         const sourceText = await this.app.vault.read(sourceFile);
         const match = this.findCurrentExtractMatch(item, sourceText);
         if (!match) {
-            const result = this.extractStore.syncFileExtracts(
-                sourceFile.path,
-                sourceText,
-                this.getExtractDeckNameForFile(sourceFile),
-            );
+            const result = this.syncExtractTextForFile(sourceFile, sourceText, { auto: false });
             await this.appendExtractSyncResult(result);
             await this.extractStore.save();
+            await this.saveNoteExtractCacheToDiskIfEnabled();
             this.syncEvents.emit("extracts-updated");
             return null;
         }
 
         const nextText = replaceExtractInnerMarkdown(sourceText, match, rawMarkdown);
         await this.app.vault.modify(sourceFile, nextText);
-        const result = this.extractStore.syncFileExtracts(
-            sourceFile.path,
-            nextText,
-            this.getExtractDeckNameForFile(sourceFile),
-        );
+        const result = this.syncExtractTextForFile(sourceFile, nextText, { auto: false });
         await this.appendExtractSyncResult(result);
         await this.extractStore.save();
+        await this.saveNoteExtractCacheToDiskIfEnabled();
         this.syncEvents.emit("extracts-updated");
         return this.extractStore.get(uuid);
     }
@@ -2685,29 +2788,63 @@ export default class SRPlugin extends Plugin {
     ): Promise<ExtractItem | null> {
         void previousContext;
         if (!this.extractStore) {
+            this.logRuntimeDebug("[SR-ExtractSave] updateExtractContextMarkdown:skip", {
+                uuid,
+                reason: "missing-extract-store",
+            });
             return null;
         }
         const item = this.extractStore.get(uuid);
         if (!item || item.stage !== "active") {
+            this.logRuntimeDebug("[SR-ExtractSave] updateExtractContextMarkdown:skip", {
+                uuid,
+                reason: !item ? "missing-item" : "inactive-item",
+                stage: item?.stage ?? null,
+            });
             return null;
         }
         if (
             item.sourceMode !== "auto-slice" &&
             !hasCurrentExtractWrapper(update.markdown, update.ranges)
         ) {
+            this.logRuntimeDebug("[SR-ExtractSave] updateExtractContextMarkdown:skip", {
+                uuid,
+                reason: "missing-current-wrapper",
+                sourceMode: item.sourceMode,
+                markdownLength: update.markdown.length,
+            });
             new Notice(t("EXTRACT_CONTEXT_SAVE_FAILED"));
             return null;
         }
 
         const sourceFile = this.resolveExtractSourceFile(item);
         if (!sourceFile) {
+            this.logRuntimeDebug("[SR-ExtractSave] updateExtractContextMarkdown:skip", {
+                uuid,
+                reason: "missing-source-file",
+                sourcePath: item.sourcePath,
+            });
             return null;
         }
 
+        this.logRuntimeDebug("[SR-ExtractSave] updateExtractContextMarkdown:start", {
+            uuid,
+            sourcePath: sourceFile.path,
+            sourceMode: item.sourceMode,
+            sliceRule: item.sliceRule,
+            markdownLength: update.markdown.length,
+            currentOuterFrom: update.ranges.currentOuterFrom,
+            currentOuterTo: update.ranges.currentOuterTo,
+        });
         const sourceText = await this.app.vault.read(sourceFile);
         if (item.sourceMode === "auto-slice") {
             const slice = this.findCurrentAutoExtractSlice(item, sourceText);
             if (!slice) {
+                this.logRuntimeDebug("[SR-ExtractSave] updateExtractContextMarkdown:auto-slice-miss", {
+                    uuid,
+                    sourcePath: sourceFile.path,
+                    autoSliceKey: item.autoSliceKey ?? null,
+                });
                 await this.syncAutoExtractsFromFile(sourceFile);
                 new Notice(t("EXTRACT_CONTEXT_SAVE_FAILED"));
                 return null;
@@ -2722,18 +2859,29 @@ export default class SRPlugin extends Plugin {
             const result = this.syncExtractTextForFile(sourceFile, nextText);
             await this.appendExtractSyncResult(result);
             await this.extractStore.save();
+            await this.saveNoteExtractCacheToDiskIfEnabled();
+            this.logRuntimeDebug("[SR-ExtractSave] updateExtractContextMarkdown:auto-slice-saved", {
+                uuid,
+                sourcePath: sourceFile.path,
+                added: result.added.length,
+                updated: result.updated.length,
+                graduated: result.graduated.length,
+            });
             this.syncEvents.emit("extracts-updated");
             return this.extractStore.get(uuid);
         }
         const match = this.findCurrentExtractMatch(item, sourceText);
         if (!match) {
-            const result = this.extractStore.syncFileExtracts(
-                sourceFile.path,
-                sourceText,
-                this.getExtractDeckNameForFile(sourceFile),
-            );
+            this.logRuntimeDebug("[SR-ExtractSave] updateExtractContextMarkdown:manual-match-miss", {
+                uuid,
+                sourcePath: sourceFile.path,
+                sourceAnchorStart: item.sourceAnchor.start,
+                sourceAnchorEnd: item.sourceAnchor.end,
+            });
+            const result = this.syncExtractTextForFile(sourceFile, sourceText, { auto: false });
             await this.appendExtractSyncResult(result);
             await this.extractStore.save();
+            await this.saveNoteExtractCacheToDiskIfEnabled();
             this.syncEvents.emit("extracts-updated");
             new Notice(t("EXTRACT_CONTEXT_SAVE_FAILED"));
             return null;
@@ -2742,13 +2890,17 @@ export default class SRPlugin extends Plugin {
         const currentContext = buildExtractReviewContext(sourceText, match);
         const nextText = replaceExtractReviewContext(sourceText, currentContext, update.markdown);
         await this.app.vault.modify(sourceFile, nextText);
-        const result = this.extractStore.syncFileExtracts(
-            sourceFile.path,
-            nextText,
-            this.getExtractDeckNameForFile(sourceFile),
-        );
+        const result = this.syncExtractTextForFile(sourceFile, nextText, { auto: false });
         await this.appendExtractSyncResult(result);
         await this.extractStore.save();
+        await this.saveNoteExtractCacheToDiskIfEnabled();
+        this.logRuntimeDebug("[SR-ExtractSave] updateExtractContextMarkdown:manual-saved", {
+            uuid,
+            sourcePath: sourceFile.path,
+            added: result.added.length,
+            updated: result.updated.length,
+            graduated: result.graduated.length,
+        });
         this.syncEvents.emit("extracts-updated");
         return this.extractStore.get(uuid);
     }
@@ -2809,16 +2961,13 @@ export default class SRPlugin extends Plugin {
                 const nextText = removeExtractWrapperKeepInnerContent(sourceText, match);
                 await this.app.vault.modify(sourceFile, nextText);
                 const graduated = this.extractStore.graduateWithReviewCount(uuid, deckPath);
-                const result = this.extractStore.syncFileExtracts(
-                    sourceFile.path,
-                    nextText,
-                    this.getExtractDeckNameForFile(sourceFile),
-                );
+                const result = this.syncExtractTextForFile(sourceFile, nextText, { auto: false });
                 await this.appendExtractSyncResult(result);
                 if (graduated) {
                     await this.appendSyroExtractGraduate({ item: graduated });
                 }
                 await this.extractStore.save();
+                await this.saveNoteExtractCacheToDiskIfEnabled();
                 await this.preserveGraduatedExtractMemo(graduated ?? item);
                 this.syncEvents.emit("extracts-updated");
                 this.syncEvents.emit("note-review-updated");
@@ -2881,9 +3030,23 @@ export default class SRPlugin extends Plugin {
         );
 
         const deckName = this.getExtractDeckNameForFile(file);
-        const result = this.extractStore.syncFileExtracts(file.path, wrapped.text, deckName);
+        const cachedManualIr = this.getNoteExtractCache().get(file.path)?.manualIr;
+        const result = cachedManualIr
+            ? this.extractStore.syncFileExtracts(file.path, wrapped.text, deckName, {
+                  manualIrCache: cachedManualIr,
+              })
+            : this.extractStore.syncFileExtracts(file.path, wrapped.text, deckName);
+        const previousExtractCache = this.getNoteExtractCache().get(file.path);
+        this.getNoteExtractCache().set(file.path, {
+            scannedAt: Date.now(),
+            fileMtime: file.stat?.mtime ?? 0,
+            fileSize: file.stat?.size,
+            manualIr: result.manualIrCache,
+            autoHeadings: previousExtractCache?.autoHeadings,
+        });
         await this.appendExtractSyncResult(result);
         await this.extractStore.save();
+        await this.saveNoteExtractCacheToDiskIfEnabled();
         this.syncEvents.emit("extracts-updated");
         this.updateStatusBar();
         new Notice(t("NOTICE_EXTRACT_CREATED"));
@@ -3606,14 +3769,29 @@ export default class SRPlugin extends Plugin {
         signature: string,
         cache: Map<string, { mtime: number; note: Note }>,
     ): PersistedNoteCacheFile {
-        const items: PersistedNoteCacheItem[] = [];
+        const itemByPath = new Map<string, PersistedNoteCacheItem>();
         for (const [notePath, entry] of cache.entries()) {
-            items.push({
+            itemByPath.set(notePath, {
                 path: notePath,
                 mtime: entry.mtime,
+                size: this.getNoteExtractCache().get(notePath)?.fileSize,
                 data: serializeNote(entry.note),
+                extractCache: this.getNoteExtractCache().get(notePath),
             });
         }
+        for (const [notePath, extractCache] of this.getNoteExtractCache().entries()) {
+            if (itemByPath.has(notePath)) {
+                continue;
+            }
+            itemByPath.set(notePath, {
+                path: notePath,
+                mtime: extractCache.fileMtime,
+                size: extractCache.fileSize,
+                data: { questions: [] },
+                extractCache,
+            });
+        }
+        const items = Array.from(itemByPath.values());
         items.sort((left, right) => left.path.localeCompare(right.path));
 
         return {
@@ -3681,6 +3859,18 @@ export default class SRPlugin extends Plugin {
         } catch (error) {
             console.warn("[SR-Cache] Failed to save note_cache.json:", error);
         }
+    }
+
+    private async saveNoteExtractCacheToDiskIfEnabled(): Promise<void> {
+        if (!this.data?.settings?.enableNoteCachePersistence) {
+            return;
+        }
+        if (!(Iadapter as unknown as { _instance?: unknown })._instance) {
+            return;
+        }
+        const signature = this.getSyncSignature(this.data.settings);
+        this.noteCacheSignature = signature;
+        await this.saveNoteCacheToDisk(signature, this.noteCache);
     }
 
     private deserializeCachedNote(noteFile: TFile, data: SerializedNote): Note | null {
@@ -7118,7 +7308,10 @@ export default class SRPlugin extends Plugin {
         const settings = this.data.settings;
         const currentSignature = this.getSyncSignature(settings);
         let syncMode: SyncMode = mode;
-        const persistedCacheByPath = new Map<string, { mtime: number; data: SerializedNote }>();
+        const persistedCacheByPath = new Map<
+            string,
+            { mtime: number; data: SerializedNote; extractCache?: PersistedExtractNoteCache }
+        >();
         const noteCachePath = settings.enableNoteCachePersistence
             ? this.getNoteCacheStorePath()
             : null;
@@ -7137,9 +7330,14 @@ export default class SRPlugin extends Plugin {
                 if (persisted.signature === currentSignature) {
                     for (const item of persisted.items) {
                         if (item?.path) {
+                            const extractCache = normalizePersistedExtractNoteCache(item.extractCache);
+                            if (extractCache) {
+                                this.getNoteExtractCache().set(item.path, extractCache);
+                            }
                             persistedCacheByPath.set(item.path, {
                                 mtime: item.mtime ?? 0,
                                 data: item.data,
+                                extractCache: extractCache ?? undefined,
                             });
                         }
                     }
@@ -7156,11 +7354,13 @@ export default class SRPlugin extends Plugin {
         if (noteCacheSignatureChanged) {
             this.noteCacheSignature = currentSignature;
             this.noteCache.clear();
+            this.noteExtractCache.clear();
             persistedCacheByPath.clear();
             syncMode = "full";
         }
         if (syncMode === "full") {
             this.noteCache.clear();
+            this.noteExtractCache.clear();
             persistedCacheByPath.clear();
         }
 
@@ -7269,7 +7469,7 @@ export default class SRPlugin extends Plugin {
             }
             if (settings.showSchedulingDebugMessages) {
                 console.debug(
-                    "[SR-Debug] sync: fullDeckTree total card count:",
+                    "SR sync: fullDeckTree total card count:",
                     fullDeckTree.getCardCount(CardListType.All, true),
                 );
             }
@@ -7304,7 +7504,7 @@ export default class SRPlugin extends Plugin {
             this.deckTree = DeckTreeFilter.filterForReviewableCards(fullDeckTree);
             if (settings.showSchedulingDebugMessages) {
                 console.debug(
-                    "[SR-Debug] sync: deckTree after filtering EditLater cards:",
+                    "SR sync: deckTree after filtering EditLater cards:",
                     this.deckTree.getCardCount(CardListType.All, true),
                 );
             }
@@ -7321,7 +7521,7 @@ export default class SRPlugin extends Plugin {
             );
             if (settings.showSchedulingDebugMessages) {
                 console.debug(
-                    "[SR-Debug] sync: remainingDeckTree after filtering future cards:",
+                    "SR sync: remainingDeckTree after filtering future cards:",
                     this.remainingDeckTree.getCardCount(CardListType.All, true),
                     "New:",
                     this.remainingDeckTree.getCardCount(CardListType.NewCard, true),
@@ -7380,10 +7580,7 @@ export default class SRPlugin extends Plugin {
                 statsService.calculateDeckStats(dName, dItems, learnAheadMillis);
             }
             if (this.data.settings.showSchedulingDebugMessages) {
-                console.debug(
-                    "[SR-Debug] DeckStatsService cache populated. Total decks:",
-                    deckItemsMap.size,
-                );
+                console.debug("SR sync: DeckStatsService cache populated. Total decks:", deckItemsMap.size);
                 this.showSyncInfo();
             }
 
@@ -9155,7 +9352,7 @@ export default class SRPlugin extends Plugin {
                     movedCount++;
                     if (this.data.settings.showSchedulingDebugMessages) {
                         console.debug(
-                            `[SR-Debug] Corrected learning card placement: ID=${card.Id} moved from New to Learning (deck: ${deckPath})`,
+                            `SR sync: corrected learning card placement: ID=${card.Id} moved from New to Learning (deck: ${deckPath})`,
                         );
                     }
                 }
@@ -9169,7 +9366,7 @@ export default class SRPlugin extends Plugin {
                     movedCount++;
                     if (this.data.settings.showSchedulingDebugMessages) {
                         console.debug(
-                            `[SR-Debug] Corrected learning card placement: ID=${card.Id} moved from Due to Learning (deck: ${deckPath})`,
+                            `SR sync: corrected learning card placement: ID=${card.Id} moved from Due to Learning (deck: ${deckPath})`,
                         );
                     }
                 }
@@ -9193,12 +9390,10 @@ export default class SRPlugin extends Plugin {
         if (this.data.settings.showSchedulingDebugMessages) {
             if (movedCount > 0) {
                 console.debug(
-                    `[SR-Debug] collectLearningCardsFromStore: moved ${movedCount} misplaced learning cards.`,
+                    `SR sync: collectLearningCardsFromStore moved ${movedCount} misplaced learning cards.`,
                 );
             }
-            console.debug(
-                `[SR-Debug] 褰撳墠鍏ㄥ眬瀛︿範闃熷垪闀垮害: ${this.learningQueue.length}`,
-            );
+            console.debug(`SR sync: current learning queue length: ${this.learningQueue.length}`);
         }
 
         this.learningQueue.sort((a, b) => a.dueTime - b.dueTime);

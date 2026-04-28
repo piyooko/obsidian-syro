@@ -506,14 +506,6 @@ export function addFileMenuEvt(plugin: SRPlugin, menu: Menu, fileish: TAbstractF
                 });
             });
         }
-        menu.addItem((item) => {
-            item.setIcon("pilcrow");
-            item.setTitle(t("AUTO_EXTRACT_BY_PARAGRAPH"));
-            item.onClick(async () => {
-                await plugin.enableAutoExtractRule(fileish, { rule: "blank-block" });
-                new Notice(t("AUTO_EXTRACT_RULE_ENABLED"));
-            });
-        });
         if (plugin.hasAutoExtractRuleForFile(fileish)) {
             menu.addItem((item) => {
                 item.setIcon("x");

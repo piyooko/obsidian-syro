@@ -1,4 +1,10 @@
-import { RangeSetBuilder, StateEffect, StateField, type Extension } from "@codemirror/state";
+import {
+    RangeSetBuilder,
+    StateEffect,
+    StateField,
+    type Extension,
+    type Transaction,
+} from "@codemirror/state";
 import {
     Decoration,
     type DecorationSet,
@@ -25,29 +31,79 @@ export interface ExtractContextUpdate {
 
 export const setExtractContextRangesEffect = StateEffect.define<ExtractContextRanges>();
 
+function clampPosition(position: number, docLength: number): number {
+    if (!Number.isFinite(position)) {
+        return 0;
+    }
+    return Math.max(0, Math.min(docLength, Math.round(position)));
+}
+
+function normalizePair(from: number, to: number, docLength: number): { from: number; to: number } {
+    const normalizedFrom = clampPosition(from, docLength);
+    const normalizedTo = Math.max(normalizedFrom, clampPosition(to, docLength));
+    return { from: normalizedFrom, to: normalizedTo };
+}
+
+function normalizeExtractContextRangesForDoc(
+    ranges: ExtractContextRanges,
+    docLength: number,
+): ExtractContextRanges {
+    const outer = normalizePair(ranges.currentOuterFrom, ranges.currentOuterTo, docLength);
+    const inner = normalizePair(ranges.currentInnerFrom, ranges.currentInnerTo, docLength);
+    const openToken = normalizePair(
+        ranges.currentOpenTokenFrom,
+        ranges.currentOpenTokenTo,
+        docLength,
+    );
+    const closeToken = normalizePair(
+        ranges.currentCloseTokenFrom,
+        ranges.currentCloseTokenTo,
+        docLength,
+    );
+
+    return {
+        currentOuterFrom: outer.from,
+        currentOuterTo: outer.to,
+        currentInnerFrom: inner.from,
+        currentInnerTo: inner.to,
+        currentOpenTokenFrom: openToken.from,
+        currentOpenTokenTo: openToken.to,
+        currentCloseTokenFrom: closeToken.from,
+        currentCloseTokenTo: closeToken.to,
+    };
+}
+
+function mapExtractContextRanges(
+    ranges: ExtractContextRanges,
+    transaction: Transaction,
+): ExtractContextRanges {
+    const startDocLength = transaction.startState.doc.length;
+    const safeRanges = normalizeExtractContextRangesForDoc(ranges, startDocLength);
+    return normalizeExtractContextRangesForDoc(
+        {
+            currentOuterFrom: transaction.changes.mapPos(safeRanges.currentOuterFrom),
+            currentOuterTo: transaction.changes.mapPos(safeRanges.currentOuterTo),
+            currentInnerFrom: transaction.changes.mapPos(safeRanges.currentInnerFrom),
+            currentInnerTo: transaction.changes.mapPos(safeRanges.currentInnerTo),
+            currentOpenTokenFrom: transaction.changes.mapPos(safeRanges.currentOpenTokenFrom),
+            currentOpenTokenTo: transaction.changes.mapPos(safeRanges.currentOpenTokenTo),
+            currentCloseTokenFrom: transaction.changes.mapPos(safeRanges.currentCloseTokenFrom),
+            currentCloseTokenTo: transaction.changes.mapPos(safeRanges.currentCloseTokenTo),
+        },
+        transaction.newDoc.length,
+    );
+}
+
 export const extractContextRangesField = StateField.define<ExtractContextRanges | null>({
     create: () => null,
     update(value, transaction) {
-        let next = value
-            ? {
-                  currentOuterFrom: transaction.changes.mapPos(value.currentOuterFrom),
-                  currentOuterTo: transaction.changes.mapPos(value.currentOuterTo),
-                  currentInnerFrom: transaction.changes.mapPos(value.currentInnerFrom),
-                  currentInnerTo: transaction.changes.mapPos(value.currentInnerTo),
-                  currentOpenTokenFrom: transaction.changes.mapPos(value.currentOpenTokenFrom),
-                  currentOpenTokenTo: transaction.changes.mapPos(value.currentOpenTokenTo),
-                  currentCloseTokenFrom: transaction.changes.mapPos(value.currentCloseTokenFrom),
-                  currentCloseTokenTo: transaction.changes.mapPos(value.currentCloseTokenTo),
-              }
-            : value;
-
         for (const effect of transaction.effects) {
             if (effect.is(setExtractContextRangesEffect)) {
-                next = effect.value;
+                return normalizeExtractContextRangesForDoc(effect.value, transaction.newDoc.length);
             }
         }
 
-        return next;
+        return value ? mapExtractContextRanges(value, transaction) : value;
     },
 });
 
@@ -122,9 +178,5 @@ export const extractContextTheme = EditorView.baseTheme({
 });
 
 export function createExtractContextDecorationExtensions(): Extension[] {
-    return [
-        extractContextRangesField,
-        createExtractContextDecorationPlugin(),
-        extractContextTheme,
-    ];
+    return [extractContextRangesField, createExtractContextDecorationPlugin(), extractContextTheme];
 }

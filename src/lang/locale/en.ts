@@ -191,6 +191,7 @@ export default normalizeSentenceCaseLocale({
     EXTRACT_SELECT_TEXT_REQUIRED: "Select text inside the extract first",
     EXTRACT_SAVE_FAILED: "Failed to save extract",
     EXTRACT_CONTEXT_SAVE_FAILED: "Failed to save extract context",
+    EXTRACT_CONTEXT_NOT_READY: "Extract context is not ready",
     EXTRACT_NESTED_CREATED: "Nested extract created",
     EXTRACT_NO_ACTIVE_ITEMS: "No active extracts to review",
     EXTRACT_REVIEW_AGAIN: "Again",
@@ -831,7 +832,8 @@ export default normalizeSentenceCaseLocale({
     NOTICE_SYRO_DEVICE_RENAMED: "The current Syro device name has been updated.",
     NOTICE_SYRO_DEVICE_PULLED: "The selected device snapshot has replaced the current device data.",
     NOTICE_SYRO_INVALID_DEVICE_DELETED: "The invalid device directory has been deleted.",
-    NOTICE_SYRO_VALID_DEVICE_DELETED: "The device snapshot and its session history have been deleted.",
+    NOTICE_SYRO_VALID_DEVICE_DELETED:
+        "The device snapshot and its session history have been deleted.",
     SYRO_PULL_TO_CURRENT_CONFIRM:
         "Use the snapshot from `${source}` to **overwrite the current device** `${current}`? Local unsynced data on this device will be replaced.",
     SYRO_DELETE_VALID_DEVICE_CONFIRM:
@@ -1011,7 +1013,8 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_ENABLE_EXTRACTS_DESC:
         "Allow {{ir::...}} incremental reading extracts and include them in card review sessions.",
     SETTINGS_MAX_NEW_EXTRACTS: "New Extracts/Day",
-    SETTINGS_MAX_NEW_EXTRACTS_DESC: "Maximum number of newly created extracts to introduce per day.",
+    SETTINGS_MAX_NEW_EXTRACTS_DESC:
+        "Maximum number of newly created extracts to introduce per day.",
     SETTINGS_MAX_EXTRACT_REVIEWS: "Extract Reviews/Day",
     SETTINGS_MAX_EXTRACT_REVIEWS_DESC: "Maximum number of due extract reviews to show per day.",
     SETTINGS_SECTION_GENERAL: "General",

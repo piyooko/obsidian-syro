@@ -413,41 +413,6 @@ function getDeckPath(deck: Deck | null | undefined): string | null {
     return deck.isRootDeck ? "" : deck.deckName;
 }
 
-function createReviewItemDebugSnapshot(
-    item:
-        | {
-              timesReviewed?: number | null;
-              queue?: number | null;
-              nextReview?: number | null;
-          }
-        | null
-        | undefined,
-) {
-    if (!item) {
-        return null;
-    }
-
-    return {
-        timesReviewed: item.timesReviewed ?? null,
-        queue: item.queue ?? null,
-        nextReview: item.nextReview ?? null,
-    };
-}
-
-function createDeckStatsDebugSnapshot(stats: {
-    newCount: number;
-    learningCount: number;
-    dueCount: number;
-    totalCount: number;
-}) {
-    return {
-        newCount: stats.newCount,
-        learningCount: stats.learningCount,
-        dueCount: stats.dueCount,
-        totalCount: stats.totalCount,
-    };
-}
-
 function combineCardAndExtractReviewStats(
     cardStats: { newCount: number; learningCount: number; dueCount: number },
     extractStats: { newCount: number; dueCount: number },
@@ -591,21 +556,10 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             });
 
             if (!activatedSession) {
-                logRuntimeDebug("[SR-Debug] enterDeckReview: activation failed", {
-                    source,
-                    reviewMode: FlashcardReviewMode[reviewMode],
-                    sequencerReviewMode:
-                        sequencerReviewMode === null
-                            ? null
-                            : FlashcardReviewMode[sequencerReviewMode],
-                    fullPath,
-                    sourceDeckTreePath: getDeckPath(sourceDeckTree),
-                });
                 new Notice(t("REVIEW_NO_CARDS"));
                 return false;
             }
 
-            const sessionStats = sequencer.getSessionDeckStats();
             reviewEntrySourceRef.current = source;
             if (sequencerReviewMode !== null && sequencerReviewMode !== reviewMode) {
                 console.warn(
@@ -618,17 +572,6 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                     },
                 );
             }
-
-            logRuntimeDebug("[SR-Debug] enterDeckReview: activation succeeded", {
-                source,
-                reviewMode: FlashcardReviewMode[reviewMode],
-                sequencerReviewMode:
-                    sequencerReviewMode === null ? null : FlashcardReviewMode[sequencerReviewMode],
-                fullPath,
-                currentCardId: sequencer.currentCard?.Id ?? null,
-                currentDeckPath: getDeckPath(sequencer.currentDeck),
-                sessionStats: createDeckStatsDebugSnapshot(sessionStats),
-            });
 
             activeDeckPathRef.current = fullPath;
             const nextReviewItem = resolveNextReviewItem(fullPath);
@@ -691,6 +634,13 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         };
 
         const onStatsUpdated = () => {
+            if (activeReviewItem?.kind === "extract") {
+                logRuntimeDebug("[SR-ExtractSave] ReviewSession received extracts-updated", {
+                    activeExtractUuid: activeReviewItem.uuid,
+                    activeDeckPath: activeDeckPathRef.current,
+                    view,
+                });
+            }
             forceUpdate();
         };
 
@@ -704,7 +654,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             unsubStats();
             unsubExtracts();
         };
-    }, [plugin, forceUpdate, logRuntimeDebug]);
+    }, [activeReviewItem, forceUpdate, logRuntimeDebug, plugin, view]);
 
     useEffect(() => {
         logRuntimeDebug(`[SR-DynSync] ReviewSession: tick=${tick}`);
@@ -909,39 +859,6 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 return;
             }
 
-            const debugSequencer = sequencer as IFlashcardReviewSequencer & {
-                sessionCounterDeckPath?: string | null;
-                globalRemainingDeckTree?: Deck;
-            };
-            const currentCard = sequencer.currentCard;
-            const sessionStatsBefore = sequencer.getSessionDeckStats();
-            const pluginStoreItemBefore = currentCard
-                ? (plugin.store?.getItembyID(currentCard.Id) ?? null)
-                : null;
-            const dataStoreItemBefore = currentCard
-                ? DataStore.getInstance().getItembyID(currentCard.Id)
-                : null;
-
-            logRuntimeDebug("[SR-Debug] ReviewSession.handleAnswer before", {
-                source: reviewEntrySourceRef.current,
-                rating,
-                response: ReviewResponse[response],
-                cardId: currentCard?.Id ?? null,
-                currentDeckPath: getDeckPath(sequencer.currentDeck),
-                sessionCounterDeckPath: debugSequencer.sessionCounterDeckPath ?? null,
-                hasGlobalRemainingDeckTree: Boolean(debugSequencer.globalRemainingDeckTree),
-                pluginStoreItemExists: Boolean(pluginStoreItemBefore),
-                dataStoreItemExists: Boolean(dataStoreItemBefore),
-                sharedStoreItemRef:
-                    pluginStoreItemBefore && dataStoreItemBefore
-                        ? pluginStoreItemBefore === dataStoreItemBefore
-                        : null,
-                itemBefore: createReviewItemDebugSnapshot(
-                    pluginStoreItemBefore ?? dataStoreItemBefore,
-                ),
-                sessionStatsBefore: createDeckStatsDebugSnapshot(sessionStatsBefore),
-            });
-
             try {
                 logRuntimeDebug("[SR-DynSync] ReviewSession: calling sequencer.processReview");
                 sequencer.processReview(response);
@@ -949,39 +866,6 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             } catch (e) {
                 console.error("[SR] processReview 鐎殿喖鍊搁悥?", e);
             }
-
-            const pluginStoreItemAfter = currentCard
-                ? (plugin.store?.getItembyID(currentCard.Id) ?? null)
-                : null;
-            const dataStoreItemAfter = currentCard
-                ? DataStore.getInstance().getItembyID(currentCard.Id)
-                : null;
-            const sessionStatsAfter = sequencer.getSessionDeckStats();
-
-            logRuntimeDebug("[SR-Debug] ReviewSession.handleAnswer after", {
-                source: reviewEntrySourceRef.current,
-                rating,
-                response: ReviewResponse[response],
-                processedCardId: currentCard?.Id ?? null,
-                nextCardId: sequencer.currentCard?.Id ?? null,
-                currentDeckPath: getDeckPath(sequencer.currentDeck),
-                sessionCounterDeckPath: debugSequencer.sessionCounterDeckPath ?? null,
-                hasGlobalRemainingDeckTree: Boolean(debugSequencer.globalRemainingDeckTree),
-                pluginStoreItemExists: Boolean(pluginStoreItemAfter),
-                dataStoreItemExists: Boolean(dataStoreItemAfter),
-                sharedStoreItemRef:
-                    pluginStoreItemAfter && dataStoreItemAfter
-                        ? pluginStoreItemAfter === dataStoreItemAfter
-                        : null,
-                itemBefore: createReviewItemDebugSnapshot(
-                    pluginStoreItemBefore ?? dataStoreItemBefore,
-                ),
-                itemAfter: createReviewItemDebugSnapshot(
-                    pluginStoreItemAfter ?? dataStoreItemAfter,
-                ),
-                sessionStatsBefore: createDeckStatsDebugSnapshot(sessionStatsBefore),
-                sessionStatsAfter: createDeckStatsDebugSnapshot(sessionStatsAfter),
-            });
 
             const nextReviewItem = resolveNextReviewItem(activeDeckPathRef.current);
             if (nextReviewItem) {
@@ -1477,6 +1361,14 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     const contextDraftRef = useRef<ExtractContextUpdate | null>(null);
     const contextDirtyRef = useRef(false);
     const bodySaveTimerRef = useRef<number | null>(null);
+    const logRuntimeDebug = useCallback(
+        (...args: unknown[]) => {
+            if (plugin.data.settings.showRuntimeDebugMessages) {
+                console.debug(...args);
+            }
+        },
+        [plugin],
+    );
 
     const sourcePath = extract?.sourcePath ?? "";
     const sourceFile = useMemo(() => {
@@ -1519,6 +1411,12 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
         contextDirtyRef.current = false;
         setContext(null);
         setContextDraft(null);
+        logRuntimeDebug("[SR-ExtractSave] extract context load:start", {
+            extractUuid,
+            uiResetToken,
+            sourcePath: nextExtract?.sourcePath ?? null,
+            sourceMode: nextExtract?.sourceMode ?? null,
+        });
         void plugin.getExtractReviewContext(extractUuid).then((nextContext) => {
             if (cancelled) {
                 return;
@@ -1531,6 +1429,13 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
             setContextDraft(nextDraft);
             contextDraftRef.current = nextDraft;
             contextDirtyRef.current = false;
+            logRuntimeDebug("[SR-ExtractSave] extract context load:done", {
+                extractUuid,
+                hasContext: nextContext !== null,
+                markdownLength: nextContext?.markdown.length ?? 0,
+                currentOuterFrom: nextContext?.currentOuterFrom ?? null,
+                currentOuterTo: nextContext?.currentOuterTo ?? null,
+            });
         });
         return () => {
             cancelled = true;
@@ -1550,14 +1455,34 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
 
     const saveBodyNow = useCallback(async () => {
         clearSaveTimer();
+        logRuntimeDebug("[SR-ExtractSave] saveBodyNow:enter", {
+            extractUuid,
+            hasContextDirty: contextDirtyRef.current,
+            hasBodyDirty: bodyDirtyRef.current,
+            hasContext: contextRef.current !== null,
+            hasContextDraft: contextDraftRef.current !== null,
+            bodyLength: bodyValueRef.current.length,
+            draftLength: contextDraftRef.current?.markdown.length ?? null,
+        });
         if (contextDirtyRef.current && contextRef.current && contextDraftRef.current) {
             contextDirtyRef.current = false;
+            logRuntimeDebug("[SR-ExtractSave] saveBodyNow:context-save-start", {
+                extractUuid,
+                markdownLength: contextDraftRef.current.markdown.length,
+                currentOuterFrom: contextDraftRef.current.ranges.currentOuterFrom,
+                currentOuterTo: contextDraftRef.current.ranges.currentOuterTo,
+            });
             const updated = await plugin.updateExtractContextMarkdown(
                 extractUuid,
                 contextRef.current,
                 contextDraftRef.current,
             );
             if (updated) {
+                logRuntimeDebug("[SR-ExtractSave] saveBodyNow:context-save-success", {
+                    extractUuid,
+                    rawMarkdownLength: updated.rawMarkdown.length,
+                    stage: updated.stage,
+                });
                 setBody(updated.rawMarkdown);
                 bodyValueRef.current = updated.rawMarkdown;
                 const nextContext = await plugin.getExtractReviewContext(extractUuid);
@@ -1568,19 +1493,45 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
                     : null;
                 setContextDraft(nextDraft);
                 contextDraftRef.current = nextDraft;
+                logRuntimeDebug("[SR-ExtractSave] saveBodyNow:context-reloaded", {
+                    extractUuid,
+                    hasContext: nextContext !== null,
+                    markdownLength: nextContext?.markdown.length ?? 0,
+                });
+            } else {
+                logRuntimeDebug("[SR-ExtractSave] saveBodyNow:context-save-null", {
+                    extractUuid,
+                    sourcePath: extract?.sourcePath ?? null,
+                });
             }
             return;
         }
         if (!bodyDirtyRef.current) {
+            logRuntimeDebug("[SR-ExtractSave] saveBodyNow:skip-no-dirty", {
+                extractUuid,
+            });
             return;
         }
         bodyDirtyRef.current = false;
+        logRuntimeDebug("[SR-ExtractSave] saveBodyNow:raw-save-start", {
+            extractUuid,
+            bodyLength: bodyValueRef.current.length,
+        });
         const updated = await plugin.updateExtractRawMarkdown(extractUuid, bodyValueRef.current);
         if (updated) {
+            logRuntimeDebug("[SR-ExtractSave] saveBodyNow:raw-save-success", {
+                extractUuid,
+                rawMarkdownLength: updated.rawMarkdown.length,
+            });
             setBody(updated.rawMarkdown);
             bodyValueRef.current = updated.rawMarkdown;
+        } else {
+            logRuntimeDebug("[SR-ExtractSave] saveBodyNow:raw-save-null", {
+                extractUuid,
+                sourcePath: extract?.sourcePath ?? null,
+            });
         }
-    }, [clearSaveTimer, extractUuid, plugin]);
+    }, [clearSaveTimer, extract?.sourcePath, extractUuid, logRuntimeDebug, plugin]);
 
     const flushBodySave = useCallback(async () => {
         await saveBodyNow();
@@ -1610,18 +1561,38 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
 
     const scheduleContextSave = useCallback(
         (update: ExtractContextUpdate) => {
+            const hadTimer = bodySaveTimerRef.current !== null;
+            const wasDirty = contextDirtyRef.current;
             setContextDraft(update);
             contextDraftRef.current = update;
             contextDirtyRef.current = true;
             clearSaveTimer();
+            if (!wasDirty || !hadTimer) {
+                logRuntimeDebug("[SR-ExtractSave] scheduleContextSave", {
+                    extractUuid,
+                    markdownLength: update.markdown.length,
+                    currentOuterFrom: update.ranges.currentOuterFrom,
+                    currentOuterTo: update.ranges.currentOuterTo,
+                    hadTimer,
+                    wasDirty,
+                });
+            }
             bodySaveTimerRef.current = window.setTimeout(() => {
+                logRuntimeDebug("[SR-ExtractSave] scheduleContextSave:timer-fired", {
+                    extractUuid,
+                    markdownLength: contextDraftRef.current?.markdown.length ?? null,
+                });
                 void saveBodyNow().catch((error) => {
                     console.error("[SR-Extract] Failed to save extract context", error);
+                    logRuntimeDebug("[SR-ExtractSave] scheduleContextSave:timer-failed", {
+                        extractUuid,
+                        message: error instanceof Error ? error.message : String(error),
+                    });
                     new Notice(t("EXTRACT_CONTEXT_SAVE_FAILED"));
                 });
             }, 700);
         },
-        [clearSaveTimer, saveBodyNow],
+        [clearSaveTimer, extractUuid, logRuntimeDebug, saveBodyNow],
     );
 
     const handleAnswer = useCallback(

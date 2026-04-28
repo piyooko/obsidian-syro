@@ -353,9 +353,6 @@ export class RepetitionItem {
 
     get isFsrs(): boolean {
         const has = isRecord(this.data) && "state" in this.data;
-        if (this.ID === 4) {
-            // console.debug(`[SR-Debug] item4.isFsrs check: hasState=${has}, data=`, this.data);
-        }
         return !!has;
     }
 

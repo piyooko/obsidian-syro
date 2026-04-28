@@ -4,7 +4,7 @@ import { cyrb53 } from "src/util/utils";
 
 export interface AutoExtractSlice {
     key: string;
-    rule: "heading" | "blank-block";
+    rule: "heading";
     rawMarkdown: string;
     sourceAnchor: IrExtractAnchor;
     headingPath?: string[];
@@ -17,13 +17,7 @@ interface HeadingToken {
     end: number;
 }
 
-interface BlankBlockRange {
-    from: number;
-    to: number;
-}
-
 const CONTEXT_RADIUS = 80;
-const BLANK_BLOCK_SEPARATOR = /\r?\n[ \t]*\r?\n/g;
 const HEADING_RE = /^(#{1,6})[ \t]+(.+?)[ \t#]*$/;
 
 function countLinesBefore(text: string, offset: number): number {
@@ -129,51 +123,10 @@ function buildHeadingSlices(text: string, headingLevel: number): AutoExtractSlic
     return slices;
 }
 
-function getBlankBlockRanges(text: string): BlankBlockRange[] {
-    const ranges: BlankBlockRange[] = [];
-    let blockStart = 0;
-    let match: RegExpExecArray | null;
-
-    while ((match = BLANK_BLOCK_SEPARATOR.exec(text)) !== null) {
-        const blockEnd = match.index;
-        if (blockEnd > blockStart && text.slice(blockStart, blockEnd).trim()) {
-            ranges.push({ from: blockStart, to: blockEnd });
-        }
-        blockStart = match.index + match[0].length;
-    }
-
-    if (blockStart < text.length && text.slice(blockStart).trim()) {
-        ranges.push({ from: blockStart, to: text.length });
-    }
-
-    return ranges;
-}
-
-function buildBlankBlockSlices(text: string): AutoExtractSlice[] {
-    const duplicateCounts = new Map<string, number>();
-    return getBlankBlockRanges(text).map((range) => {
-        const rawMarkdown = text.slice(range.from, range.to).trim();
-        const hash = cyrb53(rawMarkdown);
-        const duplicateIndex = duplicateCounts.get(hash) ?? 0;
-        duplicateCounts.set(hash, duplicateIndex + 1);
-
-        return {
-            key: `blank-block:${hash}:${duplicateIndex}`,
-            rule: "blank-block",
-            rawMarkdown,
-            sourceAnchor: createAutoAnchor(text, range.from, range.to),
-        };
-    });
-}
-
 export function buildAutoExtractSlices(text: string, rule: AutoExtractRule): AutoExtractSlice[] {
     if (!rule.enabled) {
         return [];
     }
-    if (rule.rule === "heading") {
-        const headingLevel = Math.max(1, Math.min(6, Math.round(rule.headingLevel ?? 1)));
-        return buildHeadingSlices(text, headingLevel);
-    }
-    return buildBlankBlockSlices(text);
+    const headingLevel = Math.max(1, Math.min(6, Math.round(rule.headingLevel ?? 1)));
+    return buildHeadingSlices(text, headingLevel);
 }
-

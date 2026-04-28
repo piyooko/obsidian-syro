@@ -52,7 +52,7 @@ describe("SRPlugin note cache persistence", () => {
     test("saveNoteCacheToDisk skips adapter write when the serialized payload is unchanged", async () => {
         const adapter = {
             exists: jest.fn(async () => true),
-            read: jest.fn(async () => '{"version":4,"signature":"sig","items":[]}'),
+            read: jest.fn(async () => '{"version":5,"signature":"sig","items":[]}'),
             write: jest.fn(async () => undefined),
         };
         (Iadapter as unknown as { _instance?: unknown })._instance = {
@@ -74,7 +74,7 @@ describe("SRPlugin note cache persistence", () => {
     test("saveNoteCacheToDisk writes when the serialized payload changed", async () => {
         const adapter = {
             exists: jest.fn(async () => true),
-            read: jest.fn(async () => '{"version":4,"signature":"old","items":[]}'),
+            read: jest.fn(async () => '{"version":5,"signature":"old","items":[]}'),
             write: jest.fn(async () => undefined),
         };
         (Iadapter as unknown as { _instance?: unknown })._instance = {
@@ -92,7 +92,7 @@ describe("SRPlugin note cache persistence", () => {
 
         expect(adapter.write).toHaveBeenCalledWith(
             "note-cache.json",
-            '{"version":4,"signature":"sig","items":[]}',
+            '{"version":5,"signature":"sig","items":[]}',
         );
     });
 });

@@ -514,9 +514,6 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         validLearningItems.sort((a, b) => a.dueTime - b.dueTime);
 
         if (validLearningItems.length > 0 && validLearningItems[0].dueTime <= now) {
-            this.logRuntimeDebug(
-                `[SR-Debug] advanceToNextCard: Next is Leanring Card (Strictly due), ID=${validLearningItems[0].card.Id}, dueTime=${new Date(validLearningItems[0].dueTime).toISOString()}`,
-            );
             this.setLearningCardAsCurrent(validLearningItems[0]);
             return;
         }
@@ -530,9 +527,6 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         const nextResult = this.cardSequencer.nextCard();
         if (nextResult) {
             this.syncCardRuntimeState(this.cardSequencer.currentCard);
-            this.logRuntimeDebug(
-                `[SR-Debug] advanceToNextCard: Next is Main Queue Card, ID=${this.cardSequencer.currentCard.Id}, isDue=${String(this.cardSequencer.currentCard.isDue)}, isNew=${String(this.cardSequencer.currentCard.isNew)}`,
-            );
             this._currentCard = this.cardSequencer.currentCard;
             return;
         }
@@ -570,25 +564,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         const store = DataStore.getInstance();
         const item = store.getItembyID(card.Id);
         const pluginStoreItemBefore = SRPlugin.getInstance()?.store?.getItembyID(card.Id) ?? null;
-        const sessionStatsBefore = this.getSessionDeckStats();
         const itemBeforeSnapshot = this.createDebugItemSnapshot(item ?? pluginStoreItemBefore);
-        this.logRuntimeDebug(
-            `[SR-Debug] processReview: ID=${card.Id}, isLearning=${String(this._isLearning)}, response=${ReviewResponse[response]}, currentStep=${item?.learningStep}`,
-        );
-        this.logRuntimeDebug("[SR-Debug] processReview: before", {
-            reviewMode: FlashcardReviewMode[this.reviewMode],
-            cardId: card.Id,
-            currentDeckPath: this.getDeckPath(this.currentDeck),
-            cardDeckPath: this.resolveCardDeckPath(card),
-            sessionCounterDeckPath: this.sessionCounterDeckPath,
-            hasGlobalRemainingDeckTree: Boolean(this.globalRemainingDeckTree),
-            pluginStoreItemExists: Boolean(pluginStoreItemBefore),
-            dataStoreItemExists: Boolean(item),
-            sharedStoreItemRef:
-                pluginStoreItemBefore && item ? pluginStoreItemBefore === item : null,
-            itemBefore: itemBeforeSnapshot,
-            sessionStatsBefore: this.createDebugDeckStatsSnapshot(sessionStatsBefore),
-        });
         const counterDeckPath =
             this.resolveCardDeckPath(card) ??
             this.resolveReviewCounterDeckPath(card, this.currentDeck);
@@ -639,26 +615,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         }
         const itemAfter = store.getItembyID(card.Id);
         const pluginStoreItemAfter = SRPlugin.getInstance()?.store?.getItembyID(card.Id) ?? null;
-        const sessionStatsAfter = this.getSessionDeckStats();
         const itemAfterSnapshot = this.createDebugItemSnapshot(itemAfter ?? pluginStoreItemAfter);
-        this.logRuntimeDebug("[SR-Debug] processReview: after", {
-            reviewMode: FlashcardReviewMode[this.reviewMode],
-            response: ReviewResponse[response],
-            processedCardId: card.Id,
-            nextCardId: this.currentCard?.Id ?? null,
-            currentDeckPath: this.getDeckPath(this.currentDeck),
-            cardDeckPath: this.resolveCardDeckPath(this.currentCard),
-            sessionCounterDeckPath: this.sessionCounterDeckPath,
-            hasGlobalRemainingDeckTree: Boolean(this.globalRemainingDeckTree),
-            pluginStoreItemExists: Boolean(pluginStoreItemAfter),
-            dataStoreItemExists: Boolean(itemAfter),
-            sharedStoreItemRef:
-                pluginStoreItemAfter && itemAfter ? pluginStoreItemAfter === itemAfter : null,
-            itemBefore: itemBeforeSnapshot,
-            itemAfter: itemAfterSnapshot,
-            sessionStatsBefore: this.createDebugDeckStatsSnapshot(sessionStatsBefore),
-            sessionStatsAfter: this.createDebugDeckStatsSnapshot(sessionStatsAfter),
-        });
         if (
             this.reviewMode === FlashcardReviewMode.Review &&
             itemBeforeSnapshot &&

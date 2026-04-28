@@ -6,8 +6,9 @@ import { Question, QuestionText } from "src/Question";
 import { ISRFile, type QuestionContextBreadcrumb } from "src/SRFile";
 import { TopicPath, TopicPathList, TopicPathWithWs } from "src/TopicPath";
 import { TextDirection } from "src/util/TextDirection";
+import type { PersistedExtractNoteCache } from "src/cache/extractNoteCache";
 
-export const NOTE_CACHE_VERSION = 4;
+export const NOTE_CACHE_VERSION = 5;
 
 export interface CachedNoteBindingStore {
     getItembyID(id: number): { fileID?: string | null } | null;
@@ -88,6 +89,8 @@ export interface PersistedNoteCacheItem {
     path: string;
     mtime: number;
     data: SerializedNote;
+    size?: number;
+    extractCache?: PersistedExtractNoteCache;
 }
 
 export interface PersistedNoteCacheFile {

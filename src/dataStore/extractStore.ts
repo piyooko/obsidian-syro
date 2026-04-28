@@ -8,6 +8,11 @@ import type { ExtractStorePathConfig } from "src/dataStore/syroWorkspace";
 import { renamePathPrefix } from "src/folderTracking";
 import type { ReviewResponse } from "src/scheduling";
 import type { AutoExtractRule, SRSettings } from "src/settings";
+import {
+    buildManualIrLocators,
+    type ManualIrCache,
+    type ManualIrLocator,
+} from "src/cache/extractNoteCache";
 import { buildAutoExtractSlices, type AutoExtractSlice } from "src/util/autoExtractSlices";
 import {
     parseIrExtracts,
@@ -84,6 +89,17 @@ export interface ExtractReviewStats {
 }
 
 export type ExtractDeckNameResolver = (item: ExtractItem) => string;
+
+export interface ExtractSyncResult {
+    added: ExtractItem[];
+    updated: ExtractItem[];
+    graduated: ExtractItem[];
+    manualIrCache?: ManualIrCache;
+}
+
+export interface SyncFileExtractOptions {
+    manualIrCache?: ManualIrCache | null;
+}
 
 export const EXTRACT_ITEM_ENTITY_TYPE = "extract-item";
 const EXTRACT_STORE_VERSION = 1;
@@ -377,10 +393,30 @@ export class ExtractStore {
         return true;
     }
 
+    private buildCurrentManualLocatorMap(
+        text: string,
+        matches: readonly IrExtractMatch[],
+    ): Map<number, ManualIrLocator> {
+        const uuidByStart = new Map<number, string>(
+            matches.map((match) => [match.start, `match:${match.start}`]),
+        );
+        const cache = buildManualIrLocators(text, matches, uuidByStart);
+        const locatorByStart = new Map<number, ManualIrLocator>();
+        for (const locator of Object.values(cache.locators)) {
+            const start = Number(locator.uuid.slice("match:".length));
+            if (Number.isFinite(start)) {
+                locatorByStart.set(start, locator);
+            }
+        }
+        return locatorByStart;
+    }
+
     private matchParsedExtract(
         sourcePath: string,
         match: IrExtractMatch,
         usedUuids: Set<string>,
+        cachedLocators: ManualIrCache | null | undefined,
+        currentLocator: ManualIrLocator | null | undefined,
     ): ExtractItem | null {
         const candidates = Object.values(this.items).filter(
             (item) =>
@@ -389,8 +425,39 @@ export class ExtractStore {
                 item.sourcePath === sourcePath &&
                 !usedUuids.has(item.uuid),
         );
+        const cachedLocatorFor = (item: ExtractItem): ManualIrLocator | undefined =>
+            cachedLocators?.locators?.[item.uuid];
 
         return (
+            candidates.find(
+                (item) =>
+                    item.sourceAnchor.start === match.start &&
+                    item.sourceAnchor.end === match.end,
+            ) ??
+            candidates.find((item) => {
+                const cached = cachedLocatorFor(item);
+                return cached?.outerStart === match.start && cached?.outerEnd === match.end;
+            }) ??
+            candidates.find((item) => {
+                const cached = cachedLocatorFor(item);
+                return (
+                    !!cached &&
+                    !!currentLocator &&
+                    cached.startLine === currentLocator.startLine &&
+                    cached.lineOrdinal === currentLocator.lineOrdinal &&
+                    cached.depth === currentLocator.depth
+                );
+            }) ??
+            candidates.find((item) => {
+                const cached = cachedLocatorFor(item);
+                return (
+                    !!cached &&
+                    !!currentLocator &&
+                    Math.abs(cached.startLine - currentLocator.startLine) <= 5 &&
+                    cached.lineOrdinal === currentLocator.lineOrdinal &&
+                    cached.depth === currentLocator.depth
+                );
+            }) ??
             candidates.find(
                 (item) =>
                     item.sourceAnchor.start === match.start &&
@@ -453,9 +520,15 @@ export class ExtractStore {
         );
     }
 
-    syncFileExtracts(path: string, text: string, deckName: string = DEFAULT_DECKNAME): { added: ExtractItem[]; updated: ExtractItem[]; graduated: ExtractItem[] } {
+    syncFileExtracts(
+        path: string,
+        text: string,
+        deckName: string = DEFAULT_DECKNAME,
+        options: SyncFileExtractOptions = {},
+    ): ExtractSyncResult {
         const sourcePath = normalizePath(path);
         const matches = parseIrExtracts(text);
+        const currentLocators = this.buildCurrentManualLocatorMap(text, matches);
         const usedUuids = new Set<string>();
         const byStart = new Map<number, ExtractItem>();
         const added: ExtractItem[] = [];
@@ -463,7 +536,13 @@ export class ExtractStore {
         const now = Date.now();
 
         matches.forEach((match, ordinal) => {
-            const existing = this.matchParsedExtract(sourcePath, match, usedUuids);
+            const existing = this.matchParsedExtract(
+                sourcePath,
+                match,
+                usedUuids,
+                options.manualIrCache,
+                currentLocators.get(match.start),
+            );
             const sourceAnchor: ExtractSourceAnchor = {
                 ...match.anchor,
                 ordinal,
@@ -543,7 +622,12 @@ export class ExtractStore {
             graduated.push(cloneItem(item));
         }
 
-        return { added, updated, graduated };
+        const uuidByStart = new Map<number, string>(
+            Array.from(byStart.entries()).map(([start, item]) => [start, item.uuid]),
+        );
+        const manualIrCache = buildManualIrLocators(text, matches, uuidByStart);
+
+        return { added, updated, graduated, manualIrCache };
     }
 
     syncAutoExtractsForFile(

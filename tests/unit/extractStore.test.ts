@@ -40,6 +40,24 @@ describe("ExtractStore", () => {
         expect(store.getActiveByPath("notes/source.md")).toHaveLength(1);
     });
 
+    test("keeps a manual extract identity when only inner markdown changes", () => {
+        const store = createStore();
+        const first = store.syncFileExtracts("notes/source.md", "before {{ir::one}} after", "deck");
+        const created = first.added[0];
+
+        const second = store.syncFileExtracts(
+            "notes/source.md",
+            "before {{ir::one edited}} after",
+            "deck",
+            { manualIrCache: first.manualIrCache },
+        );
+
+        expect(second.added).toHaveLength(0);
+        expect(second.graduated).toHaveLength(0);
+        expect(second.updated.map((item) => item.uuid)).toEqual([created.uuid]);
+        expect(store.get(created.uuid)?.rawMarkdown).toBe("one edited");
+    });
+
     test("moves existing extracts to the current source deck on sync", () => {
         const store = createStore();
         const [created] = store.syncFileExtracts("notes/source.md", "{{ir::one}}", "default").added;
@@ -253,65 +271,66 @@ describe("ExtractStore", () => {
         ]);
     });
 
-    test("keeps blank-block auto slice state when a new block is inserted before it", () => {
+    test("keeps heading auto slice state when body changes under the same title", () => {
         const store = createStore();
         const rule = {
             sourcePath: "notes/source.md",
-            rule: "blank-block" as const,
+            rule: "heading" as const,
+            headingLevel: 1 as const,
             enabled: true,
             createdAt: 1,
             updatedAt: 1,
         };
-        const [first, second] = store.syncAutoExtractsForFile(
+        const [first] = store.syncAutoExtractsForFile(
             "notes/source.md",
-            "alpha\n\nbeta",
+            "# A\nalpha",
             "deck",
             rule,
         ).added;
 
         const result = store.syncAutoExtractsForFile(
             "notes/source.md",
-            "new\n\nalpha\n\nbeta",
+            "# A\nalpha edited",
             "deck",
             rule,
         );
 
-        expect(result.added).toHaveLength(1);
+        expect(result.added).toHaveLength(0);
+        expect(result.updated.map((item) => item.uuid)).toEqual([first.uuid]);
         expect(store.get(first.uuid)?.stage).toBe("active");
-        expect(store.get(second.uuid)?.stage).toBe("active");
-        expect(store.get(first.uuid)?.rawMarkdown).toBe("alpha");
-        expect(store.get(second.uuid)?.rawMarkdown).toBe("beta");
+        expect(store.get(first.uuid)?.rawMarkdown).toBe("# A\nalpha edited");
     });
 
     test("does not recreate a graduated auto slice on later sync", () => {
         const store = createStore();
         const rule = {
             sourcePath: "notes/source.md",
-            rule: "blank-block" as const,
+            rule: "heading" as const,
+            headingLevel: 1 as const,
             enabled: true,
             createdAt: 1,
             updatedAt: 1,
         };
         const [created] = store.syncAutoExtractsForFile(
             "notes/source.md",
-            "alpha",
+            "# A\nalpha",
             "deck",
             rule,
         ).added;
 
         store.graduate(created.uuid);
-        const result = store.syncAutoExtractsForFile("notes/source.md", "alpha", "deck", rule);
+        const result = store.syncAutoExtractsForFile("notes/source.md", "# A\nalpha", "deck", rule);
 
         expect(result.added).toHaveLength(0);
         expect(store.get(created.uuid)?.stage).toBe("graduated");
         expect(store.getActiveByPath("notes/source.md")).toHaveLength(0);
     });
 
-    test("switching auto slice rules graduates old active auto slices", () => {
+    test("switching heading levels graduates old active auto slices", () => {
         const store = createStore();
         const [heading] = store.syncAutoExtractsForFile(
             "notes/source.md",
-            "# A\none\n\npara",
+            "# A\none\n## B\nchild",
             "deck",
             {
                 sourcePath: "notes/source.md",
@@ -325,11 +344,12 @@ describe("ExtractStore", () => {
 
         const result = store.syncAutoExtractsForFile(
             "notes/source.md",
-            "# A\none\n\npara",
+            "# A\none\n## B\nchild",
             "deck",
             {
                 sourcePath: "notes/source.md",
-                rule: "blank-block",
+                rule: "heading",
+                headingLevel: 2,
                 enabled: true,
                 createdAt: 2,
                 updatedAt: 2,
@@ -337,7 +357,7 @@ describe("ExtractStore", () => {
         );
 
         expect(result.graduated.map((item) => item.uuid)).toContain(heading.uuid);
-        expect(result.added.every((item) => item.sliceRule === "blank-block")).toBe(true);
+        expect(result.added.every((item) => item.sliceRule === "heading")).toBe(true);
         expect(store.get(heading.uuid)?.stage).toBe("graduated");
     });
 });

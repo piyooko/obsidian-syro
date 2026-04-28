@@ -669,9 +669,6 @@ export class DataStore {
         this.data.queues = Queue.create(this.data.queues);
         this.rebuildItemByIdIndex();
         this.migrateCardItemsToFsrs();
-        this.logDebug(
-            `[SR-Debug] toInstances complete. Final items count: ${this.data.items.length}`,
-        );
     }
 
     private migrateCardItemsToFsrs() {
@@ -780,10 +777,6 @@ export class DataStore {
                     }
                     this.data = Object.assign(createDefaultSrsData(), parsedData);
                     this.data.syncEntities = parseSyncEntities(parsedData?.syncEntities);
-                    this.logDebug(
-                        "[SR-Debug] Data loaded from disk. Items in JSON:",
-                        parsedData && Array.isArray(parsedData.items) ? parsedData.items.length : 0,
-                    );
                     this.data.mtime = await this.getmtime();
                     const overlay = await this.loadReviewOverlayFromDisk();
                     if (overlay) {

@@ -30,7 +30,7 @@ export type SyncProgressDisplayMode = "always" | "full-only" | "never";
 export type SidebarProgressIndicatorMode = "ring" | "percentage";
 export type SidebarProgressRingDirection = "clockwise" | "counterclockwise";
 export type NoteReviewIgnoreReason = "ignored-folder" | "ignored-tag";
-export type AutoExtractRuleKind = "heading" | "blank-block";
+export type AutoExtractRuleKind = "heading";
 export type AutoExtractHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 export const DEFAULT_SYNC_PROGRESS_DISPLAY_MODE: SyncProgressDisplayMode = "full-only";
 
@@ -58,7 +58,7 @@ export function normalizeAutoExtractRule(value: unknown, pathHint = ""): AutoExt
     }
 
     const ruleKind = getStringProp(value, "rule");
-    if (ruleKind !== "heading" && ruleKind !== "blank-block") {
+    if (ruleKind !== "heading") {
         return null;
     }
 
@@ -79,9 +79,7 @@ export function normalizeAutoExtractRule(value: unknown, pathHint = ""): AutoExt
         updatedAt: updatedAt !== undefined && Number.isFinite(updatedAt) ? updatedAt : now,
     };
 
-    if (ruleKind === "heading") {
-        normalized.headingLevel = normalizeAutoExtractHeadingLevel(value.headingLevel) ?? 1;
-    }
+    normalized.headingLevel = normalizeAutoExtractHeadingLevel(value.headingLevel) ?? 1;
 
     return normalized;
 }

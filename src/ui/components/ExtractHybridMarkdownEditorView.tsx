@@ -19,13 +19,21 @@ import {
     keymap,
     WidgetType,
 } from "@codemirror/view";
-import type { Component } from "obsidian";
+import { setIcon, type Component } from "obsidian";
 import {
     findHybridMarkdownBlocks,
     type HybridMarkdownBlock,
 } from "src/editor/hybridMarkdownBlocks";
 import { collectHybridInlineDecorations } from "src/editor/hybridMarkdownInline";
-import { parseMarkdownTableBlock, updateMarkdownTableCell } from "src/editor/hybridMarkdownTable";
+import { handleHybridEditorHotkey } from "src/editor/obsidianHotkeyBridge";
+import {
+    insertMarkdownTableColumn,
+    insertMarkdownTableRow,
+    moveMarkdownTableColumn,
+    moveMarkdownTableRow,
+    parseMarkdownTableBlock,
+    updateMarkdownTableCell,
+} from "src/editor/hybridMarkdownTable";
 import {
     createExtractContextDecorationExtensions,
     extractContextRangesField,
@@ -232,7 +240,10 @@ function getBlockContextClassName(
     return "sr-extract-context-current";
 }
 
-function getLineBlockClass(block: HybridMarkdownBlock, ranges: ExtractContextRanges | null): string {
+function getLineBlockClass(
+    block: HybridMarkdownBlock,
+    ranges: ExtractContextRanges | null,
+): string {
     const classes = [getBlockContextClassName(block, ranges)].filter(Boolean);
 
     if (block.kind === "heading") {
@@ -262,14 +273,12 @@ function recordTableCellDraft(
     value: string,
 ): void {
     const draftKey = getTableDraftKey(block);
-    const draft =
-        drafts.get(draftKey) ??
-        {
-            blockFrom: block.from,
-            blockTo: block.to,
-            cells: new Map<string, TableDraftCell>(),
-            originalMarkdown: block.markdown,
-        };
+    const draft = drafts.get(draftKey) ?? {
+        blockFrom: block.from,
+        blockTo: block.to,
+        cells: new Map<string, TableDraftCell>(),
+        originalMarkdown: block.markdown,
+    };
 
     draft.cells.set(getTableCellDraftKey(row, col), { col, row, value });
     drafts.set(draftKey, draft);
@@ -314,6 +323,211 @@ function flushTableDrafts(view: EditorView, drafts: Map<string, TableDraft>): bo
     return true;
 }
 
+function getMarkdownTableColumnCount(markdown: string): number {
+    const model = parseMarkdownTableBlock(markdown);
+    if (!model) {
+        return 0;
+    }
+    return Math.max(
+        model.header.length,
+        model.delimiter.length,
+        ...model.rows.map((row) => row.length),
+    );
+}
+
+function findCurrentTableBlock(
+    view: EditorView,
+    block: HybridMarkdownBlock,
+): HybridMarkdownBlock | null {
+    const docText = view.state.doc.toString();
+    const blocks = findHybridMarkdownBlocks(docText).filter((item) => item.kind === "table");
+    const exact = blocks.find((item) => item.from === block.from && item.to === block.to);
+    if (exact) {
+        return exact;
+    }
+    const anchored = blocks.find((item) => block.from >= item.from && block.from <= item.to);
+    return anchored ?? blocks.find((item) => item.markdown === block.markdown) ?? null;
+}
+
+function applyTableTransform(
+    view: EditorView,
+    block: HybridMarkdownBlock,
+    drafts: Map<string, TableDraft>,
+    transform: (markdown: string) => string,
+): void {
+    flushTableDrafts(view, drafts);
+
+    const currentBlock = findCurrentTableBlock(view, block);
+    if (!currentBlock) {
+        return;
+    }
+
+    const nextMarkdown = transform(currentBlock.markdown);
+    if (nextMarkdown === currentBlock.markdown) {
+        return;
+    }
+
+    view.dispatch({
+        changes: {
+            from: currentBlock.from,
+            insert: nextMarkdown,
+            to: currentBlock.to,
+        },
+        scrollIntoView: false,
+    });
+}
+
+function trySetIcon(element: HTMLElement, icon: string): void {
+    try {
+        setIcon(element, icon);
+    } catch {
+        element.textContent = "";
+    }
+}
+
+function ensureTableWrapper(table: HTMLTableElement): HTMLElement {
+    if (table.parentElement?.classList.contains("table-wrapper")) {
+        return table.parentElement;
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "table-wrapper";
+    table.parentElement?.insertBefore(wrapper, table);
+    wrapper.appendChild(table);
+    return wrapper;
+}
+
+function wrapTableCellContents(cell: HTMLElement): void {
+    if (cell.querySelector(":scope > .table-cell-wrapper")) {
+        return;
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "table-cell-wrapper";
+    while (cell.firstChild) {
+        wrapper.appendChild(cell.firstChild);
+    }
+    cell.appendChild(wrapper);
+}
+
+function addTableColHandle(
+    cell: HTMLElement,
+    colIndex: number,
+    block: HybridMarkdownBlock,
+    view: EditorView,
+    drafts: Map<string, TableDraft>,
+): void {
+    if (cell.querySelector(":scope > .table-col-drag-handle")) {
+        return;
+    }
+
+    const handle = document.createElement("span");
+    handle.className = "table-col-drag-handle";
+    handle.draggable = true;
+    handle.setAttribute("contenteditable", "false");
+    handle.setAttribute("aria-hidden", "true");
+    trySetIcon(handle, "grip-horizontal");
+    handle.addEventListener("mousedown", (event) => event.stopPropagation());
+    handle.addEventListener("dragstart", (event) => {
+        event.stopPropagation();
+        event.dataTransfer?.setData("text/plain", `col:${colIndex}`);
+    });
+    handle.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+    handle.addEventListener("drop", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const payload = event.dataTransfer?.getData("text/plain") ?? "";
+        const match = payload.match(/^col:(\d+)$/);
+        if (!match) {
+            return;
+        }
+        applyTableTransform(view, block, drafts, (markdown) =>
+            moveMarkdownTableColumn(markdown, Number(match[1]), colIndex),
+        );
+    });
+    cell.appendChild(handle);
+}
+
+function addTableRowHandle(
+    cell: HTMLElement,
+    rowIndex: number,
+    block: HybridMarkdownBlock,
+    view: EditorView,
+    drafts: Map<string, TableDraft>,
+): void {
+    if (cell.querySelector(":scope > .table-row-drag-handle")) {
+        return;
+    }
+
+    const handle = document.createElement("span");
+    handle.className = "table-row-drag-handle";
+    handle.draggable = rowIndex > 0;
+    handle.setAttribute("contenteditable", "false");
+    handle.setAttribute("aria-hidden", "true");
+    trySetIcon(handle, "grip-vertical");
+    handle.addEventListener("mousedown", (event) => event.stopPropagation());
+    handle.addEventListener("dragstart", (event) => {
+        event.stopPropagation();
+        if (rowIndex <= 0) {
+            event.preventDefault();
+            return;
+        }
+        event.dataTransfer?.setData("text/plain", `row:${rowIndex}`);
+    });
+    handle.addEventListener("dragover", (event) => {
+        if (rowIndex <= 0) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+    });
+    handle.addEventListener("drop", (event) => {
+        if (rowIndex <= 0) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        const payload = event.dataTransfer?.getData("text/plain") ?? "";
+        const match = payload.match(/^row:(\d+)$/);
+        if (!match) {
+            return;
+        }
+        applyTableTransform(view, block, drafts, (markdown) =>
+            moveMarkdownTableRow(markdown, Number(match[1]), rowIndex),
+        );
+    });
+    cell.insertBefore(handle, cell.firstChild);
+}
+
+function addTableActionButton(
+    wrapper: HTMLElement,
+    className: "table-col-btn" | "table-row-btn",
+    onClick: () => void,
+): void {
+    if (wrapper.querySelector(`:scope > .${className}`)) {
+        return;
+    }
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.setAttribute("contenteditable", "false");
+    trySetIcon(button, "plus");
+    button.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+    button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClick();
+    });
+    wrapper.appendChild(button);
+}
+
 class RenderedMarkdownBlockWidget extends WidgetType {
     constructor(
         private readonly block: HybridMarkdownBlock,
@@ -337,8 +551,7 @@ class RenderedMarkdownBlockWidget extends WidgetType {
 
     toDOM(view: EditorView): HTMLElement {
         const container = document.createElement("div");
-        const tableClass =
-            this.block.kind === "table" ? " cm-embed-block cm-table-widget" : "";
+        const tableClass = this.block.kind === "table" ? " cm-embed-block cm-table-widget" : "";
         container.className = `sr-hybrid-rendered-block markdown-preview-view markdown-rendered${tableClass}${this.className}`;
         container.dataset.srHybridBlockKind = this.block.kind;
 
@@ -369,7 +582,13 @@ class RenderedMarkdownBlockWidget extends WidgetType {
             target: container,
         }).then(() => {
             if (this.block.kind === "table") {
-                normalizeRenderedTableForLivePreview(container);
+                normalizeRenderedTableForLivePreview(
+                    container,
+                    this.mode,
+                    this.block,
+                    view,
+                    this.deps.tableDrafts,
+                );
             }
             this.wireTableEditing(container, view);
         });
@@ -446,21 +665,55 @@ class RenderedMarkdownBlockWidget extends WidgetType {
     }
 }
 
-function normalizeRenderedTableForLivePreview(container: HTMLElement): void {
-    const table = container.querySelector("table");
+function normalizeRenderedTableForLivePreview(
+    container: HTMLElement,
+    mode: ExtractHybridMode,
+    block: HybridMarkdownBlock,
+    view: EditorView,
+    drafts: Map<string, TableDraft>,
+): void {
+    const table = container.querySelector<HTMLTableElement>("table");
     if (!table) {
         return;
     }
 
     table.classList.add("table-editor");
-    if (table.parentElement?.classList.contains("table-wrapper")) {
+    const wrapper = ensureTableWrapper(table);
+    const rows = Array.from(table.querySelectorAll("tr"));
+
+    rows.forEach((row, rowIndex) => {
+        const cells = Array.from(row.querySelectorAll<HTMLElement>("th,td"));
+        cells.forEach((cell, colIndex) => {
+            wrapTableCellContents(cell);
+            if (mode !== "edit") {
+                return;
+            }
+            if (rowIndex === 0) {
+                addTableColHandle(cell, colIndex, block, view, drafts);
+            }
+            if (colIndex === 0) {
+                addTableRowHandle(cell, rowIndex, block, view, drafts);
+            }
+        });
+    });
+
+    if (mode !== "edit") {
         return;
     }
 
-    const wrapper = document.createElement("div");
-    wrapper.className = "table-wrapper";
-    table.parentElement?.insertBefore(wrapper, table);
-    wrapper.appendChild(table);
+    addTableActionButton(wrapper, "table-row-btn", () => {
+        applyTableTransform(view, block, drafts, (markdown) => {
+            const model = parseMarkdownTableBlock(markdown);
+            const lastRow = model ? model.rows.length : 0;
+            return insertMarkdownTableRow(markdown, lastRow, "after");
+        });
+    });
+    addTableActionButton(wrapper, "table-col-btn", () => {
+        applyTableTransform(view, block, drafts, (markdown) => {
+            const lastCol = Math.max(0, getMarkdownTableColumnCount(markdown) - 1);
+            return insertMarkdownTableColumn(markdown, lastCol, "after");
+        });
+    });
 }
 
 function shouldRebuildHybridDecorations(
@@ -617,17 +870,26 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
                 dropCursor(),
                 EditorView.domEventHandlers({
                     keydown: (event) => {
-                        if (event.altKey && event.key.toLowerCase() === "e") {
+                        const currentView = viewRef.current;
+                        if (!currentView || currentView.state.field(hybridModeField) !== "edit") {
+                            return false;
+                        }
+
+                        if (
+                            event.altKey &&
+                            !event.shiftKey &&
+                            !event.ctrlKey &&
+                            !event.metaKey &&
+                            event.key.toLowerCase() === "e"
+                        ) {
                             event.preventDefault();
                             event.stopPropagation();
-                            const currentView = viewRef.current;
-                            if (currentView) {
-                                flushTableDrafts(currentView, tableDraftsRef.current);
-                            }
+                            flushTableDrafts(currentView, tableDraftsRef.current);
                             onExitRef.current();
                             return true;
                         }
-                        return false;
+
+                        return handleHybridEditorHotkey(event, currentView, plugin.app);
                     },
                 }),
                 keymap.of([

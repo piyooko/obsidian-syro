@@ -1,4 +1,11 @@
-import { parseMarkdownTableBlock, updateMarkdownTableCell } from "src/editor/hybridMarkdownTable";
+import {
+    insertMarkdownTableColumn,
+    insertMarkdownTableRow,
+    moveMarkdownTableColumn,
+    moveMarkdownTableRow,
+    parseMarkdownTableBlock,
+    updateMarkdownTableCell,
+} from "src/editor/hybridMarkdownTable";
 
 describe("hybridMarkdownTable", () => {
     test("parses standard pipe tables", () => {
@@ -31,5 +38,41 @@ describe("hybridMarkdownTable", () => {
         );
 
         expect(updated).toBe("| Name | B |\n| --- | --- |\n| 1 | two |");
+    });
+
+    test("inserts a body row below the selected row", () => {
+        const updated = insertMarkdownTableRow("| A | B |\n| --- | --- |\n| 1 | two |", 1, "after");
+
+        expect(updated).toBe("| A | B |\n| --- | --- |\n| 1 | two |\n|  |  |");
+    });
+
+    test("inserts a column to the right of the selected column", () => {
+        const updated = insertMarkdownTableColumn(
+            "| A | B |\n| --- | --- |\n| 1 | two |",
+            0,
+            "after",
+        );
+
+        expect(updated).toBe("| A |  | B |\n| --- | --- | --- |\n| 1 |  | two |");
+    });
+
+    test("moves table body rows", () => {
+        const updated = moveMarkdownTableRow(
+            "| A | B |\n| --- | --- |\n| 1 | one |\n| 2 | two |",
+            2,
+            1,
+        );
+
+        expect(updated).toBe("| A | B |\n| --- | --- |\n| 2 | two |\n| 1 | one |");
+    });
+
+    test("moves table columns including header delimiter and body cells", () => {
+        const updated = moveMarkdownTableColumn(
+            "| A | B | C |\n| --- | :---: | ---: |\n| 1 | two | 3 |",
+            2,
+            0,
+        );
+
+        expect(updated).toBe("| C | A | B |\n| ---: | --- | :---: |\n| 3 | 1 | two |");
     });
 });

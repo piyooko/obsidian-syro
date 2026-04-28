@@ -72,6 +72,7 @@ export default {
     EXTRACT_SELECT_TEXT_REQUIRED: "请先在摘录正文中选中文本",
     EXTRACT_SAVE_FAILED: "摘录保存失败",
     EXTRACT_CONTEXT_SAVE_FAILED: "摘录上下文保存失败",
+    EXTRACT_CONTEXT_NOT_READY: "摘录上下文尚未加载",
     EXTRACT_NESTED_CREATED: "已创建嵌套摘录",
     EXTRACT_NO_ACTIVE_ITEMS: "没有可复习的摘录",
     EXTRACT_REVIEW_AGAIN: "重来",
@@ -797,8 +798,7 @@ export default {
         "启用 Timeline 中前置时长语法的解析与渲染，例如 2d:: 或 1mo20d::",
     SETTINGS_SECTION_EXTRACTS: "摘录",
     SETTINGS_ENABLE_EXTRACTS: "启用摘录",
-    SETTINGS_ENABLE_EXTRACTS_DESC:
-        "允许使用 {{ir::...}} 渐进阅读摘录，并将摘录加入卡片复习流。",
+    SETTINGS_ENABLE_EXTRACTS_DESC: "允许使用 {{ir::...}} 渐进阅读摘录，并将摘录加入卡片复习流。",
     SETTINGS_MAX_NEW_EXTRACTS: "每日新摘录上限",
     SETTINGS_MAX_NEW_EXTRACTS_DESC: "每天最多引入多少条新创建的摘录。",
     SETTINGS_MAX_EXTRACT_REVIEWS: "每日摘录复习上限",
@@ -864,16 +864,14 @@ export default {
     DECK_OPTIONS_PRESET_NAME: "方案名称",
     DECK_OPTIONS_SECTION_NEW_CARDS: "新卡片",
     DECK_OPTIONS_LEARNING_STEPS: "初学间隔",
-    DECK_OPTIONS_LEARNING_STEPS_DESC:
-        "间隔之间用空格分隔（如 1m 10m）。支持 m(分) h(时) d(天)",
+    DECK_OPTIONS_LEARNING_STEPS_DESC: "间隔之间用空格分隔（如 1m 10m）。支持 m(分) h(时) d(天)",
     DECK_OPTIONS_MAX_NEW_CARDS: "每日新卡片上限 (张/天)",
     DECK_OPTIONS_MAX_NEW_CARDS_DESC: "该牌组每天显示的新卡片最大数量",
     DECK_OPTIONS_MAX_NEW_EXTRACTS: "每日新摘录上限",
     DECK_OPTIONS_MAX_NEW_EXTRACTS_DESC: "该牌组每天引入的新摘录最大数量",
     DECK_OPTIONS_SECTION_LAPSES: "遗忘",
     DECK_OPTIONS_RELEARNING_STEPS: "重学间隔",
-    DECK_OPTIONS_RELEARNING_STEPS_DESC:
-        "间隔之间用空格分隔（如 10m）。支持 m(分) h(时) d(天)",
+    DECK_OPTIONS_RELEARNING_STEPS_DESC: "间隔之间用空格分隔（如 10m）。支持 m(分) h(时) d(天)",
     DECK_OPTIONS_INVALID_STEP_FORMAT:
         "牌组选项的间隔格式必须是像 1m 10m 这样的空格分隔值，并且只能使用 m、h 或 d。",
     DECK_OPTIONS_SECTION_REVIEWS: "复习",
