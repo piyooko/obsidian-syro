@@ -39,6 +39,10 @@ import type { CardReviewTarget } from "src/question-type";
 import type { QuestionContextBreadcrumb } from "src/SRFile";
 import type { ExtractReviewContext } from "src/util/irExtractContext";
 import type { ExtractContextUpdate } from "src/editor/extract-context-decoration";
+import {
+    eventMatchesReviewEditModeHotkey,
+    getReviewEditModeHotkeyLabel,
+} from "src/editor/obsidianHotkeyBridge";
 import "../styles/linear-card.css";
 import { t } from "src/lang/helpers";
 import { DEFAULT_PROGRESS_BAR_STYLE, type ProgressBarStyle } from "src/settings";
@@ -102,6 +106,9 @@ interface LinearCardProps {
     rawContent?: string;
     plugin?: SRPlugin;
     onUpdateContent?: (text: string) => void;
+    extractIdentityKey?: string;
+    editModeToggleToken?: number;
+    shouldHandleReviewHotkeys?: () => boolean;
     extractContext?: ExtractReviewContext | null;
     extractContextDraft?: ExtractContextUpdate | null;
     onUpdateExtractContext?: (update: ExtractContextUpdate) => void;
@@ -123,6 +130,8 @@ interface InlineBreadcrumbsProps {
     ) => void;
     interactive?: boolean;
 }
+
+const alwaysHandleReviewHotkeys = () => true;
 
 type ToastMsg = { icon: ReactNode; text: string; id: number };
 type ResizeDirection = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
@@ -365,6 +374,9 @@ export const LinearCard: FC<LinearCardProps> = ({
     rawContent = "",
     plugin,
     onUpdateContent,
+    extractIdentityKey,
+    editModeToggleToken,
+    shouldHandleReviewHotkeys = alwaysHandleReviewHotkeys,
     extractContext,
     extractContextDraft,
     onUpdateExtractContext,
@@ -373,6 +385,7 @@ export const LinearCard: FC<LinearCardProps> = ({
     extractActionLabels,
 }) => {
     const isExtractReview = reviewKind === "extract";
+    const canToggleEditMode = isExtractReview;
     const [size, setSize] = useState({ width, height });
     const wrapperRef = useRef<HTMLDivElement>(null);
     const cardRef = useRef<HTMLDivElement>(null);
@@ -433,18 +446,16 @@ export const LinearCard: FC<LinearCardProps> = ({
 
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(rawContent);
+    const lastEditModeToggleTokenRef = useRef(editModeToggleToken);
+    const extractHybridIdentityKey = extractIdentityKey ?? cardUiResetKey;
     const extractHybridReadyKey =
         isExtractReview && extractContext && extractContextDraft && plugin
-            ? [
-                  cardUiResetKey,
-                  extractContextDraft.ranges.currentOuterFrom,
-                  extractContextDraft.ranges.currentOuterTo,
-                  extractContextDraft.markdown,
-              ].join("\u001f")
+            ? [cardUiResetKey, extractHybridIdentityKey].join("\u001f")
             : null;
     const [visibleExtractReadyKey, setVisibleExtractReadyKey] = useState<string | null>(null);
-    const [lastExtractDebugStatus, setLastExtractDebugStatus] =
-        useState<ExtractDebugStatus | null>(null);
+    const [lastExtractDebugStatus, setLastExtractDebugStatus] = useState<ExtractDebugStatus | null>(
+        null,
+    );
     const [showExtractDebugPanel, setShowExtractDebugPanel] = useState(false);
     const lastExtractDebugWarnKeyRef = useRef("");
     const latestExtractHybridReadyKeyRef = useRef<string | null>(null);
@@ -480,6 +491,12 @@ export const LinearCard: FC<LinearCardProps> = ({
     useEffect(() => {
         setEditText(rawContent);
     }, [rawContent]);
+
+    useEffect(() => {
+        if (!canToggleEditMode && isEditing) {
+            setIsEditing(false);
+        }
+    }, [canToggleEditMode, isEditing]);
 
     useEffect(() => {
         if (isExtractReview) {
@@ -846,30 +863,32 @@ export const LinearCard: FC<LinearCardProps> = ({
         }, 2000);
     }, []);
 
-    const showEditToast = useCallback((text: string, icon: ReactNode) => {
-        const id = Date.now();
-        setToasts([{ text, icon, id }]);
-        setTimeout(() => {
-            setToasts((prev) => prev.filter((t) => t.id !== id));
-        }, 2000);
-    }, []);
-
     const enterEditMode = useCallback(() => {
+        if (!canToggleEditMode) {
+            return;
+        }
+
         if (isExtractReview && (!extractContext || !extractContextDraft || !plugin)) {
-            showEditToast(t("EXTRACT_CONTEXT_NOT_READY"), <Edit3 size={14} />);
+            showToast(t("EXTRACT_CONTEXT_NOT_READY"), <Edit3 size={14} />);
             return;
         }
 
         setEditText(rawContent);
         setIsEditing(true);
         setIsFlipped(true);
-        showEditToast(t("UI_ENTER_EDIT_MODE"), <Edit3 size={14} />);
-    }, [extractContext, extractContextDraft, isExtractReview, plugin, rawContent, showEditToast]);
+    }, [
+        canToggleEditMode,
+        extractContext,
+        extractContextDraft,
+        isExtractReview,
+        plugin,
+        rawContent,
+        showToast,
+    ]);
 
     const exitEditMode = useCallback(() => {
         setIsEditing(false);
-        showEditToast(t("UI_EXIT_EDIT_MODE"), <Check size={14} />);
-    }, [showEditToast]);
+    }, []);
 
     const toggleEditMode = useCallback(() => {
         if (isEditing) {
@@ -878,6 +897,20 @@ export const LinearCard: FC<LinearCardProps> = ({
         }
         enterEditMode();
     }, [enterEditMode, exitEditMode, isEditing]);
+
+    useEffect(() => {
+        if (editModeToggleToken === undefined) {
+            return;
+        }
+        if (lastEditModeToggleTokenRef.current === editModeToggleToken) {
+            return;
+        }
+        lastEditModeToggleTokenRef.current = editModeToggleToken;
+        if (!canToggleEditMode) {
+            return;
+        }
+        toggleEditMode();
+    }, [canToggleEditMode, editModeToggleToken, toggleEditMode]);
 
     const handleAnswerInternal = useCallback(
         (rating: number) => {
@@ -935,9 +968,116 @@ export const LinearCard: FC<LinearCardProps> = ({
         [isExtractReview, showToast, onUndo, onOpenNote, onEditCard, onPostpone, onDelete],
     );
 
+    const handleReviewShortcutKeyDown = useCallback(
+        (e: KeyboardEvent): boolean => {
+            if (!shouldHandleReviewHotkeys() || isEditing) {
+                return false;
+            }
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+                return false;
+            }
+
+            switch (e.key.toLowerCase()) {
+                case " ":
+                    e.preventDefault();
+                    if (isExtractReview) {
+                        return true;
+                    }
+                    if (!renderIsFlipped) {
+                        revealAnswer();
+                    } else {
+                        handleAnswerInternal(2);
+                    }
+                    return true;
+                case "z":
+                    if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        handleMenuAction("UNDO");
+                        return true;
+                    }
+                    return false;
+                case "1":
+                    if (isExtractReview || renderIsFlipped) {
+                        handleAnswerInternal(0);
+                        return true;
+                    }
+                    return false;
+                case "2":
+                    if (isExtractReview || renderIsFlipped) {
+                        handleAnswerInternal(1);
+                        return true;
+                    }
+                    return false;
+                case "3":
+                    if (isExtractReview) {
+                        onSetExtractDate?.();
+                        return true;
+                    } else if (renderIsFlipped) {
+                        handleAnswerInternal(2);
+                        return true;
+                    }
+                    return false;
+                case "4":
+                    if (isExtractReview) {
+                        handleMenuAction("DELETE");
+                        return true;
+                    } else if (renderIsFlipped) {
+                        handleAnswerInternal(3);
+                        return true;
+                    }
+                    return false;
+                case "o":
+                    handleMenuAction("OPEN");
+                    return true;
+                case "i":
+                    if (!isExtractReview) {
+                        handleMenuAction("INFO");
+                        return true;
+                    }
+                    return false;
+                case "p":
+                    handleMenuAction("POSTPONE");
+                    return true;
+                case "delete":
+                case "backspace":
+                    handleMenuAction("DELETE");
+                    return true;
+                case "escape":
+                    if (!showInfo && !showMenu) {
+                        return false;
+                    }
+                    if (showInfo) setShowInfo(false);
+                    if (showMenu) setShowMenu(false);
+                    return true;
+                default:
+                    return false;
+            }
+        },
+        [
+            handleAnswerInternal,
+            handleMenuAction,
+            isEditing,
+            isExtractReview,
+            onSetExtractDate,
+            renderIsFlipped,
+            revealAnswer,
+            shouldHandleReviewHotkeys,
+            showInfo,
+            showMenu,
+        ],
+    );
+
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.altKey && e.key.toLowerCase() === "e") {
+            if (!shouldHandleReviewHotkeys()) {
+                return;
+            }
+
+            if (
+                canToggleEditMode &&
+                !e.defaultPrevented &&
+                eventMatchesReviewEditModeHotkey(e, plugin?.app)
+            ) {
                 if (isEditableKeyboardTarget(e.target)) {
                     return;
                 }
@@ -945,81 +1085,16 @@ export const LinearCard: FC<LinearCardProps> = ({
                 toggleEditMode();
                 return;
             }
-            if (isEditing) return;
-            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)
-                return;
 
-            switch (e.key.toLowerCase()) {
-                case " ":
-                    e.preventDefault();
-                    if (isExtractReview) {
-                        return;
-                    }
-                    if (!renderIsFlipped) {
-                        revealAnswer();
-                    } else {
-                        handleAnswerInternal(2);
-                    }
-                    break;
-                case "z":
-                    if (e.ctrlKey || e.metaKey) {
-                        e.preventDefault();
-                        handleMenuAction("UNDO");
-                    }
-                    break;
-                case "1":
-                    if (isExtractReview || renderIsFlipped) handleAnswerInternal(0);
-                    break;
-                case "2":
-                    if (isExtractReview || renderIsFlipped) handleAnswerInternal(1);
-                    break;
-                case "3":
-                    if (isExtractReview) {
-                        onSetExtractDate?.();
-                    } else if (renderIsFlipped) {
-                        handleAnswerInternal(2);
-                    }
-                    break;
-                case "4":
-                    if (isExtractReview) {
-                        handleMenuAction("DELETE");
-                    } else if (renderIsFlipped) {
-                        handleAnswerInternal(3);
-                    }
-                    break;
-                case "o":
-                    handleMenuAction("OPEN");
-                    break;
-                case "i":
-                    if (!isExtractReview) {
-                        handleMenuAction("INFO");
-                    }
-                    break;
-                case "p":
-                    handleMenuAction("POSTPONE");
-                    break;
-                case "delete":
-                case "backspace":
-                    handleMenuAction("DELETE");
-                    break;
-                case "escape":
-                    if (showInfo) setShowInfo(false);
-                    if (showMenu) setShowMenu(false);
-                    break;
-            }
+            handleReviewShortcutKeyDown(e);
         };
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [
-        isEditing,
-        handleAnswerInternal,
-        handleMenuAction,
-        isExtractReview,
-        onSetExtractDate,
-        renderIsFlipped,
-        revealAnswer,
-        showInfo,
-        showMenu,
+        canToggleEditMode,
+        handleReviewShortcutKeyDown,
+        plugin?.app,
+        shouldHandleReviewHotkeys,
         toggleEditMode,
     ]);
 
@@ -1039,7 +1114,8 @@ export const LinearCard: FC<LinearCardProps> = ({
         set: t("EXTRACT_REVIEW_SET_DATE"),
         graduate: t("EXTRACT_REVIEW_GRADUATE"),
     };
-
+    const editModeHotkeyLabel =
+        getReviewEditModeHotkeyLabel(plugin?.app) ?? t("UI_EDIT_TOGGLE_KEY_UNSET");
     return (
         <div className={wrapperClassName} ref={wrapperRef}>
             {isMobile && <div className="sr-absolute sr-inset-0 sr-bg-black/50" />}
@@ -1164,13 +1240,15 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             currentType={currentType}
                                             animated={false}
                                         />
-                                        <button
-                                            type="button"
-                                            className="sr-header-btn"
-                                            tabIndex={-1}
-                                        >
-                                            <Edit3 size={16} />
-                                        </button>
+                                        {canToggleEditMode && (
+                                            <button
+                                                type="button"
+                                                className="sr-header-btn"
+                                                tabIndex={-1}
+                                            >
+                                                <Edit3 size={16} />
+                                            </button>
+                                        )}
                                         <button
                                             type="button"
                                             className="sr-header-btn"
@@ -1208,13 +1286,15 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             currentType={currentType}
                                             animated={false}
                                         />
-                                        <button
-                                            type="button"
-                                            className="sr-header-btn"
-                                            tabIndex={-1}
-                                        >
-                                            <Edit3 size={16} />
-                                        </button>
+                                        {canToggleEditMode && (
+                                            <button
+                                                type="button"
+                                                className="sr-header-btn"
+                                                tabIndex={-1}
+                                            >
+                                                <Edit3 size={16} />
+                                            </button>
+                                        )}
                                         <button
                                             type="button"
                                             className="sr-header-btn"
@@ -1252,13 +1332,15 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             currentType={currentType}
                                             animated={false}
                                         />
-                                        <button
-                                            type="button"
-                                            className="sr-header-btn"
-                                            tabIndex={-1}
-                                        >
-                                            <Edit3 size={16} />
-                                        </button>
+                                        {canToggleEditMode && (
+                                            <button
+                                                type="button"
+                                                className="sr-header-btn"
+                                                tabIndex={-1}
+                                            >
+                                                <Edit3 size={16} />
+                                            </button>
+                                        )}
                                         <button
                                             type="button"
                                             className="sr-header-btn"
@@ -1297,13 +1379,15 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             compact
                                             animated={false}
                                         />
-                                        <button
-                                            type="button"
-                                            className="sr-header-btn"
-                                            tabIndex={-1}
-                                        >
-                                            <Edit3 size={16} />
-                                        </button>
+                                        {canToggleEditMode && (
+                                            <button
+                                                type="button"
+                                                className="sr-header-btn"
+                                                tabIndex={-1}
+                                            >
+                                                <Edit3 size={16} />
+                                            </button>
+                                        )}
                                         <button
                                             type="button"
                                             className="sr-header-btn"
@@ -1362,20 +1446,20 @@ export const LinearCard: FC<LinearCardProps> = ({
                                     compact={shouldUseCompactStats}
                                 />
 
-                                <button
-                                    type="button"
-                                    className={`sr-header-btn ${isEditing ? "active" : ""}`}
-                                    onClick={toggleEditMode}
-                                    title={
-                                        isEditing
-                                            ? t("UI_FINISH_EDITING")
-                                            : isExtractReview
-                                              ? t("EXTRACT_EDIT_BODY")
-                                              : t("EDIT_CARD")
-                                    }
-                                >
-                                    <Edit3 size={16} />
-                                </button>
+                                {canToggleEditMode && (
+                                    <button
+                                        type="button"
+                                        className={`sr-header-btn ${isEditing ? "active" : ""}`}
+                                        onClick={toggleEditMode}
+                                        title={
+                                            isEditing
+                                                ? t("UI_FINISH_EDITING")
+                                                : t("EXTRACT_EDIT_BODY")
+                                        }
+                                    >
+                                        <Edit3 size={16} />
+                                    </button>
+                                )}
 
                                 <div className="sr-menu-container">
                                     <button
@@ -1515,7 +1599,9 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                 onChange={(update) => {
                                                     onUpdateExtractContext?.(update);
                                                 }}
+                                                onEnterEdit={enterEditMode}
                                                 onExit={exitEditMode}
+                                                onReviewKeyDown={handleReviewShortcutKeyDown}
                                                 onReady={() => {
                                                     if (
                                                         latestExtractHybridReadyKeyRef.current ===
@@ -1535,11 +1621,11 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                         return;
                                                     }
                                                     setLastExtractDebugStatus(event);
-                                                    if (plugin.data.settings.showRuntimeDebugMessages) {
-                                                        console.debug(
-                                                            "[SR-ExtractRender]",
-                                                            event,
-                                                        );
+                                                    if (
+                                                        plugin.data.settings
+                                                            .showRuntimeDebugMessages
+                                                    ) {
+                                                        console.debug("[SR-ExtractRender]", event);
                                                     }
                                                 }}
                                                 plugin={plugin}
@@ -1564,7 +1650,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                         )}
                                     </div>
                                 )
-                            ) : isEditing && plugin ? (
+                            ) : canToggleEditMode && isEditing && plugin ? (
                                 <CardEditorView
                                     value={editText}
                                     onChange={(val) => {
@@ -1630,7 +1716,8 @@ export const LinearCard: FC<LinearCardProps> = ({
                                     onClick={toggleEditMode}
                                     className="sr-show-answer-btn sr-exit-edit-btn"
                                 >
-                                    <Save size={16} /> {t("UI_FINISH_EDITING")}
+                                    <Save size={16} /> {t("UI_FINISH_EDITING")}{" "}
+                                    <span className="sr-kbd">{editModeHotkeyLabel}</span>
                                 </button>
                             ) : !renderIsFlipped ? (
                                 <button onClick={revealAnswer} className="sr-show-answer-btn">
@@ -1664,7 +1751,9 @@ export const LinearCard: FC<LinearCardProps> = ({
                                             <LinearButton
                                                 icon={<Calendar size={12} />}
                                                 label={extractLabels.set}
-                                                sub="xd"
+                                                sub={t("EXTRACT_REVIEW_SET_DATE_INTERVAL_HINT", {
+                                                    interval: "x",
+                                                })}
                                                 shortcut="3"
                                                 variant="set"
                                                 onClick={() => onSetExtractDate?.()}
@@ -2407,9 +2496,7 @@ const ExtractRenderDebugPanel: FC<{ status: ExtractDebugStatus; visible: boolean
     const detail = formatExtractDebugDetail(status);
     return (
         <div className="sr-extract-render-debug" role="status">
-            <div className="sr-extract-render-debug-title">
-                {t("EXTRACT_RENDER_DEBUG_TITLE")}
-            </div>
+            <div className="sr-extract-render-debug-title">{t("EXTRACT_RENDER_DEBUG_TITLE")}</div>
             <div>{t("EXTRACT_RENDER_DEBUG_STEP", { stage: status.stage })}</div>
             {detail && <div>{t("EXTRACT_RENDER_DEBUG_DETAIL", { detail })}</div>}
             {status.error && <div>{t("EXTRACT_RENDER_DEBUG_ERROR", { error: status.error })}</div>}

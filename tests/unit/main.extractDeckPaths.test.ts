@@ -149,7 +149,7 @@ describe("SRPlugin extract deck paths", () => {
         });
     });
 
-    test("uses the deck tree review count for inline-title stats", async () => {
+    test("keeps the deck tree review count for legacy synchronous stats", async () => {
         const root = new Deck("root", null);
         const math = new Deck("数学卡", root);
         root.subdecks.push(math);
@@ -181,6 +181,76 @@ describe("SRPlugin extract deck paths", () => {
         expect(await SRPlugin.prototype.getReadonlyNoteCardStats.call(plugin, file)).toEqual({
             reviewableCount: 0,
             totalCount: 0,
+        });
+    });
+
+    test("counts note-local active extracts for readonly title stats", async () => {
+        const now = 1_700_000_000_000;
+        jest.spyOn(Date, "now").mockReturnValue(now);
+
+        const file = createTFile("Syro 侧边栏复习教程.md");
+        const sourceText = "{{ir::first}}\n{{ir::second}}\n{{ir::third}}";
+        const matches = parseIrExtracts(sourceText);
+        const extractStore = new ExtractStore(DEFAULT_SETTINGS, { extractsPath: "extracts.json" });
+        const createSnapshot = (
+            uuid: string,
+            rawMarkdown: string,
+            ordinal: number,
+            overrides: Record<string, unknown> = {},
+        ) => ({
+            item: {
+                id: ordinal + 1,
+                uuid,
+                sourcePath: file.path,
+                sourceAnchor: { ...matches[ordinal].anchor, ordinal },
+                rawMarkdown,
+                memo: "",
+                deckName: "Syro 侧边栏复习教程",
+                stage: "active",
+                createdAt: ordinal + 1,
+                updatedAt: ordinal + 1,
+                ...overrides,
+            },
+        });
+        extractStore.upsertSnapshot(
+            createSnapshot("ir_first", "first", 0, {
+                timesReviewed: 4,
+                nextReview: now + 86_400_000,
+            }) as never,
+        );
+        extractStore.upsertSnapshot(
+            createSnapshot("ir_second", "second", 1, {
+                timesReviewed: 2,
+                nextReview: now + 172_800_000,
+            }) as never,
+        );
+        extractStore.upsertSnapshot(createSnapshot("ir_third", "third", 2) as never);
+
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    enableExtracts: true,
+                    learnAheadMinutes: 0,
+                },
+            },
+            app: {
+                vault: {
+                    read: jest.fn(() => Promise.resolve(sourceText)),
+                },
+            },
+            guardSyroDataReady: jest.fn(() => true),
+            store: {
+                getTrackedFile: jest.fn(() => null),
+                getItembyID: jest.fn(() => null),
+            },
+            extractStore,
+            noteCache: new Map(),
+        });
+
+        expect(await SRPlugin.prototype.getReadonlyNoteLocalCardStats.call(plugin, file)).toEqual({
+            reviewableCount: 1,
+            totalCount: 3,
         });
     });
 

@@ -74,6 +74,35 @@ describe("collectHybridInlineTokens", () => {
         );
     });
 
+    test("keeps formatting delimiters hidden when source reveal is disabled", () => {
+        const markdown = "1. **bold** after";
+
+        const tokens = collectHybridInlineTokensForTest(
+            markdown,
+            { from: 6, to: 6 },
+            {
+                revealFormatting: false,
+            },
+        );
+
+        expect(tokens).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    className: expect.stringContaining("cm-formatting-strong"),
+                    from: 3,
+                    hidden: true,
+                    to: 5,
+                }),
+                expect.objectContaining({
+                    className: expect.stringContaining("cm-formatting-strong"),
+                    from: 9,
+                    hidden: true,
+                    to: 11,
+                }),
+            ]),
+        );
+    });
+
     test("marks markdown and wiki links without exposing formatting by default", () => {
         const markdown = "A [label](target) and [[Page|Alias]]";
 

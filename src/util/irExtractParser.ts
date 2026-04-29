@@ -176,6 +176,78 @@ export function expandPartialOverlapSelectionToValidBoundary(
     return { from: nextFrom, to: nextTo };
 }
 
+function containsUnmatchedClosingBraceToken(text: string): boolean {
+    let depth = 0;
+    let index = 0;
+    while (index < text.length) {
+        if (text.startsWith("{{", index)) {
+            depth++;
+            index += 2;
+            continue;
+        }
+        if (text.startsWith(IR_CLOSE, index)) {
+            if (depth === 0) {
+                return true;
+            }
+            depth--;
+            index += IR_CLOSE.length;
+            continue;
+        }
+        index++;
+    }
+    return false;
+}
+
+function countIrOpenTokens(text: string): number {
+    let count = 0;
+    let index = 0;
+    while (index < text.length) {
+        if (text.startsWith(IR_OPEN, index)) {
+            count++;
+            index += IR_OPEN.length;
+            continue;
+        }
+        index++;
+    }
+    return count;
+}
+
+function partiallyOverlaps(
+    outerStart: number,
+    outerEnd: number,
+    innerStart: number,
+    innerEnd: number,
+): boolean {
+    return overlaps(outerStart, outerEnd, innerStart, innerEnd) && !contains(outerStart, outerEnd, innerStart, innerEnd);
+}
+
+export function selectionContainsIrExtractBoundarySyntax(
+    text: string,
+    from: number,
+    to: number,
+): boolean {
+    const selectionFrom = Math.max(0, Math.min(from, to));
+    const selectionTo = Math.min(text.length, Math.max(from, to));
+    if (selectionFrom === selectionTo) {
+        return false;
+    }
+
+    const selected = text.slice(selectionFrom, selectionTo);
+    if (containsUnmatchedClosingBraceToken(selected)) {
+        return true;
+    }
+
+    if (countIrOpenTokens(selected) !== parseIrExtracts(selected).length) {
+        return true;
+    }
+
+    return parseIrExtracts(text).some(
+        (match) =>
+            partiallyOverlaps(selectionFrom, selectionTo, match.start, match.innerStart) ||
+            partiallyOverlaps(selectionFrom, selectionTo, match.innerEnd, match.end),
+    );
+}
+
 export function wrapSelectionAsExtract(
     text: string,
     from: number,

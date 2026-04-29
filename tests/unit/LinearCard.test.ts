@@ -2,6 +2,8 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { EditorSelection } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import { moment } from "obsidian";
 import { CardType } from "src/Question";
 import { CardFrontBackUtil } from "src/question-type";
@@ -113,6 +115,20 @@ function createMinimalPlugin(showRuntimeDebugMessages = false): SRPlugin {
             },
         },
     } as unknown as SRPlugin;
+}
+
+function createExtractCardProps(markdown: string, plugin = createMinimalPlugin()) {
+    const context = createAutoExtractContext(markdown);
+    return {
+        reviewKind: "extract" as const,
+        card: { front: markdown, back: "" },
+        extractContext: context,
+        extractContextDraft: { markdown, ranges: context },
+        plugin,
+        renderMarkdown: (content: string, el: HTMLElement) => {
+            el.textContent = content;
+        },
+    };
 }
 
 test("validates the hidden current extract wrapper before saving", () => {
@@ -552,6 +568,73 @@ test("extract review keeps hybrid context hidden until markdown rendering is rea
         expect(container.querySelector(".sr-extract-content-ready")).not.toBeNull();
     } finally {
         act(() => root.unmount());
+    }
+});
+
+test("extract hybrid editor is not remounted when the draft markdown changes", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const before = "before\n\n";
+    const wrapped = "{{ir::target}}";
+    const markdown = `${before}${wrapped}\n\nafter`;
+    const context = createManualExtractContext(
+        markdown,
+        before.length,
+        before.length + wrapped.length,
+    );
+    const nextMarkdown = `${markdown}\nlocal edit`;
+    const nextContext = {
+        ...context,
+        markdown: nextMarkdown,
+        sourceTo: nextMarkdown.length,
+    };
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    uiResetToken: 1,
+                    card: { front: wrapped, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+        await flushEffects();
+        await flushEffects();
+
+        const editorBefore = container.querySelector(".cm-editor");
+        expect(editorBefore).not.toBeNull();
+        expect(container.querySelector(".sr-extract-content-ready")).not.toBeNull();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    uiResetToken: 1,
+                    card: { front: wrapped, back: "" },
+                    extractContext: nextContext,
+                    extractContextDraft: { markdown: nextMarkdown, ranges: nextContext },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+        await flushEffects();
+
+        expect(container.querySelector(".cm-editor")).toBe(editorBefore);
+        expect(container.querySelector(".sr-extract-content-ready")).not.toBeNull();
+    } finally {
+        act(() => root.unmount());
+        container.remove();
     }
 });
 
@@ -1173,50 +1256,7 @@ test("extract card content updates do not reset the active edit session", async 
     }
 });
 
-test("Alt+E toggles edit mode and Escape does not exit edit mode", () => {
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    act(() => {
-        root.render(
-            React.createElement(LinearCard, {
-                card: {
-                    front: "front",
-                    back: "back",
-                },
-                renderMarkdown: (content: string, el: HTMLElement) => {
-                    el.textContent = content;
-                },
-                type: "basic",
-            }),
-        );
-    });
-
-    expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
-
-    act(() => {
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
-    });
-
-    expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
-
-    act(() => {
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    });
-
-    expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
-
-    act(() => {
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
-    });
-
-    expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
-});
-
-test("edit mode exit button shows the Alt+E shortcut hint in show-answer style", () => {
-    const previousLocale = moment.locale();
-    moment.locale("zh-cn");
+test("card review hides edit mode entry and ignores edit-mode shortcuts", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -1229,6 +1269,9 @@ test("edit mode exit button shows the Alt+E shortcut hint in show-answer style",
                         front: "front",
                         back: "back",
                     },
+                    editModeToggleToken: 0,
+                    plugin: createMinimalPlugin(),
+                    rawContent: "front",
                     renderMarkdown: (content: string, el: HTMLElement) => {
                         el.textContent = content;
                     },
@@ -1237,9 +1280,110 @@ test("edit mode exit button shows the Alt+E shortcut hint in show-answer style",
             );
         });
 
+        const activeHeader = container.querySelector(
+            ".sr-card-header:not(.sr-card-header-measure)",
+        );
+        expect(activeHeader?.querySelectorAll(".sr-header-right > button.sr-header-btn")).toHaveLength(
+            0,
+        );
+        expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+
         act(() => {
             window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
         });
+        expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    card: {
+                        front: "front",
+                        back: "back",
+                    },
+                    editModeToggleToken: 1,
+                    plugin: createMinimalPlugin(),
+                    rawContent: "front",
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    type: "basic",
+                }),
+            );
+        });
+        expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+        expect(container.querySelector(".cm-editor")).toBeNull();
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
+test("extract review keeps Alt+E edit mode toggle and Escape does not exit edit mode", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps("front"),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+        });
+        await flushEffects();
+
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+        });
+        await flushEffects();
+
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+        });
+        await flushEffects();
+
+        expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
+test("extract edit mode exit button shows the Alt+E shortcut hint in show-answer style", async () => {
+    const previousLocale = moment.locale();
+    moment.locale("zh-cn");
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps("front"),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+        });
+        await flushEffects();
 
         const exitButton = container.querySelector<HTMLButtonElement>(".sr-exit-edit-btn");
         expect(exitButton?.textContent).toContain("完成编辑 Alt+E");
@@ -1255,31 +1399,139 @@ test("edit mode exit button shows the Alt+E shortcut hint in show-answer style",
     }
 });
 
-test("Alt+E exits edit mode once from CodeMirror", async () => {
+test("extract edit mode exit button follows the customized Obsidian command shortcut", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
+    const plugin = {
+        ...createMinimalPlugin(),
+        app: {
+            hotkeyManager: {
+                customKeys: {
+                    "syro:srs-toggle-review-edit-mode": [
+                        { modifiers: ["Alt", "Shift"], key: "X" },
+                    ],
+                },
+            },
+        },
+    } as unknown as SRPlugin;
 
     try {
         act(() => {
             root.render(
                 React.createElement(LinearCard, {
-                    card: {
-                        front: "front",
-                        back: "back",
-                    },
-                    plugin: createMinimalPlugin(),
+                    ...createExtractCardProps("front", plugin),
+                    editModeToggleToken: 0,
+                    plugin,
                     rawContent: "front",
-                    renderMarkdown: (content: string, el: HTMLElement) => {
-                        el.textContent = content;
-                    },
                     type: "basic",
                 }),
             );
         });
+        await flushEffects();
 
         act(() => {
-            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps("front", plugin),
+                    editModeToggleToken: 1,
+                    plugin,
+                    rawContent: "front",
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        const exitButton = container.querySelector<HTMLButtonElement>(".sr-exit-edit-btn");
+        expect(exitButton?.querySelector(".sr-kbd")?.textContent).toBe("Alt+Shift+X");
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
+test("extract edit mode exit button shows an unset shortcut hint when the command has no hotkey", async () => {
+    const previousLocale = moment.locale();
+    moment.locale("zh-cn");
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const plugin = {
+        ...createMinimalPlugin(),
+        app: {
+            hotkeyManager: {
+                customKeys: {
+                    "syro:srs-toggle-review-edit-mode": [],
+                },
+            },
+        },
+    } as unknown as SRPlugin;
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps("front", plugin),
+                    editModeToggleToken: 0,
+                    plugin,
+                    rawContent: "front",
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps("front", plugin),
+                    editModeToggleToken: 1,
+                    plugin,
+                    rawContent: "front",
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        const exitButton = container.querySelector<HTMLButtonElement>(".sr-exit-edit-btn");
+        expect(exitButton?.querySelector(".sr-kbd")?.textContent).toBe("暂未设置快捷键");
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+        moment.locale(previousLocale);
+    }
+});
+
+test("extract Alt+E exits edit mode once from CodeMirror", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "front";
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 0,
+                    plugin: createMinimalPlugin(),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 1,
+                    plugin: createMinimalPlugin(),
+                    type: "basic",
+                }),
+            );
         });
         await flushEffects();
 
@@ -1303,20 +1555,799 @@ test("Alt+E exits edit mode once from CodeMirror", async () => {
     }
 });
 
+test("extract hybrid editor keeps unmatched text keydowns inside CodeMirror", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "front";
+    const bubbledKeydown = jest.fn();
+    container.addEventListener("keydown", bubbledKeydown);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 0,
+                    plugin: createMinimalPlugin(),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 1,
+                    plugin: createMinimalPlugin(),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editor = container.querySelector<HTMLElement>(".cm-content");
+        expect(editor).not.toBeNull();
+        const event = new KeyboardEvent("keydown", {
+            bubbles: true,
+            cancelable: true,
+            code: "KeyE",
+            key: "e",
+        });
+
+        act(() => {
+            editor?.dispatchEvent(event);
+        });
+
+        expect(bubbledKeydown).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBe(false);
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+    } finally {
+        container.removeEventListener("keydown", bubbledKeydown);
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
+test("extract hybrid editor leaves modifier-only keydowns to CodeMirror", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "front";
+    const bubbledKeydown = jest.fn();
+    container.addEventListener("keydown", bubbledKeydown);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 0,
+                    plugin: createMinimalPlugin(true),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 1,
+                    plugin: createMinimalPlugin(true),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editor = container.querySelector<HTMLElement>(".cm-content");
+        expect(editor).not.toBeNull();
+        const event = new KeyboardEvent("keydown", {
+            bubbles: true,
+            cancelable: true,
+            code: "ControlLeft",
+            ctrlKey: true,
+            key: "Control",
+        });
+
+        act(() => {
+            editor?.dispatchEvent(event);
+        });
+
+        expect(bubbledKeydown).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBe(false);
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+    } finally {
+        container.removeEventListener("keydown", bubbledKeydown);
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
+test("extract hybrid editor preserves native clipboard shortcuts in edit mode", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "front";
+    const bubbledKeydown = jest.fn();
+    container.addEventListener("keydown", bubbledKeydown);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 0,
+                    plugin: createMinimalPlugin(),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 1,
+                    plugin: createMinimalPlugin(),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editor = container.querySelector<HTMLElement>(".cm-content");
+        expect(editor).not.toBeNull();
+        const event = new KeyboardEvent("keydown", {
+            bubbles: true,
+            cancelable: true,
+            code: "KeyC",
+            ctrlKey: true,
+            key: "c",
+        });
+
+        act(() => {
+            editor?.dispatchEvent(event);
+        });
+
+        expect(bubbledKeydown).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBe(false);
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+    } finally {
+        container.removeEventListener("keydown", bubbledKeydown);
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
+test("readonly extract hybrid editor keeps unmatched keydowns inside CodeMirror", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "front";
+    const bubbledKeydown = jest.fn();
+    container.addEventListener("keydown", bubbledKeydown);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 0,
+                    plugin: createMinimalPlugin(),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editor = container.querySelector<HTMLElement>(".cm-content");
+        expect(editor).not.toBeNull();
+        const event = new KeyboardEvent("keydown", {
+            bubbles: true,
+            cancelable: true,
+            code: "KeyE",
+            key: "e",
+        });
+
+        act(() => {
+            editor?.dispatchEvent(event);
+        });
+
+        expect(bubbledKeydown).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBe(false);
+        expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+    } finally {
+        container.removeEventListener("keydown", bubbledKeydown);
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
+test("readonly extract hybrid editor handles review shortcuts without bubbling", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "front";
+    const onAnswer = jest.fn();
+    const bubbledKeydown = jest.fn();
+    container.addEventListener("keydown", bubbledKeydown);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 0,
+                    onAnswer,
+                    plugin: createMinimalPlugin(),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editor = container.querySelector<HTMLElement>(".cm-content");
+        expect(editor).not.toBeNull();
+        const event = new KeyboardEvent("keydown", {
+            bubbles: true,
+            cancelable: true,
+            code: "Digit1",
+            key: "1",
+        });
+
+        act(() => {
+            editor?.dispatchEvent(event);
+        });
+
+        expect(onAnswer).toHaveBeenCalledWith(0);
+        expect(bubbledKeydown).not.toHaveBeenCalled();
+    } finally {
+        container.removeEventListener("keydown", bubbledKeydown);
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
+test("readonly extract hybrid editor blocks official editor hotkeys", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "front";
+    const onUpdateExtractContext = jest.fn();
+    const bubbledKeydown = jest.fn();
+    container.addEventListener("keydown", bubbledKeydown);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 0,
+                    onUpdateExtractContext,
+                    plugin: createMinimalPlugin(),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editor = container.querySelector<HTMLElement>(".cm-content");
+        expect(editor).not.toBeNull();
+        const event = new KeyboardEvent("keydown", {
+            bubbles: true,
+            cancelable: true,
+            code: "KeyB",
+            ctrlKey: true,
+            key: "b",
+        });
+
+        act(() => {
+            editor?.dispatchEvent(event);
+        });
+
+        expect(onUpdateExtractContext).not.toHaveBeenCalled();
+        expect(bubbledKeydown).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBe(true);
+        expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+    } finally {
+        container.removeEventListener("keydown", bubbledKeydown);
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
+test("readonly extract hybrid editor leaves modifier-only keydowns to CodeMirror", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "front";
+    const onUpdateExtractContext = jest.fn();
+    const bubbledKeydown = jest.fn();
+    container.addEventListener("keydown", bubbledKeydown);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 0,
+                    onUpdateExtractContext,
+                    plugin: createMinimalPlugin(true),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editor = container.querySelector<HTMLElement>(".cm-content");
+        expect(editor).not.toBeNull();
+        const event = new KeyboardEvent("keydown", {
+            bubbles: true,
+            cancelable: true,
+            code: "AltLeft",
+            altKey: true,
+            key: "Alt",
+        });
+
+        act(() => {
+            editor?.dispatchEvent(event);
+        });
+
+        expect(onUpdateExtractContext).not.toHaveBeenCalled();
+        expect(bubbledKeydown).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBe(false);
+        expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+    } finally {
+        container.removeEventListener("keydown", bubbledKeydown);
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
+test("readonly extract Alt+E enters edit mode from CodeMirror without bubbling", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "front";
+    const bubbledKeydown = jest.fn();
+    container.addEventListener("keydown", bubbledKeydown);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 0,
+                    plugin: createMinimalPlugin(),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editor = container.querySelector<HTMLElement>(".cm-content");
+        expect(editor).not.toBeNull();
+        const event = new KeyboardEvent("keydown", {
+            altKey: true,
+            bubbles: true,
+            cancelable: true,
+            code: "KeyE",
+            key: "e",
+        });
+
+        act(() => {
+            editor?.dispatchEvent(event);
+        });
+        await flushEffects();
+
+        expect(bubbledKeydown).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBe(true);
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+    } finally {
+        container.removeEventListener("keydown", bubbledKeydown);
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
+test("extract hybrid editor runs matching text command hotkeys before edit-mode exit", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "make extract";
+    const context = createAutoExtractContext(markdown);
+    const onUpdateExtractContext = jest.fn();
+    const plugin = {
+        ...createMinimalPlugin(),
+        app: {
+            commands: {
+                commands: {
+                    "syro:srs-toggle-review-edit-mode": {
+                        hotkeys: [{ modifiers: ["Alt"], key: "E" }],
+                    },
+                },
+            },
+            hotkeyManager: {
+                customKeys: {
+                    "syro:create-extract-from-selection": [{ modifiers: ["Alt"], key: "E" }],
+                },
+            },
+        },
+    } as unknown as SRPlugin;
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin,
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    editModeToggleToken: 0,
+                }),
+            );
+        });
+        await flushEffects();
+        await flushEffects();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin,
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    editModeToggleToken: 1,
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editorDom = container.querySelector<HTMLElement>(".cm-editor");
+        const view = editorDom ? EditorView.findFromDOM(editorDom) : null;
+        expect(view).not.toBeNull();
+        act(() => {
+            view?.dispatch({
+                selection: EditorSelection.range(0, markdown.length),
+            });
+        });
+
+        const content = container.querySelector<HTMLElement>(".cm-content");
+        act(() => {
+            content?.dispatchEvent(
+                new KeyboardEvent("keydown", { key: "e", altKey: true, bubbles: true }),
+            );
+        });
+        await flushEffects();
+
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+        expect(onUpdateExtractContext).toHaveBeenCalled();
+        expect(onUpdateExtractContext.mock.calls.at(-1)?.[0].markdown).toBe(
+            "{{ir::make extract}}",
+        );
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
+test("extract hybrid editor applies customized official editor hotkeys", async () => {
+    const debugSpy = jest.spyOn(console, "debug").mockImplementation(() => undefined);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "code";
+    const context = createAutoExtractContext(markdown);
+    const onUpdateExtractContext = jest.fn();
+    const plugin = {
+        ...createMinimalPlugin(),
+        app: {
+            hotkeyManager: {
+                customKeys: {
+                    "editor:toggle-inline-code": [{ modifiers: ["Alt"], key: "I" }],
+                },
+            },
+        },
+    } as unknown as SRPlugin;
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin,
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    editModeToggleToken: 0,
+                }),
+            );
+        });
+        await flushEffects();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin,
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    editModeToggleToken: 1,
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editorDom = container.querySelector<HTMLElement>(".cm-editor");
+        const view = editorDom ? EditorView.findFromDOM(editorDom) : null;
+        expect(view).not.toBeNull();
+        act(() => {
+            view?.dispatch({
+                selection: EditorSelection.range(0, markdown.length),
+            });
+        });
+
+        const content = container.querySelector<HTMLElement>(".cm-content");
+        act(() => {
+            content?.dispatchEvent(
+                new KeyboardEvent("keydown", { key: "i", altKey: true, bubbles: true }),
+            );
+        });
+        await flushEffects();
+
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+        expect(onUpdateExtractContext.mock.calls.at(-1)?.[0].markdown).toBe("`code`");
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+        debugSpy.mockRestore();
+    }
+});
+
+test("extract hybrid editor handles official editor hotkeys before a document capture listener blocks target delivery", async () => {
+    const debugSpy = jest.spyOn(console, "debug").mockImplementation(() => undefined);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "bold";
+    const context = createAutoExtractContext(markdown);
+    const onUpdateExtractContext = jest.fn();
+    const plugin = {
+        ...createMinimalPlugin(),
+        app: {
+            hotkeyManager: {
+                customKeys: {
+                    "editor:toggle-bold": [{ modifiers: ["Mod"], key: "B" }],
+                },
+            },
+        },
+    } as unknown as SRPlugin;
+    const globalCaptureBlocker = (event: KeyboardEvent) => {
+        if (event.ctrlKey && event.key.toLowerCase() === "b") {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+        }
+    };
+
+    document.addEventListener("keydown", globalCaptureBlocker, true);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin,
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    editModeToggleToken: 0,
+                }),
+            );
+        });
+        await flushEffects();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin,
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    editModeToggleToken: 1,
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editorDom = container.querySelector<HTMLElement>(".cm-editor");
+        const view = editorDom ? EditorView.findFromDOM(editorDom) : null;
+        expect(view).not.toBeNull();
+        act(() => {
+            view?.dispatch({
+                selection: EditorSelection.range(0, markdown.length),
+            });
+        });
+
+        const content = container.querySelector<HTMLElement>(".cm-content");
+        const event = new KeyboardEvent("keydown", {
+            bubbles: true,
+            cancelable: true,
+            ctrlKey: true,
+            key: "b",
+        });
+        act(() => {
+            content?.dispatchEvent(event);
+        });
+        await flushEffects();
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(onUpdateExtractContext.mock.calls.at(-1)?.[0].markdown).toBe("**bold**");
+    } finally {
+        document.removeEventListener("keydown", globalCaptureBlocker, true);
+        act(() => root.unmount());
+        container.remove();
+        debugSpy.mockRestore();
+    }
+});
+
+test("extract hybrid editor logs failed text commands without falling through to edit exit", async () => {
+    const debugSpy = jest.spyOn(console, "debug").mockImplementation(() => undefined);
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "{{ir::这是一句}}话";
+    const context = createAutoExtractContext(markdown);
+    const from = markdown.indexOf("这");
+    const plugin = {
+        ...createMinimalPlugin(),
+        app: {
+            commands: {
+                commands: {
+                    "syro:srs-toggle-review-edit-mode": {
+                        hotkeys: [{ modifiers: ["Alt"], key: "E" }],
+                    },
+                },
+            },
+            hotkeyManager: {
+                customKeys: {
+                    "syro:create-extract-from-selection": [{ modifiers: ["Alt"], key: "E" }],
+                },
+            },
+        },
+    } as unknown as SRPlugin;
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin,
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    editModeToggleToken: 0,
+                }),
+            );
+        });
+        await flushEffects();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin,
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    editModeToggleToken: 1,
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editorDom = container.querySelector<HTMLElement>(".cm-editor");
+        const view = editorDom ? EditorView.findFromDOM(editorDom) : null;
+        expect(view).not.toBeNull();
+        act(() => {
+            view?.dispatch({
+                selection: EditorSelection.range(from, markdown.length),
+            });
+        });
+
+        const content = container.querySelector<HTMLElement>(".cm-content");
+        act(() => {
+            content?.dispatchEvent(
+                new KeyboardEvent("keydown", { key: "e", altKey: true, bubbles: true }),
+            );
+        });
+        await flushEffects();
+
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+        expect(errorSpy).toHaveBeenCalledWith(
+            "[SR-HotkeyBridge] command-failed",
+            expect.objectContaining({
+                commandId: "syro:create-extract-from-selection",
+                reason: "command-returned-false",
+            }),
+        );
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+        debugSpy.mockRestore();
+        errorSpy.mockRestore();
+    }
+});
+
 test("editing mode does not add a left border indicator", () => {
     const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
 
     expect(css).not.toMatch(/\.sr-card-content-area\.sr-is-editing\s*\{[^}]*border-left/s);
 });
 
-test("exit edit button uses the show-answer button typography with a custom base color", () => {
+test("exit edit button uses show-answer typography without inheriting show-answer font color", () => {
     const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
 
     expect(css).toMatch(
-        /\.sr-exit-edit-btn\s*\{[^}]*background-color:\s*#496860\s*!important/s,
+        /\.sr-show-answer-btn\.sr-exit-edit-btn\s*\{[^}]*background-color:\s*rgba\(30,\s*76,\s*89,\s*0\.1\)\s*!important/s,
+    );
+    expect(css).toMatch(
+        /\.sr-show-answer-btn\.sr-exit-edit-btn\s*\{[^}]*border-color:\s*rgba\(39,\s*98,\s*115,\s*0\.2\)\s*!important/s,
+    );
+    expect(css).toMatch(
+        /\.sr-show-answer-btn\.sr-exit-edit-btn:hover\s*\{[^}]*background-color:\s*rgba\(39,\s*98,\s*115,\s*0\.2\)\s*!important/s,
+    );
+    expect(css).toMatch(
+        /\.sr-show-answer-btn\.sr-exit-edit-btn\s*\{[^}]*color:\s*#1e4c59\s*!important/s,
+    );
+    expect(css).toMatch(
+        /\.theme-dark\s+\.sr-show-answer-btn\.sr-exit-edit-btn\s*\{[^}]*color:\s*#ffffff\s*!important/s,
     );
     expect(css).not.toMatch(/\.sr-exit-edit-btn\s*\{[^}]*font-size/s);
     expect(css).not.toMatch(/\.sr-exit-edit-btn\s+\.sr-linear-btn-icon-wrapper/s);
+    expect(css).not.toMatch(/\.sr-exit-edit-btn\s+\.sr-kbd/s);
+    expect(css).toMatch(/\.sr-kbd\s*\{[^}]*font-family:\s*var\(--font-monospace\)/s);
     expect(css).toMatch(
         /\.sr-show-answer-btn\s*\{[^}]*font-size:\s*calc\(var\(--syro-desktop-review-button-label-font-size,\s*12px\)\s*\+\s*2px\)/s,
     );

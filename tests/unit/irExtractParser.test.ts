@@ -2,6 +2,7 @@ import {
     parseIrExtracts,
     removeExtractWrapperKeepInnerContent,
     replaceExtractInnerMarkdown,
+    selectionContainsIrExtractBoundarySyntax,
     stripIrExtractSyntax,
     wrapSelectionAsExtract,
 } from "src/util/irExtractParser";
@@ -75,6 +76,25 @@ describe("irExtractParser", () => {
         const wrapped = wrapSelectionAsExtract(text, from, to);
 
         expect(wrapped.text).toBe("a {{ir::{{ir::one}}}} b");
+    });
+
+    test("allows selections that contain complete existing IR wrappers", () => {
+        const text = "before {{ir::one}} after";
+
+        expect(selectionContainsIrExtractBoundarySyntax(text, text.indexOf("{{ir::"), text.indexOf(" after"))).toBe(
+            false,
+        );
+    });
+
+    test("blocks selections that contain only a partial IR boundary", () => {
+        const text = "before {{ir::one}} after";
+
+        expect(selectionContainsIrExtractBoundarySyntax(text, text.indexOf("one"), text.indexOf(" after"))).toBe(
+            true,
+        );
+        expect(
+            selectionContainsIrExtractBoundarySyntax(text, text.indexOf("{{ir::"), text.indexOf("one") + 1),
+        ).toBe(true);
     });
 
     test("wraps only the selected inner text when selecting inside an existing extract", () => {

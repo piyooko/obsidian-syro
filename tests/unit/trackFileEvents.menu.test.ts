@@ -1,11 +1,12 @@
 import { TFile } from "obsidian";
-import { addFileMenuEvt } from "src/Events/trackFileEvents";
+import { addFileMenuEvt, addInlineTitleDeckEntryMenuEvt } from "src/Events/trackFileEvents";
 import { t } from "src/lang/helpers";
 
 class FakeMenuItem {
     title = "";
     icon = "";
     checked = false;
+    submenuCreated = false;
     submenu = new FakeMenu();
     callback: (() => Promise<void> | void) | null = null;
 
@@ -25,6 +26,7 @@ class FakeMenuItem {
     }
 
     setSubmenu(): FakeMenu {
+        this.submenuCreated = true;
         return this.submenu;
     }
 
@@ -60,6 +62,57 @@ function createMarkdownFile(path = "摘录测试.md"): TFile {
 }
 
 describe("trackFileEvents auto extract menu", () => {
+    test("inline title deck entry menu keeps smart slice submenu and track note only at top level", async () => {
+        const file = createMarkdownFile();
+        const plugin = {
+            isSyroDataReady: jest.fn(() => true),
+            noteReviewStore: { isTracked: jest.fn(() => false) },
+            getAutoExtractRuleForPath: jest.fn(() => null),
+            hasAutoExtractRuleForFile: jest.fn(() => false),
+            setAutoExtractAllHeadings: jest.fn(() => Promise.resolve()),
+            setAutoExtractHeadingLevel: jest.fn(() => Promise.resolve()),
+            disableAutoExtractRule: jest.fn(() => Promise.resolve(true)),
+            trackNoteFromMenu: jest.fn(() => Promise.resolve()),
+            untrackNoteFromMenu: jest.fn(() => Promise.resolve()),
+        };
+        const menu = new FakeMenu();
+
+        addInlineTitleDeckEntryMenuEvt(plugin as any, menu as any, file);
+
+        const menuItems = menu.items.filter(
+            (item): item is FakeMenuItem => item instanceof FakeMenuItem,
+        );
+        expect(menu.items).toHaveLength(2);
+        expect(menuItems.map((item) => item.title)).toEqual([
+            t("AUTO_EXTRACT_MENU_TITLE"),
+            t("MENU_TRACK_NOTE"),
+        ]);
+        expect(menuItems.map((item) => item.icon)).toEqual(["list-tree", "SpacedRepIcon"]);
+        expect(menuItems[0].submenuCreated).toBe(true);
+
+        const submenuItems = menuItems[0].submenu.items.filter(
+            (item): item is FakeMenuItem => item instanceof FakeMenuItem,
+        );
+        expect(submenuItems.slice(0, 7).map((item) => item.title)).toEqual([
+            t("AUTO_EXTRACT_ALL_HEADINGS"),
+            t("AUTO_EXTRACT_BY_HEADING_LEVEL", { level: 1 }),
+            t("AUTO_EXTRACT_BY_HEADING_LEVEL", { level: 2 }),
+            t("AUTO_EXTRACT_BY_HEADING_LEVEL", { level: 3 }),
+            t("AUTO_EXTRACT_BY_HEADING_LEVEL", { level: 4 }),
+            t("AUTO_EXTRACT_BY_HEADING_LEVEL", { level: 5 }),
+            t("AUTO_EXTRACT_BY_HEADING_LEVEL", { level: 6 }),
+        ]);
+
+        await submenuItems[0].callback?.();
+        await submenuItems[2].callback?.();
+        await menuItems[1].callback?.();
+
+        expect(plugin.setAutoExtractAllHeadings).toHaveBeenCalledWith(file, true);
+        expect(plugin.setAutoExtractHeadingLevel).toHaveBeenCalledWith(file, 2, true);
+        expect(plugin.trackNoteFromMenu).toHaveBeenCalledWith(file);
+        expect(plugin.untrackNoteFromMenu).not.toHaveBeenCalled();
+    });
+
     test("shows all-heading item before H1-H6 with checked state", async () => {
         const file = createMarkdownFile();
         const plugin = {

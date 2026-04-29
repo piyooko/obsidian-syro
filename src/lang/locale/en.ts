@@ -197,6 +197,7 @@ export default normalizeSentenceCaseLocale({
     EXTRACT_REVIEW_AGAIN: "Again",
     EXTRACT_REVIEW_GOOD: "Good",
     EXTRACT_REVIEW_SET_DATE: "Set",
+    EXTRACT_REVIEW_SET_DATE_INTERVAL_HINT: "${interval}d",
     EXTRACT_REVIEW_GRADUATE: "Graduate",
     EXTRACT_REVIEW_PENDING_GRADUATE: "Marked for graduation. Ctrl+Z to undo",
     EXTRACT_RENDER_DEBUG_TITLE: "Extract render is still waiting",
@@ -621,6 +622,7 @@ export default normalizeSentenceCaseLocale({
     CMD_NOTE_POSTPONED: "This note has been postponed ${days} days",
     CMD_GLOBAL_SYNC_CARDS: "Repair tracked cards (Clean ghost cards)",
     CMD_CREATE_EXTRACT_FROM_SELECTION: "Create extract from selection",
+    CMD_TOGGLE_REVIEW_EDIT_MODE: "Toggle review edit mode",
     CMD_CREATE_CLOZE_SAME_LEVEL: "Create Cloze (Same Level)",
     CMD_CREATE_CLOZE_NEW_LEVEL: "Create Cloze (New Level)",
 
@@ -1162,6 +1164,7 @@ export default normalizeSentenceCaseLocale({
     UI_ITALIC_KEY_HINT: "Ctrl+I Italic",
     UI_CLOZE_KEY_HINT: "Alt+Shift+C Cloze",
     UI_EDIT_TOGGLE_KEY_HINT: "Alt+E",
+    UI_EDIT_TOGGLE_KEY_UNSET: "No shortcut set",
     UI_EXIT_KEY_HINT: "Alt+E Exit",
     WMS_IMP_MIN_ERROR: "Please enter a value between 0.1 and 5.0.",
     WMS_IMP_MAX_ERROR: "Please enter a value between 0.1 and 10.0.",

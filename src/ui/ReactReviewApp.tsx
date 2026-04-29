@@ -5,6 +5,10 @@ import { App, Component, WorkspaceLeaf } from "obsidian";
 import type SRPlugin from "src/main";
 import { FlashcardReviewMode, IFlashcardReviewSequencer } from "src/FlashcardReviewSequencer";
 import { ReviewSession, type ReviewSessionView } from "./containers/ReviewSession";
+import {
+    REVIEW_EDIT_MODE_TOGGLE_EVENT,
+    type ReviewEditModeToggleDetail,
+} from "./reviewEditModeEvents";
 
 export class ReactReviewApp {
     private plugin: SRPlugin;
@@ -58,6 +62,7 @@ export class ReactReviewApp {
                 onClose={this.onCloseCallback}
                 initialView={this.initialView}
                 initialTargetDeckPath={this.initialTargetDeckPath}
+                editModeRequestTarget={this.containerEl}
             />,
         );
     }
@@ -96,8 +101,19 @@ export class ReactReviewApp {
                     onClose={this.onCloseCallback}
                     initialView={this.initialView}
                     initialTargetDeckPath={this.initialTargetDeckPath}
+                    editModeRequestTarget={this.containerEl}
                 />,
             );
         }
+    }
+
+    requestToggleReviewEditMode(): boolean {
+        const detail: ReviewEditModeToggleDetail = { handled: false };
+        this.containerEl.dispatchEvent(
+            new CustomEvent<ReviewEditModeToggleDetail>(REVIEW_EDIT_MODE_TOGGLE_EVENT, {
+                detail,
+            }),
+        );
+        return detail.handled;
     }
 }

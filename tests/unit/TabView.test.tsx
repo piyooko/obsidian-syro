@@ -1,9 +1,22 @@
 const mockReactReviewAppInstances: Array<{
     args: unknown[];
     mount: jest.Mock;
+    requestToggleReviewEditMode: jest.Mock;
     unmount: jest.Mock;
     remountSession: jest.Mock;
 }> = [];
+const mockScopeInstances: Array<{
+    register: jest.Mock;
+    registered: Array<{
+        callback: (event: KeyboardEvent) => boolean;
+        key: string;
+        modifiers: string[];
+        token: unknown;
+    }>;
+    unregister: jest.Mock;
+}> = [];
+const mockRunResolvedHybridEditorHotkeyCommand = jest.fn();
+const mockResolveHybridEditorHotkeyRegistry = jest.fn();
 
 jest.mock("src/FlashcardReviewSequencer", () => ({
     FlashcardReviewMode: {
@@ -17,12 +30,20 @@ jest.mock("src/ui/ReactReviewApp", () => ({
         const instance = {
             args,
             mount: jest.fn(),
+            requestToggleReviewEditMode: jest.fn(() => true),
             unmount: jest.fn(),
             remountSession: jest.fn(),
         };
         mockReactReviewAppInstances.push(instance);
         return instance;
     }),
+}));
+
+jest.mock("src/editor/obsidianHotkeyBridge", () => ({
+    resolveHybridEditorHotkeyRegistry: (...args: unknown[]) =>
+        mockResolveHybridEditorHotkeyRegistry(...args),
+    runResolvedHybridEditorHotkeyCommand: (...args: unknown[]) =>
+        mockRunResolvedHybridEditorHotkeyCommand(...args),
 }));
 
 jest.mock("obsidian", () => {
@@ -59,10 +80,32 @@ jest.mock("obsidian", () => {
         }
     }
 
+    class Scope {
+        public registered: Array<{
+            callback: (event: KeyboardEvent) => boolean;
+            key: string;
+            modifiers: string[];
+            token: unknown;
+        }> = [];
+        public register = jest.fn(
+            (modifiers: string[], key: string, callback: (event: KeyboardEvent) => boolean) => {
+                const token = { key, modifiers };
+                this.registered.push({ callback, key, modifiers, token });
+                return token;
+            },
+        );
+        public unregister = jest.fn();
+
+        constructor() {
+            mockScopeInstances.push(this);
+        }
+    }
+
     class WorkspaceLeaf {}
 
     return {
         ItemView,
+        Scope,
         WorkspaceLeaf,
     };
 });
@@ -73,6 +116,27 @@ import { TabView } from "src/ui/views/TabView";
 describe("TabView", () => {
     beforeEach(() => {
         mockReactReviewAppInstances.length = 0;
+        mockScopeInstances.length = 0;
+        mockRunResolvedHybridEditorHotkeyCommand.mockReset();
+        mockResolveHybridEditorHotkeyRegistry.mockReset();
+        mockResolveHybridEditorHotkeyRegistry.mockReturnValue({
+            invalidHotkeys: [],
+            noHotkeyCommands: [],
+            officialEditorCommands: [],
+            supported: [
+                {
+                    action: "bold",
+                    commandId: "editor:toggle-bold",
+                    commandIds: ["editor:toggle-bold"],
+                    hotkeys: [{ modifiers: ["Mod"], key: "B" }],
+                    source: "default",
+                    supported: true,
+                },
+            ],
+            syroCommands: [],
+            unsupported: [],
+        });
+        mockRunResolvedHybridEditorHotkeyCommand.mockReturnValue(true);
     });
 
     function createLeaf() {
@@ -144,4 +208,55 @@ describe("TabView", () => {
             "folder/note",
         );
     });
+
+    it("does not register hybrid editor hotkeys into the Obsidian Scope", async () => {
+        const sequencer = { id: "single-note" } as never;
+        const loader = jest.fn(async () => ({
+            reviewSequencer: sequencer,
+            mode: FlashcardReviewMode.Review,
+            initialView: "review" as const,
+        }));
+        const plugin = {
+            app: { hotkeyManager: {}, workspace: {} },
+            data: {
+                settings: {
+                    showRuntimeDebugMessages: true,
+                },
+            },
+            savePluginData: jest.fn(async () => {}),
+        };
+        const view = new TabView(createLeaf() as never, plugin as never, loader);
+        await view.onOpen();
+
+        expect(mockScopeInstances).toHaveLength(0);
+        expect(mockResolveHybridEditorHotkeyRegistry).not.toHaveBeenCalled();
+        expect(mockRunResolvedHybridEditorHotkeyCommand).not.toHaveBeenCalled();
+    });
+
+    it("toggles review edit mode without registering hybrid hotkey scope handlers", async () => {
+        const loader = jest.fn(async () => ({
+            reviewSequencer: { id: "single-note" } as never,
+            mode: FlashcardReviewMode.Review,
+            initialView: "review" as const,
+        }));
+        const plugin = {
+            app: { hotkeyManager: {}, workspace: {} },
+            data: {
+                settings: {
+                    showRuntimeDebugMessages: true,
+                },
+            },
+            savePluginData: jest.fn(async () => {}),
+        };
+        const view = new TabView(createLeaf() as never, plugin as never, loader);
+        await view.onOpen();
+
+        expect(view.requestToggleReviewEditMode()).toBe(true);
+
+        expect(mockReactReviewAppInstances[0].requestToggleReviewEditMode).toHaveBeenCalledTimes(1);
+        expect(mockScopeInstances).toHaveLength(0);
+        expect(mockResolveHybridEditorHotkeyRegistry).not.toHaveBeenCalled();
+        expect(mockRunResolvedHybridEditorHotkeyCommand).not.toHaveBeenCalled();
+    });
+
 });

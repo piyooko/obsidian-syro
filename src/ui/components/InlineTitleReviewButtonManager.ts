@@ -249,6 +249,7 @@ export class InlineTitleReviewButtonManager {
         const mainButtonEl = document.createElement("button");
         mainButtonEl.type = "button";
         mainButtonEl.className = MAIN_BUTTON_CLASS;
+        mainButtonEl.disabled = true;
 
         const mainIconEl = document.createElement("span");
         mainIconEl.className = "syro-inline-title-progress-icon";
@@ -303,6 +304,7 @@ export class InlineTitleReviewButtonManager {
 
         groupEl.addEventListener("contextmenu", (event) => {
             event.preventDefault();
+            event.stopPropagation();
             this.openMenu(mount, event);
         });
 
@@ -313,28 +315,43 @@ export class InlineTitleReviewButtonManager {
     private updateMountStats(mount: MountedInlineTitleButton): void {
         const token = mount.requestToken + 1;
         mount.requestToken = token;
+        const file = mount.file;
 
-        const { reviewableCount, totalCount } = this.plugin.getReadonlyNoteCardStats(mount.file);
-        if (this.destroyed || token !== mount.requestToken) {
-            return;
-        }
+        void this.plugin
+            .getReadonlyNoteLocalCardStats(file)
+            .then(({ reviewableCount, totalCount }) => {
+                if (
+                    this.destroyed ||
+                    token !== mount.requestToken ||
+                    mount.file !== file ||
+                    !mount.wrapperEl.isConnected
+                ) {
+                    return;
+                }
 
-        mount.countEl.textContent = `${reviewableCount}/${totalCount}`;
-        mount.mainButtonEl.disabled = totalCount === 0;
+                mount.countEl.textContent = `${reviewableCount}/${totalCount}`;
+                mount.mainButtonEl.disabled = totalCount === 0;
 
-        const mainLabel =
-            totalCount === 0
-                ? t("INLINE_TITLE_CARD_NO_CARDS")
-                : t("INLINE_TITLE_CARD_PROGRESS_TOOLTIP", {
-                      reviewableCount: reviewableCount.toString(),
-                      totalCount: totalCount.toString(),
-                  });
-        const menuLabel = t("INLINE_TITLE_CARD_MENU_TOOLTIP");
+                const mainLabel =
+                    totalCount === 0
+                        ? t("INLINE_TITLE_CARD_NO_CARDS")
+                        : t("INLINE_TITLE_CARD_PROGRESS_TOOLTIP", {
+                              reviewableCount: reviewableCount.toString(),
+                              totalCount: totalCount.toString(),
+                          });
+                const menuLabel = t("INLINE_TITLE_CARD_MENU_TOOLTIP");
 
-        mount.mainButtonEl.setAttribute("aria-label", mainLabel);
-        mount.menuButtonEl.setAttribute("aria-label", menuLabel);
-        setTooltip(mount.mainButtonEl, mainLabel, { placement: "top" });
-        setTooltip(mount.menuButtonEl, menuLabel, { placement: "top" });
+                mount.mainButtonEl.setAttribute("aria-label", mainLabel);
+                mount.menuButtonEl.setAttribute("aria-label", menuLabel);
+                setTooltip(mount.mainButtonEl, mainLabel, { placement: "top" });
+                setTooltip(mount.menuButtonEl, menuLabel, { placement: "top" });
+            })
+            .catch((error: unknown) => {
+                if (this.destroyed || token !== mount.requestToken) {
+                    return;
+                }
+                console.warn("[SR] Failed to update inline-title review stats:", error);
+            });
     }
 
     private openMenu(mount: MountedInlineTitleButton, event: MouseEvent): void {

@@ -27,6 +27,7 @@ interface SelectionLike extends Partial<SelectionRangeLike> {
 
 interface TokenBuildOptions {
     blocks?: HybridMarkdownBlock[];
+    revealFormatting?: boolean;
 }
 
 function isEscaped(text: string, index: number): boolean {
@@ -102,6 +103,7 @@ function pushFormattingToken(
     hiddenByDefault = true,
     activeFrom = from,
     activeTo = to,
+    revealFormatting = true,
 ): void {
     if (from >= to) {
         return;
@@ -109,7 +111,9 @@ function pushFormattingToken(
     tokens.push({
         className,
         from,
-        hidden: hiddenByDefault ? !isFormattingGroupActive(activeFrom, activeTo, selection) : false,
+        hidden: hiddenByDefault
+            ? !(revealFormatting && isFormattingGroupActive(activeFrom, activeTo, selection))
+            : false,
         to,
     });
 }
@@ -166,6 +170,7 @@ function collectLineFormattingTokens(
     selection: EditorSelection | SelectionLike,
     skipRanges: Array<Pick<HybridMarkdownBlock, "from" | "to">>,
     tokens: HybridInlineTokenForTest[],
+    revealFormatting: boolean,
 ): void {
     const linePattern = /.*(?:\r?\n|$)/g;
     let match: RegExpExecArray | null;
@@ -195,6 +200,10 @@ function collectLineFormattingTokens(
                 lineFrom + heading[1].length,
                 lineFrom + heading[1].length + heading[2].length,
                 selection,
+                true,
+                lineFrom + heading[1].length,
+                lineFrom + heading[1].length + heading[2].length,
+                revealFormatting,
             );
         }
 
@@ -223,6 +232,9 @@ function collectLineFormattingTokens(
                 lineFrom + quote[1].length + quote[2].length,
                 selection,
                 false,
+                lineFrom + quote[1].length,
+                lineFrom + quote[1].length + quote[2].length,
+                revealFormatting,
             );
         }
 
@@ -237,6 +249,7 @@ function collectStrongTokens(
     selection: EditorSelection | SelectionLike,
     skipRanges: Array<Pick<HybridMarkdownBlock, "from" | "to">>,
     tokens: HybridInlineTokenForTest[],
+    revealFormatting: boolean,
 ): void {
     const strongPattern = /\*\*([^*\n]+?)\*\*/g;
     let match: RegExpExecArray | null;
@@ -259,6 +272,7 @@ function collectStrongTokens(
             true,
             from,
             to,
+            revealFormatting,
         );
         pushMarkToken(tokens, "cm-strong", innerFrom, innerTo);
         pushFormattingToken(
@@ -270,6 +284,7 @@ function collectStrongTokens(
             true,
             from,
             to,
+            revealFormatting,
         );
     }
 }
@@ -279,6 +294,7 @@ function collectInlineCodeTokens(
     selection: EditorSelection | SelectionLike,
     skipRanges: Array<Pick<HybridMarkdownBlock, "from" | "to">>,
     tokens: HybridInlineTokenForTest[],
+    revealFormatting: boolean,
 ): void {
     const codePattern = /`([^`\n]+?)`/g;
     let match: RegExpExecArray | null;
@@ -299,6 +315,7 @@ function collectInlineCodeTokens(
             true,
             from,
             to,
+            revealFormatting,
         );
         pushMarkToken(tokens, "cm-inline-code", from + 1, to - 1);
         pushFormattingToken(
@@ -310,6 +327,7 @@ function collectInlineCodeTokens(
             true,
             from,
             to,
+            revealFormatting,
         );
     }
 }
@@ -319,6 +337,7 @@ function collectMarkdownLinkTokens(
     selection: EditorSelection | SelectionLike,
     skipRanges: Array<Pick<HybridMarkdownBlock, "from" | "to">>,
     tokens: HybridInlineTokenForTest[],
+    revealFormatting: boolean,
 ): void {
     const linkPattern = /\[([^\]\n]+?)\]\(([^)\n]+?)\)/g;
     let match: RegExpExecArray | null;
@@ -341,6 +360,7 @@ function collectMarkdownLinkTokens(
             true,
             from,
             to,
+            revealFormatting,
         );
         pushMarkToken(tokens, "cm-link", textFrom, textTo);
         pushFormattingToken(
@@ -352,6 +372,7 @@ function collectMarkdownLinkTokens(
             true,
             from,
             to,
+            revealFormatting,
         );
     }
 }
@@ -361,6 +382,7 @@ function collectWikiLinkTokens(
     selection: EditorSelection | SelectionLike,
     skipRanges: Array<Pick<HybridMarkdownBlock, "from" | "to">>,
     tokens: HybridInlineTokenForTest[],
+    revealFormatting: boolean,
 ): void {
     const wikiPattern = /\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/g;
     let match: RegExpExecArray | null;
@@ -386,6 +408,7 @@ function collectWikiLinkTokens(
             true,
             from,
             to,
+            revealFormatting,
         );
         pushMarkToken(tokens, "cm-link", displayFrom, displayTo);
         pushFormattingToken(
@@ -397,6 +420,7 @@ function collectWikiLinkTokens(
             true,
             from,
             to,
+            revealFormatting,
         );
     }
 }
@@ -473,13 +497,14 @@ export function collectHybridInlineTokensForTest(
 ): HybridInlineTokenForTest[] {
     const blocks = options.blocks ?? findHybridMarkdownBlocks(markdown);
     const skipRanges = blocks.filter((block) => block.renderMode === "widget");
+    const revealFormatting = options.revealFormatting ?? true;
     const tokens: HybridInlineTokenForTest[] = [];
 
-    collectLineFormattingTokens(markdown, selection, skipRanges, tokens);
-    collectStrongTokens(markdown, selection, skipRanges, tokens);
-    collectInlineCodeTokens(markdown, selection, skipRanges, tokens);
-    collectMarkdownLinkTokens(markdown, selection, skipRanges, tokens);
-    collectWikiLinkTokens(markdown, selection, skipRanges, tokens);
+    collectLineFormattingTokens(markdown, selection, skipRanges, tokens, revealFormatting);
+    collectStrongTokens(markdown, selection, skipRanges, tokens, revealFormatting);
+    collectInlineCodeTokens(markdown, selection, skipRanges, tokens, revealFormatting);
+    collectMarkdownLinkTokens(markdown, selection, skipRanges, tokens, revealFormatting);
+    collectWikiLinkTokens(markdown, selection, skipRanges, tokens, revealFormatting);
     collectBareReferenceTokens(markdown, skipRanges, tokens);
     addListDepthClasses(tokens, blocks);
 
@@ -492,9 +517,13 @@ export function collectHybridInlineDecorations(
     markdown: string,
     selection: EditorSelection,
     blocks?: HybridMarkdownBlock[],
+    options: Pick<TokenBuildOptions, "revealFormatting"> = {},
 ): DecorationSet {
     const builder = new RangeSetBuilder<Decoration>();
-    const tokens = collectHybridInlineTokensForTest(markdown, selection, { blocks });
+    const tokens = collectHybridInlineTokensForTest(markdown, selection, {
+        blocks,
+        revealFormatting: options.revealFormatting,
+    });
 
     for (const token of tokens) {
         if (token.widget) {

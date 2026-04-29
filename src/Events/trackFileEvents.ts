@@ -15,6 +15,72 @@ type SubmenuCapableMenuItem = {
     setChecked?: (checked: boolean) => unknown;
 };
 
+function addAutoExtractMenuItem(plugin: SRPlugin, menu: Menu, fileish: TFile): void {
+    menu.addItem((item) => {
+        item.setIcon("list-tree");
+        item.setTitle(t("AUTO_EXTRACT_MENU_TITLE"));
+
+        const submenu = (item as unknown as SubmenuCapableMenuItem).setSubmenu?.() ?? menu;
+        const activeRule = plugin.getAutoExtractRuleForPath(fileish.path);
+        const checkedLevels = new Set(
+            activeRule?.allHeadingLevels
+                ? [1, 2, 3, 4, 5, 6]
+                : (activeRule?.headingLevels ??
+                      (activeRule?.headingLevel !== undefined
+                          ? [activeRule.headingLevel]
+                          : [])),
+        );
+        const isAllHeadingsChecked = activeRule?.allHeadingLevels === true;
+
+        submenu.addItem((submenuItem) => {
+            submenuItem.setIcon("list-tree");
+            submenuItem.setTitle(t("AUTO_EXTRACT_ALL_HEADINGS"));
+            (submenuItem as unknown as SubmenuCapableMenuItem).setChecked?.(
+                isAllHeadingsChecked,
+            );
+            submenuItem.onClick(async () => {
+                await plugin.setAutoExtractAllHeadings(fileish, !isAllHeadingsChecked);
+                new Notice(
+                    isAllHeadingsChecked
+                        ? t("AUTO_EXTRACT_RULE_DISABLED")
+                        : t("AUTO_EXTRACT_RULE_ENABLED"),
+                );
+            });
+        });
+        submenu.addSeparator();
+
+        for (const level of [1, 2, 3, 4, 5, 6] as const) {
+            const isLevelChecked = checkedLevels.has(level);
+            submenu.addItem((submenuItem) => {
+                submenuItem.setIcon("heading");
+                submenuItem.setTitle(t("AUTO_EXTRACT_BY_HEADING_LEVEL", { level }));
+                (submenuItem as unknown as SubmenuCapableMenuItem).setChecked?.(
+                    isLevelChecked,
+                );
+                submenuItem.onClick(async () => {
+                    await plugin.setAutoExtractHeadingLevel(fileish, level, !isLevelChecked);
+                    new Notice(
+                        isLevelChecked
+                            ? t("AUTO_EXTRACT_RULE_DISABLED")
+                            : t("AUTO_EXTRACT_RULE_ENABLED"),
+                    );
+                });
+            });
+        }
+        if (plugin.hasAutoExtractRuleForFile(fileish)) {
+            submenu.addSeparator();
+            submenu.addItem((submenuItem) => {
+                submenuItem.setIcon("x");
+                submenuItem.setTitle(t("AUTO_EXTRACT_DISABLE"));
+                submenuItem.onClick(async () => {
+                    await plugin.disableAutoExtractRule(fileish);
+                    new Notice(t("AUTO_EXTRACT_RULE_DISABLED"));
+                });
+            });
+        }
+    });
+}
+
 export function hasAnkiClozeCandidate(fileText: string): boolean {
     return fileText.includes("{{c") || fileText.includes("{{C");
 }
@@ -497,74 +563,7 @@ export function addFileMenuEvt(plugin: SRPlugin, menu: Menu, fileish: TAbstractF
 
     if (fileish.extension === "md") {
         menu.addSeparator();
-        menu.addItem((item) => {
-            item.setIcon("list-tree");
-            item.setTitle(t("AUTO_EXTRACT_MENU_TITLE"));
-
-            const submenu =
-                (item as unknown as SubmenuCapableMenuItem).setSubmenu?.() ?? menu;
-            const activeRule = plugin.getAutoExtractRuleForPath(fileish.path);
-            const checkedLevels = new Set(
-                activeRule?.allHeadingLevels
-                    ? [1, 2, 3, 4, 5, 6]
-                    : (activeRule?.headingLevels ??
-                          (activeRule?.headingLevel !== undefined
-                              ? [activeRule.headingLevel]
-                              : [])),
-            );
-            const isAllHeadingsChecked = activeRule?.allHeadingLevels === true;
-
-            submenu.addItem((submenuItem) => {
-                submenuItem.setIcon("sparkles");
-                submenuItem.setTitle(t("AUTO_EXTRACT_ALL_HEADINGS"));
-                (submenuItem as unknown as SubmenuCapableMenuItem).setChecked?.(
-                    isAllHeadingsChecked,
-                );
-                submenuItem.onClick(async () => {
-                    await plugin.setAutoExtractAllHeadings(fileish, !isAllHeadingsChecked);
-                    new Notice(
-                        isAllHeadingsChecked
-                            ? t("AUTO_EXTRACT_RULE_DISABLED")
-                            : t("AUTO_EXTRACT_RULE_ENABLED"),
-                    );
-                });
-            });
-            submenu.addSeparator();
-
-            for (const level of [1, 2, 3, 4, 5, 6] as const) {
-                const isLevelChecked = checkedLevels.has(level);
-                submenu.addItem((submenuItem) => {
-                    submenuItem.setIcon("heading");
-                    submenuItem.setTitle(t("AUTO_EXTRACT_BY_HEADING_LEVEL", { level }));
-                    (submenuItem as unknown as SubmenuCapableMenuItem).setChecked?.(
-                        isLevelChecked,
-                    );
-                    submenuItem.onClick(async () => {
-                        await plugin.setAutoExtractHeadingLevel(
-                            fileish,
-                            level,
-                            !isLevelChecked,
-                        );
-                        new Notice(
-                            isLevelChecked
-                                ? t("AUTO_EXTRACT_RULE_DISABLED")
-                                : t("AUTO_EXTRACT_RULE_ENABLED"),
-                        );
-                    });
-                });
-            }
-            if (plugin.hasAutoExtractRuleForFile(fileish)) {
-                submenu.addSeparator();
-                submenu.addItem((submenuItem) => {
-                    submenuItem.setIcon("x");
-                    submenuItem.setTitle(t("AUTO_EXTRACT_DISABLE"));
-                    submenuItem.onClick(async () => {
-                        await plugin.disableAutoExtractRule(fileish);
-                        new Notice(t("AUTO_EXTRACT_RULE_DISABLED"));
-                    });
-                });
-            }
-        });
+        addAutoExtractMenuItem(plugin, menu, fileish);
         menu.addSeparator();
     }
 
@@ -585,6 +584,32 @@ export function addFileMenuEvt(plugin: SRPlugin, menu: Menu, fileish: TAbstractF
         item.setIcon("SpacedRepIcon");
         item.setTitle(t("MENU_TRACK_NOTE"));
         item.onClick(async () => {
+            await plugin.trackNoteFromMenu(fileish);
+        });
+    });
+}
+
+export function addInlineTitleDeckEntryMenuEvt(plugin: SRPlugin, menu: Menu, fileish: TFile) {
+    if (!(fileish instanceof TFile) || fileish.extension !== "md") {
+        return;
+    }
+
+    if (!plugin.isSyroDataReady() || !plugin.noteReviewStore) {
+        return;
+    }
+
+    addAutoExtractMenuItem(plugin, menu, fileish);
+
+    const isTracked = plugin.noteReviewStore.isTracked(fileish.path);
+    menu.addItem((item) => {
+        item.setIcon("SpacedRepIcon");
+        item.setTitle(isTracked ? t("MENU_UNTRACK_NOTE") : t("MENU_TRACK_NOTE"));
+        item.onClick(async () => {
+            if (isTracked) {
+                await plugin.untrackNoteFromMenu(fileish);
+                return;
+            }
+
             await plugin.trackNoteFromMenu(fileish);
         });
     });

@@ -67,6 +67,10 @@ export class TabView extends ItemView {
         await this.loadSession(nextSession);
     }
 
+    public requestToggleReviewEditMode(): boolean {
+        return this.reactApp?.requestToggleReviewEditMode() ?? false;
+    }
+
     private async loadSession(nextSession?: ReviewSessionLoadResult): Promise<void> {
         try {
             const loadedData = nextSession ?? (await this.loadReviewSequencerData());

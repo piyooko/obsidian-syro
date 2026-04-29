@@ -89,6 +89,7 @@ export interface ExtractReviewStats {
 }
 
 export type ExtractDeckNameResolver = (item: ExtractItem) => string;
+export type ExtractCandidateFilter = (item: ExtractItem) => boolean;
 
 export interface ExtractSyncResult {
     added: ExtractItem[];
@@ -851,11 +852,13 @@ export class ExtractStore {
         deckPath: string | null = null,
         limits?: { maxNew: number; maxDue: number },
         resolveDeckName?: ExtractDeckNameResolver,
+        canReviewExtract?: ExtractCandidateFilter,
     ): ExtractItem[] {
         const now = Date.now();
         const targetDeck = deckPath && deckPath !== "root" ? deckPath : null;
         const activeItems = Object.values(this.items).filter((item) => {
             if (item.stage !== "active") return false;
+            if (canReviewExtract && !canReviewExtract(item)) return false;
             if (!targetDeck) return true;
             const itemDeckName = resolveDeckName?.(item) ?? item.deckName;
             return itemDeckName === targetDeck || itemDeckName.startsWith(`${targetDeck}/`);
@@ -909,8 +912,14 @@ export class ExtractStore {
         deckPath: string | null = null,
         limits?: { maxNew: number; maxDue: number },
         resolveDeckName?: ExtractDeckNameResolver,
+        canReviewExtract?: ExtractCandidateFilter,
     ): ExtractReviewStats {
-        const candidates = this.getReviewCandidates(deckPath, limits, resolveDeckName);
+        const candidates = this.getReviewCandidates(
+            deckPath,
+            limits,
+            resolveDeckName,
+            canReviewExtract,
+        );
         const newCount = candidates.filter((item) => item.timesReviewed === 0 || item.nextReview === 0).length;
         const dueCount = candidates.length - newCount;
         return {

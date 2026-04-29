@@ -6,6 +6,7 @@ import {
     ViewPlugin,
     type ViewUpdate,
 } from "@codemirror/view";
+import { setExtractContextRangesEffect } from "src/editor/extract-context-decoration";
 import { parseIrExtracts, type IrExtractMatch } from "src/util/irExtractParser";
 
 const OUTER_INSET = 18;
@@ -27,8 +28,9 @@ export interface RenderExtract {
 }
 
 export interface IrExtractDecorationOptions {
+    canRevealSource?: (view: EditorView) => boolean;
     isLivePreviewHost?: (view: EditorView) => boolean;
-    getExcludedStarts?: () => ReadonlySet<number>;
+    getExcludedStarts?: (view: EditorView) => ReadonlySet<number>;
 }
 
 export interface MeasuredExtractBlock {
@@ -110,6 +112,13 @@ function isLivePreview(view: EditorView, options: IrExtractDecorationOptions = {
     return !!view.dom.closest(".is-live-preview") || options.isLivePreviewHost?.(view) === true;
 }
 
+function canRevealIrExtractSource(
+    view: EditorView,
+    options: IrExtractDecorationOptions = {},
+): boolean {
+    return options.canRevealSource?.(view) ?? true;
+}
+
 function selectionTouchesRange(
     selectionFrom: number,
     selectionTo: number,
@@ -134,7 +143,9 @@ export function findIrExtractEditingRoot(
         return match.start <= selectionFrom && match.end >= selectionTo;
     });
     if (containing.length > 0) {
-        return containing.sort((left, right) => left.end - left.start - (right.end - right.start))[0];
+        return containing.sort(
+            (left, right) => left.end - left.start - (right.end - right.start),
+        )[0];
     }
 
     return (
@@ -170,7 +181,9 @@ function findIrExtractDirectSourceMatches(
     selectionTo: number,
 ): IrExtractMatch[] {
     return matches
-        .filter((match) => selectionTouchesRange(selectionFrom, selectionTo, match.start, match.end))
+        .filter((match) =>
+            selectionTouchesRange(selectionFrom, selectionTo, match.start, match.end),
+        )
         .sort((left, right) => left.start - right.start || right.end - left.end);
 }
 
@@ -182,11 +195,12 @@ export function findIrExtractSourceMatchesAtPoint(
 ): IrExtractMatch[] {
     const byStart = new Map(matches.map((match) => [match.start, match]));
     return blocks
-        .filter((block) =>
-            x >= block.left &&
-            x <= block.left + block.width &&
-            y >= block.top &&
-            y <= block.top + block.height,
+        .filter(
+            (block) =>
+                x >= block.left &&
+                x <= block.left + block.width &&
+                y >= block.top &&
+                y <= block.top + block.height,
         )
         .map((block) => byStart.get(block.start))
         .filter((match): match is IrExtractMatch => match !== undefined)
@@ -221,15 +235,21 @@ function pickActiveIrExtractSourceMatch(
     }
 
     const byStart = new Map(matches.map((match) => [match.start, match]));
-    const referenceOffset = selectionFrom === selectionTo
-        ? selectionFrom
-        : Math.floor((selectionFrom + selectionTo) / 2);
+    const referenceOffset =
+        selectionFrom === selectionTo
+            ? selectionFrom
+            : Math.floor((selectionFrom + selectionTo) / 2);
 
     return candidates.sort((left, right) => {
         const leftDirect = selectionTouchesRange(selectionFrom, selectionTo, left.start, left.end)
             ? 1
             : 0;
-        const rightDirect = selectionTouchesRange(selectionFrom, selectionTo, right.start, right.end)
+        const rightDirect = selectionTouchesRange(
+            selectionFrom,
+            selectionTo,
+            right.start,
+            right.end,
+        )
             ? 1
             : 0;
         if (leftDirect !== rightDirect) {
@@ -332,7 +352,8 @@ export function getIrExtractWrappedBlockPrefix(
     const kind = getWrappedBlockKind(prefixMatch[0]);
     return {
         kind,
-        level: kind === "heading" ? lineInner.match(ATX_HEADING_INNER_PREFIX)?.[1].length : undefined,
+        level:
+            kind === "heading" ? lineInner.match(ATX_HEADING_INNER_PREFIX)?.[1].length : undefined,
         lineFrom: line.from,
         markerFrom,
         markerTo,
@@ -412,15 +433,26 @@ function createRenderExtracts(
 export function buildIrExtractRenderExtractsForTest(
     _text: string,
     matches: IrExtractMatch[],
-    options: { excludedStarts?: ReadonlySet<number> } = {},
-): Array<{ start: number; parentStart?: number }> {
-    return createRenderExtracts(matches, new Set(), options.excludedStarts).map((renderExtract) => ({
-        start: renderExtract.match.start,
-        parentStart: renderExtract.match.parentStart,
-    }));
+    options: {
+        excludedStarts?: ReadonlySet<number>;
+        revealSource?: boolean;
+        sourceStarts?: ReadonlySet<number>;
+    } = {},
+): Array<{ start: number; parentStart?: number; showSource: boolean }> {
+    const sourceStarts = options.revealSource === false ? new Set<number>() : options.sourceStarts;
+    return createRenderExtracts(matches, new Set(sourceStarts), options.excludedStarts).map(
+        (renderExtract) => ({
+            start: renderExtract.match.start,
+            parentStart: renderExtract.match.parentStart,
+            showSource: renderExtract.showSource,
+        }),
+    );
 }
 
-export function getIrExtractRenderRange(renderExtract: RenderExtract): { from: number; to: number } {
+export function getIrExtractRenderRange(renderExtract: RenderExtract): {
+    from: number;
+    to: number;
+} {
     return renderExtract.showSource
         ? { from: renderExtract.match.start, to: renderExtract.match.end }
         : { from: renderExtract.match.innerStart, to: renderExtract.match.innerEnd };
@@ -629,26 +661,22 @@ function buildIrExtractDecorations(
     }
 
     const text = view.state.doc.toString();
-    const excludedStarts = options.getExcludedStarts?.() ?? new Set<number>();
+    const excludedStarts = options.getExcludedStarts?.(view) ?? new Set<number>();
     const matches = parseIrExtracts(text);
     const visibleMatches = matches.filter((match) => !excludedStarts.has(match.start));
     const selection = view.state.selection.main;
-    const lineSourceMatches = findIrExtractSourceMatches(
-        text,
-        visibleMatches,
-        selection.from,
-        selection.to,
-    );
-    const activeDirectSourceMatches = findIrExtractDirectSourceMatches(
-        visibleMatches,
-        selection.from,
-        selection.to,
-    );
-    const pointSourceMatches = visibleMatches.filter((match) => pointSourceStarts.has(match.start));
+    const sourceRevealEnabled = canRevealIrExtractSource(view, options);
+    const lineSourceMatches = sourceRevealEnabled
+        ? findIrExtractSourceMatches(text, visibleMatches, selection.from, selection.to)
+        : [];
+    const activeDirectSourceMatches = sourceRevealEnabled
+        ? findIrExtractDirectSourceMatches(visibleMatches, selection.from, selection.to)
+        : [];
+    const pointSourceMatches = sourceRevealEnabled
+        ? visibleMatches.filter((match) => pointSourceStarts.has(match.start))
+        : [];
     const sourceMatches = uniqueIrExtractMatchesByStart(
-        lineSourceMatches.sort(
-            (left, right) => left.start - right.start || right.end - left.end,
-        ),
+        lineSourceMatches.sort((left, right) => left.start - right.start || right.end - left.end),
     );
     const activeSourceMatches = uniqueIrExtractMatchesByStart(
         [...activeDirectSourceMatches, ...pointSourceMatches].sort(
@@ -656,12 +684,14 @@ function buildIrExtractDecorations(
         ),
     );
     const sourceStarts = new Set(sourceMatches.map((match) => match.start));
-    const activeSourceMatch = pickActiveIrExtractSourceMatch(
-        visibleMatches,
-        activeSourceMatches,
-        selection.from,
-        selection.to,
-    );
+    const activeSourceMatch = sourceRevealEnabled
+        ? pickActiveIrExtractSourceMatch(
+              visibleMatches,
+              activeSourceMatches,
+              selection.from,
+              selection.to,
+          )
+        : null;
     const renderExtracts = createRenderExtracts(matches, sourceStarts, excludedStarts);
     const decorations: DecorationItem[] = [];
 
@@ -865,9 +895,7 @@ function mergeRectsByVisualLine(rects: DOMRect[]): DOMRect[] {
     for (const rect of sorted) {
         const row = rows.find((candidate) => rectsOverlapVertically(candidate, rect));
         if (!row) {
-            rows.push(
-                new DOMRect(rect.left, rect.top, rect.width, Math.max(1, rect.height)),
-            );
+            rows.push(new DOMRect(rect.left, rect.top, rect.width, Math.max(1, rect.height)));
             continue;
         }
 
@@ -1003,9 +1031,11 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             decorations: DecorationSet;
             private renderExtracts: RenderExtract[];
             private pointSourceStarts = new Set<number>();
+            private sourceRevealEnabled: boolean;
             private readonly overlay: HTMLElement;
 
             constructor(view: EditorView) {
+                this.sourceRevealEnabled = canRevealIrExtractSource(view, options);
                 const state = buildIrExtractDecorations(view, this.pointSourceStarts, options);
                 this.decorations = state.decorations;
                 this.renderExtracts = state.renderExtracts;
@@ -1017,34 +1047,43 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
 
             update(update: ViewUpdate): void {
                 let receivedPointSourceStarts = false;
+                let receivedExtractContextRanges = false;
                 for (const transaction of update.transactions) {
                     for (const effect of transaction.effects) {
                         if (effect.is(irExtractPointSourceStartsEffect)) {
                             this.pointSourceStarts = new Set(effect.value);
                             receivedPointSourceStarts = true;
                         }
+                        if (effect.is(setExtractContextRangesEffect)) {
+                            receivedExtractContextRanges = true;
+                        }
                     }
                 }
 
+                const nextSourceRevealEnabled = canRevealIrExtractSource(update.view, options);
+                const sourceRevealChanged = this.sourceRevealEnabled !== nextSourceRevealEnabled;
                 const shouldRebuild =
                     update.docChanged ||
                     update.viewportChanged ||
                     update.selectionSet ||
                     update.focusChanged ||
-                    receivedPointSourceStarts;
+                    receivedPointSourceStarts ||
+                    receivedExtractContextRanges ||
+                    sourceRevealChanged;
 
-                if (
-                    shouldRebuild
-                ) {
+                if (shouldRebuild) {
                     if (
                         !receivedPointSourceStarts &&
                         (update.docChanged ||
                             update.viewportChanged ||
                             update.selectionSet ||
-                            update.focusChanged)
+                            update.focusChanged ||
+                            receivedExtractContextRanges ||
+                            sourceRevealChanged)
                     ) {
                         this.pointSourceStarts = new Set();
                     }
+                    this.sourceRevealEnabled = nextSourceRevealEnabled;
                     const state = buildIrExtractDecorations(
                         update.view,
                         this.pointSourceStarts,
@@ -1076,15 +1115,20 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         const overlayBlocks = measureExtractBlocks(view, this.renderExtracts);
                         const selection = view.state.selection.main;
                         const matches = parseIrExtracts(view.state.doc.toString());
-                        const point = getSelectionPointInScrollCoordinates(view, selection);
+                        const sourceRevealEnabled = canRevealIrExtractSource(view, options);
+                        const point = sourceRevealEnabled
+                            ? getSelectionPointInScrollCoordinates(view, selection)
+                            : null;
                         return {
                             overlayBlocks,
-                            pointSourceStarts: findIrExtractSourceStartsAtSelectionPoint(
-                                matches,
-                                selection,
-                                overlayBlocks,
-                                point,
-                            ),
+                            pointSourceStarts: sourceRevealEnabled
+                                ? findIrExtractSourceStartsAtSelectionPoint(
+                                      matches,
+                                      selection,
+                                      overlayBlocks,
+                                      point,
+                                  )
+                                : [],
                             selectionFrom: selection.from,
                             selectionTo: selection.to,
                         };
@@ -1152,9 +1196,6 @@ const irExtractDecorationTheme = EditorView.baseTheme({
 });
 
 export function createIrExtractDecorationExtensions(_host: unknown = null): Extension[] {
-    const options =
-        _host && typeof _host === "object"
-            ? (_host as IrExtractDecorationOptions)
-            : {};
+    const options = _host && typeof _host === "object" ? (_host as IrExtractDecorationOptions) : {};
     return [createIrExtractDecorationPlugin(options), irExtractDecorationTheme];
 }

@@ -46,6 +46,10 @@ import {
     clearReviewMobileNavbarCover,
     detectBlockingMobileNavbar,
 } from "./reviewMobileChrome";
+import {
+    REVIEW_EDIT_MODE_TOGGLE_EVENT,
+    type ReviewEditModeToggleDetail,
+} from "../reviewEditModeEvents";
 
 // ==========================================
 // Types
@@ -54,6 +58,33 @@ import {
 export type ReviewSessionView = "deck-list" | "review";
 type ReviewEntrySource = "global-deck-list" | "manual-deck-click" | "in-note-auto-enter";
 type ActiveReviewItem = { kind: "card" } | { kind: "extract"; uuid: string };
+
+function isReviewHostLeafActive(plugin: SRPlugin, hostLeaf: WorkspaceLeaf): boolean {
+    const workspace = (
+        plugin.app as unknown as {
+            workspace?: {
+                activeLeaf?: WorkspaceLeaf | null;
+                getMostRecentLeaf?: () => WorkspaceLeaf | null;
+            } & Record<string, unknown>;
+        }
+    ).workspace;
+    const activeLeaf =
+        workspace?.activeLeaf ??
+        (typeof workspace?.getMostRecentLeaf === "function"
+            ? workspace.getMostRecentLeaf()
+            : null);
+    if (!activeLeaf) {
+        return true;
+    }
+
+    if (activeLeaf === hostLeaf) {
+        return true;
+    }
+
+    const activeLeafId = (activeLeaf as WorkspaceLeaf & { id?: unknown }).id;
+    const hostLeafId = (hostLeaf as WorkspaceLeaf & { id?: unknown }).id;
+    return activeLeafId !== undefined && activeLeafId === hostLeafId;
+}
 
 interface PendingExtractGraduation {
     uuid: string;
@@ -81,6 +112,11 @@ interface CachedSourceText {
     text: string;
 }
 
+interface InvalidatePreparedExtractOptions {
+    preservePrepared?: boolean;
+    preservePreparing?: boolean;
+}
+
 interface ReviewSessionProps {
     plugin: SRPlugin;
     sequencer: IFlashcardReviewSequencer;
@@ -89,6 +125,7 @@ interface ReviewSessionProps {
     markdownOwner: Component;
     initialView?: ReviewSessionView;
     initialTargetDeckPath?: string;
+    editModeRequestTarget?: EventTarget;
     onClose?: () => void;
 }
 
@@ -488,6 +525,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     markdownOwner,
     initialView = "deck-list",
     initialTargetDeckPath,
+    editModeRequestTarget,
     onClose: _onClose,
 }) => {
     // View state
@@ -495,6 +533,8 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     const [direction, setDirection] = useState(0); // 1 = Push, -1 = Pop
     const [tick, setTick] = useState(0); // Force rerenders after sync or deck updates.
     const [reviewUiResetToken, setReviewUiResetToken] = useState(0);
+    const [reviewEditModeToggleToken, setReviewEditModeToggleToken] = useState(0);
+    const [activeExtractRefreshToken, setActiveExtractRefreshToken] = useState(0);
     const [recentDeckPath, setRecentDeckPath] = useState<string | null>(null);
     const [hasBlockingMobileNavbar, setHasBlockingMobileNavbar] = useState(() =>
         detectBlockingMobileNavbar(),
@@ -523,6 +563,11 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         [plugin],
     );
 
+    const shouldHandleReviewHotkeys = useCallback(
+        () => isReviewHostLeafActive(plugin, hostLeaf),
+        [hostLeaf, plugin],
+    );
+
     const forceUpdate = useCallback(() => setTick((t) => t + 1), []);
     const preparedExtractsRef = useRef(new Map<string, PreparedExtractReview>());
     const preparingExtractsRef = useRef(new Map<string, Promise<PreparedExtractReview | null>>());
@@ -535,6 +580,34 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         null,
     );
     const [, setPreparedExtractVersion] = useState(0);
+
+    useEffect(() => {
+        if (!editModeRequestTarget) {
+            return;
+        }
+
+        const handleToggleEditModeRequest = (event: Event) => {
+            if (!shouldHandleReviewHotkeys() || view !== "review" || !activeReviewItem) {
+                return;
+            }
+            const detail = (event as CustomEvent<ReviewEditModeToggleDetail>).detail;
+            if (detail) {
+                detail.handled = true;
+            }
+            setReviewEditModeToggleToken((token) => token + 1);
+        };
+
+        editModeRequestTarget.addEventListener(
+            REVIEW_EDIT_MODE_TOGGLE_EVENT,
+            handleToggleEditModeRequest,
+        );
+        return () => {
+            editModeRequestTarget.removeEventListener(
+                REVIEW_EDIT_MODE_TOGGLE_EVENT,
+                handleToggleEditModeRequest,
+            );
+        };
+    }, [activeReviewItem, editModeRequestTarget, shouldHandleReviewHotkeys, view]);
 
     const getExtractVersionKey = useCallback(
         (item: ExtractItem | null): string => {
@@ -556,19 +629,53 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         [plugin.app.vault],
     );
 
-    const invalidatePreparedExtract = useCallback((uuid?: string | null, sourcePath?: string | null) => {
-        if (uuid) {
-            preparedExtractsRef.current.delete(uuid);
-            preparingExtractsRef.current.delete(uuid);
-        } else {
-            preparedExtractsRef.current.clear();
-            preparingExtractsRef.current.clear();
+    const invalidatePreparedExtract = useCallback(
+        (
+            uuid?: string | null,
+            sourcePath?: string | null,
+            options: InvalidatePreparedExtractOptions = {},
+        ) => {
+            if (uuid) {
+                const preservedPrepared = options.preservePrepared
+                    ? preparedExtractsRef.current.get(uuid)
+                    : undefined;
+                const preservedPreparing = options.preservePreparing
+                    ? preparingExtractsRef.current.get(uuid)
+                    : undefined;
+                preparedExtractsRef.current.delete(uuid);
+                preparingExtractsRef.current.delete(uuid);
+                if (preservedPrepared) {
+                    preparedExtractsRef.current.set(uuid, preservedPrepared);
+                }
+                if (preservedPreparing !== undefined) {
+                    preparingExtractsRef.current.set(uuid, preservedPreparing);
+                }
+            } else {
+                preparedExtractsRef.current.clear();
+                preparingExtractsRef.current.clear();
+            }
+            if (sourcePath) {
+                sourceTextCacheRef.current.delete(sourcePath);
+            } else if (!uuid) {
+                sourceTextCacheRef.current.clear();
+            }
+            setPreparedExtractVersion((value) => value + 1);
+        },
+        [],
+    );
+
+    const invalidatePreparedExtractsPreserving = useCallback((uuid: string) => {
+        const preservedPrepared = preparedExtractsRef.current.get(uuid);
+        const preservedPreparing = preparingExtractsRef.current.get(uuid);
+        preparedExtractsRef.current.clear();
+        preparingExtractsRef.current.clear();
+        if (preservedPrepared) {
+            preparedExtractsRef.current.set(uuid, preservedPrepared);
         }
-        if (sourcePath) {
-            sourceTextCacheRef.current.delete(sourcePath);
-        } else if (!uuid) {
-            sourceTextCacheRef.current.clear();
+        if (preservedPreparing !== undefined) {
+            preparingExtractsRef.current.set(uuid, preservedPreparing);
         }
+        sourceTextCacheRef.current.clear();
         setPreparedExtractVersion((value) => value + 1);
     }, []);
 
@@ -633,6 +740,14 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 setPreparedExtractVersion((value) => value + 1);
                 return null;
             }
+            const sourceFile = plugin.app.vault.getAbstractFileByPath(item.sourcePath);
+            if (!(sourceFile instanceof TFile)) {
+                preparedExtractsRef.current.delete(uuid);
+                preparingExtractsRef.current.delete(uuid);
+                sourceTextCacheRef.current.delete(item.sourcePath);
+                setPreparedExtractVersion((value) => value + 1);
+                return null;
+            }
             const versionKey = getExtractVersionKey(item);
             const cached = preparedExtractsRef.current.get(uuid);
             if (cached && cached.versionKey === versionKey) {
@@ -655,6 +770,15 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                     if (latestItem?.sourcePath) {
                         sourceTextCacheRef.current.delete(latestItem.sourcePath);
                     }
+                    setPreparedExtractVersion((value) => value + 1);
+                    return null;
+                }
+                const latestSourceFile = plugin.app.vault.getAbstractFileByPath(
+                    latestItem.sourcePath,
+                );
+                if (!(latestSourceFile instanceof TFile)) {
+                    preparedExtractsRef.current.delete(uuid);
+                    sourceTextCacheRef.current.delete(latestItem.sourcePath);
                     setPreparedExtractVersion((value) => value + 1);
                     return null;
                 }
@@ -844,20 +968,28 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         };
 
         const onStatsUpdated = () => {
+            invalidatePreparedExtract();
+            forceUpdate();
+        };
+
+        const onExtractsUpdated = () => {
             if (activeReviewItem?.kind === "extract") {
                 logRuntimeDebug("[SR-ExtractSave] ReviewSession received extracts-updated", {
                     activeExtractUuid: activeReviewItem.uuid,
                     activeDeckPath: activeDeckPathRef.current,
                     view,
                 });
+                invalidatePreparedExtractsPreserving(activeReviewItem.uuid);
+                setActiveExtractRefreshToken((value) => value + 1);
+            } else {
+                invalidatePreparedExtract();
             }
-            invalidatePreparedExtract();
             forceUpdate();
         };
 
         const unsubSync = plugin.syncEvents.on("sync-complete", onSyncComplete);
         const unsubStats = plugin.syncEvents.on("deck-stats-updated", onStatsUpdated);
-        const unsubExtracts = plugin.syncEvents.on("extracts-updated", onStatsUpdated);
+        const unsubExtracts = plugin.syncEvents.on("extracts-updated", onExtractsUpdated);
 
         return () => {
             logRuntimeDebug("[SR-DynSync] ReviewSession: unsubscribed from sync events");
@@ -865,18 +997,31 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             unsubStats();
             unsubExtracts();
         };
-    }, [activeReviewItem, forceUpdate, invalidatePreparedExtract, logRuntimeDebug, plugin, view]);
+    }, [
+        activeReviewItem,
+        forceUpdate,
+        invalidatePreparedExtract,
+        invalidatePreparedExtractsPreserving,
+        logRuntimeDebug,
+        plugin,
+        view,
+    ]);
 
     useEffect(() => {
         if (activeReviewItem?.kind !== "extract") {
             return;
         }
         const currentExtract = plugin.extractStore?.get(activeReviewItem.uuid) ?? null;
+        const currentExtractSource = currentExtract
+            ? plugin.app.vault.getAbstractFileByPath(currentExtract.sourcePath)
+            : null;
         if (
             !currentExtract ||
             currentExtract.stage !== "active" ||
+            !(currentExtractSource instanceof TFile) ||
             pendingExtractGraduationsRef.current.has(activeReviewItem.uuid)
         ) {
+            invalidatePreparedExtract(activeReviewItem.uuid, currentExtract?.sourcePath ?? null);
             const nextReviewItem = resolveNextReviewItem(activeDeckPathRef.current);
             if (nextReviewItem) {
                 setActiveReviewItem(nextReviewItem);
@@ -1485,6 +1630,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                                     }
                                     prepareExtractReview={prepareExtractReview}
                                     invalidatePreparedExtract={invalidatePreparedExtract}
+                                    preparedRefreshToken={activeExtractRefreshToken}
                                     deckPath={activeDeckPathRef.current}
                                     applyExtractDailyLimits={reviewMode !== FlashcardReviewMode.Cram}
                                     pendingExtractGraduations={getPendingExtractGraduations()}
@@ -1505,6 +1651,8 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                                     }}
                                     onExit={handleExitReview}
                                     uiResetToken={reviewUiResetToken}
+                                    editModeToggleToken={reviewEditModeToggleToken}
+                                    shouldHandleReviewHotkeys={shouldHandleReviewHotkeys}
                                     overlayMobileNavbar={shouldOverlayMobileNavbarForReview}
                                 />
                             ) : (
@@ -1526,6 +1674,8 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                                     onExit={handleExitReview}
                                     tick={tick}
                                     uiResetToken={reviewUiResetToken}
+                                    editModeToggleToken={reviewEditModeToggleToken}
+                                    shouldHandleReviewHotkeys={shouldHandleReviewHotkeys}
                                     overlayMobileNavbar={shouldOverlayMobileNavbarForReview}
                                 />
                             )}
@@ -1793,7 +1943,12 @@ interface ExtractLinearCardReviewProps {
     extractUuid: string;
     preparedExtract: PreparedExtractReview | null;
     prepareExtractReview: (uuid: string) => Promise<PreparedExtractReview | null>;
-    invalidatePreparedExtract: (uuid?: string | null, sourcePath?: string | null) => void;
+    invalidatePreparedExtract: (
+        uuid?: string | null,
+        sourcePath?: string | null,
+        options?: InvalidatePreparedExtractOptions,
+    ) => void;
+    preparedRefreshToken: number;
     deckPath: string | null;
     applyExtractDailyLimits: boolean;
     pendingExtractGraduations: PendingExtractGraduation[];
@@ -1806,6 +1961,8 @@ interface ExtractLinearCardReviewProps {
     onSetExtractDate: (dueAt: number) => void;
     onExit: () => void;
     uiResetToken: number;
+    editModeToggleToken: number;
+    shouldHandleReviewHotkeys: () => boolean;
     overlayMobileNavbar: boolean;
 }
 
@@ -1846,6 +2003,7 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     preparedExtract,
     prepareExtractReview,
     invalidatePreparedExtract,
+    preparedRefreshToken,
     deckPath,
     applyExtractDailyLimits,
     pendingExtractGraduations,
@@ -1858,6 +2016,8 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     onSetExtractDate,
     onExit,
     uiResetToken,
+    editModeToggleToken,
+    shouldHandleReviewHotkeys,
     overlayMobileNavbar,
 }) => {
     const extract = plugin.extractStore?.get(extractUuid) ?? null;
@@ -1875,6 +2035,9 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     const contextRef = useRef<ExtractReviewContext | null>(null);
     const contextDraftRef = useRef<ExtractContextUpdate | null>(null);
     const contextDirtyRef = useRef(false);
+    const contextSaveInFlightDraftRef = useRef<ExtractContextUpdate | null>(null);
+    const contextIdentityRef = useRef({ extractUuid, uiResetToken });
+    const preparedRefreshTokenRef = useRef(preparedRefreshToken);
     const bodySaveTimerRef = useRef<number | null>(null);
     const logRuntimeDebug = useCallback(
         (...args: unknown[]) => {
@@ -1933,28 +2096,71 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     useEffect(() => {
         let cancelled = false;
         let retryTimerId: number | null = null;
+        const previousIdentity = contextIdentityRef.current;
+        const identityChanged =
+            previousIdentity.extractUuid !== extractUuid ||
+            previousIdentity.uiResetToken !== uiResetToken;
+        contextIdentityRef.current = { extractUuid, uiResetToken };
+        const refreshTokenChanged = preparedRefreshTokenRef.current !== preparedRefreshToken;
+        preparedRefreshTokenRef.current = preparedRefreshToken;
         const nextExtract = plugin.extractStore?.get(extractUuid) ?? null;
         const nextPrepared =
             preparedExtract && preparedExtract.uuid === extractUuid ? preparedExtract : null;
         const nextBody = nextPrepared?.rawMarkdown ?? nextExtract?.rawMarkdown ?? "";
-        setBody(nextBody);
-        bodyValueRef.current = nextBody;
-        bodyDirtyRef.current = false;
-        contextRef.current = nextPrepared?.context ?? null;
-        contextDraftRef.current = nextPrepared?.draft ?? null;
-        contextDirtyRef.current = false;
-        setContext(nextPrepared?.context ?? null);
-        setContextDraft(nextPrepared?.draft ?? null);
+        const draftAtLoadStart = contextDraftRef.current;
+        const canKeepExistingContext =
+            !identityChanged &&
+            contextRef.current !== null &&
+            contextDraftRef.current !== null;
+        const applyBody = (value: string) => {
+            setBody(value);
+            bodyValueRef.current = value;
+            bodyDirtyRef.current = false;
+        };
+        const clearContext = () => {
+            contextRef.current = null;
+            contextDraftRef.current = null;
+            contextDirtyRef.current = false;
+            setContext(null);
+            setContextDraft(null);
+        };
         setContextLoadError(null);
-        if (nextPrepared) {
+        if (nextPrepared && !refreshTokenChanged) {
+            applyBody(nextBody);
+            if (identityChanged || !contextDirtyRef.current || contextDraftRef.current === null) {
+                contextRef.current = nextPrepared.context;
+                contextDraftRef.current = nextPrepared.draft;
+                contextDirtyRef.current = false;
+                setContext(nextPrepared.context);
+                setContextDraft(nextPrepared.draft);
+            } else {
+                logRuntimeDebug("[SR-ExtractSave] extract context prepared-skip-active-draft", {
+                    extractUuid,
+                    reason: "newer-local-draft",
+                    draftLength: contextDraftRef.current.markdown.length,
+                });
+            }
             return () => {
                 cancelled = true;
             };
         }
         if (!nextExtract || nextExtract.stage !== "active") {
+            applyBody(nextBody);
+            clearContext();
             return () => {
                 cancelled = true;
             };
+        }
+        if (!sourceFile) {
+            applyBody(nextBody);
+            clearContext();
+            return () => {
+                cancelled = true;
+            };
+        }
+        applyBody(nextBody);
+        if (!canKeepExistingContext) {
+            clearContext();
         }
         logRuntimeDebug("[SR-ExtractSave] extract context load:start", {
             extractUuid,
@@ -1968,10 +2174,9 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
                     return;
                 }
                 if (!prepared) {
-                    contextRef.current = null;
-                    contextDraftRef.current = null;
-                    setContext(null);
-                    setContextDraft(null);
+                    if (!canKeepExistingContext) {
+                        clearContext();
+                    }
                     retryTimerId = window.setTimeout(() => {
                         if (!cancelled) {
                             setContextRetryToken((value) => value + 1);
@@ -1983,11 +2188,27 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
                 const nextDraft = prepared.draft;
                 setBody(prepared.rawMarkdown);
                 bodyValueRef.current = prepared.rawMarkdown;
-                setContext(nextContext);
-                contextRef.current = nextContext;
-                setContextDraft(nextDraft);
-                contextDraftRef.current = nextDraft;
-                contextDirtyRef.current = false;
+                bodyDirtyRef.current = false;
+                if (
+                    contextSaveInFlightDraftRef.current === null &&
+                    !contextDirtyRef.current &&
+                    contextDraftRef.current === draftAtLoadStart
+                ) {
+                    setContext(nextContext);
+                    contextRef.current = nextContext;
+                    setContextDraft(nextDraft);
+                    contextDraftRef.current = nextDraft;
+                    contextDirtyRef.current = false;
+                } else {
+                    logRuntimeDebug("[SR-ExtractSave] extract context background-reload-skipped", {
+                        extractUuid,
+                        reason:
+                            contextSaveInFlightDraftRef.current !== null
+                                ? "context-save-in-flight"
+                                : "newer-local-draft",
+                        draftLength: contextDraftRef.current?.markdown.length ?? null,
+                    });
+                }
                 logRuntimeDebug("[SR-ExtractSave] extract context load:done", {
                     extractUuid,
                     hasContext: nextContext !== null,
@@ -1997,6 +2218,9 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
                 });
             })
             .catch((error) => {
+                if (cancelled) {
+                    return;
+                }
                 setContextLoadError(error instanceof Error ? error.message : String(error));
                 console.error("[SR-Extract] Failed to prepare extract review", error);
             });
@@ -2009,9 +2233,12 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     }, [
         contextRetryToken,
         extractUuid,
+        logRuntimeDebug,
         plugin.extractStore,
         prepareExtractReview,
         preparedExtract,
+        preparedRefreshToken,
+        sourceFile,
         uiResetToken,
     ]);
 
@@ -2038,45 +2265,79 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
             draftLength: contextDraftRef.current?.markdown.length ?? null,
         });
         if (contextDirtyRef.current && contextRef.current && contextDraftRef.current) {
+            const contextToSave = contextRef.current;
+            const draftToSave = contextDraftRef.current;
             contextDirtyRef.current = false;
             logRuntimeDebug("[SR-ExtractSave] saveBodyNow:context-save-start", {
                 extractUuid,
-                markdownLength: contextDraftRef.current.markdown.length,
-                currentOuterFrom: contextDraftRef.current.ranges.currentOuterFrom,
-                currentOuterTo: contextDraftRef.current.ranges.currentOuterTo,
+                markdownLength: draftToSave.markdown.length,
+                currentOuterFrom: draftToSave.ranges.currentOuterFrom,
+                currentOuterTo: draftToSave.ranges.currentOuterTo,
             });
-            const updated = await plugin.updateExtractContextMarkdown(
-                extractUuid,
-                contextRef.current,
-                contextDraftRef.current,
-            );
-            if (updated) {
-                invalidatePreparedExtract(extractUuid, updated.sourcePath);
-                logRuntimeDebug("[SR-ExtractSave] saveBodyNow:context-save-success", {
+            contextSaveInFlightDraftRef.current = draftToSave;
+            try {
+                const updated = await plugin.updateExtractContextMarkdown(
                     extractUuid,
-                    rawMarkdownLength: updated.rawMarkdown.length,
-                    stage: updated.stage,
-                });
-                setBody(updated.rawMarkdown);
-                bodyValueRef.current = updated.rawMarkdown;
-                const nextContext = await plugin.getExtractReviewContext(extractUuid);
-                setContext(nextContext);
-                contextRef.current = nextContext;
-                const nextDraft = nextContext
-                    ? { markdown: nextContext.markdown, ranges: nextContext }
-                    : null;
-                setContextDraft(nextDraft);
-                contextDraftRef.current = nextDraft;
-                logRuntimeDebug("[SR-ExtractSave] saveBodyNow:context-reloaded", {
-                    extractUuid,
-                    hasContext: nextContext !== null,
-                    markdownLength: nextContext?.markdown.length ?? 0,
-                });
-            } else {
-                logRuntimeDebug("[SR-ExtractSave] saveBodyNow:context-save-null", {
-                    extractUuid,
-                    sourcePath: extract?.sourcePath ?? null,
-                });
+                    contextToSave,
+                    draftToSave,
+                );
+                if (updated) {
+                    invalidatePreparedExtract(extractUuid, updated.sourcePath, {
+                        preservePrepared: true,
+                        preservePreparing: true,
+                    });
+                    logRuntimeDebug("[SR-ExtractSave] saveBodyNow:context-save-success", {
+                        extractUuid,
+                        rawMarkdownLength: updated.rawMarkdown.length,
+                        stage: updated.stage,
+                    });
+                    setBody(updated.rawMarkdown);
+                    bodyValueRef.current = updated.rawMarkdown;
+                    if (!contextDirtyRef.current && contextDraftRef.current === draftToSave) {
+                        const nextContext = await plugin.getExtractReviewContext(extractUuid);
+                        if (!contextDirtyRef.current && contextDraftRef.current === draftToSave) {
+                            setContext(nextContext);
+                            contextRef.current = nextContext;
+                            const nextDraft = nextContext
+                                ? { markdown: nextContext.markdown, ranges: nextContext }
+                                : null;
+                            setContextDraft(nextDraft);
+                            contextDraftRef.current = nextDraft;
+                            logRuntimeDebug("[SR-ExtractSave] saveBodyNow:context-reloaded", {
+                                extractUuid,
+                                hasContext: nextContext !== null,
+                                markdownLength: nextContext?.markdown.length ?? 0,
+                            });
+                        } else {
+                            logRuntimeDebug("[SR-ExtractSave] saveBodyNow:context-reload-skipped", {
+                                extractUuid,
+                                reason:
+                                    contextDraftRef.current === null
+                                        ? "active-context-cleared-by-refresh"
+                                        : "newer-local-draft-after-reload",
+                                draftLength: contextDraftRef.current?.markdown.length ?? null,
+                            });
+                        }
+                    } else {
+                        logRuntimeDebug("[SR-ExtractSave] saveBodyNow:context-reload-skipped", {
+                            extractUuid,
+                            reason:
+                                contextDraftRef.current === null
+                                    ? "active-context-cleared-by-refresh"
+                                    : "newer-local-draft",
+                            draftLength: contextDraftRef.current?.markdown.length ?? null,
+                        });
+                    }
+                } else {
+                    logRuntimeDebug("[SR-ExtractSave] saveBodyNow:context-save-null", {
+                        extractUuid,
+                        sourcePath: extract?.sourcePath ?? null,
+                    });
+                }
+            } finally {
+                if (contextSaveInFlightDraftRef.current === draftToSave) {
+                    contextSaveInFlightDraftRef.current = null;
+                }
             }
             return;
         }
@@ -2341,6 +2602,9 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
                 reviewKind="extract"
                 card={cardState}
                 uiResetToken={uiResetToken}
+                extractIdentityKey={extractUuid}
+                editModeToggleToken={editModeToggleToken}
+                shouldHandleReviewHotkeys={shouldHandleReviewHotkeys}
                 deckPath={deckPath ?? undefined}
                 stats={reviewStats}
                 cardType={cardType}
@@ -2406,6 +2670,8 @@ interface CardReviewViewProps {
     onExit: () => void;
     tick: number;
     uiResetToken: number;
+    editModeToggleToken: number;
+    shouldHandleReviewHotkeys: () => boolean;
     overlayMobileNavbar: boolean;
 }
 
@@ -2421,6 +2687,8 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
     onExit,
     tick,
     uiResetToken,
+    editModeToggleToken,
+    shouldHandleReviewHotkeys,
     overlayMobileNavbar,
 }) => {
     const card = sequencer.currentCard;
@@ -2624,6 +2892,8 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
             <LinearCard
                 card={cardState}
                 uiResetToken={uiResetToken}
+                editModeToggleToken={editModeToggleToken}
+                shouldHandleReviewHotkeys={shouldHandleReviewHotkeys}
                 stats={reviewStats}
                 cardType={cardType}
                 type={

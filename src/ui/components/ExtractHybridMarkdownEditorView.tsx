@@ -25,7 +25,12 @@ import {
     type HybridMarkdownBlock,
 } from "src/editor/hybridMarkdownBlocks";
 import { collectHybridInlineDecorations } from "src/editor/hybridMarkdownInline";
-import { handleHybridEditorHotkey } from "src/editor/obsidianHotkeyBridge";
+import {
+    eventMatchesOfficialEditorCommandHotkey,
+    eventMatchesReviewEditModeHotkey,
+    handleHybridEditorHotkey,
+    logHybridEditorHotkeyResolution,
+} from "src/editor/obsidianHotkeyBridge";
 import {
     insertMarkdownTableColumn,
     insertMarkdownTableRow,
@@ -52,7 +57,9 @@ interface ExtractHybridMarkdownEditorViewProps {
     ranges: ExtractContextRanges;
     mode: ExtractHybridMode;
     onChange: (update: ExtractContextUpdate) => void;
+    onEnterEdit?: () => void;
     onExit: () => void;
+    onReviewKeyDown?: (event: KeyboardEvent) => boolean;
     plugin: SRPlugin;
     renderMarkdown?: (text: string, el: HTMLElement) => Promise<void> | void;
     sourcePath?: string;
@@ -565,6 +572,47 @@ function stringifyDebugError(error: unknown): string {
     return "Unknown error";
 }
 
+function logHybridEditorDomKeydownDebug(
+    plugin: SRPlugin,
+    stage: string,
+    event: KeyboardEvent,
+    view: EditorView | null,
+): void {
+    if (!plugin.data.settings.showRuntimeDebugMessages) {
+        return;
+    }
+
+    const selection = view?.state.selection.main;
+    console.debug("[SR-HotkeyBridge]", {
+        stage,
+        detail: {
+            altKey: event.altKey,
+            code: event.code,
+            ctrlKey: event.ctrlKey,
+            defaultPrevented: event.defaultPrevented,
+            docLength: view?.state.doc.length ?? null,
+            isComposing: event.isComposing,
+            key: event.key,
+            metaKey: event.metaKey,
+            repeat: event.repeat,
+            selectionFrom: selection?.from ?? null,
+            selectionTo: selection?.to ?? null,
+            shiftKey: event.shiftKey,
+            targetClassName:
+                event.target instanceof HTMLElement ? event.target.className : null,
+            targetTagName:
+                event.target instanceof HTMLElement ? event.target.tagName.toLowerCase() : null,
+        },
+    });
+}
+
+function stopKeyboardEventPropagation(event: KeyboardEvent): void {
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+    }
+}
+
 class RenderedMarkdownBlockWidget extends WidgetType {
     constructor(
         private readonly block: HybridMarkdownBlock,
@@ -901,7 +949,9 @@ function createHybridInlineDecorationsField(): Extension {
 export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorViewProps> = ({
     mode,
     onChange,
+    onEnterEdit,
     onExit,
+    onReviewKeyDown,
     plugin,
     ranges,
     renderMarkdown,
@@ -915,21 +965,123 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
     const editableCompartmentRef = useRef(new Compartment());
     const lastModeRef = useRef(mode);
     const onChangeRef = useRef(onChange);
+    const onEnterEditRef = useRef(onEnterEdit);
     const onExitRef = useRef(onExit);
+    const onReviewKeyDownRef = useRef(onReviewKeyDown);
     const onReadyRef = useRef(onReady);
     const onDebugEventRef = useRef(onDebugEvent);
     const renderMarkdownRef = useRef(renderMarkdown);
     const renderPromisesRef = useRef<Promise<void>[]>([]);
     const readyGenerationRef = useRef(0);
     const tableDraftsRef = useRef(new Map<string, TableDraft>());
+    const lastHotkeyLogModeRef = useRef<ExtractHybridMode | null>(null);
 
     useEffect(() => {
         onChangeRef.current = onChange;
+        onEnterEditRef.current = onEnterEdit;
         onExitRef.current = onExit;
+        onReviewKeyDownRef.current = onReviewKeyDown;
         onReadyRef.current = onReady;
         onDebugEventRef.current = onDebugEvent;
         renderMarkdownRef.current = renderMarkdown;
-    }, [onChange, onExit, onReady, onDebugEvent, renderMarkdown]);
+    }, [onChange, onEnterEdit, onExit, onReviewKeyDown, onReady, onDebugEvent, renderMarkdown]);
+
+    useEffect(() => {
+        if (mode === "edit" && lastHotkeyLogModeRef.current !== "edit") {
+            logHybridEditorHotkeyResolution(plugin.app);
+        }
+        lastHotkeyLogModeRef.current = mode;
+    }, [mode, plugin.app]);
+
+    useEffect(() => {
+        const currentView = viewRef.current;
+        if (!currentView) {
+            return;
+        }
+
+        const ownerDocument = currentView.dom.ownerDocument;
+        const ownerWindow = ownerDocument.defaultView;
+        const handleCapturedKeydown = (event: KeyboardEvent) => {
+            const activeView = viewRef.current;
+            if (!activeView) {
+                return;
+            }
+
+            const target = event.target;
+            if (!(target instanceof Node) || !activeView.dom.contains(target)) {
+                return;
+            }
+
+            if (activeView.state.field(hybridModeField) !== "edit") {
+                if (eventMatchesReviewEditModeHotkey(event, plugin.app)) {
+                    event.preventDefault();
+                    stopKeyboardEventPropagation(event);
+                    onEnterEditRef.current?.();
+                    logHybridEditorDomKeydownDebug(
+                        plugin,
+                        "capture-keydown-review-edit-toggle-handled",
+                        event,
+                        activeView,
+                    );
+                    return;
+                }
+
+                if (onReviewKeyDownRef.current?.(event)) {
+                    stopKeyboardEventPropagation(event);
+                    logHybridEditorDomKeydownDebug(
+                        plugin,
+                        "capture-keydown-review-shortcut-handled",
+                        event,
+                        activeView,
+                    );
+                    return;
+                }
+
+                if (eventMatchesOfficialEditorCommandHotkey(event, plugin.app)) {
+                    event.preventDefault();
+                    stopKeyboardEventPropagation(event);
+                    logHybridEditorDomKeydownDebug(
+                        plugin,
+                        "capture-keydown-review-editor-hotkey-blocked",
+                        event,
+                        activeView,
+                    );
+                }
+                return;
+            }
+
+            if (handleHybridEditorHotkey(event, activeView, plugin.app)) {
+                stopKeyboardEventPropagation(event);
+                logHybridEditorDomKeydownDebug(
+                    plugin,
+                    "capture-keydown-text-command-handled",
+                    event,
+                    activeView,
+                );
+                return;
+            }
+
+            if (eventMatchesReviewEditModeHotkey(event, plugin.app)) {
+                event.preventDefault();
+                stopKeyboardEventPropagation(event);
+                flushTableDrafts(activeView, tableDraftsRef.current);
+                onExitRef.current();
+                logHybridEditorDomKeydownDebug(
+                    plugin,
+                    "capture-keydown-edit-toggle-handled",
+                    event,
+                    activeView,
+                );
+            }
+        };
+
+        ownerWindow?.addEventListener("keydown", handleCapturedKeydown, true);
+        ownerDocument.addEventListener("keydown", handleCapturedKeydown, true);
+        return () => {
+            ownerWindow?.removeEventListener("keydown", handleCapturedKeydown, true);
+            ownerDocument.removeEventListener("keydown", handleCapturedKeydown, true);
+        };
+    }, [plugin, plugin.app]);
 
     useLayoutEffect(() => {
         const container = containerRef.current;
@@ -972,25 +1124,90 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
                 EditorView.domEventHandlers({
                     keydown: (event) => {
                         const currentView = viewRef.current;
-                        if (!currentView || currentView.state.field(hybridModeField) !== "edit") {
+                        if (!currentView) {
+                            logHybridEditorDomKeydownDebug(plugin, "dom-keydown-ignored", event, currentView);
                             return false;
                         }
 
-                        if (
-                            event.altKey &&
-                            !event.shiftKey &&
-                            !event.ctrlKey &&
-                            !event.metaKey &&
-                            event.key.toLowerCase() === "e"
-                        ) {
+                        if (currentView.state.field(hybridModeField) !== "edit") {
+                            if (eventMatchesReviewEditModeHotkey(event, plugin.app)) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                onEnterEditRef.current?.();
+                                logHybridEditorDomKeydownDebug(
+                                    plugin,
+                                    "dom-keydown-review-edit-toggle-handled",
+                                    event,
+                                    currentView,
+                                );
+                                return true;
+                            }
+
+                            if (onReviewKeyDownRef.current?.(event)) {
+                                event.stopPropagation();
+                                logHybridEditorDomKeydownDebug(
+                                    plugin,
+                                    "dom-keydown-review-shortcut-handled",
+                                    event,
+                                    currentView,
+                                );
+                                return true;
+                            }
+
+                            if (eventMatchesOfficialEditorCommandHotkey(event, plugin.app)) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                logHybridEditorDomKeydownDebug(
+                                    plugin,
+                                    "dom-keydown-review-editor-hotkey-blocked",
+                                    event,
+                                    currentView,
+                                );
+                                return true;
+                            }
+
+                            logHybridEditorDomKeydownDebug(
+                                plugin,
+                                "dom-keydown-review-pass-through",
+                                event,
+                                currentView,
+                            );
+                            event.stopPropagation();
+                            return false;
+                        }
+
+                        if (handleHybridEditorHotkey(event, currentView, plugin.app)) {
+                            logHybridEditorDomKeydownDebug(
+                                plugin,
+                                "dom-keydown-text-command-handled",
+                                event,
+                                currentView,
+                            );
+                            return true;
+                        }
+
+                        if (eventMatchesReviewEditModeHotkey(event, plugin.app)) {
                             event.preventDefault();
                             event.stopPropagation();
                             flushTableDrafts(currentView, tableDraftsRef.current);
                             onExitRef.current();
+                            logHybridEditorDomKeydownDebug(
+                                plugin,
+                                "dom-keydown-edit-toggle-handled",
+                                event,
+                                currentView,
+                            );
                             return true;
                         }
 
-                        return handleHybridEditorHotkey(event, currentView, plugin.app);
+                        logHybridEditorDomKeydownDebug(
+                            plugin,
+                            "dom-keydown-pass-through",
+                            event,
+                            currentView,
+                        );
+                        event.stopPropagation();
+                        return false;
                     },
                 }),
                 keymap.of([

@@ -1,5 +1,6 @@
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
+import { EditorView } from "@codemirror/view";
 import { Component, TFile, type WorkspaceLeaf } from "obsidian";
 import type SRPlugin from "src/main";
 import { ExtractStore, type ExtractItem } from "src/dataStore/extractStore";
@@ -132,6 +133,28 @@ function createSequencer(): IFlashcardReviewSequencer {
     } as unknown as IFlashcardReviewSequencer;
 }
 
+function createTestSyncEvents() {
+    const listeners = new Map<string, Set<() => void>>();
+    return {
+        on: jest.fn((eventName: string, listener: () => void) => {
+            let eventListeners = listeners.get(eventName);
+            if (!eventListeners) {
+                eventListeners = new Set();
+                listeners.set(eventName, eventListeners);
+            }
+            eventListeners.add(listener);
+            return () => {
+                eventListeners?.delete(listener);
+            };
+        }),
+        emit: jest.fn((eventName: string) => {
+            for (const listener of listeners.get(eventName) ?? []) {
+                listener();
+            }
+        }),
+    };
+}
+
 function createPlugin(
     itemOrItems: ExtractItem | ExtractItem[],
     getExtractReviewContext: jest.Mock<Promise<ExtractReviewContext | null>, [string, string?]>,
@@ -144,6 +167,7 @@ function createPlugin(
     for (const extract of items) {
         extractStore.upsertSnapshot({ item: extract });
     }
+    const syncEvents = createTestSyncEvents();
 
     return {
         data: {
@@ -170,6 +194,7 @@ function createPlugin(
             items.filter((candidate) => candidate.stage === "active"),
         ),
         getExtractReviewContext,
+        updateExtractContextMarkdown: jest.fn(() => Promise.resolve(item)),
         getExtractReviewIntervals: jest.fn(() => intervals),
         getExtractReviewStats: jest.fn(() => ({
             newCount: items.filter(
@@ -195,9 +220,7 @@ function createPlugin(
             return Promise.resolve(graduated);
         }),
         undoExtractReviewAction: jest.fn(() => Promise.resolve(null)),
-        syncEvents: {
-            on: jest.fn(() => jest.fn()),
-        },
+        syncEvents,
         flushReviewPersistence: jest.fn(() => Promise.resolve()),
         savePluginData: jest.fn(() => Promise.resolve()),
         setSRViewInFocus: jest.fn(),
@@ -210,7 +233,17 @@ async function flushEffects() {
     });
 }
 
-function renderExtractReviewSession(plugin: SRPlugin) {
+function createDeferred<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((promiseResolve, promiseReject) => {
+        resolve = promiseResolve;
+        reject = promiseReject;
+    });
+    return { promise, resolve, reject };
+}
+
+function renderExtractReviewSession(plugin: SRPlugin, hostLeaf: WorkspaceLeaf = { id: "leaf" } as unknown as WorkspaceLeaf) {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -221,7 +254,7 @@ function renderExtractReviewSession(plugin: SRPlugin) {
                 plugin,
                 sequencer: createSequencer(),
                 reviewMode: FlashcardReviewMode.Review,
-                hostLeaf: { id: "leaf" } as unknown as WorkspaceLeaf,
+                hostLeaf,
                 markdownOwner: new Component(),
                 initialView: "review",
             }),
@@ -298,6 +331,46 @@ test("extract review highlights reviewed extracts with nextReview zero as new", 
 
         const liveHeader = container.querySelector(".sr-card-header:not(.sr-card-header-measure)");
         expect(liveHeader?.querySelector(".sr-stat-badge.active")?.textContent).toContain("NEW");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("inactive review leaf ignores global numeric review shortcuts", async () => {
+    const item = createExtractItem();
+    const markdown = "before {{ir::target}} after";
+    const context = createManualExtractContext(markdown, 7, 21);
+    const plugin = createPlugin(
+        item,
+        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+    );
+    const reviewExtract = jest.fn(() => Promise.resolve(item));
+    (plugin as SRPlugin & { reviewExtract: typeof reviewExtract }).reviewExtract = reviewExtract;
+
+    const hostLeaf = { id: "review-leaf" } as unknown as WorkspaceLeaf;
+    const activeLeaf = { id: "note-leaf" } as unknown as WorkspaceLeaf;
+    const getLeaf = jest.fn(() => hostLeaf);
+    (plugin.app as unknown as {
+        workspace: { activeLeaf: WorkspaceLeaf; getLeaf: (newLeaf?: false) => WorkspaceLeaf };
+    }).workspace = {
+        activeLeaf,
+        getLeaf,
+    };
+
+    const { root } = renderExtractReviewSession(plugin, hostLeaf);
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "1" }));
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "2" }));
+        });
+        await flushEffects();
+
+        expect(reviewExtract).not.toHaveBeenCalled();
+        expect(getLeaf).not.toHaveBeenCalled();
     } finally {
         act(() => root.unmount());
     }
@@ -419,6 +492,159 @@ test("inactive extract is not retried for context", async () => {
         await flushEffects();
 
         expect(getExtractReviewContext).not.toHaveBeenCalled();
+    } finally {
+        act(() => root.unmount());
+        jest.useRealTimers();
+    }
+});
+
+test("extract with a missing source file is not retried for context", async () => {
+    jest.useFakeTimers();
+    const item = createExtractItem({ sourcePath: "Untitled.md" });
+    const getExtractReviewContext = jest
+        .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+        .mockResolvedValue(null);
+    const plugin = createPlugin(item, getExtractReviewContext);
+    (plugin.app.vault.getAbstractFileByPath as jest.Mock).mockReturnValue(null);
+    let candidateCalls = 0;
+    (plugin.getExtractReviewCandidates as jest.Mock).mockImplementation(() =>
+        candidateCalls++ === 0 ? [item] : [],
+    );
+    const { root } = renderExtractReviewSession(plugin);
+
+    try {
+        await flushEffects();
+        act(() => {
+            jest.advanceTimersByTime(750);
+        });
+        await flushEffects();
+
+        expect(getExtractReviewContext).not.toHaveBeenCalled();
+    } finally {
+        act(() => root.unmount());
+        jest.useRealTimers();
+    }
+});
+
+test("extract context reload does not overwrite newer local draft edits after save resolves", async () => {
+    jest.useFakeTimers();
+    const item = createExtractItem();
+    const initialMarkdown = "before {{ir::target}} after";
+    const initialContext = createManualExtractContext(initialMarkdown, 7, 21);
+    const savedMarkdown = `${initialMarkdown}1`;
+    const savedContext = {
+        ...initialContext,
+        markdown: savedMarkdown,
+        sourceTo: savedMarkdown.length,
+    };
+    const getExtractReviewContext = jest
+        .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+        .mockResolvedValueOnce(initialContext)
+        .mockResolvedValue(savedContext);
+    const plugin = createPlugin(item, getExtractReviewContext);
+    const updateDeferred = createDeferred<ExtractItem | null>();
+    (plugin.updateExtractContextMarkdown as jest.Mock).mockReturnValue(updateDeferred.promise);
+    const { container, root } = renderExtractReviewSession(plugin);
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+        });
+        await flushEffects();
+
+        const editorDom = container.querySelector<HTMLElement>(".cm-editor");
+        const view = editorDom ? EditorView.findFromDOM(editorDom) : null;
+        expect(view).not.toBeNull();
+
+        act(() => {
+            view?.dispatch({
+                changes: { from: view.state.doc.length, insert: "1" },
+            });
+        });
+        act(() => {
+            jest.advanceTimersByTime(700);
+        });
+        await flushEffects();
+        expect(plugin.updateExtractContextMarkdown).toHaveBeenCalledTimes(1);
+
+        act(() => {
+            view?.dispatch({
+                changes: { from: view.state.doc.length, insert: "2" },
+            });
+        });
+
+        await act(async () => {
+            updateDeferred.resolve({ ...item, rawMarkdown: "target1" });
+            await updateDeferred.promise;
+        });
+        await flushEffects();
+        await flushEffects();
+
+        expect(view?.state.doc.toString()).toBe(`${initialMarkdown}12`);
+    } finally {
+        act(() => root.unmount());
+        jest.useRealTimers();
+    }
+});
+
+test("extracts-updated during active context save keeps the hybrid editor mounted", async () => {
+    jest.useFakeTimers();
+    const item = createExtractItem();
+    const initialMarkdown = "before {{ir::target}} after";
+    const initialContext = createManualExtractContext(initialMarkdown, 7, 21);
+    const savedMarkdown = `${initialMarkdown}!`;
+    const savedContext = {
+        ...initialContext,
+        markdown: savedMarkdown,
+        sourceTo: savedMarkdown.length,
+    };
+    const updatedItem = { ...item, rawMarkdown: "target!" };
+    const plugin = createPlugin(
+        item,
+        jest
+            .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+            .mockResolvedValueOnce(initialContext)
+            .mockResolvedValue(savedContext),
+    );
+    (plugin.updateExtractContextMarkdown as jest.Mock).mockImplementation(async () => {
+        plugin.syncEvents.emit("extracts-updated");
+        return updatedItem;
+    });
+    const { container, root } = renderExtractReviewSession(plugin);
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+        });
+        await flushEffects();
+
+        const editorBefore = container.querySelector<HTMLElement>(".cm-editor");
+        const view = editorBefore ? EditorView.findFromDOM(editorBefore) : null;
+        expect(editorBefore).not.toBeNull();
+        expect(view).not.toBeNull();
+
+        act(() => {
+            view?.dispatch({
+                changes: { from: view.state.doc.length, insert: "!" },
+            });
+        });
+        act(() => {
+            jest.advanceTimersByTime(700);
+        });
+        await flushEffects();
+        await flushEffects();
+
+        expect(plugin.updateExtractContextMarkdown).toHaveBeenCalledTimes(1);
+        expect(container.querySelector(".cm-editor")).toBe(editorBefore);
+        expect(container.querySelector(".sr-extract-content-ready")).not.toBeNull();
+        expect(container.querySelector(".sr-extract-content-pending")).toBeNull();
+        expect(view?.state.doc.toString()).toBe(savedMarkdown);
     } finally {
         act(() => root.unmount());
         jest.useRealTimers();

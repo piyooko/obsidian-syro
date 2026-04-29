@@ -1,5 +1,5 @@
 ﻿import { MarkdownView } from "obsidian";
-import ObsidianSrsPlugin from "./main";
+import type ObsidianSrsPlugin from "./main";
 import { Queue } from "./dataStore/queue";
 import { ReviewView } from "./ui/views/reviewView";
 import { FlashcardReviewMode } from "src/scheduling";
@@ -73,6 +73,16 @@ export default class Commands {
             name: t("CMD_CREATE_EXTRACT_FROM_SELECTION"),
             editorCallback: (editor) => {
                 void plugin.createExtractFromEditorSelection(editor);
+            },
+        });
+
+        plugin.addCommand({
+            id: "srs-toggle-review-edit-mode",
+            name: t("CMD_TOGGLE_REVIEW_EDIT_MODE"),
+            // eslint-disable-next-line obsidianmd/commands/no-default-hotkeys -- Preserve the existing Alt+E review-edit shortcut while letting users remap it in Obsidian Hotkeys.
+            hotkeys: [{ modifiers: ["Alt"], key: "E" }],
+            callback: () => {
+                plugin.requestToggleReviewEditMode();
             },
         });
 

@@ -2059,17 +2059,20 @@ body.syro-mobile-review-square-corners
     opacity: 0.4;
 }
 
-/* 退出编辑按钮 */
-.sr-exit-edit-btn {
-    background: rgba(34, 197, 94, 0.1) !important;
-    border-color: rgba(34, 197, 94, 0.2) !important;
-    color: #22c55e !important;
+.sr-show-answer-btn.sr-exit-edit-btn {
+    background-color: rgba(30, 76, 89, 0.1) !important; /* 深青色 / 10% */
+    border-color: rgba(39, 98, 115, 0.2) !important;
+    color: #1e4c59 !important;
 }
 
-.sr-exit-edit-btn:hover {
-    background: rgba(34, 197, 94, 0.2) !important;
+.theme-dark .sr-show-answer-btn.sr-exit-edit-btn {
+    color: #ffffff !important;
 }
 
+.sr-show-answer-btn.sr-exit-edit-btn:hover {
+    background-color: rgba(39, 98, 115, 0.2) !important; /* 悬停变亮 / 20% */
+    border-color: rgba(49, 122, 143, 0.2) !important;
+}
 /* ==========================================
    代码块 Cloze 卡片样式
    ========================================== */
@@ -2297,6 +2300,31 @@ body.syro-mobile-review-square-corners
     color: #a1a1aa;
 }
 
+.sr-header-right .sr-header-btn {
+    width: 29px;
+    height: 29px;
+    min-width: 29px;
+    min-height: 29px;
+    flex: 0 0 29px;
+    box-sizing: border-box;
+    aspect-ratio: 1 / 1;
+    padding: 0;
+    line-height: 1;
+}
+
+.sr-header-right .sr-menu-container {
+    display: flex;
+    flex: 0 0 auto;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-header-right .sr-header-btn {
+    width: 27px;
+    height: 27px;
+    min-width: 27px;
+    min-height: 27px;
+    flex-basis: 27px;
+}
+
 /* 深色模式下的颜色适配 */
 .theme-dark .sr-header-btn {
     color: #71717a;
@@ -2431,8 +2459,7 @@ body.syro-mobile-review-square-corners
     padding-inline: 0 !important;
 }
 
-.sr-hybrid-markdown-source[data-sr-hybrid-mode="review"] .cm-cursor,
-.sr-hybrid-markdown-source[data-sr-hybrid-mode="review"] .cm-selectionBackground {
+.sr-hybrid-markdown-source[data-sr-hybrid-mode="review"] .cm-cursor {
     display: none;
 }
 

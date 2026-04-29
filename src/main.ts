@@ -224,7 +224,11 @@ import { reviewResponseModal } from "src/ui/modals/reviewresponse-modal";
 import { debug, isVersionNewerThanOther } from "./util/utils_recall";
 import { DEFAULT_DECKNAME, SR_TAB_VIEW } from "./constants";
 
-import { addFileMenuEvt, registerTrackFileEvents } from "./Events/trackFileEvents";
+import {
+    addFileMenuEvt,
+    addInlineTitleDeckEntryMenuEvt,
+    registerTrackFileEvents,
+} from "./Events/trackFileEvents";
 import { SyncEvents } from "./Events/SyncEvents";
 import { ItemTrans, itemToShedNote } from "./dataStore/itemTrans";
 import { Queue } from "./dataStore/queue";
@@ -8337,7 +8341,7 @@ export default class SRPlugin extends Plugin {
 
     public buildInlineTitleCardMenu(file: TFile): Menu {
         const menu = new Menu();
-        this.app.workspace.trigger("file-menu", menu, file, "syro-inline-title", null);
+        addInlineTitleDeckEntryMenuEvt(this, menu, file);
         return menu;
     }
 
@@ -9855,6 +9859,17 @@ export default class SRPlugin extends Plugin {
 
     public getSRInFocusState(): boolean {
         return this.isSRInFocus;
+    }
+
+    public requestToggleReviewEditMode(): boolean {
+        const workspace = this.app.workspace as typeof this.app.workspace & {
+            getMostRecentLeaf?: () => WorkspaceLeaf | null;
+        };
+        const leaf = workspace.getMostRecentLeaf?.() ?? null;
+        if (leaf?.view instanceof TabView) {
+            return leaf.view.requestToggleReviewEditMode();
+        }
+        return false;
     }
 
     public syncLearningQueueToDecks(): void {
