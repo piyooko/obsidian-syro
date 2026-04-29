@@ -5,6 +5,17 @@ export function getDefaultExtractReviewDelayDaysValue(): string {
     return "1";
 }
 
+export function configureExtractReviewDelayDaysInput(
+    inputEl: HTMLInputElement,
+    value: string,
+): void {
+    inputEl.autocomplete = "off";
+    inputEl.value = value;
+    inputEl.defaultValue = value;
+    inputEl.setAttribute("autocomplete", "off");
+    inputEl.setAttribute("value", value);
+}
+
 export function buildExtractDueAtFromDelayDaysValue(value: string, now = new Date()): number {
     const normalizedValue = value.trim();
     if (!/^\d+$/.test(normalizedValue)) {
@@ -50,12 +61,13 @@ export class ExtractReviewDateModal extends Modal {
         new Setting(contentEl)
             .setName(t("EXTRACT_SET_DATE_LABEL"))
             .addText((text) => {
+                const initialDelayDaysValue = this.delayDaysValue;
                 text.inputEl.type = "number";
                 text.inputEl.min = "1";
                 text.inputEl.step = "1";
                 text.inputEl.inputMode = "numeric";
                 text.setPlaceholder("22");
-                text.setValue(this.delayDaysValue);
+                configureExtractReviewDelayDaysInput(text.inputEl, initialDelayDaysValue);
                 text.onChange((value) => {
                     this.delayDaysValue = value;
                 });
@@ -67,6 +79,8 @@ export class ExtractReviewDateModal extends Modal {
                     submitDelayDays();
                 });
                 window.setTimeout(() => {
+                    configureExtractReviewDelayDaysInput(text.inputEl, initialDelayDaysValue);
+                    this.delayDaysValue = initialDelayDaysValue;
                     text.inputEl.focus();
                     text.inputEl.select();
                 });

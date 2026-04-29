@@ -1,5 +1,6 @@
 import {
     buildExtractDueAtFromDelayDaysValue,
+    configureExtractReviewDelayDaysInput,
     getDefaultExtractReviewDelayDaysValue,
 } from "src/ui/modals/ExtractReviewDateModal";
 
@@ -24,5 +25,17 @@ describe("ExtractReviewDateModal delay helpers", () => {
 
     test("defaults to one day", () => {
         expect(getDefaultExtractReviewDelayDaysValue()).toBe("1");
+    });
+
+    test("initializes the delay input to one day and disables browser restoration", () => {
+        const input = document.createElement("input");
+        input.value = "13";
+
+        configureExtractReviewDelayDaysInput(input, getDefaultExtractReviewDelayDaysValue());
+
+        expect(input.autocomplete).toBe("off");
+        expect(input.value).toBe("1");
+        expect(input.defaultValue).toBe("1");
+        expect(input.getAttribute("value")).toBe("1");
     });
 });
