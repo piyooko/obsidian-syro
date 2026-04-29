@@ -31,13 +31,15 @@ export type SidebarProgressIndicatorMode = "ring" | "percentage";
 export type SidebarProgressRingDirection = "clockwise" | "counterclockwise";
 export type NoteReviewIgnoreReason = "ignored-folder" | "ignored-tag";
 export type AutoExtractRuleKind = "heading";
-export type AutoExtractHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+export type AutoExtractHeadingLevel = number;
 export const DEFAULT_SYNC_PROGRESS_DISPLAY_MODE: SyncProgressDisplayMode = "full-only";
 
 export interface AutoExtractRule {
     sourcePath: string;
     rule: AutoExtractRuleKind;
     headingLevel?: AutoExtractHeadingLevel;
+    headingLevels?: AutoExtractHeadingLevel[];
+    allHeadingLevels?: boolean;
     enabled: boolean;
     createdAt: number;
     updatedAt: number;
@@ -49,7 +51,20 @@ function normalizePathKey(path: string): string {
 
 function normalizeAutoExtractHeadingLevel(value: unknown): AutoExtractHeadingLevel | undefined {
     const level = typeof value === "number" && Number.isFinite(value) ? Math.round(value) : 0;
-    return level >= 1 && level <= 6 ? (level as AutoExtractHeadingLevel) : undefined;
+    return level >= 1 ? level : undefined;
+}
+
+function normalizeAutoExtractHeadingLevels(value: unknown): AutoExtractHeadingLevel[] | undefined {
+    if (!Array.isArray(value)) {
+        return undefined;
+    }
+    return Array.from(
+        new Set(
+            value
+                .map((item) => normalizeAutoExtractHeadingLevel(item))
+                .filter((item): item is AutoExtractHeadingLevel => item !== undefined),
+        ),
+    ).sort((a, b) => a - b);
 }
 
 export function normalizeAutoExtractRule(value: unknown, pathHint = ""): AutoExtractRule | null {
@@ -71,15 +86,24 @@ export function normalizeAutoExtractRule(value: unknown, pathHint = ""): AutoExt
     const now = Date.now();
     const createdAt = getNumberProp(value, "createdAt");
     const updatedAt = getNumberProp(value, "updatedAt");
+    const enabled = getBooleanProp(value, "enabled") ?? true;
+    const allHeadingLevels = getBooleanProp(value, "allHeadingLevels") ?? false;
+    const normalizedHeadingLevels = normalizeAutoExtractHeadingLevels(value.headingLevels);
+    const legacyHeadingLevel = normalizeAutoExtractHeadingLevel(value.headingLevel);
+    const headingLevels =
+        normalizedHeadingLevels ??
+        (legacyHeadingLevel !== undefined ? [legacyHeadingLevel] : enabled && !allHeadingLevels ? [1] : []);
     const normalized: AutoExtractRule = {
         sourcePath,
         rule: ruleKind,
-        enabled: getBooleanProp(value, "enabled") ?? true,
+        enabled,
         createdAt: createdAt !== undefined && Number.isFinite(createdAt) ? createdAt : now,
         updatedAt: updatedAt !== undefined && Number.isFinite(updatedAt) ? updatedAt : now,
+        headingLevels,
+        allHeadingLevels,
     };
 
-    normalized.headingLevel = normalizeAutoExtractHeadingLevel(value.headingLevel) ?? 1;
+    normalized.headingLevel = headingLevels[0] ?? legacyHeadingLevel;
 
     return normalized;
 }

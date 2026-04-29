@@ -54,6 +54,20 @@ export type ReviewSessionView = "deck-list" | "review";
 type ReviewEntrySource = "global-deck-list" | "manual-deck-click" | "in-note-auto-enter";
 type ActiveReviewItem = { kind: "card" } | { kind: "extract"; uuid: string };
 
+interface PreparedExtractReview {
+    uuid: string;
+    rawMarkdown: string;
+    context: ExtractReviewContext | null;
+    draft: ExtractContextUpdate | null;
+    sourcePath: string | null;
+    versionKey: string;
+}
+
+interface CachedSourceText {
+    mtime: number;
+    text: string;
+}
+
 interface ReviewSessionProps {
     plugin: SRPlugin;
     sequencer: IFlashcardReviewSequencer;
@@ -497,6 +511,120 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     );
 
     const forceUpdate = useCallback(() => setTick((t) => t + 1), []);
+    const preparedExtractsRef = useRef(new Map<string, PreparedExtractReview>());
+    const preparingExtractsRef = useRef(new Map<string, Promise<PreparedExtractReview>>());
+    const sourceTextCacheRef = useRef(new Map<string, CachedSourceText>());
+    const [, setPreparedExtractVersion] = useState(0);
+
+    const getExtractVersionKey = useCallback(
+        (item: ExtractItem | null): string => {
+            if (!item) {
+                return "missing";
+            }
+            const abstractFile = plugin.app.vault.getAbstractFileByPath(item.sourcePath);
+            const mtime = abstractFile instanceof TFile ? abstractFile.stat.mtime : 0;
+            return [
+                item.uuid,
+                item.stage,
+                item.sourcePath,
+                mtime,
+                item.sourceAnchor.start,
+                item.sourceAnchor.end,
+                item.rawMarkdown,
+            ].join("\u001f");
+        },
+        [plugin.app.vault],
+    );
+
+    const invalidatePreparedExtract = useCallback((uuid?: string | null, sourcePath?: string | null) => {
+        if (uuid) {
+            preparedExtractsRef.current.delete(uuid);
+            preparingExtractsRef.current.delete(uuid);
+        } else {
+            preparedExtractsRef.current.clear();
+            preparingExtractsRef.current.clear();
+        }
+        if (sourcePath) {
+            sourceTextCacheRef.current.delete(sourcePath);
+        } else if (!uuid) {
+            sourceTextCacheRef.current.clear();
+        }
+        setPreparedExtractVersion((value) => value + 1);
+    }, []);
+
+    const getCachedSourceText = useCallback(
+        async (item: ExtractItem): Promise<string | undefined> => {
+            const abstractFile = plugin.app.vault.getAbstractFileByPath(item.sourcePath);
+            if (!(abstractFile instanceof TFile)) {
+                return undefined;
+            }
+            const cached = sourceTextCacheRef.current.get(item.sourcePath);
+            if (cached && cached.mtime === abstractFile.stat.mtime) {
+                return cached.text;
+            }
+            const text = await plugin.app.vault.read(abstractFile);
+            sourceTextCacheRef.current.set(item.sourcePath, {
+                mtime: abstractFile.stat.mtime,
+                text,
+            });
+            return text;
+        },
+        [plugin.app.vault],
+    );
+
+    const prepareExtractReview = useCallback(
+        async (uuid: string): Promise<PreparedExtractReview> => {
+            const item = plugin.extractStore?.get(uuid) ?? null;
+            const versionKey = getExtractVersionKey(item);
+            const cached = preparedExtractsRef.current.get(uuid);
+            if (cached && cached.versionKey === versionKey) {
+                return cached;
+            }
+
+            const pending = preparingExtractsRef.current.get(uuid);
+            if (pending !== undefined) {
+                return pending;
+            }
+
+            const promise = (async () => {
+                const latestItem = plugin.extractStore?.get(uuid) ?? null;
+                const latestVersionKey = getExtractVersionKey(latestItem);
+                const sourceText = latestItem ? await getCachedSourceText(latestItem) : undefined;
+                const context = await plugin.getExtractReviewContext(uuid, sourceText);
+                const prepared: PreparedExtractReview = {
+                    uuid,
+                    rawMarkdown: latestItem?.rawMarkdown ?? "",
+                    context,
+                    draft: context ? { markdown: context.markdown, ranges: context } : null,
+                    sourcePath: latestItem?.sourcePath ?? null,
+                    versionKey: latestVersionKey,
+                };
+                preparedExtractsRef.current.set(uuid, prepared);
+                setPreparedExtractVersion((value) => value + 1);
+                return prepared;
+            })().finally(() => {
+                preparingExtractsRef.current.delete(uuid);
+            });
+
+            preparingExtractsRef.current.set(uuid, promise);
+            return promise;
+        },
+        [getCachedSourceText, getExtractVersionKey, plugin],
+    );
+
+    const getExtractLookaheadUuids = useCallback(
+        (currentUuid: string): string[] => {
+            const candidates = plugin.getExtractReviewCandidates(
+                activeDeckPathRef.current,
+                reviewMode !== FlashcardReviewMode.Cram,
+            );
+            const uuids = candidates.map((item) => item.uuid);
+            const currentIndex = uuids.indexOf(currentUuid);
+            const startIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
+            return uuids.slice(startIndex, startIndex + 2);
+        },
+        [plugin, reviewMode],
+    );
 
     const resolveNextReviewItem = useCallback(
         (deckPathOverride?: string | null): ActiveReviewItem | null => {
@@ -641,6 +769,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                     view,
                 });
             }
+            invalidatePreparedExtract();
             forceUpdate();
         };
 
@@ -654,7 +783,58 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             unsubStats();
             unsubExtracts();
         };
-    }, [activeReviewItem, forceUpdate, logRuntimeDebug, plugin, view]);
+    }, [activeReviewItem, forceUpdate, invalidatePreparedExtract, logRuntimeDebug, plugin, view]);
+
+    useEffect(() => {
+        if (activeReviewItem?.kind !== "extract") {
+            return;
+        }
+        let cancelled = false;
+        void prepareExtractReview(activeReviewItem.uuid).then(() => {
+            if (!cancelled) {
+                forceUpdate();
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [activeReviewItem, forceUpdate, prepareExtractReview, reviewUiResetToken]);
+
+    useEffect(() => {
+        if (activeReviewItem?.kind !== "extract") {
+            return;
+        }
+        if (!preparedExtractsRef.current.has(activeReviewItem.uuid)) {
+            return;
+        }
+
+        const lookaheadUuids = getExtractLookaheadUuids(activeReviewItem.uuid);
+        const preload = () => {
+            lookaheadUuids.forEach((uuid) => {
+                void prepareExtractReview(uuid).catch((error) => {
+                    console.error("[SR-Extract] Failed to preload extract review", error);
+                });
+            });
+        };
+
+        const requestIdle =
+            typeof window.requestIdleCallback === "function"
+                ? window.requestIdleCallback
+                : null;
+        if (requestIdle) {
+            const idleId = requestIdle(preload, { timeout: 800 });
+            return () => window.cancelIdleCallback?.(idleId);
+        }
+
+        const timeoutId = window.setTimeout(preload, 0);
+        return () => window.clearTimeout(timeoutId);
+    }, [
+        activeReviewItem,
+        getExtractLookaheadUuids,
+        prepareExtractReview,
+        reviewUiResetToken,
+        tick,
+    ]);
 
     useEffect(() => {
         logRuntimeDebug(`[SR-DynSync] ReviewSession: tick=${tick}`);
@@ -837,6 +1017,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                     : responseMap[rating] ?? ReviewResponse.Good;
 
             if (activeReviewItem?.kind === "extract") {
+                const reviewedExtract = plugin.extractStore?.get(activeReviewItem.uuid) ?? null;
                 try {
                     await plugin.reviewExtract(
                         activeReviewItem.uuid,
@@ -846,6 +1027,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 } catch (error) {
                     console.error("[SR-Extract] Failed to review extract", error);
                 }
+                invalidatePreparedExtract(activeReviewItem.uuid, reviewedExtract?.sourcePath ?? null);
 
                 const nextReviewItem = resolveNextReviewItem(activeDeckPathRef.current);
                 if (nextReviewItem) {
@@ -885,6 +1067,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             logRuntimeDebug,
             plugin,
             plugin.store,
+            invalidatePreparedExtract,
             resolveNextReviewItem,
             sequencer,
         ],
@@ -907,7 +1090,9 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     // Remove the current card from tracking and leave review if nothing remains.
     const handleDelete = useCallback(async () => {
         if (activeReviewItem?.kind === "extract") {
+            const deletedExtract = plugin.extractStore?.get(activeReviewItem.uuid) ?? null;
             await plugin.graduateExtract(activeReviewItem.uuid, activeDeckPathRef.current);
+            invalidatePreparedExtract(activeReviewItem.uuid, deletedExtract?.sourcePath ?? null);
             const nextReviewItem = resolveNextReviewItem(activeDeckPathRef.current);
             if (nextReviewItem) {
                 setActiveReviewItem(nextReviewItem);
@@ -926,18 +1111,28 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         } else {
             handleExitReview();
         }
-    }, [activeReviewItem, forceUpdate, handleExitReview, plugin, resolveNextReviewItem, sequencer]);
+    }, [
+        activeReviewItem,
+        forceUpdate,
+        handleExitReview,
+        invalidatePreparedExtract,
+        plugin,
+        resolveNextReviewItem,
+        sequencer,
+    ]);
 
     const handleSetExtractDate = useCallback(
         async (dueAt: number) => {
             if (activeReviewItem?.kind !== "extract") {
                 return;
             }
+            const updatedExtract = plugin.extractStore?.get(activeReviewItem.uuid) ?? null;
             await plugin.setExtractReviewDate(
                 activeReviewItem.uuid,
                 dueAt,
                 activeDeckPathRef.current,
             );
+            invalidatePreparedExtract(activeReviewItem.uuid, updatedExtract?.sourcePath ?? null);
             const nextReviewItem = resolveNextReviewItem(activeDeckPathRef.current);
             if (nextReviewItem) {
                 setActiveReviewItem(nextReviewItem);
@@ -947,7 +1142,14 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 handleExitReview();
             }
         },
-        [activeReviewItem, forceUpdate, handleExitReview, plugin, resolveNextReviewItem],
+        [
+            activeReviewItem,
+            forceUpdate,
+            handleExitReview,
+            invalidatePreparedExtract,
+            plugin,
+            resolveNextReviewItem,
+        ],
     );
 
     // Persist tree collapse changes.
@@ -1032,6 +1234,12 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                                     plugin={plugin}
                                     sequencer={sequencer}
                                     extractUuid={activeReviewItem.uuid}
+                                    preparedExtract={
+                                        preparedExtractsRef.current.get(activeReviewItem.uuid) ??
+                                        null
+                                    }
+                                    prepareExtractReview={prepareExtractReview}
+                                    invalidatePreparedExtract={invalidatePreparedExtract}
                                     deckPath={activeDeckPathRef.current}
                                     applyExtractDailyLimits={reviewMode !== FlashcardReviewMode.Cram}
                                     markdownOwner={markdownOwner}
@@ -1316,6 +1524,9 @@ interface ExtractLinearCardReviewProps {
     plugin: SRPlugin;
     sequencer: IFlashcardReviewSequencer;
     extractUuid: string;
+    preparedExtract: PreparedExtractReview | null;
+    prepareExtractReview: (uuid: string) => Promise<PreparedExtractReview>;
+    invalidatePreparedExtract: (uuid?: string | null, sourcePath?: string | null) => void;
     deckPath: string | null;
     applyExtractDailyLimits: boolean;
     markdownOwner: Component;
@@ -1339,6 +1550,9 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     plugin,
     sequencer,
     extractUuid,
+    preparedExtract,
+    prepareExtractReview,
+    invalidatePreparedExtract,
     deckPath,
     applyExtractDailyLimits,
     markdownOwner,
@@ -1352,9 +1566,14 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     overlayMobileNavbar,
 }) => {
     const extract = plugin.extractStore?.get(extractUuid) ?? null;
-    const [body, setBody] = useState(extract?.rawMarkdown ?? "");
-    const [context, setContext] = useState<ExtractReviewContext | null>(null);
-    const [contextDraft, setContextDraft] = useState<ExtractContextUpdate | null>(null);
+    const [body, setBody] = useState(preparedExtract?.rawMarkdown ?? extract?.rawMarkdown ?? "");
+    const [context, setContext] = useState<ExtractReviewContext | null>(
+        preparedExtract?.context ?? null,
+    );
+    const [contextDraft, setContextDraft] = useState<ExtractContextUpdate | null>(
+        preparedExtract?.draft ?? null,
+    );
+    const [contextLoadError, setContextLoadError] = useState<string | null>(null);
     const bodyValueRef = useRef(body);
     const bodyDirtyRef = useRef(false);
     const contextRef = useRef<ExtractReviewContext | null>(null);
@@ -1385,6 +1604,10 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
         () => plugin.getExtractReviewIntervals(extractUuid),
         [extractUuid, plugin, uiResetToken],
     );
+    const extractReviewButtonLabels = useMemo(
+        () => [reviewIntervals[0] ?? "", reviewIntervals[2] ?? reviewIntervals[1] ?? ""],
+        [reviewIntervals],
+    );
     const cardStats = sequencer.getSessionDeckStats();
     const extractStats = useMemo(
         () => plugin.getExtractReviewStats(deckPath, applyExtractDailyLimits),
@@ -1402,45 +1625,59 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     useEffect(() => {
         let cancelled = false;
         const nextExtract = plugin.extractStore?.get(extractUuid) ?? null;
-        const nextBody = nextExtract?.rawMarkdown ?? "";
+        const nextPrepared =
+            preparedExtract && preparedExtract.uuid === extractUuid ? preparedExtract : null;
+        const nextBody = nextPrepared?.rawMarkdown ?? nextExtract?.rawMarkdown ?? "";
         setBody(nextBody);
         bodyValueRef.current = nextBody;
         bodyDirtyRef.current = false;
-        contextRef.current = null;
-        contextDraftRef.current = null;
+        contextRef.current = nextPrepared?.context ?? null;
+        contextDraftRef.current = nextPrepared?.draft ?? null;
         contextDirtyRef.current = false;
-        setContext(null);
-        setContextDraft(null);
+        setContext(nextPrepared?.context ?? null);
+        setContextDraft(nextPrepared?.draft ?? null);
+        setContextLoadError(null);
+        if (nextPrepared) {
+            return () => {
+                cancelled = true;
+            };
+        }
         logRuntimeDebug("[SR-ExtractSave] extract context load:start", {
             extractUuid,
             uiResetToken,
             sourcePath: nextExtract?.sourcePath ?? null,
             sourceMode: nextExtract?.sourceMode ?? null,
         });
-        void plugin.getExtractReviewContext(extractUuid).then((nextContext) => {
-            if (cancelled) {
-                return;
-            }
-            setContext(nextContext);
-            contextRef.current = nextContext;
-            const nextDraft = nextContext
-                ? { markdown: nextContext.markdown, ranges: nextContext }
-                : null;
-            setContextDraft(nextDraft);
-            contextDraftRef.current = nextDraft;
-            contextDirtyRef.current = false;
-            logRuntimeDebug("[SR-ExtractSave] extract context load:done", {
-                extractUuid,
-                hasContext: nextContext !== null,
-                markdownLength: nextContext?.markdown.length ?? 0,
-                currentOuterFrom: nextContext?.currentOuterFrom ?? null,
-                currentOuterTo: nextContext?.currentOuterTo ?? null,
+        void prepareExtractReview(extractUuid)
+            .then((prepared) => {
+                if (cancelled) {
+                    return;
+                }
+                const nextContext = prepared.context;
+                const nextDraft = prepared.draft;
+                setBody(prepared.rawMarkdown);
+                bodyValueRef.current = prepared.rawMarkdown;
+                setContext(nextContext);
+                contextRef.current = nextContext;
+                setContextDraft(nextDraft);
+                contextDraftRef.current = nextDraft;
+                contextDirtyRef.current = false;
+                logRuntimeDebug("[SR-ExtractSave] extract context load:done", {
+                    extractUuid,
+                    hasContext: nextContext !== null,
+                    markdownLength: nextContext?.markdown.length ?? 0,
+                    currentOuterFrom: nextContext?.currentOuterFrom ?? null,
+                    currentOuterTo: nextContext?.currentOuterTo ?? null,
+                });
+            })
+            .catch((error) => {
+                setContextLoadError(error instanceof Error ? error.message : String(error));
+                console.error("[SR-Extract] Failed to prepare extract review", error);
             });
-        });
         return () => {
             cancelled = true;
         };
-    }, [extractUuid, plugin.extractStore, uiResetToken]);
+    }, [extractUuid, plugin.extractStore, prepareExtractReview, preparedExtract, uiResetToken]);
 
     useEffect(() => {
         bodyValueRef.current = body;
@@ -1478,6 +1715,7 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
                 contextDraftRef.current,
             );
             if (updated) {
+                invalidatePreparedExtract(extractUuid, updated.sourcePath);
                 logRuntimeDebug("[SR-ExtractSave] saveBodyNow:context-save-success", {
                     extractUuid,
                     rawMarkdownLength: updated.rawMarkdown.length,
@@ -1519,6 +1757,7 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
         });
         const updated = await plugin.updateExtractRawMarkdown(extractUuid, bodyValueRef.current);
         if (updated) {
+            invalidatePreparedExtract(extractUuid, updated.sourcePath);
             logRuntimeDebug("[SR-ExtractSave] saveBodyNow:raw-save-success", {
                 extractUuid,
                 rawMarkdownLength: updated.rawMarkdown.length,
@@ -1531,7 +1770,14 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
                 sourcePath: extract?.sourcePath ?? null,
             });
         }
-    }, [clearSaveTimer, extract?.sourcePath, extractUuid, logRuntimeDebug, plugin]);
+    }, [
+        clearSaveTimer,
+        extract?.sourcePath,
+        extractUuid,
+        invalidatePreparedExtract,
+        logRuntimeDebug,
+        plugin,
+    ]);
 
     const flushBodySave = useCallback(async () => {
         await saveBodyNow();
@@ -1695,9 +1941,9 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
         () => ({
             front: body || t("EXTRACT_NO_ACTIVE_ITEMS"),
             back: "",
-            responseButtonLabels: reviewIntervals,
+            responseButtonLabels: extractReviewButtonLabels,
         }),
-        [body, reviewIntervals],
+        [body, extractReviewButtonLabels],
     );
     const reviewStats = useMemo(
         () => combineCardAndExtractReviewStats(cardStats, extractStats),
@@ -1713,6 +1959,24 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     const isPhoneLayout = Platform.isPhone;
     const allowResize = !isPhoneLayout;
     const cardType: "new" | "learning" | "due" = extract?.timesReviewed === 0 ? "new" : "due";
+    const extractDebugStatus =
+        context && contextDraft
+            ? null
+            : {
+                  stage: contextLoadError
+                      ? "context-load-error"
+                      : preparedExtract
+                        ? "prepared-context-missing"
+                        : "context-loading",
+                  detail: {
+                      extractUuid,
+                      sourcePath: sourcePath || null,
+                      hasExtract: !!extract,
+                      hasPreparedExtract: !!preparedExtract,
+                      rawMarkdownLength: body.length,
+                  },
+                  error: contextLoadError ?? undefined,
+              };
 
     const handleResize = (width: number, height: number) => {
         settings.reactFlashcardWidth = width;
@@ -1771,6 +2035,7 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
                 onUpdateContent={scheduleBodySave}
                 extractContext={context}
                 extractContextDraft={contextDraft}
+                extractDebugStatus={extractDebugStatus}
                 onUpdateExtractContext={scheduleContextSave}
                 extractActionLabels={{
                     again: t("EXTRACT_REVIEW_AGAIN"),

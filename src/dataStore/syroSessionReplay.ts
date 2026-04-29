@@ -1785,8 +1785,11 @@ export async function replaySyroSessionRecords(
             return "skipped";
         }
 
-        const isDelete = record.opType === "remove" || record.opType === "graduate";
-        if (isDelete) {
+        const isRemove = record.opType === "remove";
+        const isDelete = isRemove || record.opType === "graduate";
+        if (isRemove) {
+            extractStore.removeByUuid(targetUuid);
+        } else if (isDelete) {
             extractStore.graduateByUuid(targetUuid, workingSnapshot);
         } else {
             extractStore.upsertSnapshot(workingSnapshot);

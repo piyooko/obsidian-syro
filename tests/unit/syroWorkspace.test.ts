@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { NOTE_CACHE_VERSION } from "src/cache/noteCacheStore";
 import { createDeckOptionsStoreSnapshot } from "src/dataStore/deckOptionsStore";
 import * as Legacy011Migration from "src/dataStore/syroLegacy011Migration";
 import { DEFAULT_SETTINGS } from "src/settings";
@@ -470,7 +471,7 @@ describe("SyroWorkspace", () => {
             licenseState: null,
         });
         expect(JSON.parse(files.get(layout.noteCachePath) ?? "{}")).toEqual({
-            version: 4,
+            version: NOTE_CACHE_VERSION,
             signature: "",
             items: [],
         });

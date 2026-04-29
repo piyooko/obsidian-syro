@@ -460,7 +460,10 @@ describe("SRPlugin extract deck paths", () => {
             "摘录测试.md",
             "# A\none",
             "摘录测试",
-            rule,
+            expect.objectContaining({
+                ...rule,
+                headingLevels: [1],
+            }),
         );
         expect(plugin.extractStore.save).toHaveBeenCalled();
         expect(emit).toHaveBeenCalledWith("extracts-updated");
@@ -544,6 +547,7 @@ describe("SRPlugin extract deck paths", () => {
                 sourcePath: "摘录测试.md",
                 rule: "heading",
                 headingLevel: 2,
+                headingLevels: [2],
                 enabled: true,
             }),
         );
@@ -551,6 +555,65 @@ describe("SRPlugin extract deck paths", () => {
         expect(savePluginData).toHaveBeenCalledWith({ domains: ["shared-settings"] });
         expect(syncAutoExtractsFromFile).toHaveBeenCalledWith(file, rule);
         expect(emit).toHaveBeenCalledWith("note-review-updated");
+    });
+
+    test("enables all heading levels for automatic extracts", async () => {
+        const file = createTFile("摘录测试.md");
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: { settings: { autoExtractRules: {} } },
+            savePluginData: jest.fn(() => Promise.resolve()),
+            syncAutoExtractsFromFile: jest.fn(() => Promise.resolve()),
+            syncEvents: { emit: jest.fn() },
+        });
+
+        const rule = await SRPlugin.prototype.setAutoExtractAllHeadings.call(plugin, file, true);
+
+        expect(rule).toEqual(
+            expect.objectContaining({
+                sourcePath: "摘录测试.md",
+                rule: "heading",
+                headingLevels: [1, 2, 3, 4, 5, 6],
+                allHeadingLevels: true,
+                enabled: true,
+            }),
+        );
+        expect(plugin.data.settings.autoExtractRules["摘录测试.md"]).toBe(rule);
+        expect(plugin.syncAutoExtractsFromFile).toHaveBeenCalledWith(file, rule);
+    });
+
+    test("turning off one level from all headings preserves the other H1-H6 levels", async () => {
+        const file = createTFile("摘录测试.md");
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: {
+                settings: {
+                    autoExtractRules: {
+                        "摘录测试.md": {
+                            sourcePath: "摘录测试.md",
+                            rule: "heading",
+                            headingLevels: [1, 2, 3, 4, 5, 6],
+                            allHeadingLevels: true,
+                            enabled: true,
+                            createdAt: 1,
+                            updatedAt: 1,
+                        },
+                    },
+                },
+            },
+            savePluginData: jest.fn(() => Promise.resolve()),
+            syncAutoExtractsFromFile: jest.fn(() => Promise.resolve()),
+            syncEvents: { emit: jest.fn() },
+        });
+
+        const rule = await SRPlugin.prototype.setAutoExtractHeadingLevel.call(plugin, file, 3, false);
+
+        expect(rule).toEqual(
+            expect.objectContaining({
+                headingLevels: [1, 2, 4, 5, 6],
+                allHeadingLevels: false,
+                enabled: true,
+            }),
+        );
+        expect(plugin.syncAutoExtractsFromFile).toHaveBeenCalledWith(file, rule);
     });
 
     test("automatic extract graduation does not edit source markdown", async () => {

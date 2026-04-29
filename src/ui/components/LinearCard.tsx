@@ -13,7 +13,7 @@ import type { FC } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     RotateCcw,
-    CalendarDays,
+    Calendar,
     ThumbsDown,
     Check,
     GraduationCap,
@@ -106,6 +106,7 @@ interface LinearCardProps {
     extractContextDraft?: ExtractContextUpdate | null;
     onUpdateExtractContext?: (update: ExtractContextUpdate) => void;
     onSetExtractDate?: () => void;
+    extractDebugStatus?: ExtractDebugStatus | null;
     extractActionLabels?: {
         again: string;
         good: string;
@@ -129,6 +130,12 @@ type ClozeRenderFace = "single" | "front" | "back";
 type HeaderBreadcrumbPlacement = "header" | "inline";
 type HeaderBreadcrumbDisplay = "expanded" | "truncated";
 type HeaderStatsMode = "regular" | "compact";
+
+interface ExtractDebugStatus {
+    stage: string;
+    detail?: Record<string, string | number | boolean | null>;
+    error?: string;
+}
 
 type HeaderLayoutState = {
     breadcrumbPlacement: HeaderBreadcrumbPlacement;
@@ -362,6 +369,7 @@ export const LinearCard: FC<LinearCardProps> = ({
     extractContextDraft,
     onUpdateExtractContext,
     onSetExtractDate,
+    extractDebugStatus,
     extractActionLabels,
 }) => {
     const isExtractReview = reviewKind === "extract";
@@ -425,10 +433,86 @@ export const LinearCard: FC<LinearCardProps> = ({
 
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(rawContent);
+    const extractHybridReadyKey =
+        isExtractReview && extractContext && extractContextDraft && plugin
+            ? [
+                  cardUiResetKey,
+                  extractContextDraft.ranges.currentOuterFrom,
+                  extractContextDraft.ranges.currentOuterTo,
+                  extractContextDraft.markdown,
+              ].join("\u001f")
+            : null;
+    const [visibleExtractReadyKey, setVisibleExtractReadyKey] = useState<string | null>(null);
+    const [lastExtractDebugStatus, setLastExtractDebugStatus] =
+        useState<ExtractDebugStatus | null>(null);
+    const [showExtractDebugPanel, setShowExtractDebugPanel] = useState(false);
+    const lastExtractDebugWarnKeyRef = useRef("");
+    const hasPreparedExtractContext = !!(
+        isExtractReview &&
+        extractContext &&
+        extractContextDraft &&
+        plugin &&
+        extractHybridReadyKey
+    );
+    const isExtractContentReady =
+        hasPreparedExtractContext && visibleExtractReadyKey === extractHybridReadyKey;
+    const currentExtractDebugStatus =
+        lastExtractDebugStatus ??
+        extractDebugStatus ??
+        (hasPreparedExtractContext
+            ? {
+                  stage: "waiting-for-render-ready",
+                  detail: { hasContext: true, hasDraft: true },
+              }
+            : {
+                  stage: "waiting-for-context",
+                  detail: {
+                      hasContext: !!extractContext,
+                      hasDraft: !!extractContextDraft,
+                      hasPlugin: !!plugin,
+                  },
+              });
 
     useEffect(() => {
         setEditText(rawContent);
     }, [rawContent]);
+
+    useEffect(() => {
+        if (isExtractReview) {
+            setVisibleExtractReadyKey(null);
+            setLastExtractDebugStatus(null);
+            lastExtractDebugWarnKeyRef.current = "";
+        }
+    }, [extractHybridReadyKey, isExtractReview]);
+
+    useEffect(() => {
+        if (!isExtractReview || isExtractContentReady) {
+            setShowExtractDebugPanel(false);
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            setShowExtractDebugPanel(true);
+        }, 1500);
+        return () => window.clearTimeout(timeoutId);
+    }, [extractHybridReadyKey, isExtractContentReady, isExtractReview]);
+
+    useEffect(() => {
+        if (!isExtractReview || isExtractContentReady || !showExtractDebugPanel) {
+            return;
+        }
+
+        const warningKey = [
+            currentExtractDebugStatus.stage,
+            formatExtractDebugDetail(currentExtractDebugStatus),
+            currentExtractDebugStatus.error ?? "",
+        ].join("\u001f");
+        if (lastExtractDebugWarnKeyRef.current === warningKey) {
+            return;
+        }
+        lastExtractDebugWarnKeyRef.current = warningKey;
+        console.warn("[SR-ExtractRender] pending", currentExtractDebugStatus);
+    }, [currentExtractDebugStatus, isExtractContentReady, isExtractReview, showExtractDebugPanel]);
 
     const breadcrumbKey = breadcrumbs
         .map((crumb) => `${crumb.label}\u001e${crumb.line}\u001e${crumb.level}`)
@@ -1374,30 +1458,75 @@ export const LinearCard: FC<LinearCardProps> = ({
 
                         <div className={`sr-card-content-area ${isEditing ? "sr-is-editing" : ""}`}>
                             {isExtractReview ? (
-                                extractContext && extractContextDraft && plugin ? (
-                                    <ExtractHybridMarkdownEditorView
-                                        value={extractContextDraft.markdown}
-                                        ranges={extractContextDraft.ranges}
-                                        mode={isEditing ? "edit" : "review"}
-                                        onChange={(update) => {
-                                            onUpdateExtractContext?.(update);
-                                        }}
-                                        onExit={exitEditMode}
-                                        plugin={plugin}
-                                        renderMarkdown={renderMarkdown}
-                                    />
-                                ) : (
-                                    <div className="sr-card-content-scroll" ref={contentScrollRef}>
-                                        {shouldInlineBreadcrumbs && (
-                                            <InlineBreadcrumbs
-                                                breadcrumbs={breadcrumbs}
-                                                onOpenBreadcrumb={onOpenBreadcrumb}
+                                hasPreparedExtractContext &&
+                                extractContext &&
+                                extractContextDraft &&
+                                plugin &&
+                                extractHybridReadyKey ? (
+                                    <div
+                                        className={`sr-extract-content-gate ${
+                                            isExtractContentReady
+                                                ? "sr-extract-content-ready"
+                                                : "sr-extract-content-pending"
+                                        }`}
+                                    >
+                                        {!isExtractContentReady && (
+                                            <div
+                                                className="sr-extract-content-waiting"
+                                                aria-hidden={!showExtractDebugPanel}
                                             />
                                         )}
-                                        <ExtractContent
-                                            key={cardUiResetKey}
-                                            content={card?.front || t("EXTRACT_NO_ACTIVE_ITEMS")}
-                                            renderMarkdown={renderMarkdown}
+                                        {!isExtractContentReady && (
+                                            <ExtractRenderDebugPanel
+                                                status={currentExtractDebugStatus}
+                                                visible={showExtractDebugPanel}
+                                            />
+                                        )}
+                                        <div
+                                            className={
+                                                isExtractContentReady
+                                                    ? "sr-extract-content-visible"
+                                                    : "sr-extract-content-hidden"
+                                            }
+                                        >
+                                            <ExtractHybridMarkdownEditorView
+                                                key={extractHybridReadyKey}
+                                                value={extractContextDraft.markdown}
+                                                ranges={extractContextDraft.ranges}
+                                                mode={isEditing ? "edit" : "review"}
+                                                onChange={(update) => {
+                                                    onUpdateExtractContext?.(update);
+                                                }}
+                                                onExit={exitEditMode}
+                                                onReady={() => {
+                                                    setVisibleExtractReadyKey(extractHybridReadyKey);
+                                                }}
+                                                onDebugEvent={(event) => {
+                                                    setLastExtractDebugStatus(event);
+                                                    if (plugin.data.settings.showRuntimeDebugMessages) {
+                                                        console.debug(
+                                                            "[SR-ExtractRender]",
+                                                            event,
+                                                        );
+                                                    }
+                                                }}
+                                                plugin={plugin}
+                                                renderMarkdown={renderMarkdown}
+                                            />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div
+                                        className="sr-extract-content-gate sr-extract-content-pending"
+                                        ref={contentScrollRef}
+                                    >
+                                        <div
+                                            className="sr-extract-content-waiting"
+                                            aria-hidden={!showExtractDebugPanel}
+                                        />
+                                        <ExtractRenderDebugPanel
+                                            status={currentExtractDebugStatus}
+                                            visible={showExtractDebugPanel}
                                         />
                                     </div>
                                 )
@@ -1499,15 +1628,15 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                 onClick={() => handleAnswerInternal(1)}
                                             />
                                             <LinearButton
-                                                icon={<CalendarDays size={12} />}
+                                                icon={<Calendar size={12} />}
                                                 label={extractLabels.set}
-                                                sub=""
+                                                sub="xd"
                                                 shortcut="3"
                                                 variant="set"
                                                 onClick={() => onSetExtractDate?.()}
                                             />
                                             <LinearButton
-                                                icon={<GraduationCap size={12} />}
+                                                icon={<Trash2 size={12} />}
                                                 label={extractLabels.graduate}
                                                 sub=""
                                                 shortcut="4"
@@ -2225,19 +2354,35 @@ const BasicContent = ({
     </div>
 );
 
-const ExtractContent = ({
-    content,
-    renderMarkdown,
-}: {
-    content: string;
-    renderMarkdown?: (text: string, el: HTMLElement) => Promise<void> | void;
-}) => (
-    <div className="sr-basic-content">
-        <div className="sr-content-text">
-            <MarkdownDisplay content={content} renderMarkdown={renderMarkdown} />
+function formatExtractDebugDetail(status: ExtractDebugStatus): string {
+    const entries = Object.entries(status.detail ?? {});
+    if (entries.length === 0) {
+        return "";
+    }
+    return entries.map(([key, value]) => `${key}=${String(value)}`).join(", ");
+}
+
+const ExtractRenderDebugPanel: FC<{ status: ExtractDebugStatus; visible: boolean }> = ({
+    status,
+    visible,
+}) => {
+    if (!visible) {
+        return null;
+    }
+
+    const detail = formatExtractDebugDetail(status);
+    return (
+        <div className="sr-extract-render-debug" role="status">
+            <div className="sr-extract-render-debug-title">
+                {t("EXTRACT_RENDER_DEBUG_TITLE")}
+            </div>
+            <div>{t("EXTRACT_RENDER_DEBUG_STEP", { stage: status.stage })}</div>
+            {detail && <div>{t("EXTRACT_RENDER_DEBUG_DETAIL", { detail })}</div>}
+            {status.error && <div>{t("EXTRACT_RENDER_DEBUG_ERROR", { error: status.error })}</div>}
+            <div>{t("EXTRACT_RENDER_DEBUG_CONSOLE")}</div>
         </div>
-    </div>
-);
+    );
+};
 
 const InlineBreadcrumbs: FC<InlineBreadcrumbsProps> = ({
     breadcrumbs,

@@ -67,6 +67,11 @@ class WorkspaceLeaf {
 }
 
 class MenuItem {
+    constructor() {
+        this.submenu = null;
+        this.checked = false;
+    }
+
     setTitle() {
         return this;
     }
@@ -77,6 +82,16 @@ class MenuItem {
 
     onClick() {
         return this;
+    }
+
+    setChecked(checked) {
+        this.checked = checked;
+        return this;
+    }
+
+    setSubmenu() {
+        this.submenu = new Menu();
+        return this.submenu;
     }
 }
 

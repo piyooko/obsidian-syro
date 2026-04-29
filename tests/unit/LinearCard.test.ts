@@ -169,10 +169,16 @@ test("extract review renders direct actions without show-answer or hard/easy lab
     expect(container.textContent).toContain("良好");
     expect(container.textContent).toContain("指定");
     expect(container.textContent).toContain("毕业");
+    expect(container.textContent).toContain("xd");
     expect(container.textContent).not.toContain("较难");
     expect(container.textContent).not.toContain("简单");
 
     const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>(".sr-linear-btn"));
+    expect(buttons[2].className).toContain("is-set");
+    expect(buttons[3].className).toContain("is-graduate");
+    expect(buttons[2].querySelector(".lucide-calendar")).not.toBeNull();
+    expect(buttons[3].querySelector(".lucide-trash-2")).not.toBeNull();
+
     act(() => {
         buttons[0].click();
         buttons[1].click();
@@ -259,7 +265,93 @@ test("extract review without context never falls back to the plain card editor",
         expect(container.querySelector(".sr-editor-hint")).toBeNull();
         expect(container.querySelector(".cm-editor")).toBeNull();
         expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
-        expect(container.textContent).toContain("{{ir::text}}");
+        expect(container.querySelector(".sr-extract-content-pending")).not.toBeNull();
+        expect(container.textContent).not.toContain("{{ir::text}}");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("extract review pending state surfaces render diagnostics", () => {
+    jest.useFakeTimers();
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "{{ir::text}}", back: "" },
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+
+        expect(container.textContent).not.toContain("Extract render is still waiting");
+
+        act(() => {
+            jest.advanceTimersByTime(1500);
+        });
+
+        expect(container.textContent).toContain("Extract render is still waiting");
+        expect(container.textContent).toContain("waiting-for-context");
+        expect(warnSpy).toHaveBeenCalledWith(
+            "[SR-ExtractRender] pending",
+            expect.objectContaining({ stage: "waiting-for-context" }),
+        );
+    } finally {
+        act(() => root.unmount());
+        warnSpy.mockRestore();
+        jest.useRealTimers();
+    }
+});
+
+test("extract review keeps hybrid context hidden until markdown rendering is ready", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const before = "before\n\n";
+    const wrapped = "{{ir::target\n\n| A | B |\n| - | - |\n| 1 | two |}}";
+    const markdown = `${before}${wrapped}\n\nafter`;
+    const context = createManualExtractContext(
+        markdown,
+        before.length,
+        before.length + wrapped.length,
+    );
+    const { pending, renderMarkdown } = createDeferredRenderMarkdown();
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: wrapped, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown,
+                }),
+            );
+        });
+        await flushEffects();
+
+        expect(renderMarkdown).toHaveBeenCalled();
+        expect(container.querySelector(".sr-extract-content-pending")).not.toBeNull();
+        expect(container.querySelector(".sr-extract-content-ready")).toBeNull();
+
+        for (const render of pending.splice(0)) {
+            render.resolve();
+        }
+        await flushEffects();
+        await flushEffects();
+
+        expect(container.querySelector(".sr-extract-content-pending")).toBeNull();
+        expect(container.querySelector(".sr-extract-content-ready")).not.toBeNull();
     } finally {
         act(() => root.unmount());
     }
@@ -314,6 +406,53 @@ test("readonly extract context uses persistent hybrid markdown renderer", async 
         expect(renderMarkdown).toHaveBeenCalled();
         expect(container.querySelector("table")).not.toBeNull();
         expect(container.querySelector(".cm-strong")?.textContent).toBe("context");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("readonly extract rendered blocks do not reveal source on click", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const before = "before\n\n";
+    const wrapped = "{{ir::**rendered** block}}";
+    const markdown = `${before}${wrapped}\n\nafter`;
+    const context = createManualExtractContext(
+        markdown,
+        before.length,
+        before.length + wrapped.length,
+    );
+    const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
+        el.innerHTML = content.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    });
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: wrapped, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown,
+                }),
+            );
+        });
+
+        await flushEffects();
+        await flushEffects();
+
+        const renderedBlock = container.querySelector<HTMLElement>(
+            ".sr-hybrid-rendered-block, .cm-strong",
+        );
+        expect(renderedBlock).not.toBeNull();
+
+        const event = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+        renderedBlock?.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(true);
     } finally {
         act(() => root.unmount());
     }

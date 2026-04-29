@@ -18,7 +18,7 @@ interface HeadingToken {
 }
 
 const CONTEXT_RADIUS = 80;
-const HEADING_RE = /^(#{1,6})[ \t]+(.+?)[ \t#]*$/;
+const HEADING_RE = /^(#+)[ \t]+(.+?)[ \t#]*$/;
 
 function countLinesBefore(text: string, offset: number): number {
     let line = 0;
@@ -81,7 +81,23 @@ function parseHeadings(text: string): HeadingToken[] {
     return headings;
 }
 
-function buildHeadingSlices(text: string, headingLevel: number): AutoExtractSlice[] {
+function getActiveHeadingLevels(rule: AutoExtractRule): Set<number> | null {
+    if (rule.allHeadingLevels) {
+        return null;
+    }
+    const levels = Array.isArray(rule.headingLevels)
+        ? rule.headingLevels
+        : rule.headingLevel !== undefined
+          ? [rule.headingLevel]
+          : [1];
+    return new Set(
+        levels
+            .map((level) => (Number.isFinite(level) ? Math.round(level) : 0))
+            .filter((level) => level >= 1),
+    );
+}
+
+function buildHeadingSlices(text: string, activeLevels: Set<number> | null): AutoExtractSlice[] {
     const headings = parseHeadings(text);
     const stack: HeadingToken[] = [];
     const duplicateCounts = new Map<string, number>();
@@ -93,13 +109,13 @@ function buildHeadingSlices(text: string, headingLevel: number): AutoExtractSlic
         }
         stack.push(heading);
 
-        if (heading.level !== headingLevel) {
+        if (activeLevels && !activeLevels.has(heading.level)) {
             return;
         }
 
         const nextBoundary = headings
             .slice(index + 1)
-            .find((candidate) => candidate.level <= headingLevel);
+            .find((candidate) => candidate.level <= heading.level);
         const end = nextBoundary?.start ?? text.length;
         const rawMarkdown = text.slice(heading.start, end).trim();
         if (!rawMarkdown) {
@@ -127,6 +143,9 @@ export function buildAutoExtractSlices(text: string, rule: AutoExtractRule): Aut
     if (!rule.enabled) {
         return [];
     }
-    const headingLevel = Math.max(1, Math.min(6, Math.round(rule.headingLevel ?? 1)));
-    return buildHeadingSlices(text, headingLevel);
+    const activeLevels = getActiveHeadingLevels(rule);
+    if (activeLevels && activeLevels.size === 0) {
+        return [];
+    }
+    return buildHeadingSlices(text, activeLevels);
 }

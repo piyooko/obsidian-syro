@@ -67,6 +67,60 @@ describe("extractNoteCache", () => {
         ]);
     });
 
+    test("builds heading locators for all extended heading levels", () => {
+        const cache = buildAutoHeadingLocators("# A\n## B\n####### C\n########## D", {
+            sourcePath: "note.md",
+            rule: "heading",
+            headingLevels: [1, 2, 3, 4, 5, 6],
+            allHeadingLevels: true,
+            enabled: true,
+            createdAt: 1,
+            updatedAt: 1,
+        });
+
+        expect(cache?.headings.map((heading) => ({
+            level: heading.level,
+            key: heading.autoSliceKey,
+        }))).toEqual([
+            { level: 1, key: "heading:1:A:0" },
+            { level: 2, key: "heading:2:A/B:0" },
+            { level: 7, key: "heading:7:A/B/C:0" },
+            { level: 10, key: "heading:10:A/B/C/D:0" },
+        ]);
+        expect(cache?.rule).toMatchObject({
+            headingLevels: [1, 2, 3, 4, 5, 6],
+            allHeadingLevels: true,
+        });
+    });
+
+    test("normalizes multi-level heading cache rules", () => {
+        const cache = normalizePersistedExtractNoteCache({
+            scannedAt: 1,
+            fileMtime: 2,
+            autoHeadings: {
+                rule: {
+                    kind: "heading",
+                    headingLevels: [3, 1, 3, 10],
+                },
+                headings: [
+                    {
+                        autoSliceKey: "heading:10:A:0",
+                        title: "A",
+                        titlePath: ["A"],
+                        level: 10,
+                        siblingTitleOrdinal: 0,
+                        startLine: 0,
+                        endLine: 0,
+                        headingLineOrdinal: 0,
+                    },
+                ],
+            },
+        });
+
+        expect(cache?.autoHeadings?.rule.headingLevels).toEqual([1, 3, 10]);
+        expect(cache?.autoHeadings?.headings[0].level).toBe(10);
+    });
+
     test("normalizes persisted extract note cache defensively", () => {
         const cache = normalizePersistedExtractNoteCache({
             scannedAt: 1,

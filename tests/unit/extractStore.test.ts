@@ -97,6 +97,19 @@ describe("ExtractStore", () => {
         expect(store.getReviewCandidates("deck", { maxNew: 1, maxDue: 50 })).toHaveLength(0);
     });
 
+    test("reports WMS extract intervals in Again Hard Good Easy order", () => {
+        const store = createStore();
+        const algorithm = createWms();
+        const [first] = store.syncFileExtracts("notes/source.md", "{{ir::one}}", "deck").added;
+
+        const intervals = store.getReviewButtonIntervals(first.uuid, algorithm);
+
+        expect(intervals).not.toBeNull();
+        expect(intervals?.[0]).toBe(1);
+        expect(intervals?.[1]).toBe(1);
+        expect(intervals?.[2]).toBeGreaterThan(intervals?.[1] ?? 0);
+    });
+
     test("reports limited new and due stats without a learning bucket", () => {
         const store = createStore();
         const created = store.syncFileExtracts(
@@ -326,7 +339,7 @@ describe("ExtractStore", () => {
         expect(store.getActiveByPath("notes/source.md")).toHaveLength(0);
     });
 
-    test("switching heading levels graduates old active auto slices", () => {
+    test("canceling a heading level removes old active auto slices", () => {
         const store = createStore();
         const [heading] = store.syncAutoExtractsForFile(
             "notes/source.md",
@@ -356,8 +369,41 @@ describe("ExtractStore", () => {
             },
         );
 
-        expect(result.graduated.map((item) => item.uuid)).toContain(heading.uuid);
+        expect(result.removed?.map((item) => item.uuid)).toContain(heading.uuid);
+        expect(result.graduated).toHaveLength(0);
         expect(result.added.every((item) => item.sliceRule === "heading")).toBe(true);
-        expect(store.get(heading.uuid)?.stage).toBe("graduated");
+        expect(store.get(heading.uuid)).toBeNull();
+    });
+
+    test("re-enabling a removed heading level creates a new uuid", () => {
+        const store = createStore();
+        const source = "# A\none\n## B\nchild";
+        const [first] = store.syncAutoExtractsForFile("notes/source.md", source, "deck", {
+            sourcePath: "notes/source.md",
+            rule: "heading",
+            headingLevel: 1,
+            enabled: true,
+            createdAt: 1,
+            updatedAt: 1,
+        }).added;
+
+        store.syncAutoExtractsForFile("notes/source.md", source, "deck", {
+            sourcePath: "notes/source.md",
+            rule: "heading",
+            headingLevel: 2,
+            enabled: true,
+            createdAt: 2,
+            updatedAt: 2,
+        });
+        const [second] = store.syncAutoExtractsForFile("notes/source.md", source, "deck", {
+            sourcePath: "notes/source.md",
+            rule: "heading",
+            headingLevel: 1,
+            enabled: true,
+            createdAt: 3,
+            updatedAt: 3,
+        }).added;
+
+        expect(first.uuid).not.toBe(second.uuid);
     });
 });

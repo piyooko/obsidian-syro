@@ -33,7 +33,9 @@ export interface AutoHeadingLocator {
 export interface AutoHeadingCache {
     rule: {
         kind: "heading";
-        headingLevel: AutoExtractHeadingLevel;
+        headingLevel?: AutoExtractHeadingLevel;
+        headingLevels?: AutoExtractHeadingLevel[];
+        allHeadingLevels?: boolean;
     };
     headings: AutoHeadingLocator[];
 }
@@ -54,7 +56,7 @@ interface HeadingToken {
     line: number;
 }
 
-const HEADING_RE = /^(#{1,6})[ \t]+(.+?)[ \t#]*$/;
+const HEADING_RE = /^(#+)[ \t]+(.+?)[ \t#]*$/;
 
 function isFiniteNumber(value: unknown): value is number {
     return typeof value === "number" && Number.isFinite(value);
@@ -166,7 +168,7 @@ function parseHeadings(text: string): HeadingToken[] {
             const match = chunk.match(HEADING_RE);
             if (match) {
                 headings.push({
-                    level: match[1].length as AutoExtractHeadingLevel,
+                    level: match[1].length,
                     title: normalizeTitle(match[2]),
                     start: offset,
                     end: offset + chunk.length,
@@ -187,7 +189,17 @@ export function buildAutoHeadingLocators(
     if (!rule.enabled || rule.rule !== "heading") {
         return null;
     }
-    const headingLevel = Math.max(1, Math.min(6, Math.round(rule.headingLevel ?? 1))) as AutoExtractHeadingLevel;
+    const headingLevels = Array.from(
+        new Set(
+            (rule.headingLevels ?? (rule.headingLevel !== undefined ? [rule.headingLevel] : [1]))
+                .map((level) => (Number.isFinite(level) ? Math.round(level) : 0))
+                .filter((level) => level >= 1),
+        ),
+    ).sort((a, b) => a - b);
+    if (!rule.allHeadingLevels && headingLevels.length === 0) {
+        return null;
+    }
+    const activeLevels = rule.allHeadingLevels ? null : new Set(headingLevels);
     const headings = parseHeadings(sourceText);
     const stack: HeadingToken[] = [];
     const duplicateCounts = new Map<string, number>();
@@ -200,13 +212,13 @@ export function buildAutoHeadingLocators(
         }
         stack.push(heading);
 
-        if (heading.level !== headingLevel) {
+        if (activeLevels && !activeLevels.has(heading.level)) {
             return;
         }
 
         const nextBoundary = headings
             .slice(index + 1)
-            .find((candidate) => candidate.level <= headingLevel);
+            .find((candidate) => candidate.level <= heading.level);
         const end = nextBoundary?.start ?? sourceText.length;
         const titlePath = stack.map((entry) => entry.title);
         const duplicateBase = `heading:${heading.level}:${titlePath.join("/")}`;
@@ -228,7 +240,9 @@ export function buildAutoHeadingLocators(
     return {
         rule: {
             kind: "heading",
-            headingLevel,
+            headingLevel: headingLevels[0],
+            headingLevels,
+            allHeadingLevels: rule.allHeadingLevels === true,
         },
         headings: locators,
     };
@@ -276,10 +290,21 @@ function normalizeAutoHeadingCache(value: unknown): AutoHeadingCache | undefined
     const raw = asRecord(value);
     const rawRule = asRecord(raw?.rule);
     const rawHeadings = Array.isArray(raw?.headings) ? raw.headings : null;
-    const headingLevel = rawRule?.kind === "heading" && isFiniteNumber(rawRule.headingLevel)
-        ? Math.max(1, Math.min(6, Math.round(rawRule.headingLevel))) as AutoExtractHeadingLevel
-        : null;
-    if (!headingLevel || !rawHeadings) {
+    const rawHeadingLevels = Array.isArray(rawRule?.headingLevels) ? rawRule.headingLevels : null;
+    const headingLevels = rawHeadingLevels
+        ? Array.from(
+              new Set(
+                  rawHeadingLevels
+                      .filter(isFiniteNumber)
+                      .map((level) => Math.round(level))
+                      .filter((level) => level >= 1),
+              ),
+          ).sort((a, b) => a - b)
+        : rawRule?.kind === "heading" && isFiniteNumber(rawRule.headingLevel)
+          ? [Math.max(1, Math.round(rawRule.headingLevel))]
+          : [];
+    const allHeadingLevels = rawRule?.allHeadingLevels === true;
+    if ((!allHeadingLevels && headingLevels.length === 0) || !rawHeadings) {
         return undefined;
     }
     const headings: AutoHeadingLocator[] = [];
@@ -290,6 +315,7 @@ function normalizeAutoHeadingCache(value: unknown): AutoHeadingCache | undefined
             typeof rawHeading.autoSliceKey !== "string" ||
             typeof rawHeading.title !== "string" ||
             !Array.isArray(rawHeading.titlePath) ||
+            !isFiniteNumber(rawHeading.level) ||
             !isFiniteNumber(rawHeading.siblingTitleOrdinal) ||
             !isFiniteNumber(rawHeading.startLine) ||
             !isFiniteNumber(rawHeading.endLine) ||
@@ -299,7 +325,7 @@ function normalizeAutoHeadingCache(value: unknown): AutoHeadingCache | undefined
         }
         headings.push({
             autoSliceKey: rawHeading.autoSliceKey,
-            level: headingLevel,
+            level: Math.max(1, Math.round(rawHeading.level)),
             title: rawHeading.title,
             titlePath: rawHeading.titlePath.filter((part): part is string => typeof part === "string"),
             siblingTitleOrdinal: rawHeading.siblingTitleOrdinal,
@@ -309,7 +335,12 @@ function normalizeAutoHeadingCache(value: unknown): AutoHeadingCache | undefined
         });
     }
     return {
-        rule: { kind: "heading", headingLevel },
+        rule: {
+            kind: "heading",
+            headingLevel: headingLevels[0],
+            headingLevels,
+            allHeadingLevels,
+        },
         headings,
     };
 }

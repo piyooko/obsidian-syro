@@ -1,26 +1,28 @@
 import {
-    buildExtractDueAtFromDateValue,
-    getDefaultExtractReviewDateValue,
+    buildExtractDueAtFromDelayDaysValue,
+    getDefaultExtractReviewDelayDaysValue,
 } from "src/ui/modals/ExtractReviewDateModal";
 
-describe("ExtractReviewDateModal date helpers", () => {
-    test("converts a date value to local 04:00", () => {
-        const dueAt = buildExtractDueAtFromDateValue("2026-04-28");
+describe("ExtractReviewDateModal delay helpers", () => {
+    test("converts a day delay to local 04:00 on the target day", () => {
+        const dueAt = buildExtractDueAtFromDelayDaysValue("22", new Date(2026, 3, 29, 12, 0));
         const date = new Date(dueAt);
 
         expect(date.getFullYear()).toBe(2026);
-        expect(date.getMonth()).toBe(3);
-        expect(date.getDate()).toBe(28);
+        expect(date.getMonth()).toBe(4);
+        expect(date.getDate()).toBe(21);
         expect(date.getHours()).toBe(4);
         expect(date.getMinutes()).toBe(0);
     });
 
-    test("defaults to today before 04:00 and tomorrow after 04:00", () => {
-        expect(getDefaultExtractReviewDateValue(new Date(2026, 3, 27, 3, 59))).toBe(
-            "2026-04-27",
-        );
-        expect(getDefaultExtractReviewDateValue(new Date(2026, 3, 27, 4, 0))).toBe(
-            "2026-04-28",
-        );
+    test("rejects non-positive or non-integer delays", () => {
+        expect(buildExtractDueAtFromDelayDaysValue("0")).toBeNaN();
+        expect(buildExtractDueAtFromDelayDaysValue("-1")).toBeNaN();
+        expect(buildExtractDueAtFromDelayDaysValue("1.5")).toBeNaN();
+        expect(buildExtractDueAtFromDelayDaysValue("abc")).toBeNaN();
+    });
+
+    test("defaults to one day", () => {
+        expect(getDefaultExtractReviewDelayDaysValue()).toBe("1");
     });
 });

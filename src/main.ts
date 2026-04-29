@@ -1597,7 +1597,7 @@ export default class SRPlugin extends Plugin {
         this.deckTree = new Deck("root", null);
         this.remainingDeckTree = new Deck("root", null);
         this.noteCache.clear();
-        this.noteExtractCache.clear();
+        this.getNoteExtractCache().clear();
         this.noteCacheSignature = "";
         this.cardStats = new Stats();
         this.noteStats = new Stats();
@@ -2131,7 +2131,17 @@ export default class SRPlugin extends Plugin {
     public getAutoExtractRuleForPath(path: string): AutoExtractRule | null {
         const normalizedPath = this.normalizeAutoExtractPath(path);
         const rule = this.data.settings.autoExtractRules?.[normalizedPath];
-        return rule?.enabled ? rule : null;
+        if (!rule?.enabled) {
+            return null;
+        }
+        if (rule.rule !== "heading") {
+            return rule;
+        }
+        if (rule.allHeadingLevels === true) {
+            return rule;
+        }
+        const levels = this.getAutoExtractHeadingLevels(rule);
+        return levels.length > 0 ? { ...rule, headingLevels: levels } : null;
     }
 
     public hasAutoExtractRuleForFile(file: TFile): boolean {
@@ -2155,7 +2165,7 @@ export default class SRPlugin extends Plugin {
     }
 
     private emptyExtractSyncResult(): ExtractSyncResult {
-        return { added: [], updated: [], graduated: [] };
+        return { added: [], updated: [], graduated: [], removed: [] };
     }
 
     private mergeExtractSyncResults(
@@ -2165,6 +2175,7 @@ export default class SRPlugin extends Plugin {
             added: results.flatMap((result) => result.added),
             updated: results.flatMap((result) => result.updated),
             graduated: results.flatMap((result) => result.graduated),
+            removed: results.flatMap((result) => result.removed ?? []),
             manualIrCache: results.find((result) => result.manualIrCache)?.manualIrCache,
         };
     }
@@ -2237,12 +2248,14 @@ export default class SRPlugin extends Plugin {
             combined.added.push(...result.added);
             combined.updated.push(...result.updated);
             combined.graduated.push(...result.graduated);
+            combined.removed?.push(...(result.removed ?? []));
         }
 
         if (
             combined.added.length === 0 &&
             combined.updated.length === 0 &&
-            combined.graduated.length === 0
+            combined.graduated.length === 0 &&
+            (combined.removed?.length ?? 0) === 0
         ) {
             return;
         }
@@ -2267,7 +2280,8 @@ export default class SRPlugin extends Plugin {
         if (
             result.added.length === 0 &&
             result.updated.length === 0 &&
-            result.graduated.length === 0
+            result.graduated.length === 0 &&
+            (result.removed?.length ?? 0) === 0
         ) {
             return;
         }
@@ -2306,7 +2320,8 @@ export default class SRPlugin extends Plugin {
         if (
             result.added.length === 0 &&
             result.updated.length === 0 &&
-            result.graduated.length === 0
+            result.graduated.length === 0 &&
+            (result.removed?.length ?? 0) === 0
         ) {
             return;
         }
@@ -2322,6 +2337,9 @@ export default class SRPlugin extends Plugin {
         file: TFile,
         ruleInput: { rule: AutoExtractRuleKind; headingLevel?: AutoExtractHeadingLevel },
     ): Promise<AutoExtractRule | null> {
+        if (ruleInput.rule === "heading") {
+            return this.setAutoExtractHeadingLevel(file, ruleInput.headingLevel ?? 1, true);
+        }
         if (file.extension !== "md") {
             return null;
         }
@@ -2350,6 +2368,157 @@ export default class SRPlugin extends Plugin {
         await this.syncAutoExtractsFromFile(file, nextRule);
         this.syncEvents.emit("note-review-updated");
         return nextRule;
+    }
+
+    private getAutoExtractHeadingLevels(rule: AutoExtractRule | null | undefined): number[] {
+        const sourceLevels = Array.isArray(rule?.headingLevels)
+            ? rule.headingLevels
+            : rule?.headingLevel !== undefined
+              ? [rule.headingLevel]
+              : [];
+        return Array.from(
+            new Set(
+                sourceLevels
+                    .map((level) => Math.round(Number(level)))
+                    .filter((level) => Number.isFinite(level) && level >= 1),
+            ),
+        ).sort((a, b) => a - b);
+    }
+
+    private async saveAutoExtractRuleAndSync(
+        file: TFile,
+        normalizedPath: string,
+        nextRule: AutoExtractRule | null,
+        syncRule: AutoExtractRule,
+    ): Promise<AutoExtractRule | null> {
+        const nextRules = { ...(this.data.settings.autoExtractRules ?? {}) };
+        if (nextRule) {
+            nextRules[normalizedPath] = nextRule;
+        } else {
+            delete nextRules[normalizedPath];
+        }
+        this.data.settings.autoExtractRules = nextRules;
+        await this.savePluginData({ domains: ["shared-settings"] });
+        await this.syncAutoExtractsFromFile(file, syncRule);
+        this.syncEvents.emit("note-review-updated");
+        return nextRule;
+    }
+
+    public async setAutoExtractHeadingLevel(
+        file: TFile,
+        level: AutoExtractHeadingLevel,
+        enabled: boolean,
+    ): Promise<AutoExtractRule | null> {
+        if (file.extension !== "md") {
+            return null;
+        }
+        const normalizedLevel = Math.round(Number(level));
+        if (!Number.isFinite(normalizedLevel) || normalizedLevel < 1) {
+            return null;
+        }
+
+        const now = Date.now();
+        const normalizedPath = this.normalizeAutoExtractPath(file.path);
+        const existing = normalizeAutoExtractRule(
+            this.data.settings.autoExtractRules?.[normalizedPath] ?? {
+                sourcePath: normalizedPath,
+                rule: "heading",
+                enabled: true,
+                createdAt: now,
+                updatedAt: now,
+                headingLevels: [],
+            },
+            normalizedPath,
+        );
+        const baseLevels =
+            existing?.allHeadingLevels === true && !enabled
+                ? [1, 2, 3, 4, 5, 6]
+                : this.getAutoExtractHeadingLevels(existing);
+        const levelSet = new Set(baseLevels);
+        if (enabled) {
+            levelSet.add(normalizedLevel);
+        } else {
+            levelSet.delete(normalizedLevel);
+        }
+        const headingLevels = Array.from(levelSet).sort((a, b) => a - b);
+        const nextRule =
+            headingLevels.length > 0
+                ? normalizeAutoExtractRule(
+                      {
+                          sourcePath: normalizedPath,
+                          rule: "heading",
+                          enabled: true,
+                          createdAt: existing?.createdAt ?? now,
+                          updatedAt: now,
+                          headingLevel: headingLevels[0],
+                          headingLevels,
+                          allHeadingLevels: false,
+                      },
+                      normalizedPath,
+                  )
+                : null;
+        const syncRule =
+            nextRule ??
+            ({
+                sourcePath: normalizedPath,
+                rule: "heading",
+                enabled: false,
+                createdAt: existing?.createdAt ?? now,
+                updatedAt: now,
+                headingLevels: [],
+                allHeadingLevels: false,
+            } satisfies AutoExtractRule);
+        return this.saveAutoExtractRuleAndSync(file, normalizedPath, nextRule, syncRule);
+    }
+
+    public async setAutoExtractAllHeadings(
+        file: TFile,
+        enabled: boolean,
+    ): Promise<AutoExtractRule | null> {
+        if (file.extension !== "md") {
+            return null;
+        }
+
+        const now = Date.now();
+        const normalizedPath = this.normalizeAutoExtractPath(file.path);
+        const existing = normalizeAutoExtractRule(
+            this.data.settings.autoExtractRules?.[normalizedPath] ?? {
+                sourcePath: normalizedPath,
+                rule: "heading",
+                enabled: true,
+                createdAt: now,
+                updatedAt: now,
+                headingLevels: [],
+            },
+            normalizedPath,
+        );
+        const nextRule = enabled
+            ? normalizeAutoExtractRule(
+                  {
+                      sourcePath: normalizedPath,
+                      rule: "heading",
+                      enabled: true,
+                      createdAt: existing?.createdAt ?? now,
+                      updatedAt: now,
+                      headingLevel: 1,
+                      headingLevels: [1, 2, 3, 4, 5, 6],
+                      allHeadingLevels: true,
+                  },
+                  normalizedPath,
+              )
+            : null;
+        const syncRule =
+            nextRule ??
+            ({
+                sourcePath: normalizedPath,
+                rule: "heading",
+                enabled: false,
+                createdAt: existing?.createdAt ?? now,
+                updatedAt: now,
+                headingLevels: [],
+                allHeadingLevels: false,
+            } satisfies AutoExtractRule);
+        return this.saveAutoExtractRuleAndSync(file, normalizedPath, nextRule, syncRule);
     }
 
     public async disableAutoExtractRule(file: TFile): Promise<boolean> {
@@ -2408,11 +2577,13 @@ export default class SRPlugin extends Plugin {
         added: ExtractItem[];
         updated: ExtractItem[];
         graduated: ExtractItem[];
+        removed?: ExtractItem[];
     }): Promise<void> {
         await Promise.all([
             ...result.added.map((item) => this.appendSyroExtractUpsert({ item }, "create")),
             ...result.updated.map((item) => this.appendSyroExtractUpsert({ item }, "sync")),
             ...result.graduated.map((item) => this.appendSyroExtractGraduate({ item })),
+            ...(result.removed ?? []).map((item) => this.appendSyroExtractRemove({ item })),
         ]);
     }
 
@@ -2493,10 +2664,8 @@ export default class SRPlugin extends Plugin {
         if (item.sourceMode !== "auto-slice" || item.sliceRule !== "heading") {
             return null;
         }
-        const headingLevelMatch = item.autoSliceKey?.match(/^heading:(\d):/);
-        const headingLevel = headingLevelMatch
-            ? (Number(headingLevelMatch[1]) as AutoExtractHeadingLevel)
-            : undefined;
+        const headingLevelMatch = item.autoSliceKey?.match(/^heading:(\d+):/);
+        const headingLevel = headingLevelMatch ? Number(headingLevelMatch[1]) : undefined;
         const slices = buildAutoExtractSlices(sourceText, {
             sourcePath: item.sourcePath,
             rule: item.sliceRule,
@@ -2601,7 +2770,10 @@ export default class SRPlugin extends Plugin {
         return intervals.map((interval) => textInterval(interval, false));
     }
 
-    public async getExtractReviewContext(uuid: string): Promise<ExtractReviewContext | null> {
+    public async getExtractReviewContext(
+        uuid: string,
+        sourceTextOverride?: string,
+    ): Promise<ExtractReviewContext | null> {
         const item = this.extractStore?.get(uuid);
         if (!item || item.stage !== "active") {
             this.logRuntimeDebug("[SR-ExtractSave] getExtractReviewContext:skip", {
@@ -2620,7 +2792,7 @@ export default class SRPlugin extends Plugin {
             });
             return null;
         }
-        const sourceText = await this.app.vault.read(sourceFile);
+        const sourceText = sourceTextOverride ?? (await this.app.vault.read(sourceFile));
         if (item.sourceMode === "auto-slice") {
             const slice = this.findCurrentAutoExtractSlice(item, sourceText);
             if (!slice) {
@@ -6393,6 +6565,17 @@ export default class SRPlugin extends Plugin {
         return this.appendSyroExtractSnapshot(opType, snapshot);
     }
 
+    public async appendSyroExtractRemove(
+        snapshot: ExtractSnapshot | null,
+        opType = "remove",
+    ): Promise<boolean> {
+        if (!snapshot) {
+            return false;
+        }
+
+        return this.appendSyroExtractSnapshot(opType, snapshot);
+    }
+
     public async appendSyroTimelineAdd(
         notePath: string,
         commit: ReviewCommitLog | null,
@@ -7354,13 +7537,13 @@ export default class SRPlugin extends Plugin {
         if (noteCacheSignatureChanged) {
             this.noteCacheSignature = currentSignature;
             this.noteCache.clear();
-            this.noteExtractCache.clear();
+            this.getNoteExtractCache().clear();
             persistedCacheByPath.clear();
             syncMode = "full";
         }
         if (syncMode === "full") {
             this.noteCache.clear();
-            this.noteExtractCache.clear();
+            this.getNoteExtractCache().clear();
             persistedCacheByPath.clear();
         }
 

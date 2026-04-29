@@ -56,6 +56,14 @@ interface ExtractHybridMarkdownEditorViewProps {
     plugin: SRPlugin;
     renderMarkdown?: (text: string, el: HTMLElement) => Promise<void> | void;
     sourcePath?: string;
+    onReady?: () => void;
+    onDebugEvent?: (event: ExtractRenderDebugEvent) => void;
+}
+
+interface ExtractRenderDebugEvent {
+    stage: string;
+    detail?: Record<string, string | number | boolean | null>;
+    error?: string;
 }
 
 interface RenderDeps {
@@ -63,6 +71,8 @@ interface RenderDeps {
     plugin: SRPlugin;
     sourcePath?: string;
     tableDrafts: Map<string, TableDraft>;
+    registerRenderPromise?: (promise: Promise<void>) => void;
+    emitDebug?: (event: ExtractRenderDebugEvent) => void;
 }
 
 interface TableDraftCell {
@@ -528,6 +538,33 @@ function addTableActionButton(
     wrapper.appendChild(button);
 }
 
+function stringifyDebugError(error: unknown): string {
+    if (error instanceof Error) {
+        return `${error.name}: ${error.message}`;
+    }
+    if (typeof error === "string") {
+        return error;
+    }
+    if (typeof error === "number") {
+        return error.toString();
+    }
+    if (typeof error === "boolean") {
+        return error ? "true" : "false";
+    }
+    if (error === null) {
+        return "null";
+    }
+    try {
+        const json = JSON.stringify(error);
+        if (typeof json === "string") {
+            return json;
+        }
+    } catch {
+        return "Non-serializable error";
+    }
+    return "Unknown error";
+}
+
 class RenderedMarkdownBlockWidget extends WidgetType {
     constructor(
         private readonly block: HybridMarkdownBlock,
@@ -555,7 +592,12 @@ class RenderedMarkdownBlockWidget extends WidgetType {
         container.className = `sr-hybrid-rendered-block markdown-preview-view markdown-rendered${tableClass}${this.className}`;
         container.dataset.srHybridBlockKind = this.block.kind;
 
-        if (this.mode === "edit") {
+        if (this.mode === "review") {
+            container.addEventListener("mousedown", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+            });
+        } else if (this.mode === "edit") {
             container.addEventListener("mousedown", (event) => {
                 if (this.block.kind === "table") {
                     return;
@@ -573,14 +615,25 @@ class RenderedMarkdownBlockWidget extends WidgetType {
             });
         }
 
-        void renderSyroMarkdownToElement({
+        this.deps.emitDebug?.({
+            stage: "markdown-block-render-start",
+            detail: {
+                kind: this.block.kind,
+                from: this.block.from,
+                to: this.block.to,
+                markdownLength: this.markdown.length,
+            },
+        });
+
+        const renderResult: unknown = renderSyroMarkdownToElement({
             app: this.deps.plugin.app,
             markdown: this.markdown,
             owner: this.deps.plugin as unknown as Component,
             renderMarkdown: this.deps.getRenderMarkdown(),
             sourcePath: this.deps.sourcePath,
             target: container,
-        }).then(() => {
+        });
+        const renderPromise: Promise<void> = Promise.resolve(renderResult).then((): void => {
             if (this.block.kind === "table") {
                 normalizeRenderedTableForLivePreview(
                     container,
@@ -591,7 +644,30 @@ class RenderedMarkdownBlockWidget extends WidgetType {
                 );
             }
             this.wireTableEditing(container, view);
+            this.deps.emitDebug?.({
+                stage: "markdown-block-render-done",
+                detail: {
+                    kind: this.block.kind,
+                    from: this.block.from,
+                    to: this.block.to,
+                    childCount: container.childElementCount,
+                },
+            });
+        }).catch((error: unknown) => {
+            this.deps.emitDebug?.({
+                stage: "markdown-block-render-error",
+                detail: {
+                    kind: this.block.kind,
+                    from: this.block.from,
+                    to: this.block.to,
+                },
+                error: stringifyDebugError(error),
+            });
+            throw error;
         });
+        const trackedRenderPromise: Promise<void> = renderPromise.catch((): void => undefined);
+        this.deps.registerRenderPromise?.(trackedRenderPromise);
+        void trackedRenderPromise;
 
         return container;
     }
@@ -831,6 +907,8 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
     ranges,
     renderMarkdown,
     sourcePath,
+    onReady,
+    onDebugEvent,
     value,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -839,14 +917,20 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
     const lastModeRef = useRef(mode);
     const onChangeRef = useRef(onChange);
     const onExitRef = useRef(onExit);
+    const onReadyRef = useRef(onReady);
+    const onDebugEventRef = useRef(onDebugEvent);
     const renderMarkdownRef = useRef(renderMarkdown);
+    const renderPromisesRef = useRef<Promise<void>[]>([]);
+    const readyGenerationRef = useRef(0);
     const tableDraftsRef = useRef(new Map<string, TableDraft>());
 
     useEffect(() => {
         onChangeRef.current = onChange;
         onExitRef.current = onExit;
+        onReadyRef.current = onReady;
+        onDebugEventRef.current = onDebugEvent;
         renderMarkdownRef.current = renderMarkdown;
-    }, [onChange, onExit, renderMarkdown]);
+    }, [onChange, onExit, onReady, onDebugEvent, renderMarkdown]);
 
     useLayoutEffect(() => {
         const container = containerRef.current;
@@ -854,11 +938,29 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
             return;
         }
 
+        const readyGeneration = readyGenerationRef.current + 1;
+        readyGenerationRef.current = readyGeneration;
+        renderPromisesRef.current = [];
+        onDebugEventRef.current?.({
+            stage: "editor-mount-start",
+            detail: {
+                markdownLength: value.length,
+                mode,
+                hasRenderMarkdown: renderMarkdownRef.current ? true : false,
+            },
+        });
+
         const deps: RenderDeps = {
             getRenderMarkdown: () => renderMarkdownRef.current,
             plugin,
             sourcePath,
             tableDrafts: tableDraftsRef.current,
+            registerRenderPromise: (promise) => {
+                renderPromisesRef.current.push(promise);
+            },
+            emitDebug: (event) => {
+                onDebugEventRef.current?.(event);
+            },
         };
 
         const state = EditorState.create({
@@ -961,8 +1063,45 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
         container.replaceChildren();
         container.appendChild(view.dom);
         lastModeRef.current = mode;
+        onDebugEventRef.current?.({
+            stage: "editor-mounted",
+            detail: {
+                registeredMarkdownBlocks: renderPromisesRef.current.length,
+                docLength: view.state.doc.length,
+            },
+        });
+
+        void Promise.resolve().then(async () => {
+            const initialRenders = renderPromisesRef.current.slice();
+            onDebugEventRef.current?.({
+                stage: "initial-render-wait",
+                detail: {
+                    registeredMarkdownBlocks: initialRenders.length,
+                },
+            });
+            if (initialRenders.length > 0) {
+                await Promise.allSettled(initialRenders);
+            }
+            if (viewRef.current === view && readyGenerationRef.current === readyGeneration) {
+                onDebugEventRef.current?.({
+                    stage: "ready",
+                    detail: {
+                        registeredMarkdownBlocks: initialRenders.length,
+                    },
+                });
+                onReadyRef.current?.();
+            } else {
+                onDebugEventRef.current?.({
+                    stage: "ready-skipped-stale-view",
+                    detail: {
+                        registeredMarkdownBlocks: initialRenders.length,
+                    },
+                });
+            }
+        });
 
         return () => {
+            readyGenerationRef.current += 1;
             view.destroy();
             viewRef.current = null;
         };
@@ -1020,6 +1159,11 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
         <div
             className="sr-hybrid-markdown-source markdown-source-view cm-s-obsidian mod-cm6 is-live-preview"
             data-sr-hybrid-mode={mode}
+            onMouseDown={(event) => {
+                if (mode === "review") {
+                    event.preventDefault();
+                }
+            }}
         >
             <div className="sr-cm-container" ref={containerRef} />
         </div>

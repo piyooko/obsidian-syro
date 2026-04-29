@@ -94,6 +94,7 @@ export interface ExtractSyncResult {
     added: ExtractItem[];
     updated: ExtractItem[];
     graduated: ExtractItem[];
+    removed?: ExtractItem[];
     manualIrCache?: ManualIrCache;
 }
 
@@ -520,6 +521,16 @@ export class ExtractStore {
         );
     }
 
+    private removeItemByUuid(uuid: string): ExtractItem | null {
+        const canonicalUuid = this.findCanonicalUuid(uuid);
+        if (!canonicalUuid || !this.items[canonicalUuid]) {
+            return null;
+        }
+        const removed = cloneItem(this.items[canonicalUuid]);
+        delete this.items[canonicalUuid];
+        return removed;
+    }
+
     syncFileExtracts(
         path: string,
         text: string,
@@ -635,13 +646,14 @@ export class ExtractStore {
         text: string,
         deckName: string = DEFAULT_DECKNAME,
         rule: AutoExtractRule,
-    ): { added: ExtractItem[]; updated: ExtractItem[]; graduated: ExtractItem[] } {
+    ): { added: ExtractItem[]; updated: ExtractItem[]; graduated: ExtractItem[]; removed: ExtractItem[] } {
         const sourcePath = normalizePath(path);
         const now = Date.now();
         const slices = buildAutoExtractSlices(text, rule);
         const usedUuids = new Set<string>();
         const added: ExtractItem[] = [];
         const updated: ExtractItem[] = [];
+        const removed: ExtractItem[] = [];
 
         slices.forEach((slice, ordinal) => {
             const existing = this.matchAutoExtract(sourcePath, slice, usedUuids);
@@ -713,13 +725,13 @@ export class ExtractStore {
             ) {
                 continue;
             }
-            item.stage = "graduated";
-            item.graduatedAt = now;
-            item.updatedAt = now;
-            graduated.push(cloneItem(item));
+            const removedItem = this.removeItemByUuid(item.uuid);
+            if (removedItem) {
+                removed.push(removedItem);
+            }
         }
 
-        return { added, updated, graduated };
+        return { added, updated, graduated, removed };
     }
 
     setMemo(uuid: string, memo: string): ExtractItem | null {
@@ -987,6 +999,10 @@ export class ExtractStore {
             return true;
         }
         return false;
+    }
+
+    removeByUuid(uuid: string): boolean {
+        return this.removeItemByUuid(uuid) !== null;
     }
 
     getSyncEntities(): Record<string, PersistedSyncEntityState> {
