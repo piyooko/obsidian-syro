@@ -55,7 +55,7 @@ export default {
     STATUS_BAR_FLASHCARD_DUE_SINGULAR: "${dueFlashcardsCount} 卡片已到期",
     STATUS_BAR_NOTE_DUE_SINGULAR: "${dueNotesCount} 笔记已到期",
     NOTICE_TEXT_SELECTION_REQUIRED: "请先选中要挖空的文本",
-    NOTICE_EXTRACT_CREATED: "摘录已创建",
+    EXTRACT_INVALID_FORMAT_BLOCKED: "已阻止错误格式创建",
     EXTRACT_REVIEW_TITLE: "摘录",
     EXTRACT_SOURCE_MISSING: "找不到来源笔记",
     EXTRACT_MEMO_LABEL: "备注",

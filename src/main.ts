@@ -67,6 +67,7 @@ import {
     parseIrExtracts,
     removeExtractWrapperKeepInnerContent,
     replaceExtractInnerMarkdown,
+    selectionContainsIrExtractBoundarySyntax,
     wrapSelectionAsExtract,
     type IrExtractMatch,
 } from "./util/irExtractParser";
@@ -2176,6 +2177,12 @@ export default class SRPlugin extends Plugin {
         return fallbackDeckName;
     }
 
+    private hasReviewableExtractSource(
+        extract: Pick<ExtractItem, "sourcePath">,
+    ): boolean {
+        return this.resolveExtractSourceFile(extract) !== null;
+    }
+
     private emptyExtractSyncResult(): ExtractSyncResult {
         return { added: [], updated: [], graduated: [], removed: [] };
     }
@@ -2840,7 +2847,7 @@ export default class SRPlugin extends Plugin {
         ]);
     }
 
-    private resolveExtractSourceFile(item: ExtractItem): TFile | null {
+    private resolveExtractSourceFile(item: Pick<ExtractItem, "sourcePath">): TFile | null {
         const abstractFile = this.app.vault.getAbstractFileByPath(item.sourcePath);
         return abstractFile instanceof TFile && abstractFile.extension === "md"
             ? abstractFile
@@ -2958,6 +2965,7 @@ export default class SRPlugin extends Plugin {
             deckPath,
             applyDailyLimits ? this.getExtractReviewLimits(deckPath) : undefined,
             (item) => this.getExtractDeckNameForItem(item),
+            (item) => this.hasReviewableExtractSource(item),
         );
     }
 
@@ -2977,6 +2985,7 @@ export default class SRPlugin extends Plugin {
             deckPath,
             applyDailyLimits ? this.getExtractReviewLimits(deckPath) : undefined,
             (item) => this.getExtractDeckNameForItem(item),
+            (item) => this.hasReviewableExtractSource(item),
         );
     }
 
@@ -2986,7 +2995,7 @@ export default class SRPlugin extends Plugin {
         }
 
         const deckPaths = new Set<string>();
-        for (const extract of this.extractStore.getReviewCandidates(null)) {
+        for (const extract of this.getExtractReviewCandidates(null, false)) {
             const deckPath = this.getExtractDeckNameForItem(extract);
             if (this.getExtractReviewStats(deckPath, applyDailyLimits).totalCount > 0) {
                 deckPaths.add(deckPath);
@@ -3004,6 +3013,9 @@ export default class SRPlugin extends Plugin {
         const deckPaths = new Set<string>();
         for (const extract of this.extractStore.list()) {
             if (extract.stage !== "active") {
+                continue;
+            }
+            if (!this.hasReviewableExtractSource(extract)) {
                 continue;
             }
             const deckPath = this.getExtractDeckNameForItem(extract);
@@ -3486,6 +3498,11 @@ export default class SRPlugin extends Plugin {
         }
 
         const sourceText = editor.getValue();
+        if (selectionContainsIrExtractBoundarySyntax(sourceText, from, to)) {
+            new Notice(t("EXTRACT_INVALID_FORMAT_BLOCKED"));
+            return false;
+        }
+
         const wrapped = wrapSelectionAsExtract(sourceText, from, to);
         this.logDetectedManualIrExtractsForDebug(
             "create-selection:after-wrap",
@@ -3562,7 +3579,6 @@ export default class SRPlugin extends Plugin {
         );
         this.syncEvents.emit("extracts-updated");
         this.updateStatusBar();
-        new Notice(t("NOTICE_EXTRACT_CREATED"));
         return true;
     }
 

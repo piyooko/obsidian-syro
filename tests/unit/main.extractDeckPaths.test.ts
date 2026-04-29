@@ -1,4 +1,4 @@
-import { TFile } from "obsidian";
+import { moment, Notice, TFile } from "obsidian";
 import { Deck, DeckTreeFilter } from "src/Deck";
 import { ExtractStore } from "src/dataStore/extractStore";
 import SRPlugin from "src/main";
@@ -101,6 +101,54 @@ describe("SRPlugin extract deck paths", () => {
         });
     });
 
+    test("hides extracts whose source file is missing from deck paths, candidates, and stats", () => {
+        const missingExtract = {
+            uuid: "ir_missing_source",
+            stage: "active",
+            deckName: "Untitled",
+            sourcePath: "Untitled.md",
+            timesReviewed: 0,
+            nextReview: 0,
+        };
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    enableExtracts: true,
+                    convertFoldersToDecks: true,
+                    trackedNoteToDecks: false,
+                },
+            },
+            app: {
+                vault: {
+                    getAbstractFileByPath: jest.fn(() => null),
+                },
+            },
+            extractStore: {
+                list: jest.fn(() => [missingExtract]),
+                getReviewCandidates: jest.fn((_deckPath, _limits, _resolveDeckName, canReviewExtract) =>
+                    canReviewExtract?.(missingExtract) ? [missingExtract] : [],
+                ),
+                getStats: jest.fn((_deckPath, _limits, _resolveDeckName, canReviewExtract) =>
+                    canReviewExtract?.(missingExtract)
+                        ? { newCount: 1, dueCount: 0, totalCount: 1 }
+                        : { newCount: 0, dueCount: 0, totalCount: 0 },
+                ),
+            },
+        });
+
+        expect(SRPlugin.prototype.getActiveExtractDeckPaths.call(plugin)).toEqual([]);
+        expect(SRPlugin.prototype.getReviewableExtractDeckPaths.call(plugin, true)).toEqual([]);
+        expect(SRPlugin.prototype.getExtractReviewCandidates.call(plugin, "Untitled", true)).toEqual(
+            [],
+        );
+        expect(SRPlugin.prototype.getExtractReviewStats.call(plugin, "Untitled", true)).toEqual({
+            newCount: 0,
+            dueCount: 0,
+            totalCount: 0,
+        });
+    });
+
     test("uses the deck tree review count for inline-title stats", async () => {
         const root = new Deck("root", null);
         const math = new Deck("数学卡", root);
@@ -184,11 +232,133 @@ describe("SRPlugin extract deck paths", () => {
             getValue: jest.fn(() => "alpha beta"),
             replaceRange: jest.fn(),
         };
+        (Notice as jest.Mock).mockClear();
 
         await SRPlugin.prototype.createExtractFromEditorSelection.call(plugin, editor as never);
 
         expect(emit).toHaveBeenCalledWith("extracts-updated");
         expect(updateStatusBar).toHaveBeenCalled();
+        expect(Notice).not.toHaveBeenCalled();
+    });
+
+    test("blocks editor extract creation when the selection includes existing IR boundary syntax", async () => {
+        moment.locale("zh-cn");
+        const file = createTFile("摘录测试.md");
+        const sourceText = "{{ir::这是一句}}话";
+        const emit = jest.fn();
+        const updateStatusBar = jest.fn();
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: {
+                settings: {
+                    enableExtracts: true,
+                    convertFoldersToDecks: true,
+                    trackedNoteToDecks: false,
+                },
+            },
+            app: {
+                workspace: {
+                    getActiveFile: jest.fn(() => file),
+                },
+            },
+            guardSyroDataReady: jest.fn(() => true),
+            extractStore: {
+                getActiveByPath: jest.fn(() => []),
+                syncFileExtracts: jest.fn(),
+                save: jest.fn(() => Promise.resolve()),
+            },
+            syncEvents: {
+                emit,
+            },
+            updateStatusBar,
+        });
+        const editor = {
+            getSelection: jest.fn(() => "这是一句}}话"),
+            getCursor: jest.fn((which: string) =>
+                which === "to"
+                    ? { line: 0, ch: sourceText.length }
+                    : { line: 0, ch: "{{ir::".length },
+            ),
+            posToOffset: jest.fn((pos: { ch: number }) => pos.ch),
+            offsetToPos: jest.fn((offset: number) => ({ line: 0, ch: offset })),
+            getValue: jest.fn(() => sourceText),
+            replaceRange: jest.fn(),
+        };
+        (Notice as jest.Mock).mockClear();
+
+        await expect(
+            SRPlugin.prototype.createExtractFromEditorSelection.call(plugin, editor as never),
+        ).resolves.toBe(false);
+
+        expect(editor.replaceRange).not.toHaveBeenCalled();
+        expect(plugin.extractStore.syncFileExtracts).not.toHaveBeenCalled();
+        expect(emit).not.toHaveBeenCalled();
+        expect(updateStatusBar).not.toHaveBeenCalled();
+        expect(Notice).toHaveBeenCalledWith("已阻止错误格式创建");
+    });
+
+    test("allows editor extract creation when the selection includes complete existing IR wrappers", async () => {
+        const file = createTFile("摘录测试.md");
+        const sourceText = "{{ir::这是一句}}话";
+        const emit = jest.fn();
+        const updateStatusBar = jest.fn();
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: {
+                settings: {
+                    enableExtracts: true,
+                    convertFoldersToDecks: true,
+                    trackedNoteToDecks: false,
+                },
+            },
+            app: {
+                workspace: {
+                    getActiveFile: jest.fn(() => file),
+                },
+            },
+            guardSyroDataReady: jest.fn(() => true),
+            createSrTFile: jest.fn((inputFile: TFile) => ({
+                path: inputFile.path,
+                getAllTagsFromCache: () => [],
+            })),
+            extractStore: {
+                getActiveByPath: jest.fn(() => []),
+                syncFileExtracts: jest.fn(() => ({
+                    added: [],
+                    updated: [],
+                    graduated: [],
+                })),
+                save: jest.fn(() => Promise.resolve()),
+            },
+            appendExtractSyncResult: jest.fn(() => Promise.resolve()),
+            syncEvents: {
+                emit,
+            },
+            updateStatusBar,
+        });
+        const editor = {
+            getSelection: jest.fn(() => "{{ir::这是一句}}"),
+            getCursor: jest.fn((which: string) =>
+                which === "to" ? { line: 0, ch: sourceText.indexOf("话") } : { line: 0, ch: 0 },
+            ),
+            posToOffset: jest.fn((pos: { ch: number }) => pos.ch),
+            offsetToPos: jest.fn((offset: number) => ({ line: 0, ch: offset })),
+            getValue: jest.fn(() => sourceText),
+            replaceRange: jest.fn(),
+        };
+        (Notice as jest.Mock).mockClear();
+
+        await expect(
+            SRPlugin.prototype.createExtractFromEditorSelection.call(plugin, editor as never),
+        ).resolves.toBe(true);
+
+        expect(editor.replaceRange).toHaveBeenCalledWith(
+            "{{ir::{{ir::这是一句}}}}",
+            { line: 0, ch: 0 },
+            { line: 0, ch: sourceText.indexOf("话") },
+        );
+        expect(plugin.extractStore.syncFileExtracts).toHaveBeenCalled();
+        expect(emit).toHaveBeenCalledWith("extracts-updated");
+        expect(updateStatusBar).toHaveBeenCalled();
+        expect(Notice).not.toHaveBeenCalledWith("已阻止错误格式创建");
     });
 
     test("updates an extract context range in the source note and resyncs extracts", async () => {

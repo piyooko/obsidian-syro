@@ -174,7 +174,7 @@ export default normalizeSentenceCaseLocale({
     STATUS_BAR_FLASHCARD_DUE_SINGULAR: "${dueFlashcardsCount} card due",
     STATUS_BAR_NOTE_DUE_SINGULAR: "${dueNotesCount} note due",
     NOTICE_TEXT_SELECTION_REQUIRED: "Please select text to create cloze",
-    NOTICE_EXTRACT_CREATED: "Extract created",
+    EXTRACT_INVALID_FORMAT_BLOCKED: "Blocked invalid extract format creation",
     EXTRACT_REVIEW_TITLE: "Extract",
     EXTRACT_SOURCE_MISSING: "Source note not found",
     EXTRACT_MEMO_LABEL: "Memo",
