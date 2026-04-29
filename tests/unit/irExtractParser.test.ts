@@ -5,6 +5,7 @@ import {
     stripIrExtractSyntax,
     wrapSelectionAsExtract,
 } from "src/util/irExtractParser";
+import { summarizeIrExtractMatchesForDebug } from "src/util/irExtractDebug";
 
 describe("irExtractParser", () => {
     test("parses multiline and cross-paragraph extracts", () => {
@@ -117,5 +118,40 @@ describe("irExtractParser", () => {
         expect(removeExtractWrapperKeepInnerContent(replaced, updatedOuter)).toBe(
             "updated {{ir::inner}}",
         );
+    });
+
+    test("summarizes detected extracts for runtime debug output", () => {
+        const matches = parseIrExtracts("before {{ir::outer {{ir::inner}} text}} after");
+
+        expect(summarizeIrExtractMatchesForDebug(matches)).toEqual([
+            {
+                ordinal: 0,
+                start: 7,
+                end: 39,
+                innerStart: 13,
+                innerEnd: 37,
+                startLine: 0,
+                endLine: 0,
+                depth: 0,
+                parentOrdinal: null,
+                parentStart: null,
+                rawMarkdownLength: 24,
+                rawMarkdownPreview: "outer {{ir::inner}} text",
+            },
+            {
+                ordinal: 1,
+                start: 19,
+                end: 32,
+                innerStart: 25,
+                innerEnd: 30,
+                startLine: 0,
+                endLine: 0,
+                depth: 1,
+                parentOrdinal: 0,
+                parentStart: 7,
+                rawMarkdownLength: 5,
+                rawMarkdownPreview: "inner",
+            },
+        ]);
     });
 });

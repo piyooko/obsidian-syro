@@ -345,6 +345,21 @@ export class ExtractStore {
             .map((item) => cloneItem(item));
     }
 
+    removeBySourcePath(path: string): ExtractSyncResult {
+        const sourcePath = normalizePath(path);
+        const removed: ExtractItem[] = [];
+        for (const item of Object.values(this.items)) {
+            if (item.sourcePath !== sourcePath) {
+                continue;
+            }
+            const removedItem = this.removeItemByUuid(item.uuid);
+            if (removedItem) {
+                removed.push(removedItem);
+            }
+        }
+        return { added: [], updated: [], graduated: [], removed };
+    }
+
     findCanonicalUuid(uuid: string): string | null {
         if (this.items[uuid]) {
             return uuid;
@@ -908,6 +923,21 @@ export class ExtractStore {
     getReviewedCounts(deckName: string): { new: number; due: number } {
         const date = getDateKey();
         return this.reviewedCounts[`${date}:${deckName || "root"}`] ?? { new: 0, due: 0 };
+    }
+
+    undoReviewedQuota(item: ExtractItem, countDeckName?: string | null): void {
+        const date = getDateKey();
+        const key = `${date}:${countDeckName || item.deckName || "root"}`;
+        const counts = this.reviewedCounts[key];
+        if (!counts) {
+            return;
+        }
+
+        if (item.timesReviewed <= 0) {
+            counts.new = Math.max(0, counts.new - 1);
+        } else {
+            counts.due = Math.max(0, counts.due - 1);
+        }
     }
 
     private updateReviewedCounts(item: ExtractItem, countDeckName?: string | null): void {

@@ -3,22 +3,16 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import mojibakeCore from "./detect-mojibake-core.cjs";
+
+const { groupBy, scanContent, truncate } = mojibakeCore;
 
 const DEFAULT_HEAD = "HEAD";
-const SELF_SCRIPT_PATH = "scripts/detect-mojibake.mjs";
+const SELF_SCRIPT_PATHS = ["scripts/detect-mojibake.mjs", "scripts/detect-mojibake-core.cjs"];
 const BASE_CANDIDATES = ["origin/main", "origin/master", "main", "master", "HEAD~1"];
 const TEXT_FILE_PATTERN = /\.(?:ts|tsx|js|jsx|mjs|cjs|json|css|scss|md|txt|yml|yaml)$/i;
 const PRIORITY_FILE_PATTERN =
     /^(src\/.*\.(?:ts|tsx|css)|scripts\/.*\.(?:mjs|js|ts)|package\.json|manifest\.json|versions\.json|eslint.*|\.eslintrc.*)$/i;
-const EXPLICIT_MOJIBAKE_PATTERNS = [
-    /锟斤拷/u,
-    /�/u,
-    /Ã./u,
-    /Â./u,
-    /â[\u0080-\u00BF]/u,
-    /ð[\u0080-\u00BF]/u,
-];
-const SUSPICIOUS_CHAR_PATTERN = /[闂閿鏉妗鍙鐨涓浠鍚鈥欐鍥鏆鎴楂鎺鎼妫钃锟�]/gu;
 
 const invocationCwd = process.cwd();
 const args = parseArgs(process.argv.slice(2));
@@ -46,9 +40,10 @@ const defaultFilesToScan = args.all
       : [...trackedFiles].filter(isPriorityFile);
 const scanTargets = buildScanTargets(defaultFilesToScan, explicitTargets, repoRoot);
 const findings = [];
+const selfScriptPaths = new Set(SELF_SCRIPT_PATHS.map((file) => path.resolve(repoRoot, file)));
 
 for (const target of scanTargets) {
-    if (target.absPath === path.resolve(repoRoot, SELF_SCRIPT_PATH)) {
+    if (selfScriptPaths.has(target.absPath)) {
         continue;
     }
 
@@ -62,21 +57,7 @@ for (const target of scanTargets) {
     }
 
     const content = raw.toString("utf8");
-    const lines = content.split(/\r?\n/u);
-
-    lines.forEach((line, index) => {
-        const signals = getSignals(line);
-        if (signals.length === 0) {
-            return;
-        }
-
-        findings.push({
-            file: target.displayPath,
-            lineNumber: index + 1,
-            category: classifyLine(line, signals),
-            line: line.trim(),
-        });
-    });
+    findings.push(...scanContent(content, target.displayPath));
 }
 
 const grouped = groupBy(findings, (item) => item.category);
@@ -296,9 +277,7 @@ function createScanTarget(absPath, repoRoot) {
     const normalizedAbsPath = path.resolve(absPath);
     const relativePath = path.relative(repoRoot, normalizedAbsPath);
     const displayPath =
-        relativePath &&
-        !relativePath.startsWith("..") &&
-        !path.isAbsolute(relativePath)
+        relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)
             ? relativePath.split(path.sep).join("/")
             : normalizedAbsPath;
 
@@ -330,44 +309,6 @@ function isTextFile(file) {
     return TEXT_FILE_PATTERN.test(file);
 }
 
-function getSignals(line) {
-    const signals = new Set();
-
-    for (const pattern of EXPLICIT_MOJIBAKE_PATTERNS) {
-        const match = line.match(pattern);
-        if (match) {
-            signals.add(match[0]);
-        }
-    }
-
-    const suspiciousChars = [...new Set(line.match(SUSPICIOUS_CHAR_PATTERN) ?? [])];
-    if (suspiciousChars.length >= 4) {
-        for (const char of suspiciousChars.slice(0, 4)) {
-            signals.add(char);
-        }
-    }
-
-    return [...signals];
-}
-
-function classifyLine(line, signals) {
-    const trimmed = line.trim();
-    if (/^(?:\/\/|\/\*|\*|\*\/)/u.test(trimmed)) {
-        return "comment";
-    }
-
-    const escapedSignals = signals.map((signal) => escapeRegExp(signal));
-    const stringPattern = new RegExp(
-        `(["'\`])(?:\\\\.|(?!\\1).)*?(?:${escapedSignals.join("|")})(?:\\\\.|(?!\\1).)*?\\1`,
-        "u",
-    );
-    if (stringPattern.test(line)) {
-        return "runtime-string";
-    }
-
-    return "other";
-}
-
 function printGroup(name, items) {
     if (items.length === 0) {
         return;
@@ -378,21 +319,4 @@ function printGroup(name, items) {
     for (const item of items) {
         console.log(`- ${item.file}:${item.lineNumber} ${truncate(item.line, 160)}`);
     }
-}
-
-function truncate(text, maxLength) {
-    return text.length <= maxLength ? text : `${text.slice(0, maxLength - 3)}...`;
-}
-
-function escapeRegExp(text) {
-    return text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-}
-
-function groupBy(items, getKey) {
-    return items.reduce((accumulator, item) => {
-        const key = getKey(item);
-        accumulator[key] ??= [];
-        accumulator[key].push(item);
-        return accumulator;
-    }, /** @type {Record<string, typeof items>} */ ({}));
 }

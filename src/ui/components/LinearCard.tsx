@@ -158,7 +158,7 @@ interface HeaderBreadcrumbsProps {
 
 interface HeaderStatsPanelProps {
     stats: { new: number; learning: number; due: number };
-    currentType: "new" | "learning" | "due";
+    currentType: "new" | "learning" | "due" | null;
     compact?: boolean;
     animated?: boolean;
 }
@@ -398,7 +398,9 @@ export const LinearCard: FC<LinearCardProps> = ({
     }, [width, height]);
 
     const [stats, setStats] = useState(initialStats);
-    const [currentType, setCurrentType] = useState<"new" | "learning" | "due">(cardType || "due");
+    const [currentType, setCurrentType] = useState<"new" | "learning" | "due" | null>(
+        cardType ?? (isExtractReview ? null : "due"),
+    );
     const [headerLayout, setHeaderLayout] = useState<HeaderLayoutState>(() =>
         isMobile
             ? {
@@ -426,10 +428,8 @@ export const LinearCard: FC<LinearCardProps> = ({
     const renderIsFlipped = isExtractReview || (isCardUiResetPending ? false : isFlipped);
 
     useEffect(() => {
-        if (cardType) {
-            setCurrentType(cardType);
-        }
-    }, [cardType]);
+        setCurrentType(cardType ?? (isExtractReview ? null : "due"));
+    }, [cardType, isExtractReview]);
 
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(rawContent);
@@ -447,6 +447,8 @@ export const LinearCard: FC<LinearCardProps> = ({
         useState<ExtractDebugStatus | null>(null);
     const [showExtractDebugPanel, setShowExtractDebugPanel] = useState(false);
     const lastExtractDebugWarnKeyRef = useRef("");
+    const latestExtractHybridReadyKeyRef = useRef<string | null>(null);
+    latestExtractHybridReadyKeyRef.current = extractHybridReadyKey;
     const hasPreparedExtractContext = !!(
         isExtractReview &&
         extractContext &&
@@ -456,6 +458,8 @@ export const LinearCard: FC<LinearCardProps> = ({
     );
     const isExtractContentReady =
         hasPreparedExtractContext && visibleExtractReadyKey === extractHybridReadyKey;
+    const extractDebugEnabled = plugin?.data?.settings?.showRuntimeDebugMessages === true;
+    const shouldShowExtractDebugPanel = extractDebugEnabled && showExtractDebugPanel;
     const currentExtractDebugStatus =
         lastExtractDebugStatus ??
         extractDebugStatus ??
@@ -486,7 +490,7 @@ export const LinearCard: FC<LinearCardProps> = ({
     }, [extractHybridReadyKey, isExtractReview]);
 
     useEffect(() => {
-        if (!isExtractReview || isExtractContentReady) {
+        if (!isExtractReview || isExtractContentReady || !extractDebugEnabled) {
             setShowExtractDebugPanel(false);
             return;
         }
@@ -495,10 +499,15 @@ export const LinearCard: FC<LinearCardProps> = ({
             setShowExtractDebugPanel(true);
         }, 1500);
         return () => window.clearTimeout(timeoutId);
-    }, [extractHybridReadyKey, isExtractContentReady, isExtractReview]);
+    }, [extractDebugEnabled, extractHybridReadyKey, isExtractContentReady, isExtractReview]);
 
     useEffect(() => {
-        if (!isExtractReview || isExtractContentReady || !showExtractDebugPanel) {
+        if (
+            !isExtractReview ||
+            isExtractContentReady ||
+            !showExtractDebugPanel ||
+            !extractDebugEnabled
+        ) {
             return;
         }
 
@@ -512,7 +521,13 @@ export const LinearCard: FC<LinearCardProps> = ({
         }
         lastExtractDebugWarnKeyRef.current = warningKey;
         console.warn("[SR-ExtractRender] pending", currentExtractDebugStatus);
-    }, [currentExtractDebugStatus, isExtractContentReady, isExtractReview, showExtractDebugPanel]);
+    }, [
+        currentExtractDebugStatus,
+        extractDebugEnabled,
+        isExtractContentReady,
+        isExtractReview,
+        showExtractDebugPanel,
+    ]);
 
     const breadcrumbKey = breadcrumbs
         .map((crumb) => `${crumb.label}\u001e${crumb.line}\u001e${crumb.level}`)
@@ -901,7 +916,10 @@ export const LinearCard: FC<LinearCardProps> = ({
                     break;
                 case "DELETE":
                     if (isExtractReview) {
-                        showToast(t("EXTRACT_REVIEW_GRADUATE"), <GraduationCap size={14} />);
+                        showToast(
+                            t("EXTRACT_REVIEW_PENDING_GRADUATE"),
+                            <GraduationCap size={14} />,
+                        );
                         onDelete?.();
                         break;
                     }
@@ -1473,13 +1491,13 @@ export const LinearCard: FC<LinearCardProps> = ({
                                         {!isExtractContentReady && (
                                             <div
                                                 className="sr-extract-content-waiting"
-                                                aria-hidden={!showExtractDebugPanel}
+                                                aria-hidden={!shouldShowExtractDebugPanel}
                                             />
                                         )}
-                                        {!isExtractContentReady && (
+                                        {!isExtractContentReady && shouldShowExtractDebugPanel && (
                                             <ExtractRenderDebugPanel
                                                 status={currentExtractDebugStatus}
-                                                visible={showExtractDebugPanel}
+                                                visible={shouldShowExtractDebugPanel}
                                             />
                                         )}
                                         <div
@@ -1499,9 +1517,23 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                 }}
                                                 onExit={exitEditMode}
                                                 onReady={() => {
-                                                    setVisibleExtractReadyKey(extractHybridReadyKey);
+                                                    if (
+                                                        latestExtractHybridReadyKeyRef.current ===
+                                                        extractHybridReadyKey
+                                                    ) {
+                                                        setVisibleExtractReadyKey(
+                                                            extractHybridReadyKey,
+                                                        );
+                                                    }
                                                 }}
                                                 onDebugEvent={(event) => {
+                                                    if (
+                                                        latestExtractHybridReadyKeyRef.current !==
+                                                            extractHybridReadyKey ||
+                                                        event.stage === "ready-skipped-stale-view"
+                                                    ) {
+                                                        return;
+                                                    }
                                                     setLastExtractDebugStatus(event);
                                                     if (plugin.data.settings.showRuntimeDebugMessages) {
                                                         console.debug(
@@ -1522,12 +1554,14 @@ export const LinearCard: FC<LinearCardProps> = ({
                                     >
                                         <div
                                             className="sr-extract-content-waiting"
-                                            aria-hidden={!showExtractDebugPanel}
+                                            aria-hidden={!shouldShowExtractDebugPanel}
                                         />
-                                        <ExtractRenderDebugPanel
-                                            status={currentExtractDebugStatus}
-                                            visible={showExtractDebugPanel}
-                                        />
+                                        {shouldShowExtractDebugPanel && (
+                                            <ExtractRenderDebugPanel
+                                                status={currentExtractDebugStatus}
+                                                visible={shouldShowExtractDebugPanel}
+                                            />
+                                        )}
                                     </div>
                                 )
                             ) : isEditing && plugin ? (

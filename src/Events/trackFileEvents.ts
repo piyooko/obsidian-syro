@@ -331,6 +331,9 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
             if (plugin.removeAutoExtractRulePath?.(file.path)) {
                 noteChanged = true;
             }
+            if (await plugin.removeExtractsForDeletedPath?.(file.path)) {
+                noteChanged = true;
+            }
 
             const removedTimeline = reviewCommitStore.deleteFileWithSnapshot(file.path);
             const removedTimelineByPrefix = reviewCommitStore.deletePathPrefixWithSnapshots(

@@ -239,6 +239,8 @@ describe("trackFileEvents syro session hooks", () => {
             appendSyroTimelineDeleteFile: jest.fn(async () => true),
             removeFolderTrackingPaths: jest.fn(() => false),
             removeDeckOptionsAssignments: jest.fn(() => true),
+            removeAutoExtractRulePath: jest.fn(() => false),
+            removeExtractsForDeletedPath: jest.fn(async () => true),
             store: {
                 untrackPathPrefixWithSnapshots: jest.fn(() => [cardSnapshot]),
                 save: jest.fn(async () => undefined),
@@ -270,6 +272,7 @@ describe("trackFileEvents syro session hooks", () => {
         await deleteHandler(createMarkdownFile("archive/deleted.md"));
 
         expect(plugin.removeDeckOptionsAssignments).toHaveBeenCalledWith("archive/deleted.md");
+        expect(plugin.removeExtractsForDeletedPath).toHaveBeenCalledWith("archive/deleted.md");
         expect(plugin.noteReviewStore.save).toHaveBeenCalled();
         expect(plugin.reviewCommitStore.save).toHaveBeenCalled();
         expect(plugin.appendSyroNoteRemove).toHaveBeenCalledWith(noteSnapshot);

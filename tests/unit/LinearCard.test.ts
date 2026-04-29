@@ -103,12 +103,12 @@ function createAutoExtractContext(markdown: string) {
     };
 }
 
-function createMinimalPlugin(): SRPlugin {
+function createMinimalPlugin(showRuntimeDebugMessages = false): SRPlugin {
     return {
         data: {
             settings: {
                 isPro: true,
-                showRuntimeDebugMessages: false,
+                showRuntimeDebugMessages,
             },
         },
     } as unknown as SRPlugin;
@@ -231,6 +231,61 @@ test("extract review menu hides card info", () => {
     expect(container.textContent).not.toContain("卡片信息");
 });
 
+test("extract review Ctrl+Z calls undo", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onUndo = jest.fn();
+
+    act(() => {
+        root.render(
+            React.createElement(LinearCard, {
+                reviewKind: "extract",
+                card: {
+                    front: "{{ir::text}}",
+                    back: "",
+                },
+                renderMarkdown: (content: string, el: HTMLElement) => {
+                    el.textContent = content;
+                },
+                onUndo,
+            }),
+        );
+    });
+
+    act(() => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true }));
+    });
+
+    expect(onUndo).toHaveBeenCalledTimes(1);
+
+    act(() => root.unmount());
+});
+
+test("extract review without cardType does not default the header to due", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+        root.render(
+            React.createElement(LinearCard, {
+                reviewKind: "extract",
+                card: { front: "{{ir::text}}", back: "" },
+                stats: { new: 11, learning: 0, due: 0 },
+                renderMarkdown: (content: string, el: HTMLElement) => {
+                    el.textContent = content;
+                },
+            }),
+        );
+    });
+
+    const liveHeader = container.querySelector(".sr-card-header:not(.sr-card-header-measure)");
+    expect(liveHeader?.querySelector(".sr-stat-badge.active")).toBeNull();
+
+    act(() => root.unmount());
+});
+
 test("extract review without context never falls back to the plain card editor", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -272,6 +327,79 @@ test("extract review without context never falls back to the plain card editor",
     }
 });
 
+test("extract review ignores stale ready debug from an old hybrid view", async () => {
+    jest.useFakeTimers();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const firstBefore = "before\n\n";
+    const firstWrapped = "{{ir::first\n\n| A | B |\n| - | - |\n| 1 | old |}}";
+    const firstMarkdown = `${firstBefore}${firstWrapped}\n\nafter`;
+    const firstContext = createManualExtractContext(
+        firstMarkdown,
+        firstBefore.length,
+        firstBefore.length + firstWrapped.length,
+    );
+    const secondBefore = "before\n\n";
+    const secondWrapped = "{{ir::second\n\n| A | B |\n| - | - |\n| 2 | current |}}";
+    const secondMarkdown = `${secondBefore}${secondWrapped}\n\nafter`;
+    const secondContext = createManualExtractContext(
+        secondMarkdown,
+        secondBefore.length,
+        secondBefore.length + secondWrapped.length,
+    );
+    const { pending, renderMarkdown } = createDeferredRenderMarkdown();
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    uiResetToken: 1,
+                    card: { front: firstWrapped, back: "" },
+                    extractContext: firstContext,
+                    extractContextDraft: { markdown: firstMarkdown, ranges: firstContext },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown,
+                }),
+            );
+        });
+        await flushEffects();
+        const firstViewRenders = pending.slice();
+        expect(firstViewRenders.length).toBeGreaterThan(0);
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    uiResetToken: 2,
+                    card: { front: secondWrapped, back: "" },
+                    extractContext: secondContext,
+                    extractContextDraft: { markdown: secondMarkdown, ranges: secondContext },
+                    plugin: createMinimalPlugin(true),
+                    renderMarkdown,
+                }),
+            );
+        });
+        await flushEffects();
+        expect(pending.length).toBeGreaterThan(firstViewRenders.length);
+
+        for (const render of firstViewRenders) {
+            await resolvePendingRender(render);
+        }
+        await flushEffects();
+        act(() => {
+            jest.advanceTimersByTime(1500);
+        });
+
+        expect(container.textContent).toContain("Extract render is still waiting");
+        expect(container.textContent).not.toContain("ready-skipped-stale-view");
+    } finally {
+        act(() => root.unmount());
+        jest.useRealTimers();
+    }
+});
+
 test("extract review pending state surfaces render diagnostics", () => {
     jest.useFakeTimers();
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -285,6 +413,7 @@ test("extract review pending state surfaces render diagnostics", () => {
                 React.createElement(LinearCard, {
                     reviewKind: "extract",
                     card: { front: "{{ir::text}}", back: "" },
+                    plugin: createMinimalPlugin(true),
                     renderMarkdown: (content: string, el: HTMLElement) => {
                         el.textContent = content;
                     },
@@ -303,6 +432,43 @@ test("extract review pending state surfaces render diagnostics", () => {
         expect(warnSpy).toHaveBeenCalledWith(
             "[SR-ExtractRender] pending",
             expect.objectContaining({ stage: "waiting-for-context" }),
+        );
+    } finally {
+        act(() => root.unmount());
+        warnSpy.mockRestore();
+        jest.useRealTimers();
+    }
+});
+
+test("extract review pending diagnostics stay hidden outside debug mode", () => {
+    jest.useFakeTimers();
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "{{ir::text}}", back: "" },
+                    plugin: createMinimalPlugin(false),
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+
+        act(() => {
+            jest.advanceTimersByTime(1500);
+        });
+
+        expect(container.textContent).not.toContain("Extract render is still waiting");
+        expect(warnSpy).not.toHaveBeenCalledWith(
+            "[SR-ExtractRender] pending",
+            expect.anything(),
         );
     } finally {
         act(() => root.unmount());

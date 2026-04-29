@@ -159,6 +159,7 @@ describe("SRPlugin extract deck paths", () => {
                 getAllTagsFromCache: () => [],
             })),
             extractStore: {
+                getActiveByPath: jest.fn(() => []),
                 syncFileExtracts: jest.fn(() => ({
                     added: [],
                     updated: [],
@@ -313,6 +314,203 @@ describe("SRPlugin extract deck paths", () => {
         expect(plugin.appendSyroExtractUpsert).toHaveBeenCalledWith({ item: updated }, "review");
         expect(emit).toHaveBeenCalledWith("extracts-updated");
         expect(updateStatusBar).toHaveBeenCalled();
+    });
+
+    test("undoes an extract review action by restoring the previous snapshot", async () => {
+        const emit = jest.fn();
+        const updateStatusBar = jest.fn();
+        const snapshot = {
+            item: {
+                uuid: "ir_1",
+                sourcePath: "摘录测试.md",
+                sourceMode: "manual-ir",
+                stage: "active",
+                timesReviewed: 0,
+            },
+        };
+
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            extractStore: {
+                upsertSnapshot: jest.fn(),
+                undoReviewedQuota: jest.fn(),
+                get: jest.fn(() => snapshot.item),
+                syncFileExtracts: jest.fn(() => ({ added: [], updated: [], graduated: [] })),
+                save: jest.fn(() => Promise.resolve()),
+            },
+            getExtractDeckNameForFile: jest.fn(() => "摘录测试"),
+            appendExtractSyncResult: jest.fn(() => Promise.resolve()),
+            appendSyroExtractUpsert: jest.fn(() => Promise.resolve()),
+            syncEvents: { emit },
+            updateStatusBar,
+        });
+
+        const result = await SRPlugin.prototype.undoExtractReviewAction.call(plugin, {
+            snapshot,
+            countDeckName: "deck",
+        });
+
+        expect(result).toBe(snapshot.item);
+        expect(plugin.extractStore.upsertSnapshot).toHaveBeenCalledWith(snapshot);
+        expect(plugin.extractStore.undoReviewedQuota).toHaveBeenCalledWith(snapshot.item, "deck");
+        expect(plugin.extractStore.save).toHaveBeenCalled();
+        expect(plugin.appendSyroExtractUpsert).toHaveBeenCalledWith(snapshot, "undo");
+        expect(emit).toHaveBeenCalledWith("extracts-updated");
+        expect(updateStatusBar).toHaveBeenCalled();
+    });
+
+    test("undoes a manual extract graduation by restoring the source text", async () => {
+        const file = createTFile("摘录测试.md");
+        const emit = jest.fn();
+        const updateStatusBar = jest.fn();
+        let sourceText = "before target after";
+        const snapshot = {
+            item: {
+                uuid: "ir_1",
+                sourcePath: "摘录测试.md",
+                sourceMode: "manual-ir",
+                stage: "active",
+                timesReviewed: 0,
+            },
+        };
+
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            app: {
+                vault: {
+                    getAbstractFileByPath: jest.fn(() => file),
+                    read: jest.fn(() => Promise.resolve(sourceText)),
+                    modify: jest.fn((_file: TFile, nextText: string) => {
+                        sourceText = nextText;
+                        return Promise.resolve();
+                    }),
+                },
+            },
+            extractStore: {
+                upsertSnapshot: jest.fn(),
+                undoReviewedQuota: jest.fn(),
+                get: jest.fn(() => snapshot.item),
+                syncFileExtracts: jest.fn(() => ({ added: [], updated: [], graduated: [] })),
+                save: jest.fn(() => Promise.resolve()),
+            },
+            getExtractDeckNameForFile: jest.fn(() => "摘录测试"),
+            appendExtractSyncResult: jest.fn(() => Promise.resolve()),
+            appendSyroExtractUpsert: jest.fn(() => Promise.resolve()),
+            syncEvents: { emit },
+            updateStatusBar,
+        });
+
+        await SRPlugin.prototype.undoExtractReviewAction.call(plugin, {
+            snapshot,
+            countDeckName: "deck",
+            sourceTextBefore: "before {{ir::target}} after",
+            sourceTextAfter: "before target after",
+            noteReviewChanged: true,
+        });
+
+        expect(sourceText).toBe("before {{ir::target}} after");
+        expect(plugin.app.vault.modify).toHaveBeenCalledWith(
+            file,
+            "before {{ir::target}} after",
+        );
+        expect(emit).toHaveBeenCalledWith("note-review-updated");
+    });
+
+    test("undoing a manual extract graduation does not overwrite later source edits", async () => {
+        const file = createTFile("摘录测试.md");
+        const emit = jest.fn();
+        const updateStatusBar = jest.fn();
+        const snapshot = {
+            item: {
+                uuid: "ir_1",
+                sourcePath: "摘录测试.md",
+                sourceMode: "manual-ir",
+                stage: "active",
+                timesReviewed: 0,
+            },
+        };
+
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            app: {
+                vault: {
+                    getAbstractFileByPath: jest.fn(() => file),
+                    read: jest.fn(() => Promise.resolve("before user edit after")),
+                    modify: jest.fn(() => Promise.resolve()),
+                },
+            },
+            extractStore: {
+                upsertSnapshot: jest.fn(),
+                undoReviewedQuota: jest.fn(),
+                get: jest.fn(() => snapshot.item),
+                save: jest.fn(() => Promise.resolve()),
+            },
+            appendSyroExtractUpsert: jest.fn(() => Promise.resolve()),
+            syncEvents: { emit },
+            updateStatusBar,
+        });
+
+        const result = await SRPlugin.prototype.undoExtractReviewAction.call(plugin, {
+            snapshot,
+            countDeckName: "deck",
+            sourceTextBefore: "before {{ir::target}} after",
+            sourceTextAfter: "before target after",
+            noteReviewChanged: true,
+        });
+
+        expect(result).toBe(snapshot.item);
+        expect(plugin.app.vault.modify).not.toHaveBeenCalled();
+        expect(plugin.extractStore.upsertSnapshot).toHaveBeenCalledWith(snapshot);
+        expect(plugin.extractStore.save).toHaveBeenCalled();
+        expect(emit).toHaveBeenCalledWith("extracts-updated");
+    });
+
+    test("undoing a manual extract graduation restores the original uuid before file sync", async () => {
+        const file = createTFile("摘录测试.md");
+        const sourceTextBefore = "before {{ir::target}} after";
+        let sourceText = "before target after";
+        const extractStore = new ExtractStore(DEFAULT_SETTINGS, { extractsPath: "extracts.json" });
+        extractStore.save = jest.fn(() => Promise.resolve());
+        const [original] = extractStore.syncFileExtracts(file.path, sourceTextBefore, "摘录测试")
+            .added;
+        if (!original) throw new Error("Expected original extract");
+        extractStore.graduateWithReviewCount(original.uuid, "deck");
+        const syncDuringModify = jest.fn((nextText: string) =>
+            extractStore.syncFileExtracts(file.path, nextText, "摘录测试"),
+        );
+
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            app: {
+                vault: {
+                    getAbstractFileByPath: jest.fn(() => file),
+                    read: jest.fn(() => Promise.resolve(sourceText)),
+                    modify: jest.fn((_file: TFile, nextText: string) => {
+                        sourceText = nextText;
+                        syncDuringModify(nextText);
+                        return Promise.resolve();
+                    }),
+                },
+            },
+            extractStore,
+            getExtractDeckNameForFile: jest.fn(() => "摘录测试"),
+            appendExtractSyncResult: jest.fn(() => Promise.resolve()),
+            appendSyroExtractUpsert: jest.fn(() => Promise.resolve()),
+            syncEvents: { emit: jest.fn() },
+            updateStatusBar: jest.fn(),
+        });
+
+        const result = await SRPlugin.prototype.undoExtractReviewAction.call(plugin, {
+            snapshot: { item: original },
+            countDeckName: "deck",
+            sourceTextBefore,
+            sourceTextAfter: "before target after",
+            noteReviewChanged: true,
+        });
+
+        expect(result?.uuid).toBe(original.uuid);
+        expect(extractStore.get(original.uuid)?.stage).toBe("active");
+        expect(extractStore.getActiveByPath(file.path).map((item) => item.uuid)).toEqual([
+            original.uuid,
+        ]);
+        expect(syncDuringModify).toHaveBeenCalled();
+        expect(sourceText).toBe(sourceTextBefore);
     });
 
     test("graduates an extract through wrapper removal while counting the review quota", async () => {

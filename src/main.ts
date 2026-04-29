@@ -71,6 +71,10 @@ import {
     type IrExtractMatch,
 } from "./util/irExtractParser";
 import {
+    formatIrExtractDebugPreview,
+    summarizeIrExtractMatchesForDebug,
+} from "./util/irExtractDebug";
+import {
     buildAutoExtractReviewContext,
     buildExtractReviewContext,
     hasCurrentExtractWrapper,
@@ -204,6 +208,14 @@ import {
 import { type SyroUuidAliasGroup } from "./dataStore/syroUuidAlias";
 import Commands from "./commands";
 import { SrsAlgorithm } from "src/algorithms/algorithms";
+
+export interface ExtractReviewUndoAction {
+    snapshot: ExtractSnapshot;
+    countDeckName?: string | null;
+    sourceTextBefore?: string;
+    sourceTextAfter?: string;
+    noteReviewChanged?: boolean;
+}
 import { FsrsAlgorithm } from "src/algorithms/fsrs";
 import { WeightedMultiplierAlgorithm } from "src/algorithms/weightedMultiplier";
 
@@ -1999,7 +2011,7 @@ export default class SRPlugin extends Plugin {
             icon: "flashcards",
             editorCallback: async (editor) => {
                 const licMgr = LicenseManager.getInstance(this);
-                if (!(await licMgr.checkFeatureAccess("Anki 鎸栫┖"))) return;
+                if (!(await licMgr.checkFeatureAccess(t("SETTINGS_ANKI_CLOZE")))) return;
                 this.insertAnkiCloze(editor, "same");
             },
         });
@@ -2010,7 +2022,7 @@ export default class SRPlugin extends Plugin {
             icon: "flashcards",
             editorCallback: async (editor) => {
                 const licMgr = LicenseManager.getInstance(this);
-                if (!(await licMgr.checkFeatureAccess("Anki 鎸栫┖"))) return;
+                if (!(await licMgr.checkFeatureAccess(t("SETTINGS_ANKI_CLOZE")))) return;
                 this.insertAnkiCloze(editor, "new");
             },
         });
@@ -2180,10 +2192,211 @@ export default class SRPlugin extends Plugin {
         };
     }
 
+    private summarizeExtractItemsForDebug(
+        items: readonly ExtractItem[],
+    ): Array<Record<string, unknown>> {
+        return items.map((item) => ({
+            uuid: item.uuid,
+            id: item.id,
+            sourcePath: item.sourcePath,
+            deckName: item.deckName,
+            stage: item.stage,
+            sourceMode: item.sourceMode,
+            sliceRule: item.sliceRule,
+            ordinal: item.sourceAnchor.ordinal,
+            start: item.sourceAnchor.start,
+            end: item.sourceAnchor.end,
+            startLine: item.sourceAnchor.startLine,
+            endLine: item.sourceAnchor.endLine,
+            parentUuid: item.parentUuid ?? null,
+            rawMarkdownLength: item.rawMarkdown.length,
+            rawMarkdownPreview: formatIrExtractDebugPreview(item.rawMarkdown),
+        }));
+    }
+
+    private matchesExtractDeckPathForDebug(deckPath: string | null, resolvedDeckName: string): boolean {
+        const targetDeck = deckPath && deckPath !== "root" ? deckPath : null;
+        return !targetDeck || resolvedDeckName === targetDeck || resolvedDeckName.startsWith(`${targetDeck}/`);
+    }
+
+    private getExtractCandidateVisibilityReasonForDebug(input: {
+        backendItem: ExtractItem | null;
+        sourcePath: string;
+        deckPath: string | null;
+        resolvedDeckName: string | null;
+        inUnlimitedDeckCandidates: boolean;
+        inLimitedDeckCandidates: boolean;
+    }): string {
+        if (!input.backendItem) {
+            return "missing-from-store";
+        }
+        if (input.backendItem.stage !== "active") {
+            return "not-active";
+        }
+        if (input.backendItem.sourcePath !== input.sourcePath) {
+            return "different-source-path";
+        }
+        if (
+            input.resolvedDeckName &&
+            !this.matchesExtractDeckPathForDebug(input.deckPath, input.resolvedDeckName)
+        ) {
+            return "deck-filter-mismatch";
+        }
+        if (!input.inUnlimitedDeckCandidates) {
+            return "not-in-unlimited-candidates";
+        }
+        if (!input.inLimitedDeckCandidates) {
+            return "hidden-by-daily-limit";
+        }
+        return "visible-in-limited-candidates";
+    }
+
+    private logExtractBackendStateForDebug(
+        context: string,
+        file: TFile,
+        deckName: string,
+        details: Record<string, unknown> = {},
+        focusItems: readonly ExtractItem[] = [],
+    ): void {
+        if (!this.shouldLogRuntimeDebug() || !this.extractStore) {
+            return;
+        }
+
+        const sourcePath = file.path;
+        const deckOptionsPreset = resolveDeckOptionsPreset(this.data.settings, deckName);
+        const extractReviewLimits = this.getExtractReviewLimits(deckName);
+        const sourceItems = this.extractStore.list().filter((item) => item.sourcePath === sourcePath);
+        const activeSourceItems = sourceItems.filter((item) => item.stage === "active");
+        const graduatedSourceItems = sourceItems.filter((item) => item.stage === "graduated");
+        const limitedDeckCandidates = this.getExtractReviewCandidates(deckName, true);
+        const unlimitedDeckCandidates = this.getExtractReviewCandidates(deckName, false);
+        const limitedCandidateUuids = new Set(limitedDeckCandidates.map((item) => item.uuid));
+        const unlimitedCandidateUuids = new Set(unlimitedDeckCandidates.map((item) => item.uuid));
+
+        this.logRuntimeDebug("[SR-ExtractDebug] backend-state", {
+            context,
+            sourcePath,
+            deckName,
+            reviewDeckPathForFile: this.getReviewDeckPathForFile(file),
+            readonlyNoteCardStats: this.getReadonlyNoteCardStats(file),
+            deckOptionsPreset: {
+                name: deckOptionsPreset.name,
+                maxNewCards: deckOptionsPreset.maxNewCards,
+                maxReviews: deckOptionsPreset.maxReviews,
+                maxNewExtracts: deckOptionsPreset.maxNewExtracts,
+                maxExtractReviews: deckOptionsPreset.maxExtractReviews,
+            },
+            extractReviewLimits,
+            reviewedCountsForDeck: this.extractStore.getReviewedCounts(deckName || "root"),
+            sourceItemCount: sourceItems.length,
+            activeSourceItemCount: activeSourceItems.length,
+            graduatedSourceItemCount: graduatedSourceItems.length,
+            sourceManualIrActiveCount: activeSourceItems.filter(
+                (item) => item.sourceMode === "manual-ir",
+            ).length,
+            sourceAutoSliceActiveCount: activeSourceItems.filter(
+                (item) => item.sourceMode === "auto-slice",
+            ).length,
+            sourceItems: this.summarizeExtractItemsForDebug(sourceItems),
+            limitedDeckStats: this.getExtractReviewStats(deckName, true),
+            unlimitedDeckStats: this.getExtractReviewStats(deckName, false),
+            limitedDeckCandidateCount: limitedDeckCandidates.length,
+            unlimitedDeckCandidateCount: unlimitedDeckCandidates.length,
+            activeSourceItemsInLimitedDeckCandidates: activeSourceItems.filter((item) =>
+                limitedCandidateUuids.has(item.uuid),
+            ).length,
+            activeSourceItemsInUnlimitedDeckCandidates: activeSourceItems.filter((item) =>
+                unlimitedCandidateUuids.has(item.uuid),
+            ).length,
+            focusItems: focusItems.map((item) => {
+                const backendItem = this.extractStore?.get(item.uuid) ?? null;
+                const resolvedDeckName = backendItem ? this.getExtractDeckNameForItem(backendItem) : null;
+                const inUnlimitedDeckCandidates = unlimitedCandidateUuids.has(item.uuid);
+                const inLimitedDeckCandidates = limitedCandidateUuids.has(item.uuid);
+                return {
+                    uuid: item.uuid,
+                    resultStage: item.stage,
+                    existsInStore: !!backendItem,
+                    backendStage: backendItem?.stage ?? null,
+                    backendSourcePath: backendItem?.sourcePath ?? null,
+                    backendDeckName: backendItem?.deckName ?? null,
+                    resolvedDeckName,
+                    sourceAnchorOrdinal: backendItem?.sourceAnchor.ordinal ?? item.sourceAnchor.ordinal,
+                    sourceAnchorStart: backendItem?.sourceAnchor.start ?? item.sourceAnchor.start,
+                    sourceAnchorEnd: backendItem?.sourceAnchor.end ?? item.sourceAnchor.end,
+                    sourcePathMatches: backendItem?.sourcePath === sourcePath,
+                    deckPathMatches: resolvedDeckName
+                        ? this.matchesExtractDeckPathForDebug(deckName, resolvedDeckName)
+                        : false,
+                    inUnlimitedDeckCandidates,
+                    inLimitedDeckCandidates,
+                    candidateVisibilityReason: this.getExtractCandidateVisibilityReasonForDebug({
+                        backendItem,
+                        sourcePath,
+                        deckPath: deckName,
+                        resolvedDeckName,
+                        inUnlimitedDeckCandidates,
+                        inLimitedDeckCandidates,
+                    }),
+                    rawMarkdownLength: (backendItem ?? item).rawMarkdown.length,
+                    rawMarkdownPreview: formatIrExtractDebugPreview((backendItem ?? item).rawMarkdown),
+                };
+            }),
+            ...details,
+        });
+    }
+
+    private logDetectedManualIrExtractsForDebug(
+        context: string,
+        file: TFile,
+        text: string,
+        details: Record<string, unknown> = {},
+    ): void {
+        if (!this.shouldLogRuntimeDebug()) {
+            return;
+        }
+        const matches = parseIrExtracts(text);
+        this.logRuntimeDebug("[SR-ExtractDebug] manual-ir-detected", {
+            context,
+            sourcePath: file.path,
+            detectedCount: matches.length,
+            detected: summarizeIrExtractMatchesForDebug(matches),
+            ...details,
+        });
+    }
+
+    private logExtractSyncResultForDebug(
+        context: string,
+        file: TFile,
+        result: ExtractSyncResult,
+        details: Record<string, unknown> = {},
+    ): void {
+        if (!this.shouldLogRuntimeDebug()) {
+            return;
+        }
+        this.logRuntimeDebug("[SR-ExtractDebug] sync-result", {
+            context,
+            sourcePath: file.path,
+            addedCount: result.added.length,
+            updatedCount: result.updated.length,
+            graduatedCount: result.graduated.length,
+            removedCount: result.removed?.length ?? 0,
+            added: this.summarizeExtractItemsForDebug(result.added),
+            updated: this.summarizeExtractItemsForDebug(result.updated),
+            graduated: this.summarizeExtractItemsForDebug(result.graduated),
+            removed: this.summarizeExtractItemsForDebug(result.removed ?? []),
+            ...details,
+        });
+    }
+
     private syncExtractTextForFile(
         file: TFile,
         text: string,
-        options: { manual?: boolean; auto?: boolean; autoRuleOverride?: AutoExtractRule | null } = {},
+        options: {
+            manual?: boolean;
+            auto?: boolean;
+            autoRuleOverride?: AutoExtractRule | null;
+        } = {},
     ): ExtractSyncResult {
         if (!this.extractStore || this.data?.settings?.enableExtracts === false) {
             return this.emptyExtractSyncResult();
@@ -2191,6 +2404,11 @@ export default class SRPlugin extends Plugin {
         const manualEnabled = options.manual !== false;
         const autoEnabled = options.auto !== false;
         const cachedManualIr = this.getNoteExtractCache().get(file.path)?.manualIr;
+        if (manualEnabled) {
+            this.logDetectedManualIrExtractsForDebug("sync-file:before-manual-sync", file, text, {
+                cachedManualIr: !!cachedManualIr,
+            });
+        }
         const manualResult = manualEnabled
             ? cachedManualIr
                 ? this.extractStore.syncFileExtracts(
@@ -2220,6 +2438,18 @@ export default class SRPlugin extends Plugin {
                   )
                 : this.emptyExtractSyncResult();
         const result = this.mergeExtractSyncResults(manualResult, autoResult);
+        this.logExtractSyncResultForDebug("sync-file", file, result, {
+            manualEnabled,
+            autoEnabled,
+            autoRule: autoRule
+                ? {
+                      rule: autoRule.rule,
+                      headingLevel: autoRule.headingLevel ?? null,
+                      headingLevels: autoRule.headingLevels ?? null,
+                      allHeadingLevels: autoRule.allHeadingLevels === true,
+                  }
+                : null,
+        });
         this.getNoteExtractCache().set(file.path, {
             scannedAt: Date.now(),
             fileMtime: file.stat?.mtime ?? 0,
@@ -2573,6 +2803,29 @@ export default class SRPlugin extends Plugin {
         return true;
     }
 
+    public async removeExtractsForDeletedPath(deletedPath: string): Promise<boolean> {
+        if (!this.extractStore || this.data.settings.enableExtracts === false) {
+            return false;
+        }
+        const result = this.extractStore.removeBySourcePath(deletedPath);
+        if (
+            result.added.length === 0 &&
+            result.updated.length === 0 &&
+            result.graduated.length === 0 &&
+            (result.removed?.length ?? 0) === 0
+        ) {
+            return false;
+        }
+
+        this.getNoteExtractCache().delete(deletedPath);
+        await this.extractStore.save();
+        await this.appendExtractSyncResult(result);
+        await this.saveNoteExtractCacheToDiskIfEnabled();
+        this.syncEvents.emit("extracts-updated");
+        this.updateStatusBar();
+        return true;
+    }
+
     private async appendExtractSyncResult(result: {
         added: ExtractItem[];
         updated: ExtractItem[];
@@ -2877,6 +3130,46 @@ export default class SRPlugin extends Plugin {
         this.syncEvents.emit("extracts-updated");
         this.updateStatusBar();
         return updated;
+    }
+
+    public async undoExtractReviewAction(action: ExtractReviewUndoAction): Promise<ExtractItem | null> {
+        if (!this.extractStore || !action.snapshot?.item) {
+            return null;
+        }
+
+        const item = action.snapshot.item;
+        this.extractStore.upsertSnapshot(action.snapshot);
+
+        if (
+            item.sourceMode === "manual-ir" &&
+            action.sourceTextBefore !== undefined &&
+            action.sourceTextAfter !== undefined
+        ) {
+            const sourceFile = this.resolveExtractSourceFile(item);
+            if (sourceFile) {
+                const currentText = await this.app.vault.read(sourceFile);
+                if (currentText === action.sourceTextAfter) {
+                    await this.app.vault.modify(sourceFile, action.sourceTextBefore);
+                    const deckName = this.getExtractDeckNameForFile(sourceFile);
+                    const syncResult = this.extractStore.syncFileExtracts(
+                        sourceFile.path,
+                        action.sourceTextBefore,
+                        deckName,
+                    );
+                    await this.appendExtractSyncResult(syncResult);
+                }
+            }
+        }
+
+        this.extractStore.undoReviewedQuota(item, action.countDeckName);
+        await this.extractStore.save();
+        await this.appendSyroExtractUpsert(action.snapshot, "undo");
+        this.syncEvents.emit("extracts-updated");
+        if (action.noteReviewChanged) {
+            this.syncEvents.emit("note-review-updated");
+        }
+        this.updateStatusBar();
+        return this.extractStore.get(item.uuid) ?? item;
     }
 
     public async updateExtractMemo(uuid: string, memo: string): Promise<ExtractItem | null> {
@@ -3194,6 +3487,21 @@ export default class SRPlugin extends Plugin {
 
         const sourceText = editor.getValue();
         const wrapped = wrapSelectionAsExtract(sourceText, from, to);
+        this.logDetectedManualIrExtractsForDebug(
+            "create-selection:after-wrap",
+            file,
+            wrapped.text,
+            {
+                selectionFrom: from,
+                selectionTo: to,
+                wrappedFrom: wrapped.from,
+                wrappedTo: wrapped.to,
+                replaceFrom: wrapped.replaceFrom,
+                replaceTo: wrapped.replaceTo,
+                innerFrom: wrapped.innerFrom,
+                innerTo: wrapped.innerTo,
+            },
+        );
         const replacement = wrapped.text.slice(wrapped.from, wrapped.to);
         editor.replaceRange(
             replacement,
@@ -3203,11 +3511,35 @@ export default class SRPlugin extends Plugin {
 
         const deckName = this.getExtractDeckNameForFile(file);
         const cachedManualIr = this.getNoteExtractCache().get(file.path)?.manualIr;
+        this.logExtractBackendStateForDebug("create-selection:before-sync", file, deckName, {
+            cachedManualIr: !!cachedManualIr,
+            selectionFrom: from,
+            selectionTo: to,
+            wrappedFrom: wrapped.from,
+            wrappedTo: wrapped.to,
+        });
         const result = cachedManualIr
             ? this.extractStore.syncFileExtracts(file.path, wrapped.text, deckName, {
                   manualIrCache: cachedManualIr,
               })
             : this.extractStore.syncFileExtracts(file.path, wrapped.text, deckName);
+        this.logExtractSyncResultForDebug("create-selection", file, result, {
+            deckName,
+            cachedManualIr: !!cachedManualIr,
+            activeExtractCountForSource: this.extractStore.getActiveByPath(file.path).length,
+        });
+        this.logExtractBackendStateForDebug(
+            "create-selection:after-sync",
+            file,
+            deckName,
+            {
+                addedCount: result.added.length,
+                updatedCount: result.updated.length,
+                graduatedCount: result.graduated.length,
+                removedCount: result.removed?.length ?? 0,
+            },
+            result.added,
+        );
         const previousExtractCache = this.getNoteExtractCache().get(file.path);
         this.getNoteExtractCache().set(file.path, {
             scannedAt: Date.now(),
@@ -3219,6 +3551,15 @@ export default class SRPlugin extends Plugin {
         await this.appendExtractSyncResult(result);
         await this.extractStore.save();
         await this.saveNoteExtractCacheToDiskIfEnabled();
+        this.logExtractBackendStateForDebug(
+            "create-selection:after-save",
+            file,
+            deckName,
+            {
+                addedUuids: result.added.map((item) => item.uuid),
+            },
+            result.added,
+        );
         this.syncEvents.emit("extracts-updated");
         this.updateStatusBar();
         new Notice(t("NOTICE_EXTRACT_CREATED"));

@@ -225,6 +225,37 @@ describe("ExtractStore", () => {
         expect(store.getReviewCandidates("deck", { maxNew: 1, maxDue: 50 })).toHaveLength(0);
     });
 
+    test("undoes reviewed quota counts for new and due extracts", () => {
+        const store = createStore();
+        const algorithm = createWms();
+        const [newExtract, dueExtract] = store.syncFileExtracts(
+            "notes/source.md",
+            "{{ir::one}}\n{{ir::two}}\n{{ir::three}}",
+            "deck",
+        ).added;
+        const internalItems = (
+            store as unknown as {
+                items: Record<string, { timesReviewed: number; nextReview: number }>;
+            }
+        ).items;
+        internalItems[dueExtract.uuid]!.timesReviewed = 2;
+        internalItems[dueExtract.uuid]!.nextReview = Date.now() - 1;
+        const dueItem = store.get(dueExtract.uuid);
+        if (!dueItem) throw new Error("Expected due extract");
+
+        store.review(newExtract.uuid, ReviewResponse.Good, algorithm, "deck");
+        store.review(dueExtract.uuid, ReviewResponse.Good, algorithm, "deck");
+
+        expect(store.getReviewedCounts("deck")).toEqual({ new: 1, due: 1 });
+
+        store.undoReviewedQuota(newExtract, "deck");
+        store.undoReviewedQuota(dueItem, "deck");
+
+        expect(store.getReviewedCounts("deck")).toEqual({ new: 0, due: 0 });
+        store.undoReviewedQuota(dueItem, "deck");
+        expect(store.getReviewedCounts("deck")).toEqual({ new: 0, due: 0 });
+    });
+
     test("syncs heading auto slices without touching manual IR extracts", () => {
         const store = createStore();
         const manual = store.syncFileExtracts("notes/source.md", "{{ir::manual}}", "deck")

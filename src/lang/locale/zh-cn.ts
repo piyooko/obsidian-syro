@@ -79,6 +79,7 @@ export default {
     EXTRACT_REVIEW_GOOD: "良好",
     EXTRACT_REVIEW_SET_DATE: "指定",
     EXTRACT_REVIEW_GRADUATE: "毕业",
+    EXTRACT_REVIEW_PENDING_GRADUATE: "已标记毕业，可 Ctrl+Z 撤销",
     EXTRACT_RENDER_DEBUG_TITLE: "摘录渲染仍在等待",
     EXTRACT_RENDER_DEBUG_STEP: "步骤：${stage}",
     EXTRACT_RENDER_DEBUG_DETAIL: "详情：${detail}",
