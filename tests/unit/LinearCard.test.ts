@@ -2,6 +2,7 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { moment } from "obsidian";
 import { CardType } from "src/Question";
 import { CardFrontBackUtil } from "src/question-type";
 import { DEFAULT_PROGRESS_BAR_STYLE, DEFAULT_SETTINGS, SRSettings } from "src/settings";
@@ -190,6 +191,40 @@ test("extract review renders direct actions without show-answer or hard/easy lab
     expect(onAnswer).toHaveBeenNthCalledWith(2, 1);
     expect(onSetExtractDate).toHaveBeenCalled();
     expect(onDelete).toHaveBeenCalled();
+});
+
+test("extract review set date interval hint is localized in Chinese", () => {
+    const previousLocale = moment.locale();
+    moment.locale("zh-cn");
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: {
+                        front: "{{ir::text}}",
+                        back: "",
+                        responseButtonLabels: ["1天", "2天"],
+                    },
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+
+        const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>(".sr-linear-btn"));
+        expect(buttons[2].textContent).toContain("x天");
+        expect(buttons[2].textContent).not.toContain("xd");
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+        moment.locale(previousLocale);
+    }
 });
 
 test("extract review menu hides card info", () => {
@@ -466,10 +501,7 @@ test("extract review pending diagnostics stay hidden outside debug mode", () => 
         });
 
         expect(container.textContent).not.toContain("Extract render is still waiting");
-        expect(warnSpy).not.toHaveBeenCalledWith(
-            "[SR-ExtractRender] pending",
-            expect.anything(),
-        );
+        expect(warnSpy).not.toHaveBeenCalledWith("[SR-ExtractRender] pending", expect.anything());
     } finally {
         act(() => root.unmount());
         warnSpy.mockRestore();
@@ -577,7 +609,7 @@ test("readonly extract context uses persistent hybrid markdown renderer", async 
     }
 });
 
-test("readonly extract rendered blocks do not reveal source on click", async () => {
+test("readonly extract rendered blocks allow text selection without revealing source", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -618,13 +650,14 @@ test("readonly extract rendered blocks do not reveal source on click", async () 
         const event = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
         renderedBlock?.dispatchEvent(event);
 
-        expect(event.defaultPrevented).toBe(true);
+        expect(container.textContent).not.toContain("{{ir::");
+        expect(container.textContent).not.toContain("**rendered**");
     } finally {
         act(() => root.unmount());
     }
 });
 
-test("readonly extract context strips only the current outer IR wrapper", async () => {
+test("readonly extract context hides IR wrapper syntax", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -658,9 +691,124 @@ test("readonly extract context strips only the current outer IR wrapper", async 
         await flushEffects();
 
         const visibleText = container.textContent ?? "";
-        expect(visibleText).not.toContain("{{ir::outer");
-        expect(visibleText).not.toContain("text}}");
-        expect(visibleText).toContain("outer {{ir::inner}} text");
+        expect(visibleText).not.toContain("{{ir::");
+        expect(visibleText).not.toContain("}}");
+        expect(visibleText).toContain("outer inner text");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("readonly extract context does not draw an IR block around the current extract", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    const originalCancelAnimationFrame = window.cancelAnimationFrame;
+    const originalGetClientRects = Range.prototype.getClientRects;
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    const rect = {
+        bottom: 24,
+        height: 20,
+        left: 16,
+        right: 240,
+        top: 4,
+        width: 224,
+        x: 16,
+        y: 4,
+        toJSON: () => ({}),
+    } as DOMRect;
+    const wrapped = "{{ir::current extract}}";
+    const markdown = `${wrapped}\n\nafter`;
+    const context = createManualExtractContext(markdown, 0, wrapped.length);
+
+    window.requestAnimationFrame = ((cb: FrameRequestCallback) =>
+        window.setTimeout(() => cb(performance.now()), 0)) as typeof window.requestAnimationFrame;
+    window.cancelAnimationFrame = ((id: number) => {
+        window.clearTimeout(id);
+    }) as typeof window.cancelAnimationFrame;
+    Range.prototype.getClientRects = () => [rect] as unknown as DOMRectList;
+    HTMLElement.prototype.getBoundingClientRect = () => ({
+        ...rect,
+        bottom: 0,
+        height: 0,
+        left: 0,
+        right: 0,
+        top: 0,
+        width: 0,
+        x: 0,
+        y: 0,
+    });
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: wrapped, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+
+        await flushEffects();
+        await act(async () => {
+            await new Promise((resolve) => window.setTimeout(resolve, 0));
+        });
+
+        expect(container.querySelector(".sr-ir-extract-overlay")).not.toBeNull();
+        expect(container.querySelector(".sr-ir-extract-block")).toBeNull();
+    } finally {
+        Range.prototype.getClientRects = originalGetClientRects;
+        HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+        window.requestAnimationFrame = originalRequestAnimationFrame;
+        window.cancelAnimationFrame = originalCancelAnimationFrame;
+        act(() => root.unmount());
+    }
+});
+
+test("readonly extract context hides nested IR syntax on initial line rendering", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const before = "before\n\n";
+    const wrappedLine = "- {{ir::outer {{ir::inner}} text}}";
+    const markdown = `${before}${wrappedLine}\n\nafter`;
+    const innerFrom = markdown.indexOf("{{ir::inner}}");
+    const context = createManualExtractContext(
+        markdown,
+        innerFrom,
+        innerFrom + "{{ir::inner}}".length,
+    );
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "{{ir::inner}}", back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+
+        await flushEffects();
+        await flushEffects();
+
+        expect(container.querySelector(".HyperMD-list-line")).not.toBeNull();
+        expect(container.textContent).toContain("outer inner text");
+        expect(container.textContent).not.toContain("{{ir::");
+        expect(container.textContent).not.toContain("}}");
     } finally {
         act(() => root.unmount());
     }
@@ -1066,6 +1214,47 @@ test("Alt+E toggles edit mode and Escape does not exit edit mode", () => {
     expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
 });
 
+test("edit mode exit button shows the Alt+E shortcut hint in show-answer style", () => {
+    const previousLocale = moment.locale();
+    moment.locale("zh-cn");
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    card: {
+                        front: "front",
+                        back: "back",
+                    },
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    type: "basic",
+                }),
+            );
+        });
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+        });
+
+        const exitButton = container.querySelector<HTMLButtonElement>(".sr-exit-edit-btn");
+        expect(exitButton?.textContent).toContain("完成编辑 Alt+E");
+        expect(exitButton?.textContent).not.toContain("(Alt+E)");
+        expect(exitButton?.className).toContain("sr-show-answer-btn");
+        expect(exitButton?.className).not.toContain("sr-linear-btn");
+        expect(exitButton?.querySelector(".lucide-save")).not.toBeNull();
+        expect(exitButton?.querySelector(".sr-kbd")?.textContent).toBe("Alt+E");
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+        moment.locale(previousLocale);
+    }
+});
+
 test("Alt+E exits edit mode once from CodeMirror", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -1105,7 +1294,8 @@ test("Alt+E exits edit mode once from CodeMirror", async () => {
         await flushEffects();
 
         expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
-        expect(container.textContent).toContain("Exited edit mode");
+        expect(container.querySelector(".sr-toast")).toBeNull();
+        expect(container.textContent).not.toContain("Exited edit mode");
         expect(container.textContent).not.toContain("Entered edit mode");
         expect(container.textContent).not.toContain("Esc to exit");
     } finally {
@@ -1117,6 +1307,19 @@ test("editing mode does not add a left border indicator", () => {
     const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
 
     expect(css).not.toMatch(/\.sr-card-content-area\.sr-is-editing\s*\{[^}]*border-left/s);
+});
+
+test("exit edit button uses the show-answer button typography with a custom base color", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+
+    expect(css).toMatch(
+        /\.sr-exit-edit-btn\s*\{[^}]*background-color:\s*#496860\s*!important/s,
+    );
+    expect(css).not.toMatch(/\.sr-exit-edit-btn\s*\{[^}]*font-size/s);
+    expect(css).not.toMatch(/\.sr-exit-edit-btn\s+\.sr-linear-btn-icon-wrapper/s);
+    expect(css).toMatch(
+        /\.sr-show-answer-btn\s*\{[^}]*font-size:\s*calc\(var\(--syro-desktop-review-button-label-font-size,\s*12px\)\s*\+\s*2px\)/s,
+    );
 });
 
 test("hybrid editor content uses the same padding variables as review content", () => {
@@ -1132,6 +1335,17 @@ test("hybrid rendered blocks keep preview classes without preview layout padding
 
     expect(css).toMatch(
         /\.sr-hybrid-rendered-block\.markdown-preview-view\s*\{[^}]*max-width:\s*none\s*!important;[^}]*margin:\s*0\s*!important;[^}]*padding:\s*0\s*!important/s,
+    );
+});
+
+test("review hybrid editor keeps selection background visible for copying", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+
+    expect(css).not.toMatch(
+        /\.sr-hybrid-markdown-source\[data-sr-hybrid-mode="review"\]\s+\.cm-selectionBackground\s*\{[^}]*display:\s*none/s,
+    );
+    expect(css).not.toMatch(
+        /\.sr-hybrid-markdown-source\[data-sr-hybrid-mode="review"\]\s+\.cm-cursor,\s*\.sr-hybrid-markdown-source\[data-sr-hybrid-mode="review"\]\s+\.cm-selectionBackground\s*\{[^}]*display:\s*none/s,
     );
 });
 

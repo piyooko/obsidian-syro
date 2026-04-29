@@ -89,8 +89,8 @@ export const ExtractContextEditorView: FC<ExtractContextEditorViewProps> = ({
                 ...createIrExtractDecorationExtensions({
                     isLivePreviewHost: (view: EditorView) =>
                         !!view.dom.closest(".sr-extract-context-editor"),
-                    getExcludedStarts: () => {
-                        const currentRanges = viewRef.current?.state.field(extractContextRangesField);
+                    getExcludedStarts: (view: EditorView) => {
+                        const currentRanges = view.state.field(extractContextRangesField);
                         return currentRanges
                             ? new Set([currentRanges.currentOuterFrom])
                             : new Set<number>();
@@ -137,8 +137,8 @@ export const ExtractContextEditorView: FC<ExtractContextEditorViewProps> = ({
             state,
             parent: containerRef.current,
         });
-        view.dispatch({ effects: setExtractContextRangesEffect.of(ranges) });
         viewRef.current = view;
+        view.dispatch({ effects: setExtractContextRangesEffect.of(ranges) });
 
         if (editable) {
             window.setTimeout(() => view.focus(), 50);

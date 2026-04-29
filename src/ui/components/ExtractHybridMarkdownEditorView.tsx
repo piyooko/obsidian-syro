@@ -592,12 +592,7 @@ class RenderedMarkdownBlockWidget extends WidgetType {
         container.className = `sr-hybrid-rendered-block markdown-preview-view markdown-rendered${tableClass}${this.className}`;
         container.dataset.srHybridBlockKind = this.block.kind;
 
-        if (this.mode === "review") {
-            container.addEventListener("mousedown", (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-            });
-        } else if (this.mode === "edit") {
+        if (this.mode === "edit") {
             container.addEventListener("mousedown", (event) => {
                 if (this.block.kind === "table") {
                     return;
@@ -633,38 +628,40 @@ class RenderedMarkdownBlockWidget extends WidgetType {
             sourcePath: this.deps.sourcePath,
             target: container,
         });
-        const renderPromise: Promise<void> = Promise.resolve(renderResult).then((): void => {
-            if (this.block.kind === "table") {
-                normalizeRenderedTableForLivePreview(
-                    container,
-                    this.mode,
-                    this.block,
-                    view,
-                    this.deps.tableDrafts,
-                );
-            }
-            this.wireTableEditing(container, view);
-            this.deps.emitDebug?.({
-                stage: "markdown-block-render-done",
-                detail: {
-                    kind: this.block.kind,
-                    from: this.block.from,
-                    to: this.block.to,
-                    childCount: container.childElementCount,
-                },
+        const renderPromise: Promise<void> = Promise.resolve(renderResult)
+            .then((): void => {
+                if (this.block.kind === "table") {
+                    normalizeRenderedTableForLivePreview(
+                        container,
+                        this.mode,
+                        this.block,
+                        view,
+                        this.deps.tableDrafts,
+                    );
+                }
+                this.wireTableEditing(container, view);
+                this.deps.emitDebug?.({
+                    stage: "markdown-block-render-done",
+                    detail: {
+                        kind: this.block.kind,
+                        from: this.block.from,
+                        to: this.block.to,
+                        childCount: container.childElementCount,
+                    },
+                });
+            })
+            .catch((error: unknown) => {
+                this.deps.emitDebug?.({
+                    stage: "markdown-block-render-error",
+                    detail: {
+                        kind: this.block.kind,
+                        from: this.block.from,
+                        to: this.block.to,
+                    },
+                    error: stringifyDebugError(error),
+                });
+                throw error;
             });
-        }).catch((error: unknown) => {
-            this.deps.emitDebug?.({
-                stage: "markdown-block-render-error",
-                detail: {
-                    kind: this.block.kind,
-                    from: this.block.from,
-                    to: this.block.to,
-                },
-                error: stringifyDebugError(error),
-            });
-            throw error;
-        });
         const trackedRenderPromise: Promise<void> = renderPromise.catch((): void => undefined);
         this.deps.registerRenderPromise?.(trackedRenderPromise);
         void trackedRenderPromise;
@@ -852,10 +849,12 @@ function buildHybridDecorations(state: EditorState, deps: RenderDeps): Decoratio
 
 function buildHybridInlineDecorations(state: EditorState): DecorationSet {
     const docText = state.doc.toString();
+    const mode = state.field(hybridModeField);
     return collectHybridInlineDecorations(
         docText,
         state.selection,
         findHybridMarkdownBlocks(docText),
+        { revealFormatting: mode === "edit" },
     );
 }
 
@@ -1009,11 +1008,11 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
                 ]),
                 ...createExtractContextDecorationExtensions(),
                 ...createIrExtractDecorationExtensions({
-                    isLivePreviewHost: (view: EditorView) =>
-                        !!view.dom.closest(".sr-hybrid-markdown-source"),
-                    getExcludedStarts: () => {
-                        const currentRanges =
-                            viewRef.current?.state.field(extractContextRangesField);
+                    canRevealSource: (view: EditorView) =>
+                        view.state.field(hybridModeField) === "edit",
+                    isLivePreviewHost: () => true,
+                    getExcludedStarts: (view: EditorView) => {
+                        const currentRanges = view.state.field(extractContextRangesField);
                         return currentRanges
                             ? new Set([currentRanges.currentOuterFrom])
                             : new Set<number>();
@@ -1159,11 +1158,6 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
         <div
             className="sr-hybrid-markdown-source markdown-source-view cm-s-obsidian mod-cm6 is-live-preview"
             data-sr-hybrid-mode={mode}
-            onMouseDown={(event) => {
-                if (mode === "review") {
-                    event.preventDefault();
-                }
-            }}
         >
             <div className="sr-cm-container" ref={containerRef} />
         </div>

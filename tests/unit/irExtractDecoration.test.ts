@@ -290,4 +290,16 @@ describe("irExtractDecoration helpers", () => {
 
         expect(renderExtracts.map((item) => item.start)).toEqual([matches[1].start]);
     });
+
+    test("keeps extract source hidden when source reveal is disabled", () => {
+        const source = "before {{ir::outer {{ir::inner}} text}} after";
+        const matches = parseIrExtracts(source);
+
+        const renderExtracts = buildIrExtractRenderExtractsForTest(source, matches, {
+            revealSource: false,
+            sourceStarts: new Set(matches.map((match) => match.start)),
+        } as never);
+
+        expect(renderExtracts.map((item) => item.showSource)).toEqual([false, false]);
+    });
 });
