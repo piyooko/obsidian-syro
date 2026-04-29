@@ -50,17 +50,24 @@ export function buildExtractReviewContext(
     match: IrExtractMatch,
 ): ExtractReviewContext {
     const blocks = getBlankBlockRanges(sourceText);
-    const blockIndex = blocks.findIndex(
-        (block) => match.start >= block.from && match.end <= block.to,
+    const firstOverlappingBlockIndex = blocks.findIndex(
+        (block) => match.start < block.to && match.end > block.from,
     );
-    const currentIndex =
-        blockIndex >= 0
-            ? blockIndex
-            : blocks.findIndex((block) => match.start < block.to && match.end > block.from);
+    const safeFirstIndex = firstOverlappingBlockIndex >= 0 ? firstOverlappingBlockIndex : 0;
+    let safeLastIndex = safeFirstIndex;
+    for (let index = blocks.length - 1; index >= safeFirstIndex; index--) {
+        const block = blocks[index];
+        if (match.start < block.to && match.end > block.from) {
+            safeLastIndex = index;
+            break;
+        }
+    }
 
-    const safeIndex = currentIndex >= 0 ? currentIndex : 0;
-    const fromBlock = blocks[Math.max(0, safeIndex - 1)] ?? { from: 0, to: sourceText.length };
-    const toBlock = blocks[Math.min(blocks.length - 1, safeIndex + 1)] ?? fromBlock;
+    const fromBlock = blocks[Math.max(0, safeFirstIndex - 1)] ?? {
+        from: 0,
+        to: sourceText.length,
+    };
+    const toBlock = blocks[Math.min(blocks.length - 1, safeLastIndex + 1)] ?? fromBlock;
     const sourceFrom = fromBlock.from;
     const sourceTo = toBlock.to;
 
@@ -113,13 +120,13 @@ export function buildAutoExtractReviewContext(
             ? blockIndex
             : Math.max(
                   0,
-                  blocks.findIndex(
-                      (block) => current.start < block.to && current.end > block.from,
-                  ),
+                  blocks.findIndex((block) => current.start < block.to && current.end > block.from),
               );
-    const fromBlock = blocks[Math.max(0, safeIndex - 1)] ?? { from: current.start, to: current.end };
-    const toBlock =
-        blocks[Math.min(blocks.length - 1, safeIndex + 1)] ?? fromBlock;
+    const fromBlock = blocks[Math.max(0, safeIndex - 1)] ?? {
+        from: current.start,
+        to: current.end,
+    };
+    const toBlock = blocks[Math.min(blocks.length - 1, safeIndex + 1)] ?? fromBlock;
     const sourceFrom = fromBlock.from;
     const sourceTo = toBlock.to;
     const currentFrom = current.start - sourceFrom;

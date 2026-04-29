@@ -1,7 +1,4 @@
-import {
-    buildExtractReviewContext,
-    replaceExtractReviewContext,
-} from "src/util/irExtractContext";
+import { buildExtractReviewContext, replaceExtractReviewContext } from "src/util/irExtractContext";
 import { parseIrExtracts } from "src/util/irExtractParser";
 
 describe("irExtractContext", () => {
@@ -38,6 +35,46 @@ describe("irExtractContext", () => {
 
         expect(context.markdown).toBe("previous\n\nlast {{ir::target}}");
         expect(context.sourceTo).toBe(source.length);
+    });
+
+    test("keeps the full extract and nearby blocks when the extract spans blank blocks", () => {
+        const source = [
+            "intro",
+            "",
+            "lead",
+            "",
+            "{{ir::title",
+            "",
+            "first paragraph",
+            "",
+            "second paragraph}}",
+            "",
+            "next context",
+            "",
+            "end",
+        ].join("\n");
+        const match = parseIrExtracts(source)[0];
+
+        const context = buildExtractReviewContext(source, match);
+
+        expect(context.markdown).toBe(
+            [
+                "lead",
+                "",
+                "{{ir::title",
+                "",
+                "first paragraph",
+                "",
+                "second paragraph}}",
+                "",
+                "next context",
+            ].join("\n"),
+        );
+        expect(context.currentOuterFrom).toBe("lead\n\n".length);
+        expect(context.currentOuterTo).toBe(
+            ["lead", "", "{{ir::title", "", "first paragraph", "", "second paragraph}}"].join("\n")
+                .length,
+        );
     });
 
     test("replaces only the selected context range in source text", () => {
