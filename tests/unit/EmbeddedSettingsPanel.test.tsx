@@ -677,6 +677,34 @@ describe("EmbeddedSettingsPanel", () => {
         }
     });
 
+    it("renders LAB badges without custom tooltip behavior", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            openTab(view.container, "Incremental");
+
+            const labBadges = Array.from(
+                view.container.querySelectorAll<HTMLElement>(".sr-supporter-badge"),
+            ).filter((badge) => badge.textContent?.trim() === "LAB");
+
+            expect(labBadges.length).toBeGreaterThan(0);
+
+            for (const badge of labBadges) {
+                expect(badge.classList.contains("sr-supporter-badge--tooltip")).toBe(false);
+                expect(badge.getAttribute("role")).toBeNull();
+                expect(badge.getAttribute("tabindex")).toBeNull();
+
+                act(() => {
+                    badge.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
+                });
+
+                expect(document.body.querySelector(".sr-device-action-tooltip")).toBeNull();
+            }
+        } finally {
+            view.cleanup();
+        }
+    });
+
     it("keeps mobile toggle rows on a dedicated control cell with the native checkbox container", () => {
         const view = renderPanel(createSettings(), { mobile: true });
 

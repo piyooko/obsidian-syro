@@ -118,7 +118,6 @@ const LabelWithLab = ({ label }: { label: string }) => (
         label={label}
         badgeText={t("SETTINGS_LAB_BADGE").toUpperCase()}
         badgeAriaLabel={t("SETTINGS_LAB_BADGE_ARIA")}
-        badgeTooltipLabel={t("SETTINGS_LAB_BADGE_ARIA")}
     />
 );
 
