@@ -18,6 +18,11 @@ const INFO_ICON_BASE_RIGHT = 24;
 const INFO_ICON_SIZE = 20;
 const INFO_ICON_TOP = -10;
 const INFO_ICON_VISUAL_ROW_TOLERANCE = 12;
+const NOTE_TOOLTIP_VIEWPORT_PADDING = 12;
+const NOTE_TOOLTIP_GAP = 10;
+const NOTE_TOOLTIP_FALLBACK_HEIGHT = 120;
+const NOTE_TOOLTIP_FALLBACK_WIDTH = 240;
+const NOTE_TOOLTIP_ARROW_SIZE = 8;
 interface DecorationItem {
     from: number;
     to: number;
@@ -1056,15 +1061,6 @@ export function createIrExtractBlockElement(
     action.setAttribute("aria-label", "添加摘录备注");
     action.appendChild(createInfoIconSvg());
 
-    const tooltip = document.createElement("div");
-    tooltip.className = "sr-note-path-tooltip sr-ir-note-tooltip is-below";
-    tooltip.setAttribute("role", "tooltip");
-
-    const textarea = document.createElement("textarea");
-    textarea.rows = 1;
-    textarea.placeholder = "输入备注...";
-    textarea.setAttribute("aria-label", "摘录备注");
-
     const pinTooltip = (event: Event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -1092,6 +1088,25 @@ export function createIrExtractBlockElement(
         pinTooltip(event);
     });
 
+    element.appendChild(action);
+    return element;
+}
+
+export function createIrExtractNoteTooltipElement(): HTMLElement {
+    const tooltip = document.createElement("div");
+    tooltip.className = "sr-note-path-tooltip sr-ir-note-tooltip is-below";
+    tooltip.setAttribute("role", "tooltip");
+
+    const textarea = document.createElement("textarea");
+    textarea.className = "sr-ir-note-tooltip-input";
+    textarea.rows = 1;
+    textarea.placeholder = "输入备注...";
+    textarea.setAttribute("aria-label", "摘录备注");
+
+    const stopOverlayEvent = (event: Event) => {
+        event.stopPropagation();
+    };
+
     tooltip.addEventListener("pointerdown", stopOverlayEvent);
     tooltip.addEventListener("mousedown", stopOverlayEvent);
     tooltip.addEventListener("click", stopOverlayEvent);
@@ -1100,9 +1115,7 @@ export function createIrExtractBlockElement(
     textarea.addEventListener("input", () => resizeIrExtractTextarea(textarea));
 
     tooltip.appendChild(textarea);
-    action.appendChild(tooltip);
-    element.appendChild(action);
-    return element;
+    return tooltip;
 }
 
 function renderOverlayBlocks(
@@ -1231,6 +1244,101 @@ export function findIrExtractInfoActionStartAtClientPoint(
         }
     }
     return null;
+}
+
+export interface IrExtractNoteTooltipPlacementMetrics {
+    actionTop: number;
+    actionBottom: number;
+    tooltipHeight: number;
+    viewportHeight: number;
+    viewportPadding: number;
+    gap: number;
+}
+
+export function getIrExtractNoteTooltipPlacement(
+    metrics: IrExtractNoteTooltipPlacementMetrics,
+): "above" | "below" {
+    const aboveTop = metrics.actionTop - metrics.tooltipHeight - metrics.gap;
+    if (aboveTop >= metrics.viewportPadding) {
+        return "above";
+    }
+
+    return "below";
+}
+
+export interface IrExtractNoteTooltipPositionMetrics {
+    actionLeft: number;
+    actionTop: number;
+    actionRight: number;
+    actionBottom: number;
+    tooltipWidth: number;
+    tooltipHeight: number;
+    viewportWidth: number;
+    viewportHeight: number;
+    viewportPadding: number;
+    gap: number;
+}
+
+export interface IrExtractNoteTooltipPosition {
+    placement: "above" | "below";
+    top: number;
+    left: number;
+    maxWidth: number;
+    arrowLeft: number;
+}
+
+export function getIrExtractNoteTooltipPosition(
+    metrics: IrExtractNoteTooltipPositionMetrics,
+): IrExtractNoteTooltipPosition {
+    const maxWidth = Math.max(
+        1,
+        Math.min(metrics.tooltipWidth, metrics.viewportWidth - metrics.viewportPadding * 2),
+    );
+    const tooltipWidth = Math.min(metrics.tooltipWidth, maxWidth);
+    const actionCenterX = (metrics.actionLeft + metrics.actionRight) / 2;
+    const preferredLeft = actionCenterX - tooltipWidth / 2;
+    const left = Math.min(
+        Math.max(preferredLeft, metrics.viewportPadding),
+        metrics.viewportWidth - metrics.viewportPadding - tooltipWidth,
+    );
+    const placement = getIrExtractNoteTooltipPlacement(metrics);
+    const aboveTop = metrics.actionTop - metrics.tooltipHeight - metrics.gap;
+    const belowTop = metrics.actionBottom + metrics.gap;
+    const top =
+        placement === "above"
+            ? Math.max(metrics.viewportPadding, aboveTop)
+            : Math.min(
+                  metrics.viewportHeight - metrics.viewportPadding - metrics.tooltipHeight,
+                  belowTop,
+              );
+    const arrowLeft = actionCenterX - left - NOTE_TOOLTIP_ARROW_SIZE / 2;
+
+    return {
+        placement,
+        top,
+        left,
+        maxWidth,
+        arrowLeft,
+    };
+}
+
+export function shouldCloseIrExtractPinnedTooltip(
+    target: EventTarget | null,
+    overlay: HTMLElement,
+    tooltip?: HTMLElement,
+): boolean {
+    return (
+        !(target instanceof Node) ||
+        (!overlay.contains(target) && !tooltip?.contains(target))
+    );
+}
+
+export function shouldHighlightIrExtractBlock(
+    blockStart: number,
+    hoveredBlockStart: number | null,
+    pinnedTooltipStart: number | null,
+): boolean {
+    return blockStart === hoveredBlockStart && blockStart !== pinnedTooltipStart;
 }
 
 function isIrExtractOpenOnlyLine(text: string, match: IrExtractMatch): boolean {
@@ -1402,6 +1510,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             private pointSourceStarts = new Set<number>();
             private sourceRevealEnabled: boolean;
             private readonly overlay: HTMLElement;
+            private readonly noteTooltip: HTMLElement;
             private readonly scrollDOM: HTMLElement;
             private readonly blockDomCache = new Map<number, HTMLElement>();
             private readonly blockMeasurements = new Map<number, MeasuredExtractBlock>();
@@ -1411,6 +1520,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             private hoveredBlockStart: number | null = null;
             private hoveredTooltipStart: number | null = null;
             private cursorBlockStart: number | null = null;
+            private visibleTooltipAction: HTMLElement | null = null;
             private readonly handleScrollMouseMove = (event: MouseEvent): void => {
                 const point = getMousePointInScrollCoordinates(this.scrollDOM, event);
                 const hoveredStart = findHoveredIrExtractBlockStart(
@@ -1457,11 +1567,22 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.pinTooltip(infoStart);
             };
             private readonly handleDocumentMouseDown = (event: MouseEvent): void => {
-                const target = event.target;
-                if (!(target instanceof Node) || this.overlay.contains(target)) {
+                if (
+                    !shouldCloseIrExtractPinnedTooltip(
+                        event.target,
+                        this.overlay,
+                        this.noteTooltip,
+                    )
+                ) {
                     return;
                 }
                 this.closePinnedTooltip();
+            };
+            private readonly handleTooltipInput = (): void => {
+                this.repositionVisibleNoteTooltip();
+            };
+            private readonly handleViewportTooltipReposition = (): void => {
+                this.repositionVisibleNoteTooltip();
             };
 
             constructor(view: EditorView) {
@@ -1478,12 +1599,17 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 );
                 this.overlay = document.createElement("div");
                 this.overlay.className = "sr-ir-extract-overlay";
+                this.noteTooltip = createIrExtractNoteTooltipElement();
+                document.body.appendChild(this.noteTooltip);
                 this.scrollDOM = view.scrollDOM;
                 view.scrollDOM.appendChild(this.overlay);
                 this.scrollDOM.addEventListener("mousemove", this.handleScrollMouseMove);
                 this.scrollDOM.addEventListener("mouseleave", this.handleScrollMouseLeave);
                 this.scrollDOM.addEventListener("pointerdown", this.handleScrollPointerDown, true);
+                this.noteTooltip.addEventListener("input", this.handleTooltipInput);
                 document.addEventListener("mousedown", this.handleDocumentMouseDown, true);
+                window.addEventListener("resize", this.handleViewportTooltipReposition);
+                window.addEventListener("scroll", this.handleViewportTooltipReposition, true);
                 this.scheduleMeasure(view);
             }
 
@@ -1556,8 +1682,12 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     true,
                 );
                 document.removeEventListener("mousedown", this.handleDocumentMouseDown, true);
+                window.removeEventListener("resize", this.handleViewportTooltipReposition);
+                window.removeEventListener("scroll", this.handleViewportTooltipReposition, true);
+                this.noteTooltip.removeEventListener("input", this.handleTooltipInput);
                 this.clearOverlayBlocks();
                 this.overlay.remove();
+                this.noteTooltip.remove();
             }
 
             private renderBlocks(blocks: MeasuredExtractBlock[]): void {
@@ -1605,21 +1735,19 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.hoveredBlockStart = null;
                 this.hoveredTooltipStart = null;
                 this.cursorBlockStart = null;
+                this.visibleTooltipAction = null;
                 this.blockMeasurements.clear();
                 this.blockDomCache.clear();
                 this.overlay.replaceChildren();
+                this.noteTooltip.classList.remove("is-visible", "is-above", "is-below");
             }
 
             private pinTooltip(blockStart: number): void {
                 this.pinnedTooltipStart =
                     this.pinnedTooltipStart === blockStart ? null : blockStart;
-                this.hoveredBlockStart = blockStart;
                 this.updateInteractiveBlockStates();
 
-                const element = this.blockDomCache.get(blockStart);
-                const textarea = element?.querySelector<HTMLTextAreaElement>(
-                    ".sr-ir-note-tooltip textarea",
-                );
+                const textarea = this.noteTooltip.querySelector<HTMLTextAreaElement>("textarea");
                 if (!textarea || this.pinnedTooltipStart !== blockStart) {
                     return;
                 }
@@ -1669,9 +1797,15 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     this.matchesByStart,
                     this.blockMeasurements,
                 );
+                let visibleTooltipAction: HTMLElement | null = null;
+                let visibleTooltip = false;
                 for (const [blockStart, element] of this.blockDomCache) {
                     const isEditing = blockStart === this.pinnedTooltipStart;
-                    const isHovered = isEditing || blockStart === this.hoveredBlockStart;
+                    const isHovered = shouldHighlightIrExtractBlock(
+                        blockStart,
+                        this.hoveredBlockStart,
+                        this.pinnedTooltipStart,
+                    );
                     const isTooltipVisible = isIrExtractNoteTooltipVisible(
                         blockStart,
                         this.hoveredTooltipStart,
@@ -1680,7 +1814,6 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     const infoVisible = infoVisibleStarts.has(blockStart);
                     element.classList.toggle("is-editing", isEditing);
                     element.classList.toggle("is-hovered", isHovered);
-                    element.classList.toggle("has-visible-tooltip", isTooltipVisible);
                     const infoAction = element.querySelector<HTMLElement>(".sr-ir-info-action");
                     infoAction?.classList.toggle("is-editing", isEditing);
                     infoAction?.classList.toggle("is-visible", infoVisible);
@@ -1688,6 +1821,10 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         "aria-expanded",
                         isTooltipVisible ? "true" : "false",
                     );
+                    if (isTooltipVisible && infoAction) {
+                        visibleTooltipAction = infoAction;
+                        visibleTooltip = true;
+                    }
                     if (infoVisible) {
                         infoAction?.style.setProperty(
                             "--sr-ir-info-offset",
@@ -1707,6 +1844,52 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         infoAction?.style.removeProperty("top");
                     }
                 }
+                this.updateNoteTooltipPosition(visibleTooltipAction, visibleTooltip);
+            }
+
+            private updateNoteTooltipPosition(
+                infoAction: HTMLElement | null,
+                visible: boolean,
+            ): void {
+                this.noteTooltip.classList.toggle("is-visible", visible);
+                if (!visible || !infoAction) {
+                    this.visibleTooltipAction = null;
+                    return;
+                }
+
+                this.visibleTooltipAction = infoAction;
+                const actionRect = infoAction.getBoundingClientRect();
+                const tooltipRect = this.noteTooltip.getBoundingClientRect();
+                const tooltipHeight = tooltipRect.height || NOTE_TOOLTIP_FALLBACK_HEIGHT;
+                const tooltipWidth = tooltipRect.width || NOTE_TOOLTIP_FALLBACK_WIDTH;
+                const position = getIrExtractNoteTooltipPosition({
+                    actionLeft: actionRect.left,
+                    actionTop: actionRect.top,
+                    actionRight: actionRect.right,
+                    actionBottom: actionRect.bottom,
+                    tooltipWidth,
+                    tooltipHeight,
+                    viewportWidth: window.innerWidth,
+                    viewportHeight: window.innerHeight,
+                    viewportPadding: NOTE_TOOLTIP_VIEWPORT_PADDING,
+                    gap: NOTE_TOOLTIP_GAP,
+                });
+
+                this.noteTooltip.classList.toggle("is-above", position.placement === "above");
+                this.noteTooltip.classList.toggle("is-below", position.placement === "below");
+                this.noteTooltip.setCssProps({
+                    top: `${position.top}px`,
+                    left: `${position.left}px`,
+                    maxWidth: `${position.maxWidth}px`,
+                    "--sr-note-path-tooltip-arrow-left": `${position.arrowLeft}px`,
+                });
+            }
+
+            private repositionVisibleNoteTooltip(): void {
+                if (!this.noteTooltip.classList.contains("is-visible")) {
+                    return;
+                }
+                this.updateNoteTooltipPosition(this.visibleTooltipAction, true);
             }
 
             private scheduleMeasure(view: EditorView): void {
@@ -1842,49 +2025,14 @@ const irExtractDecorationTheme = EditorView.baseTheme({
         color: "var(--interactive-accent)",
     },
     ".sr-ir-note-tooltip": {
-        position: "absolute",
-        top: "26px",
-        right: "-10px",
-        width: "240px",
-        "--sr-note-path-tooltip-arrow-left": "210px",
-        maxWidth: "min(240px, calc(100vw - 24px))",
-        cursor: "default",
         opacity: "0",
         visibility: "hidden",
-        transform: "translateY(-4px) scale(0.96)",
-        transformOrigin: "top right",
         pointerEvents: "none",
-        zIndex: "50",
-        transition: "opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease",
     },
-    ".sr-ir-extract-block.has-visible-tooltip .sr-ir-note-tooltip": {
+    ".sr-ir-note-tooltip.is-visible": {
         opacity: "1",
         visibility: "visible",
-        transform: "translateY(0) scale(1)",
         pointerEvents: "auto",
-    },
-    ".sr-ir-note-tooltip::after": {
-        pointerEvents: "none",
-    },
-    ".sr-ir-note-tooltip textarea": {
-        width: "100%",
-        height: "var(--sr-ir-note-textarea-height, auto)",
-        minHeight: "20px",
-        boxSizing: "border-box",
-        background: "transparent",
-        border: "none",
-        color: "var(--text-normal)",
-        fontFamily: "inherit",
-        fontSize: "13px",
-        lineHeight: "1.5",
-        resize: "none",
-        outline: "none",
-        overflow: "hidden",
-        padding: "0",
-        margin: "0",
-    },
-    ".sr-ir-note-tooltip textarea::placeholder": {
-        color: "var(--text-muted)",
     },
     ".sr-ir-extract-active-token": {
         color: "var(--interactive-accent)",

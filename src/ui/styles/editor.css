@@ -277,3 +277,70 @@
         border-color 0.15s ease,
         background-color 0.15s ease;
 }
+
+/* ==========================================
+   Incremental Reading Extract Note Tooltip
+   Body-level floating tooltip for editor info icons.
+   ========================================== */
+
+.sr-ir-note-tooltip {
+    width: 240px;
+    max-width: min(240px, calc(100vw - 24px));
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    cursor: pointer;
+    z-index: 10000;
+    -webkit-app-region: no-drag;
+}
+
+.sr-ir-note-tooltip.is-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.sr-ir-note-tooltip::after {
+    pointer-events: none;
+}
+
+.sr-ir-note-tooltip-input,
+.sr-ir-note-tooltip textarea {
+    display: block;
+    width: 100%;
+    height: var(--sr-ir-note-textarea-height, auto);
+    min-height: 20px;
+    max-height: min(360px, calc(100vh - 72px));
+    box-sizing: border-box;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    color: var(--text-normal);
+    cursor: text;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 0 !important;
+    outline: 0 !important;
+    overflow: hidden;
+    padding: 0 !important;
+    resize: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.sr-ir-note-tooltip-input:focus,
+.sr-ir-note-tooltip textarea:focus,
+.sr-ir-note-tooltip-input:focus-visible,
+.sr-ir-note-tooltip textarea:focus-visible {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    outline: 0 !important;
+}
+
+.sr-ir-note-tooltip-input::placeholder,
+.sr-ir-note-tooltip textarea::placeholder {
+    color: var(--text-muted);
+}

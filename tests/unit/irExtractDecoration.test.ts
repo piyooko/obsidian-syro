@@ -5,6 +5,7 @@ import {
     clampIrExtractVerticalInsetsForAdjacentBlocks,
     containNestedIrExtractBlocks,
     createIrExtractBlockElement,
+    createIrExtractNoteTooltipElement,
     createIrExtractDecorationExtensions,
     findActiveIrExtractSourceMatch,
     buildIrExtractRenderExtractsForTest,
@@ -18,11 +19,15 @@ import {
     getIrExtractLayerVerticalInset,
     getIrExtractHorizontalFrameForMetrics,
     getIrExtractLineRanges,
+    getIrExtractNoteTooltipPosition,
     getIrExtractRenderRange,
     getIrExtractVerticalInsetForMetrics,
     getIrExtractWrappedBlockPrefix,
     getIrExtractWrappedHeading,
     findIrExtractInfoActionStartAtClientPoint,
+    getIrExtractNoteTooltipPlacement,
+    shouldHighlightIrExtractBlock,
+    shouldCloseIrExtractPinnedTooltip,
     isIrExtractNoteTooltipVisible,
     type MeasuredExtractBlock,
     type RenderExtract,
@@ -408,14 +413,15 @@ describe("irExtractDecoration helpers", () => {
         });
 
         const action = element.querySelector<HTMLElement>(".sr-ir-info-action");
-        const tooltip = element.querySelector<HTMLElement>(".sr-ir-note-tooltip");
-        const textarea = tooltip?.querySelector<HTMLTextAreaElement>("textarea");
+        const tooltip = createIrExtractNoteTooltipElement();
+        const textarea = tooltip.querySelector<HTMLTextAreaElement>("textarea");
 
         expect(action).toBeTruthy();
         expect(tooltip).toBeTruthy();
         expect(tooltip?.classList.contains("sr-note-path-tooltip")).toBe(true);
         expect(tooltip?.classList.contains("is-below")).toBe(true);
-        expect(action?.contains(tooltip ?? null)).toBe(true);
+        expect(textarea?.classList.contains("sr-ir-note-tooltip-input")).toBe(true);
+        expect(action?.querySelector(".sr-ir-note-tooltip")).toBeNull();
         expect(textarea?.placeholder).toBe("输入备注...");
 
         action?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
@@ -430,9 +436,11 @@ describe("irExtractDecoration helpers", () => {
         if (!textarea) {
             throw new Error("Expected editable tooltip textarea");
         }
+        Object.defineProperty(textarea, "scrollHeight", { value: 42, configurable: true });
         textarea.value = "纯前端备注";
         textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
         expect(textarea.value).toBe("纯前端备注");
+        expect(textarea.style.getPropertyValue("--sr-ir-note-textarea-height")).toBe("42px");
     });
 
     test("shows the note tooltip only from icon hover or pinned click state", () => {
@@ -440,6 +448,90 @@ describe("irExtractDecoration helpers", () => {
         expect(isIrExtractNoteTooltipVisible(42, 42, null)).toBe(true);
         expect(isIrExtractNoteTooltipVisible(42, null, 42)).toBe(true);
         expect(isIrExtractNoteTooltipVisible(42, 7, 9)).toBe(false);
+    });
+
+    test("places the note tooltip above the icon unless there is not enough viewport space", () => {
+        expect(
+            getIrExtractNoteTooltipPlacement({
+                actionTop: 120,
+                actionBottom: 140,
+                tooltipHeight: 80,
+                viewportHeight: 500,
+                viewportPadding: 12,
+                gap: 10,
+            }),
+        ).toBe("above");
+        expect(
+            getIrExtractNoteTooltipPlacement({
+                actionTop: 70,
+                actionBottom: 90,
+                tooltipHeight: 80,
+                viewportHeight: 500,
+                viewportPadding: 12,
+                gap: 10,
+            }),
+        ).toBe("below");
+    });
+
+    test("positions the note tooltip arrow at the info icon center", () => {
+        expect(
+            getIrExtractNoteTooltipPosition({
+                actionLeft: 1180,
+                actionTop: 600,
+                actionRight: 1200,
+                actionBottom: 620,
+                tooltipWidth: 240,
+                tooltipHeight: 80,
+                viewportWidth: 1280,
+                viewportHeight: 800,
+                viewportPadding: 12,
+                gap: 10,
+            }),
+        ).toEqual({
+            placement: "above",
+            top: 510,
+            left: 1028,
+            maxWidth: 240,
+            arrowLeft: 158,
+        });
+
+        expect(
+            getIrExtractNoteTooltipPosition({
+                actionLeft: 4,
+                actionTop: 50,
+                actionRight: 24,
+                actionBottom: 70,
+                tooltipWidth: 240,
+                tooltipHeight: 80,
+                viewportWidth: 1280,
+                viewportHeight: 800,
+                viewportPadding: 12,
+                gap: 10,
+            }),
+        ).toEqual({
+            placement: "below",
+            top: 80,
+            left: 12,
+            maxWidth: 240,
+            arrowLeft: -2,
+        });
+    });
+
+    test("keeps a pinned note tooltip open when clicking inside it", () => {
+        const overlay = document.createElement("div");
+        const tooltip = createIrExtractNoteTooltipElement();
+        const textarea = tooltip.querySelector<HTMLTextAreaElement>("textarea");
+        document.body.append(overlay, tooltip);
+
+        expect(shouldCloseIrExtractPinnedTooltip(textarea, overlay, tooltip)).toBe(false);
+        expect(shouldCloseIrExtractPinnedTooltip(tooltip, overlay, tooltip)).toBe(false);
+        expect(shouldCloseIrExtractPinnedTooltip(document.body, overlay, tooltip)).toBe(true);
+    });
+
+    test("does not highlight the extract block only because its tooltip is pinned", () => {
+        expect(shouldHighlightIrExtractBlock(42, 42, null)).toBe(true);
+        expect(shouldHighlightIrExtractBlock(42, 42, 42)).toBe(false);
+        expect(shouldHighlightIrExtractBlock(42, null, 42)).toBe(false);
     });
 
     test("detects visible info actions by pointer coordinates even when event target differs", () => {
