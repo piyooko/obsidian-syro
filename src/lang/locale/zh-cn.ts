@@ -72,6 +72,7 @@ export default {
     EXTRACT_SELECT_TEXT_REQUIRED: "请先在摘录正文中选中文本",
     EXTRACT_SAVE_FAILED: "摘录保存失败",
     EXTRACT_CONTEXT_SAVE_FAILED: "摘录上下文保存失败",
+    EXTRACT_EMPTY_BLOCKED: "摘录不可为空",
     EXTRACT_CONTEXT_NOT_READY: "摘录上下文尚未加载",
     EXTRACT_NESTED_CREATED: "已创建嵌套摘录",
     EXTRACT_NO_ACTIVE_ITEMS: "没有可复习的摘录",

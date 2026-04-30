@@ -1,5 +1,6 @@
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { Notice } from "obsidian";
 import {
     allowExtractContextBoundaryMutationAnnotation,
     createExtractContextDecorationExtensions,
@@ -7,6 +8,7 @@ import {
     setExtractContextRangesEffect,
     type ExtractContextRanges,
 } from "src/editor/extract-context-decoration";
+import { t } from "src/lang/helpers";
 import { hasCurrentExtractWrapper } from "src/util/irExtractContext";
 
 function createRanges(overrides: Partial<ExtractContextRanges> = {}): ExtractContextRanges {
@@ -223,6 +225,10 @@ describe("extract context boundary reveal", () => {
 });
 
 describe("extract context boundary guard", () => {
+    beforeEach(() => {
+        (Notice as jest.Mock).mockClear();
+    });
+
     function createGuardedEditor(
         editable = true,
     ): { parent: HTMLElement; ranges: ExtractContextRanges; view: EditorView } {
@@ -359,7 +365,7 @@ describe("extract context boundary guard", () => {
         }
     });
 
-    test("preserves only the current outer boundary when deleting the whole current extract", () => {
+    test("blocks deleting the whole current extract because it would be empty", () => {
         const editor = createGuardedEditor();
 
         try {
@@ -373,10 +379,51 @@ describe("extract context boundary guard", () => {
             });
 
             const nextRanges = editor.view.state.field(extractContextRangesField);
-            expect(editor.view.state.doc.toString()).toBe("before {{ir::}} after");
+            expect(editor.view.state.doc.toString()).toBe("before {{ir::target}} after");
             expect(hasCurrentExtractWrapper(editor.view.state.doc.toString(), nextRanges)).toBe(
                 true,
             );
+            expect(Notice).toHaveBeenCalledWith(t("EXTRACT_EMPTY_BLOCKED"));
+        } finally {
+            destroyGuardedEditor(editor);
+        }
+    });
+
+    test("blocks replacing the current extract content with whitespace only", () => {
+        const editor = createGuardedEditor();
+
+        try {
+            editor.view.dispatch({
+                changes: {
+                    from: editor.ranges.currentInnerFrom,
+                    to: editor.ranges.currentInnerTo,
+                    insert: "\n  \n",
+                },
+                userEvent: "input",
+            });
+
+            expect(editor.view.state.doc.toString()).toBe("before {{ir::target}} after");
+            expect(Notice).toHaveBeenCalledWith(t("EXTRACT_EMPTY_BLOCKED"));
+        } finally {
+            destroyGuardedEditor(editor);
+        }
+    });
+
+    test("allows replacing the current extract content with punctuation", () => {
+        const editor = createGuardedEditor();
+
+        try {
+            editor.view.dispatch({
+                changes: {
+                    from: editor.ranges.currentInnerFrom,
+                    to: editor.ranges.currentInnerTo,
+                    insert: "。",
+                },
+                userEvent: "input",
+            });
+
+            expect(editor.view.state.doc.toString()).toBe("before {{ir::。}} after");
+            expect(Notice).not.toHaveBeenCalledWith(t("EXTRACT_EMPTY_BLOCKED"));
         } finally {
             destroyGuardedEditor(editor);
         }

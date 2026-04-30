@@ -191,6 +191,7 @@ export default normalizeSentenceCaseLocale({
     EXTRACT_SELECT_TEXT_REQUIRED: "Select text inside the extract first",
     EXTRACT_SAVE_FAILED: "Failed to save extract",
     EXTRACT_CONTEXT_SAVE_FAILED: "Failed to save extract context",
+    EXTRACT_EMPTY_BLOCKED: "Extract cannot be empty",
     EXTRACT_CONTEXT_NOT_READY: "Extract context is not ready",
     EXTRACT_NESTED_CREATED: "Nested extract created",
     EXTRACT_NO_ACTIVE_ITEMS: "No active extracts to review",

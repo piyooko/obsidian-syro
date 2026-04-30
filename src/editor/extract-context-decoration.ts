@@ -14,6 +14,8 @@ import {
     ViewPlugin,
     type ViewUpdate,
 } from "@codemirror/view";
+import { Notice } from "obsidian";
+import { t } from "src/lang/helpers";
 
 export interface ExtractContextRanges {
     currentOuterFrom: number;
@@ -221,6 +223,18 @@ function transactionKeepsCurrentBoundaryTokens(
     return hasCurrentBoundaryTokens(transaction.newDoc.toString(), nextRanges);
 }
 
+function transactionLeavesCurrentExtractEmpty(
+    transaction: Transaction,
+    ranges: ExtractContextRanges,
+): boolean {
+    const nextRanges = mapExtractContextRanges(ranges, transaction);
+    const nextMarkdown = transaction.newDoc.toString();
+    return (
+        nextMarkdown.slice(nextRanges.currentInnerFrom, nextRanges.currentInnerTo).trim().length ===
+        0
+    );
+}
+
 function createExtractContextBoundaryGuardExtension(): Extension {
     return [
         EditorState.changeFilter.of((transaction) => {
@@ -255,6 +269,11 @@ function createExtractContextBoundaryGuardExtension(): Extension {
             }
 
             if (transactionInsertsInsideCurrentBoundary(transaction, ranges)) {
+                return [];
+            }
+
+            if (transactionLeavesCurrentExtractEmpty(transaction, ranges)) {
+                new Notice(t("EXTRACT_EMPTY_BLOCKED"));
                 return [];
             }
 
