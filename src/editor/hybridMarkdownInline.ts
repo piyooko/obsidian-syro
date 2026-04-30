@@ -332,6 +332,150 @@ function collectInlineCodeTokens(
     }
 }
 
+function collectHighlightTokens(
+    markdown: string,
+    selection: EditorSelection | SelectionLike,
+    skipRanges: Array<Pick<HybridMarkdownBlock, "from" | "to">>,
+    tokens: HybridInlineTokenForTest[],
+    revealFormatting: boolean,
+): void {
+    const highlightPattern = /==([^=\n]+?)==/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = highlightPattern.exec(markdown)) !== null) {
+        const from = match.index;
+        const to = from + match[0].length;
+        if (isEscaped(markdown, from) || intersectsRange(from, to, skipRanges)) {
+            continue;
+        }
+
+        const innerFrom = from + 2;
+        const innerTo = to - 2;
+        pushFormattingToken(
+            tokens,
+            "cm-formatting cm-formatting-highlight",
+            from,
+            innerFrom,
+            selection,
+            true,
+            from,
+            to,
+            revealFormatting,
+        );
+        pushMarkToken(tokens, "cm-highlight", innerFrom, innerTo);
+        pushFormattingToken(
+            tokens,
+            "cm-formatting cm-formatting-highlight",
+            innerTo,
+            to,
+            selection,
+            true,
+            from,
+            to,
+            revealFormatting,
+        );
+    }
+}
+
+function collectAnkiClozeTokens(
+    markdown: string,
+    selection: EditorSelection | SelectionLike,
+    skipRanges: Array<Pick<HybridMarkdownBlock, "from" | "to">>,
+    tokens: HybridInlineTokenForTest[],
+    revealFormatting: boolean,
+): void {
+    const clozePattern = /\{\{c(\d+)::([^\n]*?)(?:::(.*?))?\}\}/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = clozePattern.exec(markdown)) !== null) {
+        const from = match.index;
+        const to = from + match[0].length;
+        if (isEscaped(markdown, from) || intersectsRange(from, to, skipRanges)) {
+            continue;
+        }
+
+        const id = match[1];
+        const content = match[2] ?? "";
+        const hint = match[3];
+        const prefixFrom = from;
+        const idFrom = from + 3;
+        const idTo = idFrom + id.length;
+        const contentFrom = from + `{{c${id}::`.length;
+        const contentTo = contentFrom + content.length;
+        const suffixFrom = contentTo;
+        const suffixTo = to;
+        const isActive = revealFormatting && isFormattingGroupActive(from, to, selection);
+
+        if (!isActive) {
+            pushFormattingToken(
+                tokens,
+                "cm-formatting cm-formatting-cloze cm-anki-cloze",
+                prefixFrom,
+                contentFrom,
+                selection,
+                true,
+                from,
+                to,
+                revealFormatting,
+            );
+            pushMarkToken(
+                tokens,
+                "sr-cloze-highlight cm-anki-cloze cm-anki-cloze-content",
+                contentFrom,
+                contentTo,
+            );
+            pushFormattingToken(
+                tokens,
+                "cm-formatting cm-formatting-cloze cm-anki-cloze",
+                suffixFrom,
+                suffixTo,
+                selection,
+                true,
+                from,
+                to,
+                revealFormatting,
+            );
+            continue;
+        }
+
+        pushMarkToken(tokens, "sr-cloze-highlight sr-cloze-editing cm-anki-cloze", from, to);
+        pushMarkToken(tokens, "cm-formatting cm-formatting-cloze cm-anki-cloze", from, idFrom);
+        pushMarkToken(tokens, "cm-anki-cloze-id", idFrom, idTo);
+        pushMarkToken(
+            tokens,
+            "cm-formatting cm-formatting-cloze cm-anki-cloze",
+            idTo,
+            contentFrom,
+        );
+        pushMarkToken(tokens, "cm-anki-cloze-content", contentFrom, contentTo);
+
+        if (typeof hint === "string") {
+            const hintFrom = contentTo + 2;
+            const hintTo = hintFrom + hint.length;
+            pushMarkToken(
+                tokens,
+                "cm-formatting cm-formatting-cloze cm-anki-cloze",
+                contentTo,
+                hintFrom,
+            );
+            pushMarkToken(tokens, "cm-anki-cloze-hint", hintFrom, hintTo);
+            pushMarkToken(
+                tokens,
+                "cm-formatting cm-formatting-cloze cm-anki-cloze",
+                hintTo,
+                to,
+            );
+        } else {
+            pushMarkToken(
+                tokens,
+                "cm-formatting cm-formatting-cloze cm-anki-cloze",
+                contentTo,
+                to,
+            );
+        }
+    }
+}
+
 function collectMarkdownLinkTokens(
     markdown: string,
     selection: EditorSelection | SelectionLike,
@@ -503,6 +647,8 @@ export function collectHybridInlineTokensForTest(
     collectLineFormattingTokens(markdown, selection, skipRanges, tokens, revealFormatting);
     collectStrongTokens(markdown, selection, skipRanges, tokens, revealFormatting);
     collectInlineCodeTokens(markdown, selection, skipRanges, tokens, revealFormatting);
+    collectHighlightTokens(markdown, selection, skipRanges, tokens, revealFormatting);
+    collectAnkiClozeTokens(markdown, selection, skipRanges, tokens, revealFormatting);
     collectMarkdownLinkTokens(markdown, selection, skipRanges, tokens, revealFormatting);
     collectWikiLinkTokens(markdown, selection, skipRanges, tokens, revealFormatting);
     collectBareReferenceTokens(markdown, skipRanges, tokens);

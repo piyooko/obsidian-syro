@@ -692,6 +692,99 @@ test("readonly extract context uses persistent hybrid markdown renderer", async 
     }
 });
 
+test("extract hybrid editor renders highlight and Anki cloze with editor-compatible classes", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "before ==mark== and {{c2::answer::hint}} after";
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+        await flushEffects();
+
+        expect(container.querySelector(".cm-highlight")?.textContent).toBe("mark");
+        const clozeContent = container.querySelector(".sr-cloze-highlight.cm-anki-cloze-content");
+        expect(clozeContent?.textContent).toBe("answer");
+        expect(container.textContent).not.toContain("==mark==");
+        expect(container.textContent).not.toContain("{{c2::");
+        expect(container.textContent).not.toContain("::hint}}");
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
+test("extract hybrid editor reveals Anki cloze source segments when selected in edit mode", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "before {{c2::answer::hint}} after";
+    const context = createAutoExtractContext(markdown);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    editModeToggleToken: 0,
+                }),
+            );
+        });
+        await flushEffects();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin: createMinimalPlugin(),
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    editModeToggleToken: 1,
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editorDom = container.querySelector<HTMLElement>(".cm-editor");
+        const view = editorDom ? EditorView.findFromDOM(editorDom) : null;
+        expect(view).not.toBeNull();
+
+        act(() => {
+            view?.dispatch({
+                selection: EditorSelection.cursor(markdown.indexOf("answer") + 1),
+            });
+        });
+        await flushEffects();
+
+        expect(container.querySelector(".cm-anki-cloze-id")?.textContent).toBe("2");
+        expect(container.querySelector(".cm-anki-cloze-content")?.textContent).toBe("answer");
+        expect(container.querySelector(".cm-anki-cloze-hint")?.textContent).toBe("hint");
+        expect(container.textContent).toContain("{{c2::answer::hint}}");
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
 test("readonly extract rendered blocks allow text selection without revealing source", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -907,6 +1000,7 @@ test("extract hybrid editor keeps the same CodeMirror node across review and edi
         "before\n\n".length,
         "before\n\n{{ir::target}}".length,
     );
+    const plugin = createMinimalPlugin();
 
     try {
         act(() => {
@@ -916,10 +1010,11 @@ test("extract hybrid editor keeps the same CodeMirror node across review and edi
                     card: { front: "{{ir::target}}", back: "" },
                     extractContext: context,
                     extractContextDraft: { markdown, ranges: context },
-                    plugin: createMinimalPlugin(),
+                    plugin,
                     renderMarkdown: (content: string, el: HTMLElement) => {
                         el.textContent = content;
                     },
+                    editModeToggleToken: 0,
                 }),
             );
         });
@@ -929,17 +1024,38 @@ test("extract hybrid editor keeps the same CodeMirror node across review and edi
         expect(editorBefore).not.toBeNull();
 
         act(() => {
-            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "{{ir::target}}", back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin,
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    editModeToggleToken: 1,
+                }),
+            );
         });
         await flushEffects();
 
         expect(container.querySelector(".cm-editor")).toBe(editorBefore);
         expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
 
-        const content = container.querySelector<HTMLElement>(".cm-content");
         act(() => {
-            content?.dispatchEvent(
-                new KeyboardEvent("keydown", { key: "e", altKey: true, bubbles: true }),
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "{{ir::target}}", back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin,
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    editModeToggleToken: 2,
+                }),
             );
         });
         await flushEffects();
@@ -958,6 +1074,7 @@ test("extract hybrid table cells edit as rendered table and write back markdown"
     const markdown = "| A | B |\n| - | - |\n| 1 | two |";
     const context = createAutoExtractContext(markdown);
     const onUpdateExtractContext = jest.fn();
+    const plugin = createMinimalPlugin();
     const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
         if (content.includes("| A | B |")) {
             el.innerHTML =
@@ -976,8 +1093,9 @@ test("extract hybrid table cells edit as rendered table and write back markdown"
                     extractContext: context,
                     extractContextDraft: { markdown, ranges: context },
                     onUpdateExtractContext,
-                    plugin: createMinimalPlugin(),
+                    plugin,
                     renderMarkdown,
+                    editModeToggleToken: 0,
                 }),
             );
         });
@@ -985,7 +1103,18 @@ test("extract hybrid table cells edit as rendered table and write back markdown"
         await flushEffects();
 
         act(() => {
-            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin,
+                    renderMarkdown,
+                    editModeToggleToken: 1,
+                }),
+            );
         });
         await flushEffects();
         await flushEffects();
@@ -1027,6 +1156,7 @@ test("extract hybrid edit mode keeps list rendering instead of exposing the whol
     const root = createRoot(container);
     const markdown = "1. **绳镖**: first\n2. **火狱瞬移**: second";
     const context = createAutoExtractContext(markdown);
+    const plugin = createMinimalPlugin();
     const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
         el.textContent = content;
     });
@@ -1039,8 +1169,9 @@ test("extract hybrid edit mode keeps list rendering instead of exposing the whol
                     card: { front: markdown, back: "" },
                     extractContext: context,
                     extractContextDraft: { markdown, ranges: context },
-                    plugin: createMinimalPlugin(),
+                    plugin,
                     renderMarkdown,
+                    editModeToggleToken: 0,
                 }),
             );
         });
@@ -1048,7 +1179,17 @@ test("extract hybrid edit mode keeps list rendering instead of exposing the whol
         await flushEffects();
 
         act(() => {
-            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    plugin,
+                    renderMarkdown,
+                    editModeToggleToken: 1,
+                }),
+            );
         });
         await flushEffects();
         await flushEffects();
@@ -1074,6 +1215,7 @@ test("extract hybrid table blur keeps edit mode and waits for an explicit commit
     const markdown = "| A | B |\n| - | - |\n| 1 | two |";
     const context = createAutoExtractContext(markdown);
     const onUpdateExtractContext = jest.fn();
+    const plugin = createMinimalPlugin();
     const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
         if (content.includes("| A | B |")) {
             el.innerHTML =
@@ -1092,8 +1234,9 @@ test("extract hybrid table blur keeps edit mode and waits for an explicit commit
                     extractContext: context,
                     extractContextDraft: { markdown, ranges: context },
                     onUpdateExtractContext,
-                    plugin: createMinimalPlugin(),
+                    plugin,
                     renderMarkdown,
+                    editModeToggleToken: 0,
                 }),
             );
         });
@@ -1101,7 +1244,18 @@ test("extract hybrid table blur keeps edit mode and waits for an explicit commit
         await flushEffects();
 
         act(() => {
-            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin,
+                    renderMarkdown,
+                    editModeToggleToken: 1,
+                }),
+            );
         });
         await flushEffects();
         await flushEffects();
@@ -1135,13 +1289,14 @@ test("extract hybrid table blur keeps edit mode and waits for an explicit commit
     }
 });
 
-test("extract hybrid table draft flushes when exiting edit mode with Alt+E", async () => {
+test("extract hybrid table draft flushes when exiting edit mode from the review edit command", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
     const markdown = "| A | B |\n| - | - |\n| 1 | two |";
     const context = createAutoExtractContext(markdown);
     const onUpdateExtractContext = jest.fn();
+    const plugin = createMinimalPlugin();
     const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
         if (content.includes("| A | B |")) {
             el.innerHTML =
@@ -1160,8 +1315,9 @@ test("extract hybrid table draft flushes when exiting edit mode with Alt+E", asy
                     extractContext: context,
                     extractContextDraft: { markdown, ranges: context },
                     onUpdateExtractContext,
-                    plugin: createMinimalPlugin(),
+                    plugin,
                     renderMarkdown,
+                    editModeToggleToken: 0,
                 }),
             );
         });
@@ -1169,7 +1325,18 @@ test("extract hybrid table draft flushes when exiting edit mode with Alt+E", asy
         await flushEffects();
 
         act(() => {
-            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin,
+                    renderMarkdown,
+                    editModeToggleToken: 1,
+                }),
+            );
         });
         await flushEffects();
         await flushEffects();
@@ -1186,8 +1353,17 @@ test("extract hybrid table draft flushes when exiting edit mode with Alt+E", asy
                 cell.textContent = "changed";
                 cell.dispatchEvent(new InputEvent("input", { bubbles: true }));
             }
-            editor?.dispatchEvent(
-                new KeyboardEvent("keydown", { key: "e", altKey: true, bubbles: true }),
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: markdown, back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin,
+                    renderMarkdown,
+                    editModeToggleToken: 2,
+                }),
             );
         });
         await flushEffects();
@@ -1208,6 +1384,7 @@ test("extract card content updates do not reset the active edit session", async 
     const nextMarkdown = "before\n\nactive extract edited";
     const firstContext = createAutoExtractContext(firstMarkdown);
     const nextContext = createAutoExtractContext(nextMarkdown);
+    const plugin = createMinimalPlugin();
     const renderMarkdown = jest.fn(async (content: string, el: HTMLElement) => {
         el.textContent = content;
     });
@@ -1221,15 +1398,27 @@ test("extract card content updates do not reset the active edit session", async 
                     card: { front: firstMarkdown, back: "" },
                     extractContext: firstContext,
                     extractContextDraft: { markdown: firstMarkdown, ranges: firstContext },
-                    plugin: createMinimalPlugin(),
+                    plugin,
                     renderMarkdown,
+                    editModeToggleToken: 0,
                 }),
             );
         });
         await flushEffects();
 
         act(() => {
-            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    uiResetToken: 1,
+                    card: { front: firstMarkdown, back: "" },
+                    extractContext: firstContext,
+                    extractContextDraft: { markdown: firstMarkdown, ranges: firstContext },
+                    plugin,
+                    renderMarkdown,
+                    editModeToggleToken: 1,
+                }),
+            );
         });
         await flushEffects();
         expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
@@ -1242,8 +1431,9 @@ test("extract card content updates do not reset the active edit session", async 
                     card: { front: nextMarkdown, back: "" },
                     extractContext: nextContext,
                     extractContextDraft: { markdown: nextMarkdown, ranges: nextContext },
-                    plugin: createMinimalPlugin(),
+                    plugin,
                     renderMarkdown,
+                    editModeToggleToken: 1,
                 }),
             );
         });
@@ -1318,16 +1508,18 @@ test("card review hides edit mode entry and ignores edit-mode shortcuts", () => 
     }
 });
 
-test("extract review keeps Alt+E edit mode toggle and Escape does not exit edit mode", async () => {
+test("extract review toggles edit mode from the review edit command and Escape does not exit edit mode", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
+    const props = createExtractCardProps("front");
 
     try {
         act(() => {
             root.render(
                 React.createElement(LinearCard, {
-                    ...createExtractCardProps("front"),
+                    ...props,
+                    editModeToggleToken: 0,
                     type: "basic",
                 }),
             );
@@ -1337,7 +1529,13 @@ test("extract review keeps Alt+E edit mode toggle and Escape does not exit edit 
         expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
 
         act(() => {
-            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+            root.render(
+                React.createElement(LinearCard, {
+                    ...props,
+                    editModeToggleToken: 1,
+                    type: "basic",
+                }),
+            );
         });
         await flushEffects();
 
@@ -1351,7 +1549,13 @@ test("extract review keeps Alt+E edit mode toggle and Escape does not exit edit 
         expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
 
         act(() => {
-            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+            root.render(
+                React.createElement(LinearCard, {
+                    ...props,
+                    editModeToggleToken: 2,
+                    type: "basic",
+                }),
+            );
         });
         await flushEffects();
 
@@ -1368,12 +1572,14 @@ test("extract edit mode exit button shows the Alt+E shortcut hint in show-answer
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
+    const props = createExtractCardProps("front");
 
     try {
         act(() => {
             root.render(
                 React.createElement(LinearCard, {
-                    ...createExtractCardProps("front"),
+                    ...props,
+                    editModeToggleToken: 0,
                     type: "basic",
                 }),
             );
@@ -1381,7 +1587,13 @@ test("extract edit mode exit button shows the Alt+E shortcut hint in show-answer
         await flushEffects();
 
         act(() => {
-            window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", altKey: true }));
+            root.render(
+                React.createElement(LinearCard, {
+                    ...props,
+                    editModeToggleToken: 1,
+                    type: "basic",
+                }),
+            );
         });
         await flushEffects();
 
@@ -1504,7 +1716,7 @@ test("extract edit mode exit button shows an unset shortcut hint when the comman
     }
 });
 
-test("extract Alt+E exits edit mode once from CodeMirror", async () => {
+test("extract Alt+E is not handled locally by the hybrid editor in edit mode", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -1540,12 +1752,18 @@ test("extract Alt+E exits edit mode once from CodeMirror", async () => {
 
         act(() => {
             editor?.dispatchEvent(
-                new KeyboardEvent("keydown", { key: "e", altKey: true, bubbles: true }),
+                new KeyboardEvent("keydown", {
+                    altKey: true,
+                    bubbles: true,
+                    cancelable: true,
+                    code: "KeyE",
+                    key: "e",
+                }),
             );
         });
         await flushEffects();
 
-        expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
+        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
         expect(container.querySelector(".sr-toast")).toBeNull();
         expect(container.textContent).not.toContain("Exited edit mode");
         expect(container.textContent).not.toContain("Entered edit mode");
@@ -1910,7 +2128,7 @@ test("readonly extract hybrid editor leaves modifier-only keydowns to CodeMirror
     }
 });
 
-test("readonly extract Alt+E enters edit mode from CodeMirror without bubbling", async () => {
+test("readonly extract Alt+E is left for the Obsidian review edit command", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -1947,8 +2165,8 @@ test("readonly extract Alt+E enters edit mode from CodeMirror without bubbling",
         await flushEffects();
 
         expect(bubbledKeydown).not.toHaveBeenCalled();
-        expect(event.defaultPrevented).toBe(true);
-        expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
+        expect(event.defaultPrevented).toBe(false);
+        expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
     } finally {
         container.removeEventListener("keydown", bubbledKeydown);
         act(() => root.unmount());

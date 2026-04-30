@@ -103,6 +103,128 @@ describe("collectHybridInlineTokens", () => {
         );
     });
 
+    test("marks highlighted text and hides delimiters away from the cursor", () => {
+        const markdown = "before ==mark== after";
+
+        const tokens = collectHybridInlineTokensForTest(markdown, { from: 0, to: 0 });
+
+        expect(tokens).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    className: expect.stringContaining("cm-formatting-highlight"),
+                    from: 7,
+                    hidden: true,
+                    to: 9,
+                }),
+                expect.objectContaining({
+                    className: expect.stringContaining("cm-highlight"),
+                    from: 9,
+                    to: 13,
+                }),
+                expect.objectContaining({
+                    className: expect.stringContaining("cm-formatting-highlight"),
+                    from: 13,
+                    hidden: true,
+                    to: 15,
+                }),
+            ]),
+        );
+    });
+
+    test("reveals highlight delimiters when the cursor is inside the highlight", () => {
+        const markdown = "before ==mark== after";
+
+        const tokens = collectHybridInlineTokensForTest(markdown, { from: 10, to: 10 });
+
+        expect(tokens).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    className: expect.stringContaining("cm-formatting-highlight"),
+                    from: 7,
+                    hidden: false,
+                    to: 9,
+                }),
+                expect.objectContaining({
+                    className: expect.stringContaining("cm-highlight"),
+                    from: 9,
+                    to: 13,
+                }),
+                expect.objectContaining({
+                    className: expect.stringContaining("cm-formatting-highlight"),
+                    from: 13,
+                    hidden: false,
+                    to: 15,
+                }),
+            ]),
+        );
+    });
+
+    test("marks Anki cloze content and hides wrapper syntax away from the cursor", () => {
+        const markdown = "A {{c2::answer::hint}} B";
+
+        const tokens = collectHybridInlineTokensForTest(markdown, { from: 0, to: 0 });
+
+        expect(tokens).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    className: expect.stringContaining("cm-anki-cloze"),
+                    from: 2,
+                    hidden: true,
+                    to: 8,
+                }),
+                expect.objectContaining({
+                    className: expect.stringMatching(
+                        /sr-cloze-highlight.*cm-anki-cloze-content|cm-anki-cloze-content.*sr-cloze-highlight/,
+                    ),
+                    from: 8,
+                    to: 14,
+                }),
+                expect.objectContaining({
+                    className: expect.stringContaining("cm-anki-cloze"),
+                    from: 14,
+                    hidden: true,
+                    to: 22,
+                }),
+            ]),
+        );
+    });
+
+    test("reveals Anki cloze source segments when the cursor is inside the cloze", () => {
+        const markdown = "A {{c2::answer::hint}} B";
+
+        const tokens = collectHybridInlineTokensForTest(markdown, { from: 10, to: 10 });
+
+        expect(tokens).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    className: expect.stringMatching(
+                        /sr-cloze-highlight.*sr-cloze-editing.*cm-anki-cloze|cm-anki-cloze.*sr-cloze-editing.*sr-cloze-highlight/,
+                    ),
+                    from: 2,
+                    to: 22,
+                }),
+                expect.objectContaining({
+                    className: expect.stringContaining("cm-anki-cloze-id"),
+                    from: 5,
+                    to: 6,
+                }),
+                expect.objectContaining({
+                    className: expect.stringContaining("cm-anki-cloze-content"),
+                    from: 8,
+                    to: 14,
+                }),
+                expect.objectContaining({
+                    className: expect.stringContaining("cm-anki-cloze-hint"),
+                    from: 16,
+                    to: 20,
+                }),
+            ]),
+        );
+        expect(
+            tokens.filter((token) => token.className.includes("cm-anki-cloze") && token.hidden),
+        ).toHaveLength(0);
+    });
+
     test("marks markdown and wiki links without exposing formatting by default", () => {
         const markdown = "A [label](target) and [[Page|Alias]]";
 
@@ -245,17 +367,19 @@ describe("collectHybridInlineTokens", () => {
         );
     });
 
-    test("skips fenced code and table widget ranges", () => {
+    test("skips inline formatting inside fenced code and table widget ranges", () => {
         const markdown = [
             "| A | B |",
             "| - | - |",
-            "| **x** | y |",
+            "| **x** | ==y== |",
             "",
             "```",
             "**code**",
+            "==code==",
+            "{{c1::code}}",
             "```",
             "",
-            "**real**",
+            "**real** ==mark== {{c1::answer}}",
         ].join("\n");
 
         const tokens = collectHybridInlineTokensForTest(markdown, { from: 0, to: 0 });
@@ -266,5 +390,9 @@ describe("collectHybridInlineTokens", () => {
                 to: markdown.lastIndexOf("real") + "real".length,
             }),
         ]);
+        expect(tokens.filter((token) => token.className.includes("cm-highlight"))).toHaveLength(1);
+        expect(
+            tokens.filter((token) => token.className.includes("cm-anki-cloze-content")),
+        ).toHaveLength(1);
     });
 });

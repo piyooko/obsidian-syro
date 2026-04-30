@@ -27,7 +27,6 @@ import {
 import { collectHybridInlineDecorations } from "src/editor/hybridMarkdownInline";
 import {
     eventMatchesOfficialEditorCommandHotkey,
-    eventMatchesReviewEditModeHotkey,
     handleHybridEditorHotkey,
     logHybridEditorHotkeyResolution,
 } from "src/editor/obsidianHotkeyBridge";
@@ -1013,19 +1012,6 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
             }
 
             if (activeView.state.field(hybridModeField) !== "edit") {
-                if (eventMatchesReviewEditModeHotkey(event, plugin.app)) {
-                    event.preventDefault();
-                    stopKeyboardEventPropagation(event);
-                    onEnterEditRef.current?.();
-                    logHybridEditorDomKeydownDebug(
-                        plugin,
-                        "capture-keydown-review-edit-toggle-handled",
-                        event,
-                        activeView,
-                    );
-                    return;
-                }
-
                 if (onReviewKeyDownRef.current?.(event)) {
                     stopKeyboardEventPropagation(event);
                     logHybridEditorDomKeydownDebug(
@@ -1059,19 +1045,6 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
                     activeView,
                 );
                 return;
-            }
-
-            if (eventMatchesReviewEditModeHotkey(event, plugin.app)) {
-                event.preventDefault();
-                stopKeyboardEventPropagation(event);
-                flushTableDrafts(activeView, tableDraftsRef.current);
-                onExitRef.current();
-                logHybridEditorDomKeydownDebug(
-                    plugin,
-                    "capture-keydown-edit-toggle-handled",
-                    event,
-                    activeView,
-                );
             }
         };
 
@@ -1130,19 +1103,6 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
                         }
 
                         if (currentView.state.field(hybridModeField) !== "edit") {
-                            if (eventMatchesReviewEditModeHotkey(event, plugin.app)) {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                onEnterEditRef.current?.();
-                                logHybridEditorDomKeydownDebug(
-                                    plugin,
-                                    "dom-keydown-review-edit-toggle-handled",
-                                    event,
-                                    currentView,
-                                );
-                                return true;
-                            }
-
                             if (onReviewKeyDownRef.current?.(event)) {
                                 event.stopPropagation();
                                 logHybridEditorDomKeydownDebug(
@@ -1180,20 +1140,6 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
                             logHybridEditorDomKeydownDebug(
                                 plugin,
                                 "dom-keydown-text-command-handled",
-                                event,
-                                currentView,
-                            );
-                            return true;
-                        }
-
-                        if (eventMatchesReviewEditModeHotkey(event, plugin.app)) {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            flushTableDrafts(currentView, tableDraftsRef.current);
-                            onExitRef.current();
-                            logHybridEditorDomKeydownDebug(
-                                plugin,
-                                "dom-keydown-edit-toggle-handled",
                                 event,
                                 currentView,
                             );

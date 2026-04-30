@@ -39,10 +39,7 @@ import type { CardReviewTarget } from "src/question-type";
 import type { QuestionContextBreadcrumb } from "src/SRFile";
 import type { ExtractReviewContext } from "src/util/irExtractContext";
 import type { ExtractContextUpdate } from "src/editor/extract-context-decoration";
-import {
-    eventMatchesReviewEditModeHotkey,
-    getReviewEditModeHotkeyLabel,
-} from "src/editor/obsidianHotkeyBridge";
+import { getReviewEditModeHotkeyLabel } from "src/editor/obsidianHotkeyBridge";
 import "../styles/linear-card.css";
 import { t } from "src/lang/helpers";
 import { DEFAULT_PROGRESS_BAR_STYLE, type ProgressBarStyle } from "src/settings";
@@ -1073,30 +1070,11 @@ export const LinearCard: FC<LinearCardProps> = ({
                 return;
             }
 
-            if (
-                canToggleEditMode &&
-                !e.defaultPrevented &&
-                eventMatchesReviewEditModeHotkey(e, plugin?.app)
-            ) {
-                if (isEditableKeyboardTarget(e.target)) {
-                    return;
-                }
-                e.preventDefault();
-                toggleEditMode();
-                return;
-            }
-
             handleReviewShortcutKeyDown(e);
         };
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [
-        canToggleEditMode,
-        handleReviewShortcutKeyDown,
-        plugin?.app,
-        shouldHandleReviewHotkeys,
-        toggleEditMode,
-    ]);
+    }, [handleReviewShortcutKeyDown, shouldHandleReviewHotkeys]);
 
     const wrapperClassName = [
         "sr-linear-card-wrapper",
@@ -2144,18 +2122,6 @@ function getInactivePreRenderedFaceStyle(): CSSProperties {
         pointerEvents: "none",
         overflow: "hidden",
     };
-}
-
-function isEditableKeyboardTarget(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) {
-        return false;
-    }
-
-    return (
-        target.matches("input, textarea, select") ||
-        target.isContentEditable ||
-        !!target.closest("[contenteditable='true'], .cm-editor")
-    );
 }
 
 const ClozeContent = ({
