@@ -13,6 +13,11 @@ const OUTER_INSET = 18;
 const INNER_INSET = 6;
 const MAX_VERTICAL_INSET = 8;
 const INNERMOST_CONTAINER_OUTSET = 6;
+const INFO_ICON_STACK_STEP = 24;
+const INFO_ICON_BASE_RIGHT = 24;
+const INFO_ICON_SIZE = 20;
+const INFO_ICON_TOP = -10;
+const INFO_ICON_VISUAL_ROW_TOLERANCE = 12;
 interface DecorationItem {
     from: number;
     to: number;
@@ -1180,6 +1185,167 @@ export function getIrExtractInfoVisibleStarts(
     return starts;
 }
 
+function isIrExtractOpenOnlyLine(text: string, match: IrExtractMatch): boolean {
+    const line = getLineAtOffset(text, match.start);
+    return text.slice(line.from, line.to).trim() === "{{ir::";
+}
+
+function shouldStackIrExtractInfoActions(
+    text: string,
+    left: IrExtractMatch,
+    right: IrExtractMatch,
+): boolean {
+    const leftLine = left.anchor.startLine;
+    const rightLine = right.anchor.startLine;
+    if (leftLine === rightLine) {
+        return true;
+    }
+
+    const earlier = leftLine < rightLine ? left : right;
+    const later = earlier === left ? right : left;
+    return later.anchor.startLine === earlier.anchor.startLine + 1 && isIrExtractOpenOnlyLine(text, earlier);
+}
+
+function areIrExtractInfoBlocksOnSameVisualRow(
+    left: Pick<MeasuredExtractBlock, "top">,
+    right: Pick<MeasuredExtractBlock, "top">,
+): boolean {
+    return Math.abs(left.top - right.top) <= INFO_ICON_VISUAL_ROW_TOLERANCE;
+}
+
+export function getIrExtractInfoOffsetIndexes(
+    text: string,
+    matchesByStart: ReadonlyMap<number, IrExtractMatch>,
+    blocks: ReadonlyMap<number, Pick<MeasuredExtractBlock, "left" | "top" | "width">>,
+): Map<number, { rightOffset: number; topOffset: number }> {
+    const starts = [...blocks.keys()].filter((start) => matchesByStart.has(start));
+    const offsets = new Map(starts.map((start) => [start, { rightOffset: 0, topOffset: 0 }]));
+    const visited = new Set<number>();
+
+    const getConnectedStarts = (rootStart: number): number[] => {
+        const group = new Set([rootStart]);
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const start of starts) {
+                if (group.has(start)) {
+                    continue;
+                }
+                const match = matchesByStart.get(start);
+                const parentStart = match?.parentStart;
+                if (parentStart === undefined || !group.has(parentStart)) {
+                    continue;
+                }
+                const parent = matchesByStart.get(parentStart);
+                const block = blocks.get(start);
+                const parentBlock = blocks.get(parentStart);
+                if (
+                    !match ||
+                    !parent ||
+                    !block ||
+                    !parentBlock ||
+                    !areIrExtractInfoBlocksOnSameVisualRow(block, parentBlock) ||
+                    !shouldStackIrExtractInfoActions(text, match, parent)
+                ) {
+                    continue;
+                }
+                group.add(start);
+                changed = true;
+            }
+
+            for (const start of starts) {
+                const match = matchesByStart.get(start);
+                const parentStart = match?.parentStart;
+                if (!match || parentStart === undefined || !group.has(start)) {
+                    continue;
+                }
+                const parent = matchesByStart.get(parentStart);
+                const block = blocks.get(start);
+                const parentBlock = blocks.get(parentStart);
+                if (
+                    !parent ||
+                    !block ||
+                    !parentBlock ||
+                    !areIrExtractInfoBlocksOnSameVisualRow(block, parentBlock) ||
+                    !shouldStackIrExtractInfoActions(text, match, parent)
+                ) {
+                    continue;
+                }
+                if (!group.has(parentStart)) {
+                    group.add(parentStart);
+                    changed = true;
+                }
+            }
+        }
+        return [...group];
+    };
+
+    const getDepth = (start: number): number => {
+        let depth = 1;
+        let parentStart = matchesByStart.get(start)?.parentStart;
+        while (parentStart !== undefined) {
+            depth++;
+            parentStart = matchesByStart.get(parentStart)?.parentStart;
+        }
+        return depth;
+    };
+
+    for (const start of starts) {
+        if (visited.has(start)) {
+            continue;
+        }
+        const group = getConnectedStarts(start);
+        for (const groupStart of group) {
+            visited.add(groupStart);
+        }
+        if (group.length < 2) {
+            continue;
+        }
+
+        const orderedGroup = group.sort((left, right) => getDepth(right) - getDepth(left) || right - left);
+        const tops = orderedGroup.flatMap((groupStart) => {
+            const block = blocks.get(groupStart);
+            return block ? [block.top + INFO_ICON_TOP] : [];
+        });
+        if (tops.length === 0) {
+            continue;
+        }
+        const top = Math.min(...tops);
+        for (const groupStart of orderedGroup) {
+            const block = blocks.get(groupStart);
+            const offset = offsets.get(groupStart);
+            if (!block || !offset) {
+                continue;
+            }
+            offset.topOffset = top - (block.top + INFO_ICON_TOP);
+        }
+
+        let previousActualLeft: number | null = null;
+        for (const groupStart of orderedGroup) {
+            const block = blocks.get(groupStart);
+            const defaultLeft = block
+                ? block.left + block.width - INFO_ICON_BASE_RIGHT - INFO_ICON_SIZE
+                : null;
+            if (defaultLeft === null) {
+                previousActualLeft = null;
+                continue;
+            }
+            if (previousActualLeft === null) {
+                previousActualLeft = defaultLeft;
+                continue;
+            }
+            const offset = Math.max(0, defaultLeft - previousActualLeft + INFO_ICON_STACK_STEP);
+            const currentOffset = offsets.get(groupStart);
+            if (currentOffset) {
+                currentOffset.rightOffset = offset;
+            }
+            previousActualLeft = defaultLeft - offset;
+        }
+    }
+
+    return offsets;
+}
+
 function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {}): Extension {
     return ViewPlugin.fromClass(
         class {
@@ -1191,6 +1357,8 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             private readonly scrollDOM: HTMLElement;
             private readonly blockDomCache = new Map<number, HTMLElement>();
             private readonly blockMeasurements = new Map<number, MeasuredExtractBlock>();
+            private matchesByStart = new Map<number, IrExtractMatch>();
+            private sourceText = "";
             private openBlockStart: number | null = null;
             private hoveredBlockStart: number | null = null;
             private readonly handleScrollMouseMove = (event: MouseEvent): void => {
@@ -1228,6 +1396,13 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 const state = buildIrExtractDecorations(view, this.pointSourceStarts, options);
                 this.decorations = state.decorations;
                 this.renderExtracts = state.renderExtracts;
+                this.sourceText = view.state.doc.toString();
+                this.matchesByStart = new Map(
+                    this.renderExtracts.map((renderExtract) => [
+                        renderExtract.match.start,
+                        renderExtract.match,
+                    ]),
+                );
                 this.overlay = document.createElement("div");
                 this.overlay.className = "sr-ir-extract-overlay";
                 this.scrollDOM = view.scrollDOM;
@@ -1282,6 +1457,13 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     );
                     this.decorations = state.decorations;
                     this.renderExtracts = state.renderExtracts;
+                    this.sourceText = update.view.state.doc.toString();
+                    this.matchesByStart = new Map(
+                        this.renderExtracts.map((renderExtract) => [
+                            renderExtract.match.start,
+                            renderExtract.match,
+                        ]),
+                    );
                     this.scheduleMeasure(update.view);
                     return;
                 }
@@ -1369,15 +1551,38 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     this.hoveredBlockStart,
                     this.openBlockStart,
                 );
+                const infoOffsetIndexes = getIrExtractInfoOffsetIndexes(
+                    this.sourceText,
+                    this.matchesByStart,
+                    this.blockMeasurements,
+                );
                 for (const [blockStart, element] of this.blockDomCache) {
                     const isEditing = blockStart === this.openBlockStart;
                     const isHovered = isEditing || blockStart === this.hoveredBlockStart;
                     const infoVisible = infoVisibleStarts.has(blockStart);
                     element.classList.toggle("is-editing", isEditing);
                     element.classList.toggle("is-hovered", isHovered);
-                    const infoAction = element.querySelector(".sr-ir-info-action");
+                    const infoAction = element.querySelector<HTMLElement>(".sr-ir-info-action");
                     infoAction?.classList.toggle("is-editing", isEditing);
                     infoAction?.classList.toggle("is-visible", infoVisible);
+                    if (infoVisible) {
+                        infoAction?.style.setProperty(
+                            "--sr-ir-info-offset",
+                            `${infoOffsetIndexes.get(blockStart)?.rightOffset ?? 0}px`,
+                        );
+                        infoAction?.style.setProperty(
+                            "right",
+                            `${INFO_ICON_BASE_RIGHT + (infoOffsetIndexes.get(blockStart)?.rightOffset ?? 0)}px`,
+                        );
+                        infoAction?.style.setProperty(
+                            "top",
+                            `${INFO_ICON_TOP + (infoOffsetIndexes.get(blockStart)?.topOffset ?? 0)}px`,
+                        );
+                    } else {
+                        infoAction?.style.removeProperty("--sr-ir-info-offset");
+                        infoAction?.style.removeProperty("right");
+                        infoAction?.style.removeProperty("top");
+                    }
                 }
             }
 
@@ -1474,7 +1679,7 @@ const irExtractDecorationTheme = EditorView.baseTheme({
     ".sr-ir-info-action": {
         position: "absolute",
         top: "-10px",
-        right: "24px",
+        right: "calc(24px + var(--sr-ir-info-offset, 0px))",
         width: "20px",
         height: "20px",
         padding: "0",

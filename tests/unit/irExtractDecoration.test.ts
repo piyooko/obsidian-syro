@@ -12,6 +12,7 @@ import {
     findIrExtractSourceMatchesAtPoint,
     findIrExtractSourceStartsAtSelectionPoint,
     getIrExtractInfoVisibleStarts,
+    getIrExtractInfoOffsetIndexes,
     getIrExtractLayerInset,
     getIrExtractLayerVerticalInset,
     getIrExtractHorizontalFrameForMetrics,
@@ -20,6 +21,7 @@ import {
     getIrExtractVerticalInsetForMetrics,
     getIrExtractWrappedBlockPrefix,
     getIrExtractWrappedHeading,
+    type MeasuredExtractBlock,
     type RenderExtract,
 } from "src/editor/ir-extract-decoration";
 import { parseIrExtracts } from "src/util/irExtractParser";
@@ -28,6 +30,45 @@ describe("irExtractDecoration helpers", () => {
     afterEach(() => {
         document.body.innerHTML = "";
     });
+
+    function getInfoRightOffsetEntries(
+        source: string,
+        visibleStarts: number[],
+        blocks?: MeasuredExtractBlock[],
+    ): Array<[number, number]> {
+        const matches = parseIrExtracts(source);
+        const measuredBlocks =
+            blocks ??
+            matches.map((match) => ({
+                start: match.start,
+                left: 0,
+                top: 0,
+                width: 100,
+                height: 20,
+                depth: 1,
+                maxDepth: 1,
+            }));
+        const offsets = getIrExtractInfoOffsetIndexes(
+            source,
+            new Map(matches.map((match) => [match.start, match])),
+            new Map(measuredBlocks.map((block) => [block.start, block])),
+        );
+        return visibleStarts.map((start) => [start, offsets.get(start)?.rightOffset ?? 0]);
+    }
+
+    function getInfoTopOffsetEntries(
+        source: string,
+        visibleStarts: number[],
+        blocks: MeasuredExtractBlock[],
+    ): Array<[number, number]> {
+        const matches = parseIrExtracts(source);
+        const offsets = getIrExtractInfoOffsetIndexes(
+            source,
+            new Map(matches.map((match) => [match.start, match])),
+            new Map(blocks.map((block) => [block.start, block])),
+        );
+        return visibleStarts.map((start) => [start, offsets.get(start)?.topOffset ?? 0]);
+    }
 
     test("keeps the first three extract layer insets fixed", () => {
         expect(getIrExtractLayerInset(1, 3)).toBe(18);
@@ -161,6 +202,187 @@ describe("irExtractDecoration helpers", () => {
         );
 
         expect([...visibleStarts]).toEqual([40, 20, 0]);
+    });
+
+    test("keeps visible info actions fixed when their start tokens are on unrelated lines", () => {
+        const source = "{{ir::outer\nsome text\n{{ir::inner}}}}";
+        const matches = parseIrExtracts(source);
+
+        expect(getInfoRightOffsetEntries(source, [matches[1].start, matches[0].start])).toEqual([
+            [matches[1].start, 0],
+            [matches[0].start, 0],
+        ]);
+    });
+
+    test("stacks info actions left when nested start tokens share a source line", () => {
+        const source = "{{ir::这{{ir::是}}一句话}}";
+        const matches = parseIrExtracts(source);
+
+        expect(getInfoRightOffsetEntries(source, [matches[1].start, matches[0].start])).toEqual([
+            [matches[1].start, 0],
+            [matches[0].start, 24],
+        ]);
+    });
+
+    test("uses measured block right edges to keep stacked info actions from overlapping", () => {
+        const source = "{{ir::这{{ir::是}}一句话}}";
+        const matches = parseIrExtracts(source);
+
+        expect(
+            getInfoRightOffsetEntries(
+                source,
+                [matches[1].start, matches[0].start],
+                [
+                    {
+                        start: matches[1].start,
+                        left: 0,
+                        top: 0,
+                        width: 232,
+                        height: 20,
+                        depth: 2,
+                        maxDepth: 2,
+                    },
+                    {
+                        start: matches[0].start,
+                        left: 0,
+                        top: 0,
+                        width: 244,
+                        height: 20,
+                        depth: 1,
+                        maxDepth: 2,
+                    },
+                ],
+            ),
+        ).toEqual([
+            [matches[1].start, 0],
+            [matches[0].start, 36],
+        ]);
+    });
+
+    test("does not stack same source-line starts when their visual rows differ", () => {
+        const source = "{{ir::父级很长很长很长很长很长很长很长 {{ir::逃出}} 后续}}";
+        const matches = parseIrExtracts(source);
+
+        expect(
+            getInfoRightOffsetEntries(
+                source,
+                [matches[1].start, matches[0].start],
+                [
+                    {
+                        start: matches[1].start,
+                        left: 0,
+                        top: 96,
+                        width: 232,
+                        height: 20,
+                        depth: 2,
+                        maxDepth: 2,
+                    },
+                    {
+                        start: matches[0].start,
+                        left: 0,
+                        top: 0,
+                        width: 244,
+                        height: 20,
+                        depth: 1,
+                        maxDepth: 2,
+                    },
+                ],
+            ),
+        ).toEqual([
+            [matches[1].start, 0],
+            [matches[0].start, 0],
+        ]);
+    });
+
+    test("keeps computed info positions fixed even when only one icon is visible", () => {
+        const source = "{{ir::这{{ir::是}}一句话}}";
+        const matches = parseIrExtracts(source);
+
+        expect(getInfoRightOffsetEntries(source, [matches[0].start])).toEqual([
+            [matches[0].start, 24],
+        ]);
+        expect(getInfoRightOffsetEntries(source, [matches[1].start])).toEqual([
+            [matches[1].start, 0],
+        ]);
+    });
+
+    test("aligns stacked info actions to the highest icon in the group", () => {
+        const source = "{{ir::这{{ir::是}}一句话}}";
+        const matches = parseIrExtracts(source);
+
+        expect(
+            getInfoTopOffsetEntries(
+                source,
+                [matches[1].start, matches[0].start],
+                [
+                    {
+                        start: matches[1].start,
+                        left: 0,
+                        top: 8,
+                        width: 232,
+                        height: 20,
+                        depth: 2,
+                        maxDepth: 2,
+                    },
+                    {
+                        start: matches[0].start,
+                        left: 0,
+                        top: 0,
+                        width: 244,
+                        height: 20,
+                        depth: 1,
+                        maxDepth: 2,
+                    },
+                ],
+            ),
+        ).toEqual([
+            [matches[1].start, -8],
+            [matches[0].start, 0],
+        ]);
+    });
+
+    test("stacks info actions left when a parent start token is on the previous start-only line", () => {
+        const source = "{{ir::\n这{{ir::是}}一句话}}";
+        const matches = parseIrExtracts(source);
+
+        expect(getInfoRightOffsetEntries(source, [matches[1].start, matches[0].start])).toEqual([
+            [matches[1].start, 0],
+            [matches[0].start, 24],
+        ]);
+    });
+
+    test("stacks multi-level info actions from the innermost start token", () => {
+        const source = "{{ir::\n这{{ir::个{{ir::词}}}}}}";
+        const matches = parseIrExtracts(source);
+
+        expect(
+            getInfoRightOffsetEntries(source, [
+                matches[2].start,
+                matches[1].start,
+                matches[0].start,
+            ]),
+        ).toEqual([
+            [matches[2].start, 0],
+            [matches[1].start, 24],
+            [matches[0].start, 48],
+        ]);
+    });
+
+    test("keeps unrelated ancestors fixed while stacking only the overlapping start-token group", () => {
+        const source = "{{ir::outer\nsome text\n{{ir::middle {{ir::inner}}}}}}";
+        const matches = parseIrExtracts(source);
+
+        expect(
+            getInfoRightOffsetEntries(source, [
+                matches[2].start,
+                matches[1].start,
+                matches[0].start,
+            ]),
+        ).toEqual([
+            [matches[2].start, 0],
+            [matches[1].start, 24],
+            [matches[0].start, 0],
+        ]);
     });
 
     test("separates nested extract vertical borders by depth", () => {
