@@ -13,6 +13,8 @@ import {
     findIrExtractSourceMatches,
     findIrExtractSourceMatchesAtPoint,
     findIrExtractSourceStartsAtSelectionPoint,
+    IR_EXTRACT_INFO_NOTE_COLOR,
+    getIrExtractInfoActionColor,
     getIrExtractInfoVisibleStarts,
     getIrExtractInfoOffsetIndexes,
     getIrExtractInfoState,
@@ -30,6 +32,7 @@ import {
     shouldHighlightIrExtractBlock,
     shouldCloseIrExtractPinnedTooltip,
     isIrExtractNoteTooltipVisible,
+    shouldUseIrExtractTextColumnFrame,
     syncIrExtractInfoCursorAtClientPoint,
     type MeasuredExtractBlock,
     type RenderExtract,
@@ -53,6 +56,96 @@ describe("irExtractDecoration helpers", () => {
     afterEach(() => {
         document.body.innerHTML = "";
     });
+
+    function installIrExtractMeasureMocks(): () => void {
+        const originalCreateRange = document.createRange;
+        const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+        const originalDOMRect = globalThis.DOMRect;
+        const rect = (left: number, top: number, width: number, height: number): DOMRect => {
+            const right = left + width;
+            const bottom = top + height;
+            return {
+                x: left,
+                y: top,
+                left,
+                top,
+                right,
+                bottom,
+                width,
+                height,
+                toJSON: () => undefined,
+            } as DOMRect;
+        };
+        Object.defineProperty(globalThis, "DOMRect", {
+            configurable: true,
+            value: class MockDOMRect {
+                x: number;
+                y: number;
+                left: number;
+                top: number;
+                right: number;
+                bottom: number;
+                width: number;
+                height: number;
+
+                constructor(left = 0, top = 0, width = 0, height = 0) {
+                    this.x = left;
+                    this.y = top;
+                    this.left = left;
+                    this.top = top;
+                    this.width = width;
+                    this.height = height;
+                    this.right = left + width;
+                    this.bottom = top + height;
+                }
+
+                toJSON(): undefined {
+                    return undefined;
+                }
+            },
+        });
+        document.createRange = jest.fn(
+            () =>
+                ({
+                    setStart: jest.fn(),
+                    setEnd: jest.fn(),
+                    detach: jest.fn(),
+                    getClientRects: jest.fn(() => [rect(10, 10, 120, 20)]),
+                }) as unknown as Range,
+        );
+        HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+            if ((this as HTMLElement).classList?.contains("cm-scroller")) {
+                return rect(0, 0, 500, 500);
+            }
+            if ((this as HTMLElement).classList?.contains("cm-content")) {
+                return rect(0, 0, 500, 500);
+            }
+            if ((this as HTMLElement).classList?.contains("sr-ir-info-action")) {
+                return rect(110, 10, 20, 20);
+            }
+            if ((this as HTMLElement).classList?.contains("sr-ir-note-tooltip")) {
+                return rect(0, 0, 240, 80);
+            }
+            return originalGetBoundingClientRect.call(this);
+        };
+
+        return () => {
+            document.createRange = originalCreateRange;
+            HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+            if (originalDOMRect) {
+                Object.defineProperty(globalThis, "DOMRect", {
+                    configurable: true,
+                    value: originalDOMRect,
+                });
+            } else {
+                delete (globalThis as typeof globalThis & { DOMRect?: typeof DOMRect }).DOMRect;
+            }
+        };
+    }
+
+    async function waitForIrExtractMeasure(): Promise<void> {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+    }
 
     function getInfoRightOffsetEntries(
         source: string,
@@ -237,6 +330,16 @@ describe("irExtractDecoration helpers", () => {
             visible: true,
             hasNote: true,
         });
+    });
+
+    test("uses a bright green note color distinct from the editing accent", () => {
+        expect(IR_EXTRACT_INFO_NOTE_COLOR).toBe("#44cf6e");
+        expect(IR_EXTRACT_INFO_NOTE_COLOR).not.toBe("var(--interactive-accent)");
+        expect(getIrExtractInfoActionColor(true, false, false)).toBe(IR_EXTRACT_INFO_NOTE_COLOR);
+        expect(getIrExtractInfoActionColor(true, true, true)).toBe(IR_EXTRACT_INFO_NOTE_COLOR);
+        expect(getIrExtractInfoActionColor(false, true, false)).toBe("var(--interactive-accent)");
+        expect(getIrExtractInfoActionColor(false, false, true)).toBe("var(--interactive-accent)");
+        expect(getIrExtractInfoActionColor(false, false, false)).toBeUndefined();
     });
 
     test("shows the same ancestor info actions when the cursor is inside a nested child block", () => {
@@ -754,6 +857,33 @@ describe("irExtractDecoration helpers", () => {
         });
     });
 
+    test("uses extract context text column frame inside padded review content", () => {
+        const frame = getIrExtractHorizontalFrameForMetrics(80, 500, 20, 5, {
+            useTextColumn: true,
+            paddingLeft: 40,
+            paddingRight: 40,
+        });
+
+        expect(frame).toEqual({
+            left: 105,
+            width: 340,
+        });
+    });
+
+    test("uses the text column frame for hybrid review editor content", () => {
+        const officialEditor = document.createElement("div");
+        officialEditor.className = "markdown-source-view mod-cm6 is-live-preview";
+        const extractContextEditor = document.createElement("div");
+        extractContextEditor.className = "sr-extract-context-editor";
+        const hybridReviewEditor = document.createElement("div");
+        hybridReviewEditor.className =
+            "sr-hybrid-markdown-source markdown-source-view cm-s-obsidian mod-cm6 is-live-preview";
+
+        expect(shouldUseIrExtractTextColumnFrame(officialEditor)).toBe(false);
+        expect(shouldUseIrExtractTextColumnFrame(extractContextEditor)).toBe(true);
+        expect(shouldUseIrExtractTextColumnFrame(hybridReviewEditor)).toBe(true);
+    });
+
     test("selects the smallest touched extract as the editing root", () => {
         const text = "{{ir::outer {{ir::inner}} text}}";
         const matches = parseIrExtracts(text);
@@ -1050,6 +1180,223 @@ describe("irExtractDecoration helpers", () => {
             expect(view.dom.querySelector(".sr-ir-extract-layout-line")).toBeNull();
         } finally {
             view.destroy();
+        }
+    });
+
+    test("loads a persisted tooltip note when the extract tooltip is pinned", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const resolveExtractTooltipNote = jest.fn(() =>
+            Promise.resolve({ uuid: "extract-uuid-1", memo: "后端已有备注", priority: 5 }),
+        );
+        const doc = "{{ir::one}}";
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc,
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNote,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            const action = document.querySelector<HTMLElement>(".sr-ir-info-action");
+            if (!action) {
+                throw new Error("Expected info action");
+            }
+
+            action.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+            await waitForIrExtractMeasure();
+
+            const textarea = document.querySelector<HTMLTextAreaElement>(
+                ".sr-ir-note-tooltip-input",
+            );
+            expect(resolveExtractTooltipNote).toHaveBeenCalledWith(view, doc.indexOf("{{ir::"));
+            expect(textarea?.value).toBe("后端已有备注");
+            expect(action.classList.contains("has-note")).toBe(true);
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("saves a pinned persisted tooltip note on submit", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const saveExtractTooltipNote = jest.fn(() => Promise.resolve());
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: "{{ir::one}}",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNote: () =>
+                            Promise.resolve({ uuid: "extract-uuid-1", memo: "", priority: 5 }),
+                        saveExtractTooltipNote,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            document
+                .querySelector<HTMLElement>(".sr-ir-info-action")
+                ?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+            await waitForIrExtractMeasure();
+
+            const textarea = document.querySelector<HTMLTextAreaElement>(
+                ".sr-ir-note-tooltip-input",
+            );
+            if (!textarea) {
+                throw new Error("Expected tooltip textarea");
+            }
+            textarea.value = "新的摘录备注";
+            textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            textarea.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                    key: "Enter",
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            );
+            await waitForIrExtractMeasure();
+
+            expect(saveExtractTooltipNote).toHaveBeenCalledTimes(1);
+            expect(saveExtractTooltipNote).toHaveBeenCalledWith("extract-uuid-1", "新的摘录备注");
+            expect(
+                document.querySelector<HTMLElement>(".sr-ir-info-action")?.classList.contains(
+                    "has-note",
+                ),
+            ).toBe(true);
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("saves an empty persisted tooltip note as no note", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const saveExtractTooltipNote = jest.fn(() => Promise.resolve());
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: "{{ir::one}}",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNote: () =>
+                            Promise.resolve({
+                                uuid: "extract-uuid-1",
+                                memo: "后端已有备注",
+                                priority: 5,
+                            }),
+                        saveExtractTooltipNote,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            const action = document.querySelector<HTMLElement>(".sr-ir-info-action");
+            action?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+            await waitForIrExtractMeasure();
+
+            const textarea = document.querySelector<HTMLTextAreaElement>(
+                ".sr-ir-note-tooltip-input",
+            );
+            if (!textarea) {
+                throw new Error("Expected tooltip textarea");
+            }
+            textarea.value = "";
+            textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            textarea.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                    key: "Enter",
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            );
+            await waitForIrExtractMeasure();
+
+            expect(saveExtractTooltipNote).toHaveBeenCalledWith("extract-uuid-1", "");
+            expect(action?.classList.contains("has-note")).toBe(false);
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("keeps the tooltip draft when persisted note save fails", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const saveError = new Error("save failed");
+        const onExtractTooltipNoteSaveError = jest.fn();
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: "{{ir::one}}",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNote: () =>
+                            Promise.resolve({ uuid: "extract-uuid-1", memo: "", priority: 5 }),
+                        saveExtractTooltipNote: () => Promise.reject(saveError),
+                        onExtractTooltipNoteSaveError,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            const action = document.querySelector<HTMLElement>(".sr-ir-info-action");
+            action?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+            await waitForIrExtractMeasure();
+
+            const textarea = document.querySelector<HTMLTextAreaElement>(
+                ".sr-ir-note-tooltip-input",
+            );
+            if (!textarea) {
+                throw new Error("Expected tooltip textarea");
+            }
+            textarea.value = "失败时保留";
+            textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            textarea.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                    key: "Enter",
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            );
+            await waitForIrExtractMeasure();
+
+            expect(onExtractTooltipNoteSaveError).toHaveBeenCalledWith(saveError);
+            expect(textarea.value).toBe("失败时保留");
+            expect(action?.classList.contains("has-note")).toBe(true);
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
         }
     });
 });

@@ -195,6 +195,31 @@ describe("ExtractStore", () => {
         expect(item?.autoSliceKey).toBeUndefined();
     });
 
+    test("stores independent extract memo while preserving default priority", () => {
+        const store = createStore();
+        const [created] = store.syncFileExtracts("notes/source.md", "{{ir::one}}", "deck").added;
+
+        const updated = store.setMemo(created.uuid, "摘录备注");
+
+        expect(created.priority).toBe(5);
+        expect(updated?.memo).toBe("摘录备注");
+        expect(updated?.priority).toBe(5);
+        expect(store.get(created.uuid)?.memo).toBe("摘录备注");
+    });
+
+    test("stores an empty extract memo without resetting priority", () => {
+        const store = createStore();
+        const [created] = store.syncFileExtracts("notes/source.md", "{{ir::one}}", "deck").added;
+        store.setPriority(created.uuid, 8);
+        store.setMemo(created.uuid, "摘录备注");
+
+        const updated = store.setMemo(created.uuid, "");
+
+        expect(updated?.memo).toBe("");
+        expect(updated?.priority).toBe(8);
+        expect(store.get(created.uuid)?.stage).toBe("active");
+    });
+
     test("sets a custom next review date and counts the extract as reviewed", () => {
         const store = createStore();
         const [created] = store.syncFileExtracts("notes/source.md", "{{ir::one}}", "deck").added;

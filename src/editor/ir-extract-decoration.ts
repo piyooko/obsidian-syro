@@ -17,6 +17,7 @@ const INFO_ICON_STACK_STEP = 24;
 const INFO_ICON_BASE_RIGHT = 24;
 const INFO_ICON_SIZE = 20;
 const INFO_ICON_TOP = -10;
+export const IR_EXTRACT_INFO_NOTE_COLOR = "#44cf6e";
 const INFO_ICON_VISUAL_ROW_TOLERANCE = 12;
 const NOTE_TOOLTIP_VIEWPORT_PADDING = 12;
 const NOTE_TOOLTIP_GAP = 10;
@@ -41,6 +42,12 @@ export interface IrExtractDecorationOptions {
     canRevealSource?: (view: EditorView) => boolean;
     isLivePreviewHost?: (view: EditorView) => boolean;
     getExcludedStarts?: (view: EditorView) => ReadonlySet<number>;
+    resolveExtractTooltipNote?: (
+        view: EditorView,
+        sourceStart: number,
+    ) => Promise<{ uuid: string; memo: string; priority: number } | null>;
+    saveExtractTooltipNote?: (uuid: string, memo: string) => Promise<void>;
+    onExtractTooltipNoteSaveError?: (error: unknown) => void;
 }
 
 export interface MeasuredExtractBlock {
@@ -90,6 +97,12 @@ export interface IrExtractVerticalInsetBlock {
     rawBottom: number;
     depth: number;
     verticalInset: number;
+}
+
+export interface IrExtractHorizontalFrameOptions {
+    useTextColumn?: boolean;
+    paddingLeft?: number;
+    paddingRight?: number;
 }
 
 export interface IrExtractWrappedHeading {
@@ -509,10 +522,15 @@ export function getIrExtractHorizontalFrameForMetrics(
     containerRight: number,
     scrollRectLeft: number,
     scrollLeft: number,
+    options: IrExtractHorizontalFrameOptions = {},
 ): { left: number; width: number } {
+    const paddingLeft = options.useTextColumn ? Math.max(0, options.paddingLeft ?? 0) : 0;
+    const paddingRight = options.useTextColumn ? Math.max(0, options.paddingRight ?? 0) : 0;
+    const left = containerLeft + paddingLeft;
+    const right = Math.max(left + 1, containerRight - paddingRight);
     return {
-        left: containerLeft - scrollRectLeft + scrollLeft,
-        width: Math.max(1, containerRight - containerLeft),
+        left: left - scrollRectLeft + scrollLeft,
+        width: Math.max(1, right - left),
     };
 }
 
@@ -670,10 +688,11 @@ function buildIrExtractDecorations(
 ): {
     decorations: DecorationSet;
     renderExtracts: RenderExtract[];
+    activeSourceStart: number | null;
 } {
     const builder = new RangeSetBuilder<Decoration>();
     if (!isLivePreview(view, options)) {
-        return { decorations: builder.finish(), renderExtracts: [] };
+        return { decorations: builder.finish(), renderExtracts: [], activeSourceStart: null };
     }
 
     const text = view.state.doc.toString();
@@ -750,7 +769,11 @@ function buildIrExtractDecorations(
         .sort((left, right) => left.from - right.from || left.to - right.to)
         .forEach((item) => builder.add(item.from, item.to, item.decoration));
 
-    return { decorations: builder.finish(), renderExtracts };
+    return {
+        decorations: builder.finish(),
+        renderExtracts,
+        activeSourceStart: activeSourceMatch?.start ?? null,
+    };
 }
 
 function createWrappedBlockPrefixDecorations(
@@ -901,6 +924,26 @@ function getEditorLineHeight(view: EditorView): number {
     return fontSize === null ? 0 : fontSize * 1.5;
 }
 
+export function shouldUseIrExtractTextColumnFrame(root: Element): boolean {
+    return (
+        !!root.closest(".sr-extract-context-editor") ||
+        !!root.closest(".sr-hybrid-markdown-source")
+    );
+}
+
+function getIrExtractHorizontalFrameOptions(view: EditorView): IrExtractHorizontalFrameOptions {
+    if (!shouldUseIrExtractTextColumnFrame(view.dom)) {
+        return {};
+    }
+
+    const computed = getComputedStyle(view.contentDOM);
+    return {
+        useTextColumn: true,
+        paddingLeft: parseCssPixelValue(computed.paddingLeft) ?? 0,
+        paddingRight: parseCssPixelValue(computed.paddingRight) ?? 0,
+    };
+}
+
 function rectsOverlapVertically(left: DOMRect, right: DOMRect): boolean {
     return left.top < right.bottom && left.bottom > right.top;
 }
@@ -959,6 +1002,7 @@ function measureExtractBlocks(
     const scrollLeft = view.scrollDOM.scrollLeft;
     const scrollTop = view.scrollDOM.scrollTop;
     const lineHeight = getEditorLineHeight(view);
+    const horizontalFrameOptions = getIrExtractHorizontalFrameOptions(view);
     const pendingBlocks: PendingMeasuredExtractBlock[] = [];
 
     for (const renderExtract of renderExtracts) {
@@ -977,6 +1021,7 @@ function measureExtractBlocks(
             frameRight,
             scrollRect.left,
             scrollLeft,
+            horizontalFrameOptions,
         );
         const baseVerticalInset = getIrExtractVerticalInsetForMetrics(
             lineHeight,
@@ -1245,6 +1290,20 @@ export function getIrExtractInfoState(
         visible: hasNote || visibleStarts.has(blockStart),
         hasNote,
     };
+}
+
+export function getIrExtractInfoActionColor(
+    hasNote: boolean,
+    isEditing: boolean,
+    isActiveSource: boolean,
+): string | undefined {
+    if (hasNote) {
+        return IR_EXTRACT_INFO_NOTE_COLOR;
+    }
+    if (isEditing || isActiveSource) {
+        return "var(--interactive-accent)";
+    }
+    return undefined;
 }
 
 export function findIrExtractInfoActionStartAtClientPoint(
@@ -1546,9 +1605,11 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             private renderExtracts: RenderExtract[];
             private pointSourceStarts = new Set<number>();
             private sourceRevealEnabled: boolean;
+            private activeSourceStart: number | null = null;
             private readonly overlay: HTMLElement;
             private readonly noteTooltip: HTMLElement;
             private readonly scrollDOM: HTMLElement;
+            private readonly view: EditorView;
             private readonly blockDomCache = new Map<number, HTMLElement>();
             private readonly blockMeasurements = new Map<number, MeasuredExtractBlock>();
             private matchesByStart = new Map<number, IrExtractMatch>();
@@ -1559,7 +1620,10 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             private cursorBlockStart: number | null = null;
             private visibleTooltipAction: HTMLElement | null = null;
             private tooltipDraftStart: number | null = null;
+            private tooltipDraftUuid: string | null = null;
+            private tooltipResolveRequestId = 0;
             private readonly noteDraftsByStart = new Map<number, string>();
+            private readonly noteUuidsByStart = new Map<number, string>();
             private readonly handleScrollMouseMove = (event: MouseEvent): void => {
                 const point = getMousePointInScrollCoordinates(this.scrollDOM, event);
                 const hoveredStart = findHoveredIrExtractBlockStart(
@@ -1626,7 +1690,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.closePinnedTooltip();
             };
             private readonly handleTooltipInput = (): void => {
-                this.saveVisibleTooltipDraft();
+                void this.saveVisibleTooltipDraft(false);
                 this.updateInteractiveBlockStates();
                 this.repositionVisibleNoteTooltip();
             };
@@ -1635,10 +1699,12 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             };
 
             constructor(view: EditorView) {
+                this.view = view;
                 this.sourceRevealEnabled = canRevealIrExtractSource(view, options);
                 const state = buildIrExtractDecorations(view, this.pointSourceStarts, options);
                 this.decorations = state.decorations;
                 this.renderExtracts = state.renderExtracts;
+                this.activeSourceStart = state.activeSourceStart;
                 this.sourceText = view.state.doc.toString();
                 this.matchesByStart = new Map(
                     this.renderExtracts.map((renderExtract) => [
@@ -1708,6 +1774,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     );
                     this.decorations = state.decorations;
                     this.renderExtracts = state.renderExtracts;
+                    this.activeSourceStart = state.activeSourceStart;
                     this.sourceText = update.view.state.doc.toString();
                     this.matchesByStart = new Map(
                         this.renderExtracts.map((renderExtract) => [
@@ -1787,6 +1854,8 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.hoveredTooltipStart = null;
                 this.cursorBlockStart = null;
                 this.visibleTooltipAction = null;
+                this.tooltipDraftStart = null;
+                this.tooltipDraftUuid = null;
                 this.blockMeasurements.clear();
                 this.blockDomCache.clear();
                 this.overlay.replaceChildren();
@@ -1794,8 +1863,16 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             }
 
             private pinTooltip(blockStart: number): void {
+                if (this.pinnedTooltipStart !== null && this.pinnedTooltipStart !== blockStart) {
+                    void this.saveVisibleTooltipDraft();
+                }
                 this.pinnedTooltipStart =
                     this.pinnedTooltipStart === blockStart ? null : blockStart;
+                if (this.pinnedTooltipStart === null) {
+                    void this.saveVisibleTooltipDraft();
+                    this.tooltipDraftStart = null;
+                    this.tooltipDraftUuid = null;
+                }
                 this.updateInteractiveBlockStates();
 
                 const textarea = this.noteTooltip.querySelector<HTMLTextAreaElement>("textarea");
@@ -1805,9 +1882,11 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
 
                 const focusTextarea = () => {
                     this.tooltipDraftStart = blockStart;
+                    this.tooltipDraftUuid = this.noteUuidsByStart.get(blockStart) ?? null;
                     textarea.value = this.noteDraftsByStart.get(blockStart) ?? "";
                     resizeIrExtractTextarea(textarea);
                     textarea.focus();
+                    this.resolveTooltipNote(blockStart);
                 };
 
                 if (typeof window.requestAnimationFrame === "function") {
@@ -1834,9 +1913,10 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 if (this.pinnedTooltipStart === null) {
                     return;
                 }
-                this.saveVisibleTooltipDraft();
+                void this.saveVisibleTooltipDraft();
                 this.pinnedTooltipStart = null;
                 this.tooltipDraftStart = null;
+                this.tooltipDraftUuid = null;
                 this.updateInteractiveBlockStates();
             }
 
@@ -1883,6 +1963,16 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     infoAction?.classList.toggle("is-editing", isEditing);
                     infoAction?.classList.toggle("has-note", infoState.hasNote);
                     infoAction?.classList.toggle("is-visible", infoVisible);
+                    const infoActionColor = getIrExtractInfoActionColor(
+                        infoState.hasNote,
+                        isEditing,
+                        blockStart === this.activeSourceStart,
+                    );
+                    if (infoActionColor) {
+                        infoAction?.style.setProperty("color", infoActionColor);
+                    } else {
+                        infoAction?.style.removeProperty("color");
+                    }
                     infoAction?.setAttribute(
                         "aria-expanded",
                         isTooltipVisible ? "true" : "false",
@@ -1948,12 +2038,63 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.updateNoteTooltipPosition(this.visibleTooltipAction, true);
             }
 
-            private saveVisibleTooltipDraft(): void {
+            private resolveTooltipNote(blockStart: number): void {
+                if (!options.resolveExtractTooltipNote) {
+                    return;
+                }
+                const requestId = ++this.tooltipResolveRequestId;
+                const textarea = this.noteTooltip.querySelector<HTMLTextAreaElement>("textarea");
+                const draftAtRequest = textarea?.value ?? "";
+                void options
+                    .resolveExtractTooltipNote(this.view, blockStart)
+                    .then((note) => {
+                        if (
+                            requestId !== this.tooltipResolveRequestId ||
+                            this.tooltipDraftStart !== blockStart ||
+                            !textarea ||
+                            textarea.value !== draftAtRequest
+                        ) {
+                            return;
+                        }
+                        if (!note) {
+                            this.tooltipDraftUuid = null;
+                            this.noteUuidsByStart.delete(blockStart);
+                            return;
+                        }
+                        this.tooltipDraftUuid = note.uuid;
+                        this.noteUuidsByStart.set(blockStart, note.uuid);
+                        this.noteDraftsByStart.set(blockStart, note.memo);
+                        textarea.value = note.memo;
+                        resizeIrExtractTextarea(textarea);
+                        this.updateInteractiveBlockStates();
+                        this.repositionVisibleNoteTooltip();
+                    })
+                    .catch((error) => {
+                        options.onExtractTooltipNoteSaveError?.(error);
+                    });
+            }
+
+            private async saveVisibleTooltipDraft(persist = true): Promise<void> {
                 const textarea = this.noteTooltip.querySelector<HTMLTextAreaElement>("textarea");
                 if (!textarea || this.tooltipDraftStart === null) {
                     return;
                 }
-                this.noteDraftsByStart.set(this.tooltipDraftStart, textarea.value);
+                const draftStart = this.tooltipDraftStart;
+                const memo = textarea.value;
+                const uuid = this.tooltipDraftUuid ?? this.noteUuidsByStart.get(draftStart) ?? null;
+                this.noteDraftsByStart.set(draftStart, memo);
+                this.updateInteractiveBlockStates();
+                if (!persist || !uuid || !options.saveExtractTooltipNote) {
+                    return;
+                }
+                try {
+                    await options.saveExtractTooltipNote(uuid, memo);
+                    this.noteDraftsByStart.set(draftStart, memo);
+                    this.noteUuidsByStart.set(draftStart, uuid);
+                    this.updateInteractiveBlockStates();
+                } catch (error) {
+                    options.onExtractTooltipNoteSaveError?.(error);
+                }
             }
 
             private scheduleMeasure(view: EditorView): void {
@@ -2089,7 +2230,7 @@ const irExtractDecorationTheme = EditorView.baseTheme({
         color: "var(--text-normal)",
     },
     ".sr-ir-info-action.has-note": {
-        color: "var(--interactive-accent)",
+        color: IR_EXTRACT_INFO_NOTE_COLOR,
         opacity: "1",
     },
     ".sr-ir-info-action.is-editing": {

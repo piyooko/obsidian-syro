@@ -4,6 +4,7 @@ import {
     Editor,
     getAllTags,
     Menu,
+    MarkdownView,
     Notice,
     Plugin,
     TAbstractFile,
@@ -93,6 +94,7 @@ import {
     type TrackedCardSnapshot,
     type TrackedCardsFileSnapshot,
 } from "./dataStore/data";
+import type { EditorView } from "@codemirror/view";
 import {
     buildDeckOptionsAssignmentTargetUuid,
     buildDeckOptionsPresetTargetUuid,
@@ -2202,6 +2204,67 @@ export default class SRPlugin extends Plugin {
             removed: results.flatMap((result) => result.removed ?? []),
             manualIrCache: results.find((result) => result.manualIrCache)?.manualIrCache,
         };
+    }
+
+    public resolveMarkdownFileForEditorView(view: EditorView): TFile | null {
+        let resolvedFile: TFile | null = null;
+        this.app.workspace.iterateAllLeaves((leaf) => {
+            if (resolvedFile || !(leaf.view instanceof MarkdownView)) {
+                return;
+            }
+            const file = leaf.view.file;
+            if (!(file instanceof TFile) || file.extension !== "md") {
+                return;
+            }
+            const containerEl = (leaf as WorkspaceLeaf & { containerEl?: HTMLElement })
+                .containerEl;
+            const viewContainerEl = (leaf.view as MarkdownView & { containerEl?: HTMLElement })
+                .containerEl;
+            if (containerEl?.contains(view.dom) || viewContainerEl?.contains(view.dom)) {
+                resolvedFile = file;
+            }
+        });
+        return resolvedFile;
+    }
+
+    public async resolveExtractTooltipNote(
+        view: EditorView,
+        sourceStart: number,
+    ): Promise<{ uuid: string; memo: string; priority: number } | null> {
+        if (!this.extractStore || this.data.settings.enableExtracts === false) {
+            return null;
+        }
+        const file = this.resolveMarkdownFileForEditorView(view);
+        if (!file) {
+            return null;
+        }
+        const text = view.state.doc.toString();
+        const syncResult = this.syncExtractTextForFile(file, text, { auto: false });
+        if (
+            syncResult.added.length > 0 ||
+            syncResult.updated.length > 0 ||
+            syncResult.graduated.length > 0 ||
+            (syncResult.removed?.length ?? 0) > 0
+        ) {
+            await this.appendExtractSyncResult(syncResult);
+            await this.extractStore.save();
+            this.syncEvents.emit("extracts-updated");
+        }
+
+        const item =
+            this.extractStore
+                .getActiveByPath(file.path)
+                .find(
+                    (candidate) =>
+                        candidate.sourceMode === "manual-ir" &&
+                        candidate.sourceAnchor.start === sourceStart,
+                ) ?? null;
+        return item ? { uuid: item.uuid, memo: item.memo, priority: item.priority } : null;
+    }
+
+    public handleExtractTooltipNoteSaveError(error: unknown): void {
+        console.error("[Syro] Failed to save extract tooltip note", error);
+        new Notice(t("EXTRACT_TOOLTIP_NOTE_SAVE_FAILED"));
     }
 
     private summarizeExtractItemsForDebug(

@@ -190,6 +190,7 @@ export default normalizeSentenceCaseLocale({
     EXTRACT_SAVING: "Saving...",
     EXTRACT_SELECT_TEXT_REQUIRED: "Select text inside the extract first",
     EXTRACT_SAVE_FAILED: "Failed to save extract",
+    EXTRACT_TOOLTIP_NOTE_SAVE_FAILED: "Failed to save extract note. Please try again.",
     EXTRACT_CONTEXT_SAVE_FAILED: "Failed to save extract context",
     EXTRACT_EMPTY_BLOCKED: "Extract cannot be empty",
     EXTRACT_CONTEXT_NOT_READY: "Extract context is not ready",

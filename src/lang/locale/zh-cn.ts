@@ -71,6 +71,7 @@ export default {
     EXTRACT_SAVING: "正在保存...",
     EXTRACT_SELECT_TEXT_REQUIRED: "请先在摘录正文中选中文本",
     EXTRACT_SAVE_FAILED: "摘录保存失败",
+    EXTRACT_TOOLTIP_NOTE_SAVE_FAILED: "摘录备注保存失败，请稍后重试",
     EXTRACT_CONTEXT_SAVE_FAILED: "摘录上下文保存失败",
     EXTRACT_EMPTY_BLOCKED: "摘录不可为空",
     EXTRACT_CONTEXT_NOT_READY: "摘录上下文尚未加载",

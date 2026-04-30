@@ -1,4 +1,6 @@
-import { moment, Notice, TFile } from "obsidian";
+import { MarkdownView, moment, Notice, TFile } from "obsidian";
+import { EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import { Deck, DeckTreeFilter } from "src/Deck";
 import { ExtractStore } from "src/dataStore/extractStore";
 import { RPITEMTYPE } from "src/dataStore/repetitionItem";
@@ -788,6 +790,110 @@ describe("SRPlugin extract deck paths", () => {
         expect(plugin.appendSyroExtractUpsert).toHaveBeenCalledWith({ item: updated }, "review");
         expect(emit).toHaveBeenCalledWith("extracts-updated");
         expect(updateStatusBar).toHaveBeenCalled();
+    });
+
+    test("resolves a persisted tooltip note by syncing the editor text first", async () => {
+        const file = createTFile("摘录测试.md");
+        const parent = document.createElement("div");
+        document.body.appendChild(parent);
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({ doc: "before {{ir::target}} after" }),
+        });
+        const extractStore = new ExtractStore(DEFAULT_SETTINGS, { extractsPath: "extracts.json" });
+        extractStore.save = jest.fn(() => Promise.resolve());
+        const emit = jest.fn();
+        const appendExtractSyncResult = jest.fn(() => Promise.resolve());
+        const markdownView = Object.assign(new MarkdownView({} as never), {
+            file,
+            containerEl: parent,
+        });
+
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    enableExtracts: true,
+                    convertFoldersToDecks: true,
+                    trackedNoteToDecks: false,
+                },
+            },
+            app: {
+                workspace: {
+                    iterateAllLeaves: jest.fn((callback) => {
+                        callback({
+                            view: markdownView,
+                            containerEl: parent,
+                        });
+                    }),
+                },
+                vault: {
+                    getAbstractFileByPath: jest.fn(() => file),
+                },
+            },
+            extractStore,
+            noteExtractCache: new Map(),
+            appendExtractSyncResult,
+            syncEvents: { emit },
+            getReviewDeckPathForFile: jest.fn(() => "摘录测试"),
+            shouldLogRuntimeDebug: jest.fn(() => false),
+            logDetectedManualIrExtractsForDebug: jest.fn(),
+            logExtractSyncResultForDebug: jest.fn(),
+            getAutoExtractRuleForPath: jest.fn(() => null),
+        });
+
+        try {
+            const note = await SRPlugin.prototype.resolveExtractTooltipNote.call(
+                plugin,
+                view,
+                "before ".length,
+            );
+
+            expect(note).toMatchObject({
+                memo: "",
+                priority: 5,
+            });
+            expect(note?.uuid).toEqual(expect.any(String));
+            expect(appendExtractSyncResult).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    added: [expect.objectContaining({ uuid: note?.uuid })],
+                }),
+            );
+            expect(extractStore.save).toHaveBeenCalled();
+            expect(emit).toHaveBeenCalledWith("extracts-updated");
+        } finally {
+            view.destroy();
+            parent.remove();
+        }
+    });
+
+    test("updates extract tooltip memo through the existing extract upsert path", async () => {
+        const emit = jest.fn();
+        const extractStore = new ExtractStore(DEFAULT_SETTINGS, { extractsPath: "extracts.json" });
+        extractStore.save = jest.fn(() => Promise.resolve());
+        const [created] = extractStore.syncFileExtracts("摘录测试.md", "{{ir::target}}", "deck")
+            .added;
+        const appendSyroExtractUpsert = jest.fn(() => Promise.resolve());
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            extractStore,
+            appendSyroExtractUpsert,
+            syncEvents: { emit },
+        });
+
+        const updated = await SRPlugin.prototype.updateExtractMemo.call(
+            plugin,
+            created.uuid,
+            "新的摘录备注",
+        );
+
+        expect(updated?.memo).toBe("新的摘录备注");
+        expect(updated?.priority).toBe(5);
+        expect(extractStore.save).toHaveBeenCalled();
+        expect(appendSyroExtractUpsert).toHaveBeenCalledWith(
+            { item: expect.objectContaining({ uuid: created.uuid, memo: "新的摘录备注" }) },
+            "memo",
+        );
+        expect(emit).toHaveBeenCalledWith("extracts-updated");
     });
 
     test("undoes an extract review action by restoring the previous snapshot", async () => {
