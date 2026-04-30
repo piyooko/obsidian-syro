@@ -15,6 +15,7 @@ import {
     findIrExtractSourceStartsAtSelectionPoint,
     getIrExtractInfoVisibleStarts,
     getIrExtractInfoOffsetIndexes,
+    getIrExtractInfoState,
     getIrExtractLayerInset,
     getIrExtractLayerVerticalInset,
     getIrExtractHorizontalFrameForMetrics,
@@ -29,6 +30,7 @@ import {
     shouldHighlightIrExtractBlock,
     shouldCloseIrExtractPinnedTooltip,
     isIrExtractNoteTooltipVisible,
+    syncIrExtractInfoCursorAtClientPoint,
     type MeasuredExtractBlock,
     type RenderExtract,
 } from "src/editor/ir-extract-decoration";
@@ -226,6 +228,17 @@ describe("irExtractDecoration helpers", () => {
         expect([...visibleStarts]).toEqual([40, 20, 0]);
     });
 
+    test("keeps noted info actions visible and accented", () => {
+        expect(getIrExtractInfoState(42, new Set([42]), new Set())).toEqual({
+            visible: true,
+            hasNote: false,
+        });
+        expect(getIrExtractInfoState(42, new Set(), new Set([42]))).toEqual({
+            visible: true,
+            hasNote: true,
+        });
+    });
+
     test("shows the same ancestor info actions when the cursor is inside a nested child block", () => {
         const visibleStarts = getIrExtractInfoVisibleStarts(
             new Map([
@@ -406,6 +419,7 @@ describe("irExtractDecoration helpers", () => {
         const pinnedStarts: number[] = [];
         const hoverStarts: number[] = [];
         const hoverEnds: number[] = [];
+        const submit = jest.fn();
         const element = createIrExtractBlockElement(42, {
             onPinTooltip: (blockStart: number) => pinnedStarts.push(blockStart),
             onTooltipHoverStart: (blockStart: number) => hoverStarts.push(blockStart),
@@ -413,16 +427,19 @@ describe("irExtractDecoration helpers", () => {
         });
 
         const action = element.querySelector<HTMLElement>(".sr-ir-info-action");
-        const tooltip = createIrExtractNoteTooltipElement();
+        const tooltip = createIrExtractNoteTooltipElement({ onSubmit: submit });
         const textarea = tooltip.querySelector<HTMLTextAreaElement>("textarea");
 
         expect(action).toBeTruthy();
+        expect(action?.classList.contains("sr-ir-info-action")).toBe(true);
         expect(tooltip).toBeTruthy();
         expect(tooltip?.classList.contains("sr-note-path-tooltip")).toBe(true);
         expect(tooltip?.classList.contains("is-below")).toBe(true);
         expect(textarea?.classList.contains("sr-ir-note-tooltip-input")).toBe(true);
         expect(action?.querySelector(".sr-ir-note-tooltip")).toBeNull();
         expect(textarea?.placeholder).toBe("输入备注...");
+        expect(textarea?.hasAttribute("aria-label")).toBe(false);
+        expect(textarea?.getAttribute("title")).toBe("");
 
         action?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
         expect(hoverStarts).toEqual([42]);
@@ -441,6 +458,25 @@ describe("irExtractDecoration helpers", () => {
         textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
         expect(textarea.value).toBe("纯前端备注");
         expect(textarea.style.getPropertyValue("--sr-ir-note-textarea-height")).toBe("42px");
+
+        const enterEvent = new KeyboardEvent("keydown", {
+            key: "Enter",
+            bubbles: true,
+            cancelable: true,
+        });
+        textarea.dispatchEvent(enterEvent);
+        expect(enterEvent.defaultPrevented).toBe(true);
+        expect(submit).toHaveBeenCalledTimes(1);
+
+        const shiftEnterEvent = new KeyboardEvent("keydown", {
+            key: "Enter",
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true,
+        });
+        textarea.dispatchEvent(shiftEnterEvent);
+        expect(shiftEnterEvent.defaultPrevented).toBe(false);
+        expect(submit).toHaveBeenCalledTimes(1);
     });
 
     test("shows the note tooltip only from icon hover or pinned click state", () => {
@@ -571,6 +607,89 @@ describe("irExtractDecoration helpers", () => {
         expect(findIrExtractInfoActionStartAtClientPoint(new Map([[42, element]]), 5, 25)).toBe(
             null,
         );
+    });
+
+    test("keeps computed info action positions while hiding to avoid a last-frame jump", () => {
+        const source = "{{ir::这{{ir::是}} 一句话}}";
+        const matches = parseIrExtracts(source);
+        const blocks = [
+            {
+                start: matches[1].start,
+                left: 14,
+                top: 0,
+                width: 232,
+                height: 20,
+                depth: 2,
+                maxDepth: 2,
+            },
+            {
+                start: matches[0].start,
+                left: 2,
+                top: 0,
+                width: 256,
+                height: 20,
+                depth: 1,
+                maxDepth: 2,
+            },
+        ];
+        const offsets = getIrExtractInfoOffsetIndexes(
+            source,
+            new Map(matches.map((match) => [match.start, match])),
+            new Map(blocks.map((block) => [block.start, block])),
+        );
+
+        expect(offsets.get(matches[1].start)?.rightOffset).toBe(0);
+        expect(offsets.get(matches[0].start)?.rightOffset).toBe(36);
+    });
+
+    test("forces the pointer cursor across the editor while the pointer is over a visible info action", () => {
+        const scrollDOM = document.createElement("div");
+        const element = createIrExtractBlockElement(42, {
+            onPinTooltip: () => undefined,
+            onTooltipHoverStart: () => undefined,
+            onTooltipHoverEnd: () => undefined,
+        });
+        const action = element.querySelector<HTMLElement>(".sr-ir-info-action");
+        if (!action) {
+            throw new Error("Expected info action");
+        }
+        action.classList.add("is-visible");
+        action.getBoundingClientRect = jest.fn(
+            () =>
+                ({
+                    left: 10,
+                    top: 20,
+                    right: 30,
+                    bottom: 40,
+                    width: 20,
+                    height: 20,
+                    x: 10,
+                    y: 20,
+                    toJSON: () => undefined,
+                }) as DOMRect,
+        );
+
+        expect(
+            syncIrExtractInfoCursorAtClientPoint(
+                scrollDOM,
+                new Map([[42, element]]),
+                15,
+                25,
+            ),
+        ).toBe(true);
+        expect(scrollDOM.style.cursor).toBe("pointer");
+        expect(scrollDOM.classList.contains("sr-ir-info-cursor-pointer")).toBe(true);
+
+        expect(
+            syncIrExtractInfoCursorAtClientPoint(
+                scrollDOM,
+                new Map([[42, element]]),
+                5,
+                25,
+            ),
+        ).toBe(false);
+        expect(scrollDOM.style.cursor).toBe("");
+        expect(scrollDOM.classList.contains("sr-ir-info-cursor-pointer")).toBe(false);
     });
 
     test("stacks info actions left when a parent start token is on the previous start-only line", () => {

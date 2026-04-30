@@ -81,6 +81,10 @@ export interface IrExtractInfoTooltipHandlers {
     onTooltipHoverEnd: (blockStart: number) => void;
 }
 
+export interface IrExtractNoteTooltipOptions {
+    onSubmit?: () => void;
+}
+
 export interface IrExtractVerticalInsetBlock {
     rawTop: number;
     rawBottom: number;
@@ -1055,10 +1059,8 @@ export function createIrExtractBlockElement(
 
     const action = document.createElement("div");
     action.className = "sr-ir-info-action";
-    action.dataset.tooltip = "添加备注";
     action.setAttribute("role", "button");
     action.setAttribute("tabindex", "0");
-    action.setAttribute("aria-label", "添加摘录备注");
     action.appendChild(createInfoIconSvg());
 
     const pinTooltip = (event: Event) => {
@@ -1092,7 +1094,9 @@ export function createIrExtractBlockElement(
     return element;
 }
 
-export function createIrExtractNoteTooltipElement(): HTMLElement {
+export function createIrExtractNoteTooltipElement(
+    options: IrExtractNoteTooltipOptions = {},
+): HTMLElement {
     const tooltip = document.createElement("div");
     tooltip.className = "sr-note-path-tooltip sr-ir-note-tooltip is-below";
     tooltip.setAttribute("role", "tooltip");
@@ -1101,7 +1105,7 @@ export function createIrExtractNoteTooltipElement(): HTMLElement {
     textarea.className = "sr-ir-note-tooltip-input";
     textarea.rows = 1;
     textarea.placeholder = "输入备注...";
-    textarea.setAttribute("aria-label", "摘录备注");
+    textarea.title = "";
 
     const stopOverlayEvent = (event: Event) => {
         event.stopPropagation();
@@ -1113,6 +1117,14 @@ export function createIrExtractNoteTooltipElement(): HTMLElement {
     tooltip.addEventListener("keydown", stopOverlayEvent);
 
     textarea.addEventListener("input", () => resizeIrExtractTextarea(textarea));
+    textarea.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.shiftKey) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        options.onSubmit?.();
+    });
 
     tooltip.appendChild(textarea);
     return tooltip;
@@ -1223,6 +1235,18 @@ export function isIrExtractNoteTooltipVisible(
     return blockStart === hoveredTooltipStart || blockStart === pinnedTooltipStart;
 }
 
+export function getIrExtractInfoState(
+    blockStart: number,
+    visibleStarts: ReadonlySet<number>,
+    notedStarts: ReadonlySet<number>,
+): { visible: boolean; hasNote: boolean } {
+    const hasNote = notedStarts.has(blockStart);
+    return {
+        visible: hasNote || visibleStarts.has(blockStart),
+        hasNote,
+    };
+}
+
 export function findIrExtractInfoActionStartAtClientPoint(
     blockDomCache: ReadonlyMap<number, HTMLElement>,
     clientX: number,
@@ -1244,6 +1268,19 @@ export function findIrExtractInfoActionStartAtClientPoint(
         }
     }
     return null;
+}
+
+export function syncIrExtractInfoCursorAtClientPoint(
+    scrollDOM: HTMLElement,
+    blockDomCache: ReadonlyMap<number, HTMLElement>,
+    clientX: number,
+    clientY: number,
+): boolean {
+    const isOverInfo =
+        findIrExtractInfoActionStartAtClientPoint(blockDomCache, clientX, clientY) !== null;
+    scrollDOM.classList.toggle("sr-ir-info-cursor-pointer", isOverInfo);
+    scrollDOM.setCssProps({ cursor: isOverInfo ? "pointer" : "" });
+    return isOverInfo;
 }
 
 export interface IrExtractNoteTooltipPlacementMetrics {
@@ -1521,6 +1558,8 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             private hoveredTooltipStart: number | null = null;
             private cursorBlockStart: number | null = null;
             private visibleTooltipAction: HTMLElement | null = null;
+            private tooltipDraftStart: number | null = null;
+            private readonly noteDraftsByStart = new Map<number, string>();
             private readonly handleScrollMouseMove = (event: MouseEvent): void => {
                 const point = getMousePointInScrollCoordinates(this.scrollDOM, event);
                 const hoveredStart = findHoveredIrExtractBlockStart(
@@ -1529,6 +1568,12 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     point.y,
                 );
                 const hoveredInfoStart = findIrExtractInfoActionStartAtClientPoint(
+                    this.blockDomCache,
+                    event.clientX,
+                    event.clientY,
+                );
+                syncIrExtractInfoCursorAtClientPoint(
+                    this.scrollDOM,
                     this.blockDomCache,
                     event.clientX,
                     event.clientY,
@@ -1551,6 +1596,8 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 }
                 this.hoveredBlockStart = null;
                 this.hoveredTooltipStart = null;
+                this.scrollDOM.classList.remove("sr-ir-info-cursor-pointer");
+                this.scrollDOM.setCssProps({ cursor: "" });
                 this.updateInteractiveBlockStates();
             };
             private readonly handleScrollPointerDown = (event: PointerEvent): void => {
@@ -1579,6 +1626,8 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.closePinnedTooltip();
             };
             private readonly handleTooltipInput = (): void => {
+                this.saveVisibleTooltipDraft();
+                this.updateInteractiveBlockStates();
                 this.repositionVisibleNoteTooltip();
             };
             private readonly handleViewportTooltipReposition = (): void => {
@@ -1599,7 +1648,9 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 );
                 this.overlay = document.createElement("div");
                 this.overlay.className = "sr-ir-extract-overlay";
-                this.noteTooltip = createIrExtractNoteTooltipElement();
+                this.noteTooltip = createIrExtractNoteTooltipElement({
+                    onSubmit: () => this.closePinnedTooltip(),
+                });
                 document.body.appendChild(this.noteTooltip);
                 this.scrollDOM = view.scrollDOM;
                 view.scrollDOM.appendChild(this.overlay);
@@ -1753,6 +1804,8 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 }
 
                 const focusTextarea = () => {
+                    this.tooltipDraftStart = blockStart;
+                    textarea.value = this.noteDraftsByStart.get(blockStart) ?? "";
                     resizeIrExtractTextarea(textarea);
                     textarea.focus();
                 };
@@ -1781,7 +1834,9 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 if (this.pinnedTooltipStart === null) {
                     return;
                 }
+                this.saveVisibleTooltipDraft();
                 this.pinnedTooltipStart = null;
+                this.tooltipDraftStart = null;
                 this.updateInteractiveBlockStates();
             }
 
@@ -1791,6 +1846,11 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     this.hoveredBlockStart,
                     this.cursorBlockStart,
                     this.pinnedTooltipStart,
+                );
+                const notedStarts = new Set(
+                    [...this.noteDraftsByStart]
+                        .filter(([, value]) => value.trim().length > 0)
+                        .map(([start]) => start),
                 );
                 const infoOffsetIndexes = getIrExtractInfoOffsetIndexes(
                     this.sourceText,
@@ -1811,11 +1871,17 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         this.hoveredTooltipStart,
                         this.pinnedTooltipStart,
                     );
-                    const infoVisible = infoVisibleStarts.has(blockStart);
+                    const infoState = getIrExtractInfoState(
+                        blockStart,
+                        infoVisibleStarts,
+                        notedStarts,
+                    );
+                    const infoVisible = infoState.visible;
                     element.classList.toggle("is-editing", isEditing);
                     element.classList.toggle("is-hovered", isHovered);
                     const infoAction = element.querySelector<HTMLElement>(".sr-ir-info-action");
                     infoAction?.classList.toggle("is-editing", isEditing);
+                    infoAction?.classList.toggle("has-note", infoState.hasNote);
                     infoAction?.classList.toggle("is-visible", infoVisible);
                     infoAction?.setAttribute(
                         "aria-expanded",
@@ -1825,24 +1891,14 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         visibleTooltipAction = infoAction;
                         visibleTooltip = true;
                     }
-                    if (infoVisible) {
-                        infoAction?.style.setProperty(
-                            "--sr-ir-info-offset",
-                            `${infoOffsetIndexes.get(blockStart)?.rightOffset ?? 0}px`,
-                        );
-                        infoAction?.style.setProperty(
-                            "right",
-                            `${INFO_ICON_BASE_RIGHT + (infoOffsetIndexes.get(blockStart)?.rightOffset ?? 0)}px`,
-                        );
-                        infoAction?.style.setProperty(
-                            "top",
-                            `${INFO_ICON_TOP + (infoOffsetIndexes.get(blockStart)?.topOffset ?? 0)}px`,
-                        );
-                    } else {
-                        infoAction?.style.removeProperty("--sr-ir-info-offset");
-                        infoAction?.style.removeProperty("right");
-                        infoAction?.style.removeProperty("top");
-                    }
+                    const rightOffset = infoOffsetIndexes.get(blockStart)?.rightOffset ?? 0;
+                    const topOffset = infoOffsetIndexes.get(blockStart)?.topOffset ?? 0;
+                    infoAction?.style.setProperty("--sr-ir-info-offset", `${rightOffset}px`);
+                    infoAction?.style.setProperty(
+                        "right",
+                        `${INFO_ICON_BASE_RIGHT + rightOffset}px`,
+                    );
+                    infoAction?.style.setProperty("top", `${INFO_ICON_TOP + topOffset}px`);
                 }
                 this.updateNoteTooltipPosition(visibleTooltipAction, visibleTooltip);
             }
@@ -1890,6 +1946,14 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     return;
                 }
                 this.updateNoteTooltipPosition(this.visibleTooltipAction, true);
+            }
+
+            private saveVisibleTooltipDraft(): void {
+                const textarea = this.noteTooltip.querySelector<HTMLTextAreaElement>("textarea");
+                if (!textarea || this.tooltipDraftStart === null) {
+                    return;
+                }
+                this.noteDraftsByStart.set(this.tooltipDraftStart, textarea.value);
             }
 
             private scheduleMeasure(view: EditorView): void {
@@ -1991,6 +2055,9 @@ const irExtractDecorationTheme = EditorView.baseTheme({
         borderColor: "rgba(var(--mono-rgb-100), 0.2)",
         backgroundColor: "rgba(var(--mono-rgb-100), 0.012)",
     },
+    ".cm-scroller.sr-ir-info-cursor-pointer, .cm-scroller.sr-ir-info-cursor-pointer *": {
+        cursor: "pointer !important",
+    },
     ".sr-ir-info-action": {
         position: "absolute",
         top: "-10px",
@@ -2020,6 +2087,10 @@ const irExtractDecorationTheme = EditorView.baseTheme({
     },
     ".sr-ir-info-action:hover": {
         color: "var(--text-normal)",
+    },
+    ".sr-ir-info-action.has-note": {
+        color: "var(--interactive-accent)",
+        opacity: "1",
     },
     ".sr-ir-info-action.is-editing": {
         color: "var(--interactive-accent)",
