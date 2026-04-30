@@ -12,6 +12,8 @@ import { parseIrExtracts, type IrExtractMatch } from "src/util/irExtractParser";
 const OUTER_INSET = 18;
 const INNER_INSET = 6;
 const MAX_VERTICAL_INSET = 8;
+const EXTRACT_TOP_LAYOUT_GAP = 24;
+const EXTRACT_BOTTOM_LAYOUT_GAP = 8;
 
 interface DecorationItem {
     from: number;
@@ -51,9 +53,15 @@ interface PendingMeasuredExtractBlock {
     rawTop: number;
     rawBottom: number;
     width: number;
-    verticalInset: number;
+    topInset: number;
+    bottomInset: number;
     depth: number;
     maxDepth: number;
+}
+
+interface IrExtractLayoutLineDecoration {
+    topGap: number;
+    bottomGap: number;
 }
 
 interface IrExtractMeasureReadResult {
@@ -62,6 +70,8 @@ interface IrExtractMeasureReadResult {
     selectionFrom: number;
     selectionTo: number;
 }
+
+type OpenIrExtractNoteHandler = (blockStart: number) => void;
 
 export interface IrExtractVerticalInsetBlock {
     rawTop: number;
@@ -641,6 +651,54 @@ function areNumberSetsEqual(left: Set<number>, right: Set<number>): boolean {
     return true;
 }
 
+function getIrExtractDepthProgress(depth: number, maxDepth: number): number {
+    if (maxDepth <= 1) return 0;
+    return Math.max(0, Math.min(1, (depth - 1) / (maxDepth - 1)));
+}
+
+function upsertIrExtractLayoutLineDecoration(
+    lineDecorations: Map<number, IrExtractLayoutLineDecoration>,
+    lineFrom: number,
+    patch: Partial<IrExtractLayoutLineDecoration>,
+): void {
+    const current = lineDecorations.get(lineFrom) ?? {
+        topGap: 0,
+        bottomGap: 0,
+    };
+    lineDecorations.set(lineFrom, {
+        topGap: Math.max(current.topGap, patch.topGap ?? 0),
+        bottomGap: Math.max(current.bottomGap, patch.bottomGap ?? 0),
+    });
+}
+
+function createIrExtractLayoutLineDecoration(
+    lineFrom: number,
+    layout: IrExtractLayoutLineDecoration,
+): DecorationItem {
+    const classes = ["sr-ir-extract-layout-line"];
+    if (layout.topGap > 0) {
+        classes.push("sr-ir-extract-gap-top");
+    }
+    if (layout.bottomGap > 0) {
+        classes.push("sr-ir-extract-gap-bottom");
+    }
+
+    return {
+        from: lineFrom,
+        to: lineFrom,
+        decoration: Decoration.line({
+            attributes: {
+                class: classes.join(" "),
+                style: [
+                    `margin-top: ${layout.topGap}px`,
+                    `margin-bottom: ${layout.bottomGap}px`,
+                ].join("; "),
+            },
+        }),
+        allowEmpty: true,
+    };
+}
+
 function buildIrExtractDecorations(
     view: EditorView,
     pointSourceStarts: Set<number> = new Set(),
@@ -688,6 +746,28 @@ function buildIrExtractDecorations(
         : null;
     const renderExtracts = createRenderExtracts(matches, sourceStarts, excludedStarts);
     const decorations: DecorationItem[] = [];
+    const layoutLineDecorations = new Map<number, IrExtractLayoutLineDecoration>();
+
+    for (const renderExtract of renderExtracts) {
+        if (renderExtract.showSource) {
+            continue;
+        }
+
+        const range = getIrExtractRenderRange(renderExtract);
+        const startLine = view.state.doc.lineAt(range.from);
+        const endLine = view.state.doc.lineAt(Math.max(range.from, range.to - 1));
+
+        upsertIrExtractLayoutLineDecoration(layoutLineDecorations, startLine.from, {
+            topGap: EXTRACT_TOP_LAYOUT_GAP,
+        });
+        upsertIrExtractLayoutLineDecoration(layoutLineDecorations, endLine.from, {
+            bottomGap: EXTRACT_BOTTOM_LAYOUT_GAP,
+        });
+    }
+
+    for (const [lineFrom, layout] of layoutLineDecorations) {
+        decorations.push(createIrExtractLayoutLineDecoration(lineFrom, layout));
+    }
 
     for (const match of visibleMatches) {
         if (sourceStarts.has(match.start)) {
@@ -933,6 +1013,7 @@ function measureExtractBlocks(
 ): MeasuredExtractBlock[] {
     const text = view.state.doc.toString();
     const scrollRect = view.scrollDOM.getBoundingClientRect();
+    const contentRect = view.contentDOM.getBoundingClientRect();
     const scrollLeft = view.scrollDOM.scrollLeft;
     const scrollTop = view.scrollDOM.scrollTop;
     const lineHeight = getEditorLineHeight(view);
@@ -945,6 +1026,7 @@ function measureExtractBlocks(
 
         const minLeft = Math.min(...rects.map((rect) => rect.left));
         const maxRight = Math.max(...rects.map((rect) => rect.right));
+        const fixedRight = contentRect.width > 0 ? contentRect.right : maxRight;
         const minTop = Math.min(...rects.map((rect) => rect.top));
         const maxBottom = Math.max(...rects.map((rect) => rect.bottom));
         const inset = getIrExtractLayerInset(renderExtract.depth, renderExtract.maxDepth);
@@ -957,66 +1039,193 @@ function measureExtractBlocks(
             renderExtract.depth,
             renderExtract.maxDepth,
         );
-
         pendingBlocks.push({
             start: renderExtract.match.start,
             parentStart: renderExtract.match.parentStart,
             left: minLeft - scrollRect.left + scrollLeft - inset,
             rawTop: minTop - scrollRect.top + scrollTop,
             rawBottom: maxBottom - scrollRect.top + scrollTop,
-            width: maxRight - minLeft + inset * 2,
-            verticalInset,
+            width: Math.max(1, fixedRight - minLeft + inset),
+            topInset: verticalInset,
+            bottomInset: verticalInset,
             depth: renderExtract.depth,
             maxDepth: renderExtract.maxDepth,
         });
     }
 
-    const verticalInsets = clampIrExtractVerticalInsetsForAdjacentBlocks(
-        pendingBlocks.map((block) => ({
-            rawTop: block.rawTop,
-            rawBottom: block.rawBottom,
-            depth: block.depth,
-            verticalInset: block.verticalInset,
-        })),
-    );
-
-    const measuredBlocks = pendingBlocks.map((block, index) => {
-        const verticalInset = verticalInsets[index] ?? 0;
-        return {
-            start: block.start,
-            parentStart: block.parentStart,
-            left: block.left,
-            top: block.rawTop - verticalInset,
-            width: block.width,
-            height: block.rawBottom - block.rawTop + verticalInset * 2,
-            depth: block.depth,
-            maxDepth: block.maxDepth,
-        };
-    });
+    const measuredBlocks = pendingBlocks.map((block) => ({
+        start: block.start,
+        parentStart: block.parentStart,
+        left: block.left,
+        top: block.rawTop - block.topInset,
+        width: block.width,
+        height: block.rawBottom - block.rawTop + block.topInset + block.bottomInset,
+        depth: block.depth,
+        maxDepth: block.maxDepth,
+    }));
 
     return containNestedIrExtractBlocks(alignNestedIrExtractBlocksHorizontally(measuredBlocks));
 }
 
 function getDepthProgress(depth: number, maxDepth: number): number {
-    if (maxDepth <= 1) return 0;
-    return Math.max(0, Math.min(1, (depth - 1) / (maxDepth - 1)));
+    return getIrExtractDepthProgress(depth, maxDepth);
 }
 
-function renderOverlayBlocks(overlay: HTMLElement, blocks: MeasuredExtractBlock[]): void {
-    const fragment = document.createDocumentFragment();
+function resizeIrExtractTextarea(textarea: HTMLTextAreaElement): void {
+    textarea.setCssProps({ "--sr-ir-note-textarea-height": "auto" });
+    textarea.setCssProps({ "--sr-ir-note-textarea-height": `${textarea.scrollHeight}px` });
+}
+
+function createInfoIconSvg(): SVGSVGElement {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("cx", "12");
+    circle.setAttribute("cy", "12");
+    circle.setAttribute("r", "10");
+
+    const verticalPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    verticalPath.setAttribute("d", "M12 16v-4");
+
+    const dotPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    dotPath.setAttribute("d", "M12 8h.01");
+
+    svg.append(circle, verticalPath, dotPath);
+    return svg;
+}
+
+function createIrExtractBlockElement(
+    blockStart: number,
+    onOpenNote: OpenIrExtractNoteHandler,
+): HTMLElement {
+    const element = document.createElement("div");
+    element.className = "sr-ir-extract-block";
+    element.dataset.srIrExtractStart = String(blockStart);
+
+    const action = document.createElement("div");
+    action.className = "sr-ir-info-action";
+    action.dataset.tooltip = "添加备注";
+    action.setAttribute("role", "button");
+    action.setAttribute("tabindex", "0");
+    action.setAttribute("aria-label", "添加摘录备注");
+    action.appendChild(createInfoIconSvg());
+
+    const tooltip = document.createElement("div");
+    tooltip.className = "sr-ir-editable-tooltip";
+
+    const textarea = document.createElement("textarea");
+    textarea.rows = 1;
+    textarea.placeholder = "输入备注...";
+    textarea.setAttribute("aria-label", "摘录备注");
+
+    const openNote = (event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onOpenNote(blockStart);
+    };
+    const stopOverlayEvent = (event: Event) => {
+        event.stopPropagation();
+    };
+
+    action.addEventListener("pointerdown", openNote);
+    action.addEventListener("mousedown", openNote);
+    action.addEventListener("click", openNote);
+    action.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+            return;
+        }
+        openNote(event);
+    });
+
+    tooltip.addEventListener("pointerdown", stopOverlayEvent);
+    tooltip.addEventListener("mousedown", stopOverlayEvent);
+    tooltip.addEventListener("click", stopOverlayEvent);
+    tooltip.addEventListener("keydown", stopOverlayEvent);
+
+    textarea.addEventListener("input", () => resizeIrExtractTextarea(textarea));
+
+    tooltip.appendChild(textarea);
+    element.append(action, tooltip);
+    return element;
+}
+
+function renderOverlayBlocks(
+    overlay: HTMLElement,
+    blocks: MeasuredExtractBlock[],
+    blockDomCache: Map<number, HTMLElement>,
+    onOpenNote: OpenIrExtractNoteHandler,
+): void {
+    const nextKeys = new Set<number>();
+
     for (const block of blocks) {
         const progress = getDepthProgress(block.depth, block.maxDepth);
-        const element = document.createElement("div");
-        element.className = "sr-ir-extract-block";
+        nextKeys.add(block.start);
+
+        let element = blockDomCache.get(block.start);
+        if (!element) {
+            element = createIrExtractBlockElement(block.start, onOpenNote);
+            blockDomCache.set(block.start, element);
+            overlay.appendChild(element);
+        } else if (element.parentElement !== overlay) {
+            overlay.appendChild(element);
+        }
+
         element.style.left = `${block.left}px`;
         element.style.top = `${block.top}px`;
         element.style.width = `${block.width}px`;
         element.style.height = `${block.height}px`;
         element.style.setProperty("--sr-ir-border-alpha", String(0.07 + progress * 0.08));
         element.style.setProperty("--sr-ir-bg-alpha", String(0.006 + progress * 0.014));
-        fragment.appendChild(element);
     }
-    overlay.replaceChildren(fragment);
+
+    for (const [key, element] of blockDomCache) {
+        if (nextKeys.has(key)) {
+            continue;
+        }
+        element.remove();
+        blockDomCache.delete(key);
+    }
+}
+
+function getMousePointInScrollCoordinates(
+    scrollDOM: HTMLElement,
+    event: MouseEvent,
+): { x: number; y: number } {
+    const scrollRect = scrollDOM.getBoundingClientRect();
+    return {
+        x: event.clientX - scrollRect.left + scrollDOM.scrollLeft,
+        y: event.clientY - scrollRect.top + scrollDOM.scrollTop,
+    };
+}
+
+function findHoveredIrExtractBlockStart(
+    blocks: Map<number, MeasuredExtractBlock>,
+    x: number,
+    y: number,
+): number | null {
+    const sortedBlocks = [...blocks.values()].sort(
+        (left, right) => right.depth - left.depth || right.start - left.start,
+    );
+
+    for (const block of sortedBlocks) {
+        if (
+            x >= block.left &&
+            x <= block.left + block.width &&
+            y >= block.top &&
+            y <= block.top + block.height
+        ) {
+            return block.start;
+        }
+    }
+
+    return null;
 }
 
 function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {}): Extension {
@@ -1027,6 +1236,40 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             private pointSourceStarts = new Set<number>();
             private sourceRevealEnabled: boolean;
             private readonly overlay: HTMLElement;
+            private readonly scrollDOM: HTMLElement;
+            private readonly blockDomCache = new Map<number, HTMLElement>();
+            private readonly blockMeasurements = new Map<number, MeasuredExtractBlock>();
+            private openBlockStart: number | null = null;
+            private hoveredBlockStart: number | null = null;
+            private readonly handleScrollMouseMove = (event: MouseEvent): void => {
+                const point = getMousePointInScrollCoordinates(this.scrollDOM, event);
+                const hoveredStart = findHoveredIrExtractBlockStart(
+                    this.blockMeasurements,
+                    point.x,
+                    point.y,
+                );
+
+                if (this.hoveredBlockStart === hoveredStart) {
+                    return;
+                }
+
+                this.hoveredBlockStart = hoveredStart;
+                this.updateInteractiveBlockStates();
+            };
+            private readonly handleScrollMouseLeave = (): void => {
+                if (this.hoveredBlockStart === null) {
+                    return;
+                }
+                this.hoveredBlockStart = null;
+                this.updateInteractiveBlockStates();
+            };
+            private readonly handleDocumentMouseDown = (event: MouseEvent): void => {
+                const target = event.target;
+                if (!(target instanceof Node) || this.overlay.contains(target)) {
+                    return;
+                }
+                this.closeOpenNote();
+            };
 
             constructor(view: EditorView) {
                 this.sourceRevealEnabled = canRevealIrExtractSource(view, options);
@@ -1035,7 +1278,11 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.renderExtracts = state.renderExtracts;
                 this.overlay = document.createElement("div");
                 this.overlay.className = "sr-ir-extract-overlay";
+                this.scrollDOM = view.scrollDOM;
                 view.scrollDOM.appendChild(this.overlay);
+                this.scrollDOM.addEventListener("mousemove", this.handleScrollMouseMove);
+                this.scrollDOM.addEventListener("mouseleave", this.handleScrollMouseLeave);
+                document.addEventListener("mousedown", this.handleDocumentMouseDown, true);
                 this.scheduleMeasure(view);
             }
 
@@ -1093,12 +1340,92 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             }
 
             destroy(): void {
+                this.scrollDOM.removeEventListener("mousemove", this.handleScrollMouseMove);
+                this.scrollDOM.removeEventListener("mouseleave", this.handleScrollMouseLeave);
+                document.removeEventListener("mousedown", this.handleDocumentMouseDown, true);
+                this.clearOverlayBlocks();
                 this.overlay.remove();
+            }
+
+            private renderBlocks(blocks: MeasuredExtractBlock[]): void {
+                renderOverlayBlocks(this.overlay, blocks, this.blockDomCache, (blockStart) =>
+                    this.openNote(blockStart),
+                );
+
+                this.blockMeasurements.clear();
+                for (const block of blocks) {
+                    this.blockMeasurements.set(block.start, block);
+                }
+
+                if (this.openBlockStart !== null && !this.blockMeasurements.has(this.openBlockStart)) {
+                    this.openBlockStart = null;
+                }
+                if (
+                    this.hoveredBlockStart !== null &&
+                    !this.blockMeasurements.has(this.hoveredBlockStart)
+                ) {
+                    this.hoveredBlockStart = null;
+                }
+
+                this.updateInteractiveBlockStates();
+            }
+
+            private clearOverlayBlocks(): void {
+                this.openBlockStart = null;
+                this.hoveredBlockStart = null;
+                this.blockMeasurements.clear();
+                this.blockDomCache.clear();
+                this.overlay.replaceChildren();
+            }
+
+            private openNote(blockStart: number): void {
+                this.openBlockStart = blockStart;
+                this.hoveredBlockStart = blockStart;
+                this.updateInteractiveBlockStates();
+
+                const element = this.blockDomCache.get(blockStart);
+                const textarea = element?.querySelector<HTMLTextAreaElement>(
+                    ".sr-ir-editable-tooltip textarea",
+                );
+                if (!textarea) {
+                    return;
+                }
+
+                const focusTextarea = () => {
+                    resizeIrExtractTextarea(textarea);
+                    textarea.focus();
+                };
+
+                if (typeof window.requestAnimationFrame === "function") {
+                    window.requestAnimationFrame(focusTextarea);
+                } else {
+                    focusTextarea();
+                }
+            }
+
+            private closeOpenNote(): void {
+                if (this.openBlockStart === null) {
+                    return;
+                }
+                this.openBlockStart = null;
+                this.updateInteractiveBlockStates();
+            }
+
+            private updateInteractiveBlockStates(): void {
+                for (const [blockStart, element] of this.blockDomCache) {
+                    const isEditing = blockStart === this.openBlockStart;
+                    const isHovered = isEditing || blockStart === this.hoveredBlockStart;
+                    element.classList.toggle("is-editing", isEditing);
+                    element.classList.toggle("is-hovered", isHovered);
+                    element
+                        .querySelector(".sr-ir-info-action")
+                        ?.classList.toggle("is-editing", isEditing);
+                }
             }
 
             private scheduleMeasure(view: EditorView): void {
                 if (!isLivePreview(view, options) || this.renderExtracts.length === 0) {
-                    this.overlay.replaceChildren();
+                    this.clearOverlayBlocks();
                     return;
                 }
 
@@ -1128,7 +1455,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     write: (result) => {
                         this.overlay.style.width = `${view.scrollDOM.scrollWidth}px`;
                         this.overlay.style.height = `${view.scrollDOM.scrollHeight}px`;
-                        renderOverlayBlocks(this.overlay, result.overlayBlocks);
+                        this.renderBlocks(result.overlayBlocks);
 
                         const nextPointSourceStarts = new Set(result.pointSourceStarts);
                         if (!areNumberSetsEqual(this.pointSourceStarts, nextPointSourceStarts)) {
@@ -1171,7 +1498,10 @@ const irExtractDecorationTheme = EditorView.baseTheme({
         left: "0",
         pointerEvents: "none",
         overflow: "visible",
-        zIndex: "1",
+        zIndex: "3",
+    },
+    ".sr-ir-extract-layout-line": {
+        position: "relative",
     },
     ".sr-ir-extract-block": {
         position: "absolute",
@@ -1179,6 +1509,126 @@ const irExtractDecorationTheme = EditorView.baseTheme({
         border: "1px solid rgba(var(--mono-rgb-100), var(--sr-ir-border-alpha, 0.1))",
         borderRadius: "4px",
         backgroundColor: "rgba(var(--mono-rgb-100), var(--sr-ir-bg-alpha, 0.008))",
+        pointerEvents: "none",
+        transition: "border-color 0.15s ease, background-color 0.15s ease",
+    },
+    ".sr-ir-extract-block.is-hovered, .sr-ir-extract-block.is-editing": {
+        borderColor: "rgba(var(--mono-rgb-100), 0.2)",
+        backgroundColor: "rgba(var(--mono-rgb-100), 0.012)",
+    },
+    ".sr-ir-info-action": {
+        position: "absolute",
+        top: "-10px",
+        right: "24px",
+        width: "20px",
+        height: "20px",
+        padding: "0",
+        border: "none",
+        borderRadius: "50%",
+        backgroundColor: "var(--background-primary)",
+        color: "var(--text-faint)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        opacity: "0",
+        pointerEvents: "auto",
+        zIndex: "10",
+        transition: "opacity 0.15s ease, color 0.15s ease",
+    },
+    ".sr-ir-info-action svg": {
+        width: "14px",
+        height: "14px",
+    },
+    ".sr-ir-extract-block.is-hovered .sr-ir-info-action, .sr-ir-info-action.is-editing": {
+        opacity: "1",
+    },
+    ".sr-ir-info-action:hover": {
+        color: "var(--text-normal)",
+    },
+    ".sr-ir-info-action.is-editing": {
+        color: "var(--interactive-accent)",
+    },
+    ".sr-ir-info-action[data-tooltip]::after": {
+        content: "attr(data-tooltip)",
+        position: "absolute",
+        bottom: "100%",
+        right: "50%",
+        transform: "translateX(50%) translateY(-6px)",
+        background: "rgba(0, 0, 0, 0.8)",
+        color: "#ccc",
+        padding: "4px 8px",
+        borderRadius: "4px",
+        fontSize: "11px",
+        lineHeight: "1.2",
+        whiteSpace: "nowrap",
+        pointerEvents: "none",
+        opacity: "0",
+        transition: "opacity 0.1s ease",
+    },
+    ".sr-ir-info-action:hover::after": {
+        opacity: "1",
+        transitionDelay: "0.1s",
+    },
+    ".sr-ir-info-action.is-editing::after": {
+        display: "none",
+    },
+    ".sr-ir-editable-tooltip": {
+        position: "absolute",
+        top: "24px",
+        right: "14px",
+        width: "240px",
+        boxSizing: "border-box",
+        backgroundColor: "var(--background-secondary)",
+        border: "1px solid var(--background-modifier-border)",
+        borderRadius: "6px",
+        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.25)",
+        padding: "8px 10px",
+        cursor: "default",
+        opacity: "0",
+        visibility: "hidden",
+        transform: "translateY(-4px) scale(0.96)",
+        transformOrigin: "top right",
+        pointerEvents: "auto",
+        zIndex: "50",
+        transition: "opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease",
+    },
+    ".sr-ir-extract-block.is-editing .sr-ir-editable-tooltip": {
+        opacity: "1",
+        visibility: "visible",
+        transform: "translateY(0) scale(1)",
+    },
+    ".sr-ir-editable-tooltip::before": {
+        content: "''",
+        position: "absolute",
+        top: "-5px",
+        right: "15px",
+        width: "8px",
+        height: "8px",
+        backgroundColor: "var(--background-secondary)",
+        borderTop: "1px solid var(--background-modifier-border)",
+        borderLeft: "1px solid var(--background-modifier-border)",
+        transform: "rotate(45deg)",
+    },
+    ".sr-ir-editable-tooltip textarea": {
+        width: "100%",
+        height: "var(--sr-ir-note-textarea-height, auto)",
+        minHeight: "20px",
+        boxSizing: "border-box",
+        background: "transparent",
+        border: "none",
+        color: "var(--text-normal)",
+        fontFamily: "inherit",
+        fontSize: "13px",
+        lineHeight: "1.5",
+        resize: "none",
+        outline: "none",
+        overflow: "hidden",
+        padding: "0",
+        margin: "0",
+    },
+    ".sr-ir-editable-tooltip textarea::placeholder": {
+        color: "var(--text-muted)",
     },
     ".sr-ir-extract-active-token": {
         color: "var(--interactive-accent)",

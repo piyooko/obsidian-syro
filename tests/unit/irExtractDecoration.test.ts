@@ -1,7 +1,10 @@
+import { EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import {
     alignNestedIrExtractBlocksHorizontally,
     clampIrExtractVerticalInsetsForAdjacentBlocks,
     containNestedIrExtractBlocks,
+    createIrExtractDecorationExtensions,
     findActiveIrExtractSourceMatch,
     buildIrExtractRenderExtractsForTest,
     findIrExtractEditingRoot,
@@ -20,6 +23,10 @@ import {
 import { parseIrExtracts } from "src/util/irExtractParser";
 
 describe("irExtractDecoration helpers", () => {
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
     test("keeps the first three extract layer insets fixed", () => {
         expect(getIrExtractLayerInset(1, 3)).toBe(18);
         expect(getIrExtractLayerInset(2, 3)).toBe(12);
@@ -322,5 +329,43 @@ describe("irExtractDecoration helpers", () => {
         } as never);
 
         expect(renderExtracts.map((item) => item.showSource)).toEqual([false, false]);
+    });
+
+    test("uses reference-style outside margins for extract vertical gaps", () => {
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: "before\n{{ir::first line\nsecond line}}\nafter",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        canRevealSource: () => false,
+                        isLivePreviewHost: () => true,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            const lines = Array.from(view.dom.querySelectorAll<HTMLElement>(".cm-line"));
+            const firstExtractLine = lines.find((line) => line.textContent === "first line");
+            const secondExtractLine = lines.find((line) => line.textContent === "second line");
+
+            expect(firstExtractLine).toBeTruthy();
+            expect(secondExtractLine).toBeTruthy();
+            expect(firstExtractLine?.classList.contains("sr-ir-extract-gap-top")).toBe(true);
+            expect(secondExtractLine?.classList.contains("sr-ir-extract-gap-bottom")).toBe(true);
+            expect(firstExtractLine?.style.marginTop).toBe("24px");
+            expect(secondExtractLine?.style.marginBottom).toBe("8px");
+            expect(firstExtractLine?.style.paddingTop).toBe("");
+            expect(secondExtractLine?.style.paddingBottom).toBe("");
+            expect(firstExtractLine?.classList.contains("sr-ir-extract-layout-top")).toBe(false);
+            expect(secondExtractLine?.classList.contains("sr-ir-extract-layout-bottom")).toBe(false);
+        } finally {
+            view.destroy();
+        }
     });
 });
