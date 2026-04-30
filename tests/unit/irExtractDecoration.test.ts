@@ -13,6 +13,7 @@ import {
     findIrExtractSourceStartsAtSelectionPoint,
     getIrExtractLayerInset,
     getIrExtractLayerVerticalInset,
+    getIrExtractHorizontalFrameForMetrics,
     getIrExtractLineRanges,
     getIrExtractRenderRange,
     getIrExtractVerticalInsetForMetrics,
@@ -85,7 +86,7 @@ describe("irExtractDecoration helpers", () => {
         expect(blocks[0]).toMatchObject({ left: -1, top: 10, width: 132, height: 51 });
     });
 
-    test("aligns nested extract horizontal edges to the parent frame", () => {
+    test("expands parent extract frames outward from the innermost container frame", () => {
         const blocks = alignNestedIrExtractBlocksHorizontally([
             {
                 start: 0,
@@ -99,9 +100,9 @@ describe("irExtractDecoration helpers", () => {
             {
                 start: 30,
                 parentStart: 0,
-                left: 120,
+                left: 20,
                 top: 20,
-                width: 80,
+                width: 220,
                 height: 30,
                 depth: 2,
                 maxDepth: 3,
@@ -109,17 +110,18 @@ describe("irExtractDecoration helpers", () => {
             {
                 start: 50,
                 parentStart: 30,
-                left: 150,
+                left: 20,
                 top: 28,
-                width: 40,
+                width: 220,
                 height: 18,
                 depth: 3,
                 maxDepth: 3,
             },
         ]);
 
-        expect(blocks[1]).toMatchObject({ left: 26, width: 208 });
-        expect(blocks[2]).toMatchObject({ left: 32, width: 196 });
+        expect(blocks[0]).toMatchObject({ left: 2, width: 256 });
+        expect(blocks[1]).toMatchObject({ left: 8, width: 244 });
+        expect(blocks[2]).toMatchObject({ left: 14, width: 232 });
     });
 
     test("separates nested extract vertical borders by depth", () => {
@@ -129,6 +131,15 @@ describe("irExtractDecoration helpers", () => {
         expect([1, 2].map((depth) => getIrExtractLayerVerticalInset(1, depth, 2))).toEqual([
             1, 0.5,
         ]);
+    });
+
+    test("uses content container horizontal frame for extract blocks", () => {
+        const frame = getIrExtractHorizontalFrameForMetrics(80, 500, 20, 5);
+
+        expect(frame).toEqual({
+            left: 65,
+            width: 420,
+        });
     });
 
     test("selects the smallest touched extract as the editing root", () => {
@@ -331,7 +342,7 @@ describe("irExtractDecoration helpers", () => {
         expect(renderExtracts.map((item) => item.showSource)).toEqual([false, false]);
     });
 
-    test("uses reference-style outside margins for extract vertical gaps", () => {
+    test("keeps hidden inline extracts on their containing line without layout widgets", () => {
         const parent = document.createElement("div");
         parent.className = "is-live-preview";
         document.body.appendChild(parent);
@@ -339,7 +350,11 @@ describe("irExtractDecoration helpers", () => {
         const view = new EditorView({
             parent,
             state: EditorState.create({
-                doc: "before\n{{ir::first line\nsecond line}}\nafter",
+                doc: [
+                    "11111111111111",
+                    "111111111{{ir::11}}111",
+                    "11111111111111",
+                ].join("\n"),
                 extensions: [
                     createIrExtractDecorationExtensions({
                         canRevealSource: () => false,
@@ -351,19 +366,76 @@ describe("irExtractDecoration helpers", () => {
 
         try {
             const lines = Array.from(view.dom.querySelectorAll<HTMLElement>(".cm-line"));
-            const firstExtractLine = lines.find((line) => line.textContent === "first line");
-            const secondExtractLine = lines.find((line) => line.textContent === "second line");
+            const extractLine = lines[1];
+            const isolatedExtractLine = lines.find((line) => line.textContent === "11");
 
-            expect(firstExtractLine).toBeTruthy();
-            expect(secondExtractLine).toBeTruthy();
-            expect(firstExtractLine?.classList.contains("sr-ir-extract-gap-top")).toBe(true);
-            expect(secondExtractLine?.classList.contains("sr-ir-extract-gap-bottom")).toBe(true);
-            expect(firstExtractLine?.style.marginTop).toBe("24px");
-            expect(secondExtractLine?.style.marginBottom).toBe("8px");
-            expect(firstExtractLine?.style.paddingTop).toBe("");
-            expect(secondExtractLine?.style.paddingBottom).toBe("");
-            expect(firstExtractLine?.classList.contains("sr-ir-extract-layout-top")).toBe(false);
-            expect(secondExtractLine?.classList.contains("sr-ir-extract-layout-bottom")).toBe(false);
+            expect(extractLine).toBeTruthy();
+            expect(extractLine?.textContent).toBe("11111111111111");
+            expect(isolatedExtractLine).toBeUndefined();
+            expect(extractLine?.querySelector(".sr-ir-extract-gap-anchor")).toBeNull();
+            expect(view.dom.querySelector(".sr-ir-extract-gap-anchor")).toBeNull();
+            expect(view.dom.querySelector(".sr-ir-extract-gap-top")).toBeNull();
+            expect(view.dom.querySelector(".sr-ir-extract-gap-bottom")).toBeNull();
+            expect(view.dom.querySelector(".sr-ir-extract-layout-line")).toBeNull();
+            expect(extractLine?.style.marginTop).toBe("");
+            expect(extractLine?.style.marginBottom).toBe("");
+            expect(extractLine?.style.paddingTop).toBe("");
+            expect(extractLine?.style.paddingBottom).toBe("");
+        } finally {
+            view.destroy();
+        }
+    });
+
+    test("keeps inline extracts on the same line after source reveal turns off", () => {
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+
+        let canRevealSource = true;
+        const doc = [
+            "11111111111111",
+            "111111111{{ir::11}}111",
+            "11111111111111",
+        ].join("\n");
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc,
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        canRevealSource: () => canRevealSource,
+                        isLivePreviewHost: () => true,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            view.dispatch({
+                selection: { anchor: doc.indexOf("{{ir::") + "{{ir::".length },
+            });
+
+            const revealedLines = Array.from(
+                view.dom.querySelectorAll<HTMLElement>(".cm-line"),
+            );
+            expect(revealedLines[1]?.textContent).toBe("111111111{{ir::11}}111");
+
+            canRevealSource = false;
+            view.dispatch({
+                selection: { anchor: doc.length },
+            });
+
+            const hiddenLines = Array.from(view.dom.querySelectorAll<HTMLElement>(".cm-line"));
+            const hiddenExtractLine = hiddenLines[1];
+            const isolatedExtractLine = hiddenLines.find((line) => line.textContent === "11");
+
+            expect(hiddenExtractLine?.textContent).toBe("11111111111111");
+            expect(isolatedExtractLine).toBeUndefined();
+            expect(view.dom.querySelector(".sr-ir-extract-gap-anchor")).toBeNull();
+            expect(view.dom.querySelector(".sr-ir-extract-gap-top")).toBeNull();
+            expect(view.dom.querySelector(".sr-ir-extract-gap-bottom")).toBeNull();
+            expect(view.dom.querySelector(".sr-ir-extract-layout-line")).toBeNull();
         } finally {
             view.destroy();
         }

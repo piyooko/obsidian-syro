@@ -12,9 +12,7 @@ import { parseIrExtracts, type IrExtractMatch } from "src/util/irExtractParser";
 const OUTER_INSET = 18;
 const INNER_INSET = 6;
 const MAX_VERTICAL_INSET = 8;
-const EXTRACT_TOP_LAYOUT_GAP = 24;
-const EXTRACT_BOTTOM_LAYOUT_GAP = 8;
-
+const INNERMOST_CONTAINER_OUTSET = 6;
 interface DecorationItem {
     from: number;
     to: number;
@@ -57,11 +55,6 @@ interface PendingMeasuredExtractBlock {
     bottomInset: number;
     depth: number;
     maxDepth: number;
-}
-
-interface IrExtractLayoutLineDecoration {
-    topGap: number;
-    bottomGap: number;
 }
 
 interface IrExtractMeasureReadResult {
@@ -492,6 +485,18 @@ export function getIrExtractLayerVerticalInset(
     return Number(Math.max(0, safeBaseInset - step * (safeDepth - 1)).toFixed(2));
 }
 
+export function getIrExtractHorizontalFrameForMetrics(
+    containerLeft: number,
+    containerRight: number,
+    scrollRectLeft: number,
+    scrollLeft: number,
+): { left: number; width: number } {
+    return {
+        left: containerLeft - scrollRectLeft + scrollLeft,
+        width: Math.max(1, containerRight - containerLeft),
+    };
+}
+
 export function clampIrExtractVerticalInsetsForAdjacentBlocks(
     blocks: IrExtractVerticalInsetBlock[],
 ): number[] {
@@ -561,31 +566,14 @@ export function alignNestedIrExtractBlocksHorizontally<T extends MeasuredExtract
     blocks: T[],
 ): T[] {
     const nextBlocks = blocks.map((block) => ({ ...block }));
-    const byStart = new Map(nextBlocks.map((block) => [block.start, block]));
-    const parentsFirst = [...nextBlocks].sort((left, right) => left.depth - right.depth);
+    for (const block of nextBlocks) {
+        const maxDepth = Math.max(block.maxDepth, block.depth, 1);
+        const innerInset = getIrExtractLayerInset(maxDepth, maxDepth);
+        const currentInset = getIrExtractLayerInset(block.depth, maxDepth);
+        const expansion = Math.max(0, currentInset - innerInset + INNERMOST_CONTAINER_OUTSET);
 
-    for (const child of parentsFirst) {
-        if (child.parentStart === undefined) {
-            continue;
-        }
-        const parent = byStart.get(child.parentStart);
-        if (!parent) {
-            continue;
-        }
-
-        const maxDepth = Math.max(parent.maxDepth, child.maxDepth, parent.depth, child.depth);
-        const parentInset = getIrExtractLayerInset(parent.depth, maxDepth);
-        const childInset = getIrExtractLayerInset(child.depth, maxDepth);
-        const stairGap = Math.max(0, parentInset - childInset);
-        const nextLeft = parent.left + stairGap;
-        const nextRight = parent.left + parent.width - stairGap;
-        const nextWidth = nextRight - nextLeft;
-        if (nextWidth <= 1) {
-            continue;
-        }
-
-        child.left = Number(nextLeft.toFixed(2));
-        child.width = Number(nextWidth.toFixed(2));
+        block.left = Number((block.left - expansion).toFixed(2));
+        block.width = Number((block.width + expansion * 2).toFixed(2));
     }
 
     return nextBlocks;
@@ -656,49 +644,6 @@ function getIrExtractDepthProgress(depth: number, maxDepth: number): number {
     return Math.max(0, Math.min(1, (depth - 1) / (maxDepth - 1)));
 }
 
-function upsertIrExtractLayoutLineDecoration(
-    lineDecorations: Map<number, IrExtractLayoutLineDecoration>,
-    lineFrom: number,
-    patch: Partial<IrExtractLayoutLineDecoration>,
-): void {
-    const current = lineDecorations.get(lineFrom) ?? {
-        topGap: 0,
-        bottomGap: 0,
-    };
-    lineDecorations.set(lineFrom, {
-        topGap: Math.max(current.topGap, patch.topGap ?? 0),
-        bottomGap: Math.max(current.bottomGap, patch.bottomGap ?? 0),
-    });
-}
-
-function createIrExtractLayoutLineDecoration(
-    lineFrom: number,
-    layout: IrExtractLayoutLineDecoration,
-): DecorationItem {
-    const classes = ["sr-ir-extract-layout-line"];
-    if (layout.topGap > 0) {
-        classes.push("sr-ir-extract-gap-top");
-    }
-    if (layout.bottomGap > 0) {
-        classes.push("sr-ir-extract-gap-bottom");
-    }
-
-    return {
-        from: lineFrom,
-        to: lineFrom,
-        decoration: Decoration.line({
-            attributes: {
-                class: classes.join(" "),
-                style: [
-                    `margin-top: ${layout.topGap}px`,
-                    `margin-bottom: ${layout.bottomGap}px`,
-                ].join("; "),
-            },
-        }),
-        allowEmpty: true,
-    };
-}
-
 function buildIrExtractDecorations(
     view: EditorView,
     pointSourceStarts: Set<number> = new Set(),
@@ -746,28 +691,6 @@ function buildIrExtractDecorations(
         : null;
     const renderExtracts = createRenderExtracts(matches, sourceStarts, excludedStarts);
     const decorations: DecorationItem[] = [];
-    const layoutLineDecorations = new Map<number, IrExtractLayoutLineDecoration>();
-
-    for (const renderExtract of renderExtracts) {
-        if (renderExtract.showSource) {
-            continue;
-        }
-
-        const range = getIrExtractRenderRange(renderExtract);
-        const startLine = view.state.doc.lineAt(range.from);
-        const endLine = view.state.doc.lineAt(Math.max(range.from, range.to - 1));
-
-        upsertIrExtractLayoutLineDecoration(layoutLineDecorations, startLine.from, {
-            topGap: EXTRACT_TOP_LAYOUT_GAP,
-        });
-        upsertIrExtractLayoutLineDecoration(layoutLineDecorations, endLine.from, {
-            bottomGap: EXTRACT_BOTTOM_LAYOUT_GAP,
-        });
-    }
-
-    for (const [lineFrom, layout] of layoutLineDecorations) {
-        decorations.push(createIrExtractLayoutLineDecoration(lineFrom, layout));
-    }
 
     for (const match of visibleMatches) {
         if (sourceStarts.has(match.start)) {
@@ -1026,10 +949,16 @@ function measureExtractBlocks(
 
         const minLeft = Math.min(...rects.map((rect) => rect.left));
         const maxRight = Math.max(...rects.map((rect) => rect.right));
-        const fixedRight = contentRect.width > 0 ? contentRect.right : maxRight;
+        const frameLeft = contentRect.width > 0 ? contentRect.left : minLeft;
+        const frameRight = contentRect.width > 0 ? contentRect.right : maxRight;
         const minTop = Math.min(...rects.map((rect) => rect.top));
         const maxBottom = Math.max(...rects.map((rect) => rect.bottom));
-        const inset = getIrExtractLayerInset(renderExtract.depth, renderExtract.maxDepth);
+        const horizontalFrame = getIrExtractHorizontalFrameForMetrics(
+            frameLeft,
+            frameRight,
+            scrollRect.left,
+            scrollLeft,
+        );
         const baseVerticalInset = getIrExtractVerticalInsetForMetrics(
             lineHeight,
             rects.map((rect) => rect.height),
@@ -1042,10 +971,10 @@ function measureExtractBlocks(
         pendingBlocks.push({
             start: renderExtract.match.start,
             parentStart: renderExtract.match.parentStart,
-            left: minLeft - scrollRect.left + scrollLeft - inset,
+            left: horizontalFrame.left,
             rawTop: minTop - scrollRect.top + scrollTop,
             rawBottom: maxBottom - scrollRect.top + scrollTop,
-            width: Math.max(1, fixedRight - minLeft + inset),
+            width: horizontalFrame.width,
             topInset: verticalInset,
             bottomInset: verticalInset,
             depth: renderExtract.depth,
@@ -1499,9 +1428,6 @@ const irExtractDecorationTheme = EditorView.baseTheme({
         pointerEvents: "none",
         overflow: "visible",
         zIndex: "3",
-    },
-    ".sr-ir-extract-layout-line": {
-        position: "relative",
     },
     ".sr-ir-extract-block": {
         position: "absolute",
