@@ -1,6 +1,8 @@
 import { moment, Notice, TFile } from "obsidian";
 import { Deck, DeckTreeFilter } from "src/Deck";
 import { ExtractStore } from "src/dataStore/extractStore";
+import { RPITEMTYPE } from "src/dataStore/repetitionItem";
+import { TrackedFile } from "src/dataStore/trackedFile";
 import SRPlugin from "src/main";
 import { DEFAULT_SETTINGS } from "src/settings";
 import { parseIrExtracts } from "src/util/irExtractParser";
@@ -520,6 +522,238 @@ describe("SRPlugin extract deck paths", () => {
         expect(syncFileExtracts).toHaveBeenCalled();
         expect(save).toHaveBeenCalled();
         expect(emit).toHaveBeenCalledWith("extracts-updated");
+    });
+
+    test("refreshes tracked card index after manual extract context adds a highlight cloze", async () => {
+        const file = createTFile("摘录测试.md");
+        const emit = jest.fn();
+        const save = jest.fn(() => Promise.resolve());
+        let sourceText = "before\n\ncontext {{ir::target}}\n\nafter";
+        const trackedFile = new TrackedFile(file.path, RPITEMTYPE.CARD, "摘录测试");
+        const syncNoteCardsIndex = jest.spyOn(trackedFile, "syncNoteCardsIndex");
+        const sourceAnchor = {
+            start: "before\n\ncontext ".length,
+            end: "before\n\ncontext {{ir::target}}".length,
+            innerStart: "before\n\ncontext {{ir::".length,
+            innerEnd: "before\n\ncontext {{ir::target".length,
+            startLine: 2,
+            endLine: 2,
+            prefix: "",
+            suffix: "",
+            contentHash: "hash",
+            ordinal: 0,
+        };
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            app: {
+                vault: {
+                    getAbstractFileByPath: jest.fn(() => file),
+                    read: jest.fn(() => Promise.resolve(sourceText)),
+                    modify: jest.fn((_file: TFile, nextText: string) => {
+                        sourceText = nextText;
+                        return Promise.resolve();
+                    }),
+                },
+            },
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    enableExtracts: true,
+                    convertHighlightsToClozes: true,
+                    convertBoldTextToClozes: false,
+                    convertAnkiClozesToClozes: false,
+                },
+            },
+            store: {
+                getTrackedFile: jest.fn(() => trackedFile),
+                isTrackedCardfile: jest.fn(() => true),
+                unTrackItem: jest.fn(),
+            },
+            extractStore: {
+                get: jest.fn(() => ({
+                    uuid: "ir_1",
+                    stage: "active",
+                    sourcePath: file.path,
+                    sourceAnchor,
+                    rawMarkdown: "target",
+                    deckName: "摘录测试",
+                })),
+                syncFileExtracts: jest.fn(() => ({ added: [], updated: [], graduated: [] })),
+                save,
+            },
+            getExtractDeckNameForFile: jest.fn(() => "摘录测试"),
+            appendExtractSyncResult: jest.fn(() => Promise.resolve()),
+            markSyncDirty: jest.fn(),
+            loadNote: jest.fn(() => Promise.resolve({ questionList: [{ id: "q1" }] })),
+            noteCache: new Map(),
+            requestSync: jest.fn(() => Promise.resolve()),
+            syncEvents: { emit },
+        });
+
+        await SRPlugin.prototype.updateExtractContextMarkdown.call(
+            plugin,
+            "ir_1",
+            {
+                sourceFrom: 0,
+                sourceTo: sourceText.length,
+                markdown: sourceText,
+                currentOuterFrom: sourceAnchor.start,
+                currentOuterTo: sourceAnchor.end,
+                currentInnerFrom: sourceAnchor.innerStart,
+                currentInnerTo: sourceAnchor.innerEnd,
+                currentOpenTokenFrom: sourceAnchor.start,
+                currentOpenTokenTo: sourceAnchor.innerStart,
+                currentCloseTokenFrom: sourceAnchor.innerEnd,
+                currentCloseTokenTo: sourceAnchor.end,
+            },
+            {
+                markdown: "before\n\ncontext {{ir::target ==new card==}}\n\nafter",
+                ranges: {
+                    currentOuterFrom: "before\n\ncontext ".length,
+                    currentOuterTo: "before\n\ncontext {{ir::target ==new card==}}".length,
+                    currentInnerFrom: "before\n\ncontext {{ir::".length,
+                    currentInnerTo: "before\n\ncontext {{ir::target ==new card==".length,
+                    currentOpenTokenFrom: "before\n\ncontext ".length,
+                    currentOpenTokenTo: "before\n\ncontext {{ir::".length,
+                    currentCloseTokenFrom: "before\n\ncontext {{ir::target ==new card==".length,
+                    currentCloseTokenTo:
+                        "before\n\ncontext {{ir::target ==new card==}}".length,
+                },
+            },
+        );
+
+        expect(syncNoteCardsIndex).toHaveBeenCalledWith(sourceText, plugin.data.settings);
+        expect(trackedFile.trackedItems?.map((item) => item.fingerprint)).toContain("new card");
+        expect(plugin.loadNote).toHaveBeenCalledWith(file);
+        expect(plugin.noteCache.get(file.path)).toEqual({
+            mtime: file.stat?.mtime ?? 0,
+            note: { questionList: [{ id: "q1" }] },
+        });
+        expect(plugin.markSyncDirty).toHaveBeenCalled();
+        expect(plugin.requestSync).toHaveBeenCalledWith({ trigger: "file-event" });
+    });
+
+    test("refreshes extract source cards only for enabled bold and Anki cloze settings", async () => {
+        const file = createTFile("摘录测试.md");
+        const emit = jest.fn();
+        let sourceText = "before {{ir::target}} after";
+        const sourceAnchor = {
+            start: "before ".length,
+            end: "before {{ir::target}}".length,
+            innerStart: "before {{ir::".length,
+            innerEnd: "before {{ir::target".length,
+            startLine: 0,
+            endLine: 0,
+            prefix: "",
+            suffix: "",
+            contentHash: "hash",
+            ordinal: 0,
+        };
+        const createPlugin = (settings: Partial<typeof DEFAULT_SETTINGS>) => {
+            const trackedFile = new TrackedFile(file.path, RPITEMTYPE.CARD, "摘录测试");
+            const syncNoteCardsIndex = jest.spyOn(trackedFile, "syncNoteCardsIndex");
+            const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+                app: {
+                    vault: {
+                        getAbstractFileByPath: jest.fn(() => file),
+                        read: jest.fn(() => Promise.resolve(sourceText)),
+                        modify: jest.fn((_file: TFile, nextText: string) => {
+                            sourceText = nextText;
+                            return Promise.resolve();
+                        }),
+                    },
+                },
+                data: {
+                    settings: {
+                        ...DEFAULT_SETTINGS,
+                        enableExtracts: true,
+                        ...settings,
+                    },
+                },
+                store: {
+                    getTrackedFile: jest.fn(() => trackedFile),
+                    isTrackedCardfile: jest.fn(() => true),
+                    unTrackItem: jest.fn(),
+                },
+                extractStore: {
+                    get: jest.fn(() => ({
+                        uuid: "ir_1",
+                        stage: "active",
+                        sourcePath: file.path,
+                        sourceAnchor,
+                        rawMarkdown: "target",
+                        deckName: "摘录测试",
+                    })),
+                    syncFileExtracts: jest.fn(() => ({ added: [], updated: [], graduated: [] })),
+                    save: jest.fn(() => Promise.resolve()),
+                },
+                getExtractDeckNameForFile: jest.fn(() => "摘录测试"),
+                appendExtractSyncResult: jest.fn(() => Promise.resolve()),
+                markSyncDirty: jest.fn(),
+                loadNote: jest.fn(() => Promise.resolve({ questionList: [{ id: "q1" }] })),
+                noteCache: new Map(),
+                requestSync: jest.fn(() => Promise.resolve()),
+                syncEvents: { emit },
+            });
+            return { plugin, trackedFile, syncNoteCardsIndex };
+        };
+        const saveWithMarkdown = async (plugin: SRPlugin, markdown: string) => {
+            const closeTokenFrom = markdown.indexOf("}}");
+            await SRPlugin.prototype.updateExtractContextMarkdown.call(
+                plugin,
+                "ir_1",
+                {
+                    sourceFrom: 0,
+                    sourceTo: sourceText.length,
+                    markdown: sourceText,
+                    currentOuterFrom: sourceAnchor.start,
+                    currentOuterTo: sourceAnchor.end,
+                    currentInnerFrom: sourceAnchor.innerStart,
+                    currentInnerTo: sourceAnchor.innerEnd,
+                    currentOpenTokenFrom: sourceAnchor.start,
+                    currentOpenTokenTo: sourceAnchor.innerStart,
+                    currentCloseTokenFrom: sourceAnchor.innerEnd,
+                    currentCloseTokenTo: sourceAnchor.end,
+                },
+                {
+                    markdown,
+                    ranges: {
+                        currentOuterFrom: "before ".length,
+                        currentOuterTo: closeTokenFrom + 2,
+                        currentInnerFrom: "before {{ir::".length,
+                        currentInnerTo: closeTokenFrom,
+                        currentOpenTokenFrom: "before ".length,
+                        currentOpenTokenTo: "before {{ir::".length,
+                        currentCloseTokenFrom: closeTokenFrom,
+                        currentCloseTokenTo: closeTokenFrom + 2,
+                    },
+                },
+            );
+        };
+
+        const disabled = createPlugin({
+            convertBoldTextToClozes: false,
+            convertAnkiClozesToClozes: false,
+        });
+        await saveWithMarkdown(disabled.plugin, "before {{ir::**bold** {{c1::anki}}}} after");
+        expect(disabled.syncNoteCardsIndex).toHaveBeenCalledWith(
+            sourceText,
+            disabled.plugin.data.settings,
+        );
+        expect(disabled.trackedFile.trackedItems).toEqual([]);
+        expect(disabled.plugin.markSyncDirty).not.toHaveBeenCalled();
+
+        sourceText = "before {{ir::target}} after";
+        const enabled = createPlugin({
+            convertBoldTextToClozes: true,
+            convertAnkiClozesToClozes: true,
+            isPro: true,
+        });
+        await saveWithMarkdown(enabled.plugin, "before {{ir::**bold** {{c1::anki}}}} after");
+        expect(enabled.trackedFile.trackedItems?.map((item) => item.fingerprint)).toEqual([
+            "anki",
+            "bold",
+        ]);
+        expect(enabled.plugin.markSyncDirty).toHaveBeenCalled();
     });
 
     test("sets extract review date through plugin and emits extract updates", async () => {

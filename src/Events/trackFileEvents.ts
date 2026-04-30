@@ -6,9 +6,12 @@ import {
     type SyroFileIdentity,
 } from "src/dataStore/syroFileIdentityStore";
 import SRPlugin from "src/main";
-import { SRSettings } from "src/settings";
 import { FolderTrackingSettingsModal } from "src/ui/modals/FolderTrackingSettingsModal";
-import { hasPlainCurlyCloze } from "src/util/curlyCloze";
+import {
+    hasAnkiClozeCandidate,
+    hasCurlyClozeCandidate,
+    hasEnabledCardFormatCandidate,
+} from "src/util/cardFormatCandidates";
 
 type SubmenuCapableMenuItem = {
     setSubmenu?: () => Menu;
@@ -81,16 +84,7 @@ function addAutoExtractMenuItem(plugin: SRPlugin, menu: Menu, fileish: TFile): v
     });
 }
 
-export function hasAnkiClozeCandidate(fileText: string): boolean {
-    return fileText.includes("{{c") || fileText.includes("{{C");
-}
-
-export function hasCurlyClozeCandidate(
-    fileText: string,
-    settings: Pick<SRSettings, "convertCurlyBracketsToClozes">,
-): boolean {
-    return settings.convertCurlyBracketsToClozes && hasPlainCurlyCloze(fileText);
-}
+export { hasAnkiClozeCandidate, hasCurlyClozeCandidate };
 
 function buildFileIdentityChange(input: {
     existingIdentity?: SyroFileIdentity | null;
@@ -510,19 +504,7 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
             await plugin.syncExtractsFromFile(file);
             const settings = plugin.data.settings;
 
-            const hasInlineSeparator =
-                fileText.includes(settings.singleLineCardSeparator) ||
-                fileText.includes(settings.singleLineReversedCardSeparator);
-            const hasMultilineSeparator =
-                fileText.includes(settings.multilineCardSeparator) ||
-                fileText.includes(settings.multilineReversedCardSeparator);
-            const hasCloze =
-                hasAnkiClozeCandidate(fileText) ||
-                hasCurlyClozeCandidate(fileText, settings) ||
-                fileText.includes("==") ||
-                fileText.includes("**");
-
-            if (hasInlineSeparator || hasMultilineSeparator || hasCloze) {
+            if (hasEnabledCardFormatCandidate(fileText, settings)) {
                 const note = await plugin.loadNote(file);
                 if (note.questionList.length > 0) {
                     shouldSyncCards = true;

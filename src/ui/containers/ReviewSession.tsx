@@ -919,6 +919,37 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         [logRuntimeDebug, plugin, resolveNextReviewItem, reviewMode, sequencer],
     );
 
+    const refreshActiveDeckReviewSession = useCallback((): boolean => {
+        const fullPath = activeDeckPathRef.current;
+        if (!fullPath || view !== "review") {
+            return false;
+        }
+
+        const isCramMode = reviewMode === FlashcardReviewMode.Cram;
+        const sourceDeckTree = isCramMode ? plugin.deckTree : plugin.remainingDeckTree;
+        const globalRemainingDeckTree = isCramMode ? undefined : plugin.remainingDeckTree;
+        const activatedSession = activateDeckReviewSession({
+            plugin,
+            sequencer,
+            fullPath,
+            sourceDeckTree,
+            fullDeckTree: plugin.deckTree,
+            globalRemainingDeckTree,
+            applyDailyLimits: !isCramMode,
+        });
+
+        if (!activatedSession) {
+            return false;
+        }
+
+        logRuntimeDebug("[SR-DynSync] ReviewSession: active deck session refreshed", {
+            fullPath,
+            view,
+            activeKind: activeReviewItem?.kind ?? null,
+        });
+        return true;
+    }, [activeReviewItem, logRuntimeDebug, plugin, reviewMode, sequencer, view]);
+
     useEffect(() => {
         if (
             handledInitialReviewEntryRef.current ||
@@ -964,6 +995,9 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
 
         const onSyncComplete = () => {
             logRuntimeDebug("[SR-DynSync] ReviewSession: sync-complete received");
+            if (activeReviewItem?.kind === "extract") {
+                refreshActiveDeckReviewSession();
+            }
             forceUpdate();
         };
 
@@ -1004,6 +1038,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         invalidatePreparedExtractsPreserving,
         logRuntimeDebug,
         plugin,
+        refreshActiveDeckReviewSession,
         view,
     ]);
 

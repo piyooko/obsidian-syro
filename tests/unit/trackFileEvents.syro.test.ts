@@ -1,5 +1,6 @@
 import { registerTrackFileEvents } from "src/Events/trackFileEvents";
 import { createDeterministicFileIdentityUuid } from "src/dataStore/syroFileIdentityStore";
+import { hasEnabledCardFormatCandidate } from "src/util/cardFormatCandidates";
 
 jest.mock("src/lang/helpers", () => ({
     t: (key: string) => key,
@@ -375,5 +376,49 @@ describe("trackFileEvents syro session hooks", () => {
         await modifyHandlers[0](file);
 
         expect(plugin.syncExtractsFromFile).toHaveBeenCalledWith(file);
+    });
+
+    test("card format candidate detection follows enabled parser settings", () => {
+        const baseSettings = {
+            singleLineCardSeparator: "::",
+            singleLineReversedCardSeparator: ":::",
+            multilineCardSeparator: "?",
+            multilineReversedCardSeparator: "??",
+            convertHighlightsToClozes: false,
+            convertBoldTextToClozes: false,
+            convertCurlyBracketsToClozes: false,
+            convertAnkiClozesToClozes: false,
+            isPro: true,
+        };
+
+        expect(hasEnabledCardFormatCandidate("front::back", baseSettings)).toBe(true);
+        expect(hasEnabledCardFormatCandidate("==highlight==", baseSettings)).toBe(false);
+        expect(
+            hasEnabledCardFormatCandidate("==highlight==", {
+                ...baseSettings,
+                convertHighlightsToClozes: true,
+            }),
+        ).toBe(true);
+        expect(hasEnabledCardFormatCandidate("**bold**", baseSettings)).toBe(false);
+        expect(
+            hasEnabledCardFormatCandidate("**bold**", {
+                ...baseSettings,
+                convertBoldTextToClozes: true,
+            }),
+        ).toBe(true);
+        expect(
+            hasEnabledCardFormatCandidate("{{c1::anki}}", {
+                ...baseSettings,
+                convertAnkiClozesToClozes: true,
+                isPro: false,
+            }),
+        ).toBe(false);
+        expect(
+            hasEnabledCardFormatCandidate("{{c1::anki}}", {
+                ...baseSettings,
+                convertAnkiClozesToClozes: true,
+                isPro: true,
+            }),
+        ).toBe(true);
     });
 });

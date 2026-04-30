@@ -324,6 +324,7 @@ import {
 } from "src/ui/types/syroDeviceManagement";
 import { getFirstRunTutorial } from "src/firstRunTutorial";
 import { InlineTitleReviewButtonManager } from "src/ui/components/InlineTitleReviewButtonManager";
+import { hasEnabledCardFormatCandidate } from "src/util/cardFormatCandidates";
 
 function readFolderTrackingFrontmatterTags(frontmatter: unknown): string[] {
     if (!isRecord(frontmatter)) {
@@ -3262,6 +3263,50 @@ export default class SRPlugin extends Plugin {
         return this.extractStore.get(uuid);
     }
 
+    private async refreshSourceCardsAfterExtractSave(
+        sourceFile: TFile,
+        nextText: string,
+    ): Promise<void> {
+        const store = this.store;
+        if (!store) {
+            return;
+        }
+
+        let shouldRequestSync = false;
+        let refreshedNote: Note | null = null;
+        const trackedFile = store.getTrackedFile(sourceFile.path);
+
+        if (store.isTrackedCardfile(sourceFile.path) && trackedFile) {
+            const result = trackedFile.syncNoteCardsIndex(nextText, this.data.settings);
+            for (const id of result.removedIds) {
+                store.unTrackItem(id);
+            }
+            shouldRequestSync = result.hasChange;
+            if (result.hasChange) {
+                refreshedNote = await this.loadNote(sourceFile);
+            }
+        } else if (hasEnabledCardFormatCandidate(nextText, this.data.settings)) {
+            refreshedNote = await this.loadNote(sourceFile);
+            shouldRequestSync = refreshedNote.questionList.length > 0;
+        }
+
+        if (refreshedNote) {
+            this.noteCache.set(sourceFile.path, {
+                mtime: sourceFile.stat?.mtime ?? 0,
+                note: refreshedNote,
+            });
+        }
+
+        if (!shouldRequestSync) {
+            return;
+        }
+
+        this.markSyncDirty();
+        void this.requestSync({ trigger: "file-event" }).catch((error) => {
+            console.error("[SR-ExtractSave] Failed to sync cards after extract save", error);
+        });
+    }
+
     public async updateExtractContextMarkdown(
         uuid: string,
         previousContext: ExtractReviewContext | null,
@@ -3341,6 +3386,7 @@ export default class SRPlugin extends Plugin {
             await this.appendExtractSyncResult(result);
             await this.extractStore.save();
             await this.saveNoteExtractCacheToDiskIfEnabled();
+            await this.refreshSourceCardsAfterExtractSave(sourceFile, nextText);
             this.logRuntimeDebug("[SR-ExtractSave] updateExtractContextMarkdown:auto-slice-saved", {
                 uuid,
                 sourcePath: sourceFile.path,
@@ -3375,6 +3421,7 @@ export default class SRPlugin extends Plugin {
         await this.appendExtractSyncResult(result);
         await this.extractStore.save();
         await this.saveNoteExtractCacheToDiskIfEnabled();
+        await this.refreshSourceCardsAfterExtractSave(sourceFile, nextText);
         this.logRuntimeDebug("[SR-ExtractSave] updateExtractContextMarkdown:manual-saved", {
             uuid,
             sourcePath: sourceFile.path,

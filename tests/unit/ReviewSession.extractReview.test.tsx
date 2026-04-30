@@ -2,6 +2,8 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { EditorView } from "@codemirror/view";
 import { Component, TFile, type WorkspaceLeaf } from "obsidian";
+import { Card } from "src/Card";
+import { CardListType, Deck } from "src/Deck";
 import type SRPlugin from "src/main";
 import { ExtractStore, type ExtractItem } from "src/dataStore/extractStore";
 import { FlashcardReviewMode, type IFlashcardReviewSequencer } from "src/FlashcardReviewSequencer";
@@ -130,6 +132,8 @@ function createSequencer(): IFlashcardReviewSequencer {
         undoReview: jest.fn(),
         processReview: jest.fn(),
         untrackCurrentCard: jest.fn(() => Promise.resolve()),
+        setDeckTree: jest.fn(),
+        setCurrentDeck: jest.fn(),
     } as unknown as IFlashcardReviewSequencer;
 }
 
@@ -222,6 +226,8 @@ function createPlugin(
         undoExtractReviewAction: jest.fn(() => Promise.resolve(null)),
         syncEvents,
         flushReviewPersistence: jest.fn(() => Promise.resolve()),
+        loadDailyDeckStats: jest.fn(),
+        getDailyCounts: jest.fn(() => ({ new: 0, review: 0 })),
         savePluginData: jest.fn(() => Promise.resolve()),
         setSRViewInFocus: jest.fn(),
     } as unknown as SRPlugin;
@@ -243,7 +249,14 @@ function createDeferred<T>() {
     return { promise, resolve, reject };
 }
 
-function renderExtractReviewSession(plugin: SRPlugin, hostLeaf: WorkspaceLeaf = { id: "leaf" } as unknown as WorkspaceLeaf) {
+function renderExtractReviewSession(
+    plugin: SRPlugin,
+    hostLeaf: WorkspaceLeaf = { id: "leaf" } as unknown as WorkspaceLeaf,
+    options: {
+        sequencer?: IFlashcardReviewSequencer;
+        initialTargetDeckPath?: string;
+    } = {},
+) {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -252,16 +265,25 @@ function renderExtractReviewSession(plugin: SRPlugin, hostLeaf: WorkspaceLeaf = 
         root.render(
             React.createElement(ReviewSession, {
                 plugin,
-                sequencer: createSequencer(),
+                sequencer: options.sequencer ?? createSequencer(),
                 reviewMode: FlashcardReviewMode.Review,
                 hostLeaf,
                 markdownOwner: new Component(),
                 initialView: "review",
+                initialTargetDeckPath: options.initialTargetDeckPath,
             }),
         );
     });
 
     return { container, root };
+}
+
+function getLiveHeaderNewCount(container: HTMLElement): number {
+    const liveHeader = container.querySelector(".sr-card-header:not(.sr-card-header-measure)");
+    const badges = Array.from(liveHeader?.querySelectorAll(".sr-stat-badge") ?? []);
+    const newBadge = badges.find((badge) => badge.querySelector(".sr-stat-label")?.textContent === "NEW");
+    const count = newBadge?.querySelector(".sr-stat-count")?.textContent ?? "";
+    return Number(count);
 }
 
 function findButton(container: HTMLElement, label: string): HTMLButtonElement {
@@ -331,6 +353,113 @@ test("extract review highlights reviewed extracts with nextReview zero as new", 
 
         const liveHeader = container.querySelector(".sr-card-header:not(.sr-card-header-measure)");
         expect(liveHeader?.querySelector(".sr-stat-badge.active")?.textContent).toContain("NEW");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("sync-complete refreshes active extract review card counters without returning to deck list", async () => {
+    const item = createExtractItem({ deckName: "摘录测试" });
+    const markdown = "before {{ir::target}} after";
+    const context = createManualExtractContext(markdown, 7, 21);
+    const plugin = createPlugin(
+        item,
+        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+    );
+    const rootDeck = new Deck("root", null);
+    const extractDeck = new Deck("摘录测试", rootDeck);
+    rootDeck.subdecks.push(extractDeck);
+    plugin.remainingDeckTree = rootDeck;
+    plugin.deckTree = rootDeck;
+
+    let sessionStats = { newCount: 0, learningCount: 0, dueCount: 0 };
+    const sequencer = {
+        ...createSequencer(),
+        getSessionDeckStats: jest.fn(() => sessionStats),
+        setDeckTree: jest.fn((_fullDeckTree: Deck, isolatedDeckTree: Deck) => {
+            sessionStats = {
+                newCount: isolatedDeckTree.getCardCount(CardListType.NewCard, true),
+                learningCount: isolatedDeckTree.getCardCount(CardListType.LearningCard, true),
+                dueCount: isolatedDeckTree.getCardCount(CardListType.DueCard, true),
+            };
+        }),
+        setCurrentDeck: jest.fn(),
+    } as unknown as IFlashcardReviewSequencer;
+
+    const { container, root } = renderExtractReviewSession(
+        plugin,
+        { id: "leaf" } as unknown as WorkspaceLeaf,
+        { sequencer, initialTargetDeckPath: "摘录测试" },
+    );
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        expect(getLiveHeaderNewCount(container)).toBe(1);
+
+        extractDeck.newFlashcards.push(new Card({ Id: 42 }));
+
+        await act(async () => {
+            plugin.syncEvents.emit("sync-complete");
+        });
+        await flushEffects();
+
+        expect(getLiveHeaderNewCount(container)).toBe(2);
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("sync-complete refresh keeps newly added cards out of counters after daily new limit is reached", async () => {
+    const item = createExtractItem({ deckName: "摘录测试" });
+    const markdown = "before {{ir::target}} after";
+    const context = createManualExtractContext(markdown, 7, 21);
+    const plugin = createPlugin(
+        item,
+        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+    );
+    const rootDeck = new Deck("root", null);
+    const extractDeck = new Deck("摘录测试", rootDeck);
+    rootDeck.subdecks.push(extractDeck);
+    plugin.remainingDeckTree = rootDeck;
+    plugin.deckTree = rootDeck;
+    (plugin.getDailyCounts as jest.Mock).mockReturnValue({ new: 20, review: 0 });
+
+    let sessionStats = { newCount: 0, learningCount: 0, dueCount: 0 };
+    const sequencer = {
+        ...createSequencer(),
+        getSessionDeckStats: jest.fn(() => sessionStats),
+        setDeckTree: jest.fn((_fullDeckTree: Deck, isolatedDeckTree: Deck) => {
+            sessionStats = {
+                newCount: isolatedDeckTree.getCardCount(CardListType.NewCard, true),
+                learningCount: isolatedDeckTree.getCardCount(CardListType.LearningCard, true),
+                dueCount: isolatedDeckTree.getCardCount(CardListType.DueCard, true),
+            };
+        }),
+        setCurrentDeck: jest.fn(),
+    } as unknown as IFlashcardReviewSequencer;
+
+    const { container, root } = renderExtractReviewSession(
+        plugin,
+        { id: "leaf" } as unknown as WorkspaceLeaf,
+        { sequencer, initialTargetDeckPath: "摘录测试" },
+    );
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        expect(getLiveHeaderNewCount(container)).toBe(1);
+
+        extractDeck.newFlashcards.push(new Card({ Id: 43 }));
+
+        await act(async () => {
+            plugin.syncEvents.emit("sync-complete");
+        });
+        await flushEffects();
+
+        expect(getLiveHeaderNewCount(container)).toBe(1);
     } finally {
         act(() => root.unmount());
     }
