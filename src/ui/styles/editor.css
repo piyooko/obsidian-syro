@@ -239,27 +239,6 @@
 }
 
 /* ==========================================
-   Anki-Style Cloze ({{c1::...}}) in Editor
-   ========================================== */
-
-/* Anki cloze in source mode - subtle underline */
-.cm-anki-cloze {
-    border-bottom: 2px solid var(--interactive-accent);
-}
-
-/* Anki cloze ID number */
-.cm-anki-cloze-id {
-    color: var(--text-muted);
-    font-size: 0.85em;
-}
-
-/* Anki cloze content */
-.cm-anki-cloze-content {
-    color: var(--text-normal);
-    font-weight: 500;
-}
-
-/* ==========================================
    Incremental Reading Extracts
    Reading-mode overlay mirrors the editor overlay from ir-extract-decoration.ts.
    ========================================== */
@@ -294,11 +273,4 @@
     border: 1px solid rgba(var(--mono-rgb-100), var(--sr-ir-border-alpha, 0.1));
     border-radius: 4px;
     background-color: rgba(var(--mono-rgb-100), var(--sr-ir-bg-alpha, 0.008));
-}
-
-/* Anki cloze hint */
-.cm-anki-cloze-hint {
-    color: var(--text-muted);
-    font-style: italic;
-    font-size: 0.9em;
 }

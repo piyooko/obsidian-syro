@@ -777,8 +777,9 @@ test("extract hybrid editor renders highlight and Anki cloze with editor-compati
         await flushEffects();
 
         expect(container.querySelector(".cm-highlight")?.textContent).toBe("mark");
-        const clozeContent = container.querySelector(".sr-cloze-highlight.cm-anki-cloze-content");
+        const clozeContent = container.querySelector(".sr-cloze-highlight");
         expect(clozeContent?.textContent).toBe("answer");
+        expect(container.querySelector("[class*='cm-anki-cloze']")).toBeNull();
         expect(container.textContent).not.toContain("==mark==");
         expect(container.textContent).not.toContain("{{c2::");
         expect(container.textContent).not.toContain("::hint}}");
@@ -841,9 +842,9 @@ test("extract hybrid editor reveals Anki cloze source segments when selected in 
         });
         await flushEffects();
 
-        expect(container.querySelector(".cm-anki-cloze-id")?.textContent).toBe("2");
-        expect(container.querySelector(".cm-anki-cloze-content")?.textContent).toBe("answer");
-        expect(container.querySelector(".cm-anki-cloze-hint")?.textContent).toBe("hint");
+        const activeCloze = container.querySelector(".sr-cloze-highlight.sr-cloze-editing");
+        expect(activeCloze?.textContent).toBe("{{c2::answer::hint}}");
+        expect(container.querySelector("[class*='cm-anki-cloze']")).toBeNull();
         expect(container.textContent).toContain("{{c2::answer::hint}}");
     } finally {
         act(() => root.unmount());
@@ -2752,6 +2753,20 @@ test("review hybrid editor keeps selection background visible for copying", () =
     );
     expect(css).not.toMatch(
         /\.sr-hybrid-markdown-source\[data-sr-hybrid-mode="review"\]\s+\.cm-cursor,\s*\.sr-hybrid-markdown-source\[data-sr-hybrid-mode="review"\]\s+\.cm-selectionBackground\s*\{[^}]*display:\s*none/s,
+    );
+});
+
+test("outside extract Anki cloze highlights inherit muted context brightness", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+
+    expect(css).toMatch(
+        /\.sr-hybrid-markdown-source\s+\.sr-cloze-highlight\.sr-extract-context-muted,\s*\.sr-hybrid-markdown-source\s+\.sr-cloze-highlight:has\(\.sr-extract-context-muted\)\s*\{[^}]*opacity:\s*0\.5\s*;/s,
+    );
+    expect(css).toMatch(
+        /\.sr-hybrid-markdown-source\s+\.sr-cloze-highlight:has\(\.sr-extract-context-muted\)\s+\.sr-extract-context-muted\s*\{[^}]*opacity:\s*1\s*;/s,
+    );
+    expect(css).not.toMatch(
+        /\.sr-hybrid-markdown-source\s+\.sr-cloze-highlight\.sr-extract-context-muted,\s*\.sr-hybrid-markdown-source\s+\.sr-cloze-highlight\s+\.sr-extract-context-muted\s*\{[^}]*opacity:\s*1\s*;/s,
     );
 });
 

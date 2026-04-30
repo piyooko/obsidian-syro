@@ -2463,6 +2463,15 @@ body.syro-mobile-review-square-corners
     display: none;
 }
 
+.sr-hybrid-markdown-source .sr-cloze-highlight.sr-extract-context-muted,
+.sr-hybrid-markdown-source .sr-cloze-highlight:has(.sr-extract-context-muted) {
+    opacity: 0.5;
+}
+
+.sr-hybrid-markdown-source .sr-cloze-highlight:has(.sr-extract-context-muted) .sr-extract-context-muted {
+    opacity: 1;
+}
+
 .sr-hybrid-rendered-block.markdown-preview-view {
     max-width: none !important;
     width: 100%;

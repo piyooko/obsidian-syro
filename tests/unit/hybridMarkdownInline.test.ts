@@ -163,66 +163,130 @@ describe("collectHybridInlineTokens", () => {
         const markdown = "A {{c2::answer::hint}} B";
 
         const tokens = collectHybridInlineTokensForTest(markdown, { from: 0, to: 0 });
+        const clozeContent = tokens.find((token) => token.from === 8 && token.to === 14);
 
         expect(tokens).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
-                    className: expect.stringContaining("cm-anki-cloze"),
+                    className: expect.stringContaining("cm-formatting-cloze"),
                     from: 2,
                     hidden: true,
                     to: 8,
                 }),
                 expect.objectContaining({
-                    className: expect.stringMatching(
-                        /sr-cloze-highlight.*cm-anki-cloze-content|cm-anki-cloze-content.*sr-cloze-highlight/,
-                    ),
+                    className: "sr-cloze-highlight",
                     from: 8,
                     to: 14,
                 }),
                 expect.objectContaining({
-                    className: expect.stringContaining("cm-anki-cloze"),
+                    className: expect.stringContaining("cm-formatting-cloze"),
                     from: 14,
                     hidden: true,
                     to: 22,
                 }),
             ]),
         );
+        expect(clozeContent?.className).not.toContain("cm-anki-cloze");
     });
 
-    test("reveals Anki cloze source segments when the cursor is inside the cloze", () => {
+    test("reveals Anki cloze source as one editor-compatible mark when the cursor is inside the cloze", () => {
         const markdown = "A {{c2::answer::hint}} B";
 
         const tokens = collectHybridInlineTokensForTest(markdown, { from: 10, to: 10 });
+        const clozeSource = tokens.find((token) => token.from === 2 && token.to === 22);
 
         expect(tokens).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
-                    className: expect.stringMatching(
-                        /sr-cloze-highlight.*sr-cloze-editing.*cm-anki-cloze|cm-anki-cloze.*sr-cloze-editing.*sr-cloze-highlight/,
-                    ),
+                    className: "sr-cloze-highlight sr-cloze-editing",
                     from: 2,
                     to: 22,
                 }),
+            ]),
+        );
+        expect(clozeSource?.className).not.toContain("cm-anki-cloze");
+        expect(tokens.some((token) => token.className.includes("cm-anki-cloze"))).toBe(false);
+    });
+
+    test("keeps Anki cloze collapsed when the cursor is before the preceding visible character", () => {
+        const markdown = "段的框{{c2::架数}}据深{{c1::度剖}}析";
+        const clozeFrom = markdown.indexOf("{{c2::");
+        const contentFrom = clozeFrom + "{{c2::".length;
+        const contentTo = contentFrom + "架数".length;
+        const clozeTo = contentTo + "}}".length;
+
+        const tokens = collectHybridInlineTokensForTest(markdown, {
+            from: clozeFrom - 1,
+            to: clozeFrom - 1,
+        });
+
+        expect(tokens).toEqual(
+            expect.arrayContaining([
                 expect.objectContaining({
-                    className: expect.stringContaining("cm-anki-cloze-id"),
-                    from: 5,
-                    to: 6,
+                    className: expect.stringContaining("cm-formatting-cloze"),
+                    from: clozeFrom,
+                    hidden: true,
+                    to: contentFrom,
                 }),
                 expect.objectContaining({
-                    className: expect.stringContaining("cm-anki-cloze-content"),
-                    from: 8,
-                    to: 14,
+                    className: "sr-cloze-highlight",
+                    from: contentFrom,
+                    to: contentTo,
                 }),
                 expect.objectContaining({
-                    className: expect.stringContaining("cm-anki-cloze-hint"),
-                    from: 16,
-                    to: 20,
+                    className: expect.stringContaining("cm-formatting-cloze"),
+                    from: contentTo,
+                    hidden: true,
+                    to: clozeTo,
                 }),
             ]),
         );
+        expect(tokens).not.toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    className: "sr-cloze-highlight sr-cloze-editing",
+                    from: clozeFrom,
+                    to: clozeTo,
+                }),
+            ]),
+        );
+    });
+
+    test("reveals Anki cloze source when the cursor touches the source boundary or selection overlaps it", () => {
+        const markdown = "段的框{{c2::架数}}据深";
+        const clozeFrom = markdown.indexOf("{{c2::");
+        const clozeTo = clozeFrom + "{{c2::架数}}".length;
+        const contentFrom = clozeFrom + "{{c2::".length;
+
         expect(
-            tokens.filter((token) => token.className.includes("cm-anki-cloze") && token.hidden),
-        ).toHaveLength(0);
+            collectHybridInlineTokensForTest(markdown, {
+                from: clozeFrom,
+                to: clozeFrom,
+            }),
+        ).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    className: "sr-cloze-highlight sr-cloze-editing",
+                    from: clozeFrom,
+                    to: clozeTo,
+                }),
+            ]),
+        );
+
+        expect(
+            collectHybridInlineTokensForTest(markdown, {
+                from: contentFrom,
+                to: contentFrom + 1,
+            }),
+        ).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    className: "sr-cloze-highlight sr-cloze-editing",
+                    from: clozeFrom,
+                    to: clozeTo,
+                }),
+            ]),
+        );
     });
 
     test("marks markdown and wiki links without exposing formatting by default", () => {
@@ -392,7 +456,7 @@ describe("collectHybridInlineTokens", () => {
         ]);
         expect(tokens.filter((token) => token.className.includes("cm-highlight"))).toHaveLength(1);
         expect(
-            tokens.filter((token) => token.className.includes("cm-anki-cloze-content")),
+            tokens.filter((token) => token.className === "sr-cloze-highlight"),
         ).toHaveLength(1);
     });
 });
