@@ -1,4 +1,6 @@
 import {
+    Annotation,
+    EditorState,
     RangeSetBuilder,
     StateEffect,
     StateField,
@@ -30,6 +32,7 @@ export interface ExtractContextUpdate {
 }
 
 export const setExtractContextRangesEffect = StateEffect.define<ExtractContextRanges>();
+export const allowExtractContextBoundaryMutationAnnotation = Annotation.define<boolean>();
 const LEFT_ASSOC = -1;
 const RIGHT_ASSOC = 1;
 
@@ -142,6 +145,132 @@ function shouldRevealToken(view: EditorView, from: number, to: number): boolean 
     return view.state.facet(EditorView.editable) && selectionTouchesToken(view, from, to);
 }
 
+function shouldGuardCurrentBoundary(transaction: Transaction): boolean {
+    return (
+        transaction.docChanged &&
+        transaction.startState.facet(EditorView.editable) &&
+        transaction.annotation(allowExtractContextBoundaryMutationAnnotation) !== true
+    );
+}
+
+function getCurrentBoundaryTokenRanges(
+    ranges: ExtractContextRanges,
+): Array<{ from: number; to: number }> {
+    return [
+        { from: ranges.currentOpenTokenFrom, to: ranges.currentOpenTokenTo },
+        { from: ranges.currentCloseTokenFrom, to: ranges.currentCloseTokenTo },
+    ].filter((range) => range.to > range.from);
+}
+
+function getCurrentBoundarySuppressionRanges(
+    transaction: Transaction,
+    ranges: ExtractContextRanges,
+): number[] {
+    const tokens = getCurrentBoundaryTokenRanges(ranges);
+    const suppressed: number[] = [];
+
+    transaction.changes.iterChanges((fromA, toA) => {
+        if (fromA === toA) {
+            return;
+        }
+
+        for (const token of tokens) {
+            const from = Math.max(fromA, token.from);
+            const to = Math.min(toA, token.to);
+            if (from < to) {
+                suppressed.push(from, to);
+            }
+        }
+    });
+
+    return suppressed;
+}
+
+function transactionInsertsInsideCurrentBoundary(
+    transaction: Transaction,
+    ranges: ExtractContextRanges,
+): boolean {
+    const tokens = getCurrentBoundaryTokenRanges(ranges);
+    let insertsInsideBoundary = false;
+
+    transaction.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+        if (insertsInsideBoundary || fromA !== toA || inserted.length === 0) {
+            return;
+        }
+
+        insertsInsideBoundary = tokens.some(
+            (token) => fromA > token.from && fromA < token.to,
+        );
+    });
+
+    return insertsInsideBoundary;
+}
+
+function hasCurrentBoundaryTokens(markdown: string, ranges: ExtractContextRanges): boolean {
+    return (
+        markdown.slice(ranges.currentOpenTokenFrom, ranges.currentOpenTokenTo) === "{{ir::" &&
+        markdown.slice(ranges.currentCloseTokenFrom, ranges.currentCloseTokenTo) === "}}"
+    );
+}
+
+function transactionKeepsCurrentBoundaryTokens(
+    transaction: Transaction,
+    ranges: ExtractContextRanges,
+): boolean {
+    const nextRanges = mapExtractContextRanges(ranges, transaction);
+    return hasCurrentBoundaryTokens(transaction.newDoc.toString(), nextRanges);
+}
+
+function createExtractContextBoundaryGuardExtension(): Extension {
+    return [
+        EditorState.changeFilter.of((transaction) => {
+            if (!shouldGuardCurrentBoundary(transaction)) {
+                return true;
+            }
+
+            const ranges = transaction.startState.field(extractContextRangesField, false);
+            if (!ranges) {
+                return true;
+            }
+
+            if (getCurrentBoundaryTokenRanges(ranges).length === 0) {
+                return true;
+            }
+
+            const suppressed = getCurrentBoundarySuppressionRanges(transaction, ranges);
+            return suppressed.length > 0 ? suppressed : true;
+        }),
+        EditorState.transactionFilter.of((transaction) => {
+            if (!shouldGuardCurrentBoundary(transaction)) {
+                return transaction;
+            }
+
+            const ranges = transaction.startState.field(extractContextRangesField, false);
+            if (!ranges) {
+                return transaction;
+            }
+
+            if (getCurrentBoundaryTokenRanges(ranges).length === 0) {
+                return transaction;
+            }
+
+            if (transactionInsertsInsideCurrentBoundary(transaction, ranges)) {
+                return [];
+            }
+
+            const suppressed = getCurrentBoundarySuppressionRanges(transaction, ranges);
+            if (
+                suppressed.length === 0 &&
+                !transactionKeepsCurrentBoundaryTokens(transaction, ranges)
+            ) {
+                return [];
+            }
+
+            return transaction;
+        }),
+    ];
+}
+
 function buildExtractContextDecorations(view: EditorView): DecorationSet {
     const builder = new RangeSetBuilder<Decoration>();
     const ranges = view.state.field(extractContextRangesField);
@@ -236,5 +365,10 @@ export const extractContextTheme = EditorView.baseTheme({
 });
 
 export function createExtractContextDecorationExtensions(): Extension[] {
-    return [extractContextRangesField, createExtractContextDecorationPlugin(), extractContextTheme];
+    return [
+        extractContextRangesField,
+        createExtractContextBoundaryGuardExtension(),
+        createExtractContextDecorationPlugin(),
+        extractContextTheme,
+    ];
 }

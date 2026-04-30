@@ -40,6 +40,7 @@ import {
     updateMarkdownTableCell,
 } from "src/editor/hybridMarkdownTable";
 import {
+    allowExtractContextBoundaryMutationAnnotation,
     createExtractContextDecorationExtensions,
     extractContextRangesField,
     setExtractContextRangesEffect,
@@ -1304,6 +1305,7 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
             view.dispatch({
                 changes: { from: 0, to: currentValue.length, insert: value },
                 effects,
+                annotations: allowExtractContextBoundaryMutationAnnotation.of(true),
             });
         } else {
             view.dispatch({ effects });

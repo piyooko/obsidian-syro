@@ -1,6 +1,7 @@
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import {
+    allowExtractContextBoundaryMutationAnnotation,
     createExtractContextDecorationExtensions,
     extractContextRangesField,
     setExtractContextRangesEffect,
@@ -217,6 +218,366 @@ describe("extract context boundary reveal", () => {
             away.parent.remove();
             readonly.view.destroy();
             readonly.parent.remove();
+        }
+    });
+});
+
+describe("extract context boundary guard", () => {
+    function createGuardedEditor(
+        editable = true,
+    ): { parent: HTMLElement; ranges: ExtractContextRanges; view: EditorView } {
+        const markdown = "before {{ir::target}} after";
+        const ranges = createManualRanges(markdown, 7, 21);
+        const parent = document.createElement("div");
+        document.body.appendChild(parent);
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: markdown,
+                extensions: [
+                    EditorView.editable.of(editable),
+                    ...createExtractContextDecorationExtensions(),
+                ],
+            }),
+        });
+        view.dispatch({ effects: setExtractContextRangesEffect.of(ranges) });
+        return { parent, ranges, view };
+    }
+
+    function destroyGuardedEditor(editor: { parent: HTMLElement; view: EditorView }): void {
+        editor.view.destroy();
+        editor.parent.remove();
+    }
+
+    test("preserves the current close boundary while replacing selected content", () => {
+        const editor = createGuardedEditor();
+
+        try {
+            editor.view.dispatch({
+                changes: {
+                    from: editor.ranges.currentCloseTokenFrom - 1,
+                    to: editor.ranges.currentCloseTokenTo,
+                    insert: "1",
+                },
+                userEvent: "input.type",
+            });
+
+            expect(editor.view.state.doc.toString()).toBe("before {{ir::targe1}} after");
+        } finally {
+            destroyGuardedEditor(editor);
+        }
+    });
+
+    test("blocks deleting the current open boundary", () => {
+        const editor = createGuardedEditor();
+
+        try {
+            editor.view.dispatch({
+                changes: {
+                    from: editor.ranges.currentOpenTokenFrom,
+                    to: editor.ranges.currentOpenTokenTo,
+                    insert: "",
+                },
+                userEvent: "delete",
+            });
+
+            expect(editor.view.state.doc.toString()).toBe("before {{ir::target}} after");
+        } finally {
+            destroyGuardedEditor(editor);
+        }
+    });
+
+    test("protects the current open boundary even when the delete transaction has no user event", () => {
+        const editor = createGuardedEditor();
+
+        try {
+            editor.view.dispatch({
+                changes: {
+                    from: editor.ranges.currentOpenTokenFrom,
+                    to: editor.ranges.currentOpenTokenTo,
+                    insert: "",
+                },
+            });
+
+            expect(editor.view.state.doc.toString()).toBe("before {{ir::target}} after");
+        } finally {
+            destroyGuardedEditor(editor);
+        }
+    });
+
+    test("protects the current close boundary even when the delete transaction has no user event", () => {
+        const editor = createGuardedEditor();
+
+        try {
+            editor.view.dispatch({
+                changes: {
+                    from: editor.ranges.currentCloseTokenFrom,
+                    to: editor.ranges.currentCloseTokenTo,
+                    insert: "",
+                },
+            });
+
+            expect(editor.view.state.doc.toString()).toBe("before {{ir::target}} after");
+        } finally {
+            destroyGuardedEditor(editor);
+        }
+    });
+
+    test("allows deleting a nested extract boundary inside the current extract", () => {
+        const markdown = "before {{ir::这是{{ir::一}}段话}} after";
+        const ranges = createManualRanges(markdown, 7, markdown.indexOf(" after"));
+        const parent = document.createElement("div");
+        document.body.appendChild(parent);
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: markdown,
+                extensions: [
+                    EditorView.editable.of(true),
+                    ...createExtractContextDecorationExtensions(),
+                ],
+            }),
+        });
+        view.dispatch({ effects: setExtractContextRangesEffect.of(ranges) });
+
+        try {
+            view.dispatch({
+                changes: {
+                    from: ranges.currentInnerFrom + "这是".length,
+                    to: ranges.currentInnerFrom + "这是{{ir::一}}".length,
+                    insert: "",
+                },
+                userEvent: "delete",
+            });
+
+            const nextRanges = view.state.field(extractContextRangesField);
+            expect(view.state.doc.toString()).toBe("before {{ir::这是段话}} after");
+            expect(hasCurrentExtractWrapper(view.state.doc.toString(), nextRanges)).toBe(true);
+        } finally {
+            view.destroy();
+            parent.remove();
+        }
+    });
+
+    test("preserves only the current outer boundary when deleting the whole current extract", () => {
+        const editor = createGuardedEditor();
+
+        try {
+            editor.view.dispatch({
+                changes: {
+                    from: editor.ranges.currentOpenTokenFrom,
+                    to: editor.ranges.currentCloseTokenTo,
+                    insert: "",
+                },
+                userEvent: "delete",
+            });
+
+            const nextRanges = editor.view.state.field(extractContextRangesField);
+            expect(editor.view.state.doc.toString()).toBe("before {{ir::}} after");
+            expect(hasCurrentExtractWrapper(editor.view.state.doc.toString(), nextRanges)).toBe(
+                true,
+            );
+        } finally {
+            destroyGuardedEditor(editor);
+        }
+    });
+
+    test("preserves the current open boundary while deleting selected multiline content", () => {
+        const markdown = "before {{ir::target\nnext}} after";
+        const ranges = createManualRanges(markdown, 7, 26);
+        const parent = document.createElement("div");
+        document.body.appendChild(parent);
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: markdown,
+                extensions: [
+                    EditorView.editable.of(true),
+                    ...createExtractContextDecorationExtensions(),
+                ],
+            }),
+        });
+        view.dispatch({ effects: setExtractContextRangesEffect.of(ranges) });
+
+        try {
+            view.dispatch({
+                changes: {
+                    from: ranges.currentOpenTokenFrom,
+                    to: ranges.currentInnerFrom + "target\n".length,
+                    insert: "",
+                },
+                userEvent: "delete",
+            });
+
+            expect(view.state.doc.toString()).toBe("before {{ir::next}} after");
+        } finally {
+            view.destroy();
+            parent.remove();
+        }
+    });
+
+    test("allows deleting selected multiline content fully inside the current extract", () => {
+        const markdown = "before {{ir::target\nnext}} after";
+        const ranges = createManualRanges(markdown, 7, 26);
+        const parent = document.createElement("div");
+        document.body.appendChild(parent);
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: markdown,
+                extensions: [
+                    EditorView.editable.of(true),
+                    ...createExtractContextDecorationExtensions(),
+                ],
+            }),
+        });
+        view.dispatch({ effects: setExtractContextRangesEffect.of(ranges) });
+
+        try {
+            view.dispatch({
+                changes: {
+                    from: ranges.currentInnerFrom,
+                    to: ranges.currentInnerFrom + "target\n".length,
+                    insert: "",
+                },
+                userEvent: "delete",
+            });
+
+            expect(view.state.doc.toString()).toBe("before {{ir::next}} after");
+        } finally {
+            view.destroy();
+            parent.remove();
+        }
+    });
+
+    test("blocks Enter inside the current close boundary token", () => {
+        const editor = createGuardedEditor();
+
+        try {
+            editor.view.dispatch({
+                changes: {
+                    from: editor.ranges.currentCloseTokenFrom + 1,
+                    insert: "\n",
+                },
+                userEvent: "input",
+            });
+
+            expect(editor.view.state.doc.toString()).toBe("before {{ir::target}} after");
+        } finally {
+            destroyGuardedEditor(editor);
+        }
+    });
+
+    test("blocks replacing only the current open boundary token with Enter", () => {
+        const editor = createGuardedEditor();
+
+        try {
+            editor.view.dispatch({
+                changes: {
+                    from: editor.ranges.currentOpenTokenFrom,
+                    to: editor.ranges.currentOpenTokenTo,
+                    insert: "\n",
+                },
+                userEvent: "input",
+            });
+
+            expect(editor.view.state.doc.toString()).toBe("before {{ir::target}} after");
+        } finally {
+            destroyGuardedEditor(editor);
+        }
+    });
+
+    test("blocks replacing only the current close boundary token with Enter", () => {
+        const editor = createGuardedEditor();
+
+        try {
+            editor.view.dispatch({
+                changes: {
+                    from: editor.ranges.currentCloseTokenFrom,
+                    to: editor.ranges.currentCloseTokenTo,
+                    insert: "\n",
+                },
+                userEvent: "input",
+            });
+
+            expect(editor.view.state.doc.toString()).toBe("before {{ir::target}} after");
+        } finally {
+            destroyGuardedEditor(editor);
+        }
+    });
+
+    test("allows insertions on the semantic edges of the current open boundary", () => {
+        const outside = createGuardedEditor();
+        const inside = createGuardedEditor();
+
+        try {
+            outside.view.dispatch({
+                changes: {
+                    from: outside.ranges.currentOpenTokenFrom,
+                    insert: "1",
+                },
+                userEvent: "input.type",
+            });
+            inside.view.dispatch({
+                changes: {
+                    from: inside.ranges.currentOpenTokenTo,
+                    insert: "1",
+                },
+                userEvent: "input.type",
+            });
+
+            expect(outside.view.state.doc.toString()).toBe("before 1{{ir::target}} after");
+            expect(inside.view.state.doc.toString()).toBe("before {{ir::1target}} after");
+        } finally {
+            destroyGuardedEditor(outside);
+            destroyGuardedEditor(inside);
+        }
+    });
+
+    test("allows insertions on the semantic edges of the current close boundary", () => {
+        const inside = createGuardedEditor();
+        const outside = createGuardedEditor();
+
+        try {
+            inside.view.dispatch({
+                changes: {
+                    from: inside.ranges.currentCloseTokenFrom,
+                    insert: "1",
+                },
+                userEvent: "input.type",
+            });
+            outside.view.dispatch({
+                changes: {
+                    from: outside.ranges.currentCloseTokenTo,
+                    insert: "1",
+                },
+                userEvent: "input.type",
+            });
+
+            expect(inside.view.state.doc.toString()).toBe("before {{ir::target1}} after");
+            expect(outside.view.state.doc.toString()).toBe("before {{ir::target}}1 after");
+        } finally {
+            destroyGuardedEditor(inside);
+            destroyGuardedEditor(outside);
+        }
+    });
+
+    test("allows annotated document synchronization even when it replaces boundary text", () => {
+        const editor = createGuardedEditor();
+
+        try {
+            editor.view.dispatch({
+                changes: {
+                    from: editor.ranges.currentOpenTokenFrom,
+                    to: editor.ranges.currentCloseTokenTo,
+                    insert: "target",
+                },
+                annotations: allowExtractContextBoundaryMutationAnnotation.of(true),
+            });
+
+            expect(editor.view.state.doc.toString()).toBe("before target after");
+        } finally {
+            destroyGuardedEditor(editor);
         }
     });
 });

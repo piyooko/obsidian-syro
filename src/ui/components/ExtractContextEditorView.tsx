@@ -5,6 +5,7 @@ import type { FC } from "react";
 import { Compartment, EditorState } from "@codemirror/state";
 import { drawSelection, dropCursor, EditorView, keymap } from "@codemirror/view";
 import {
+    allowExtractContextBoundaryMutationAnnotation,
     createExtractContextDecorationExtensions,
     extractContextRangesField,
     setExtractContextRangesEffect,
@@ -158,6 +159,7 @@ export const ExtractContextEditorView: FC<ExtractContextEditorViewProps> = ({
         if (value !== currentValue) {
             view.dispatch({
                 changes: { from: 0, to: currentValue.length, insert: value },
+                annotations: allowExtractContextBoundaryMutationAnnotation.of(true),
             });
         }
         view.dispatch({
