@@ -4,6 +4,7 @@ import {
     alignNestedIrExtractBlocksHorizontally,
     clampIrExtractVerticalInsetsForAdjacentBlocks,
     containNestedIrExtractBlocks,
+    createIrExtractBlockElement,
     createIrExtractDecorationExtensions,
     findActiveIrExtractSourceMatch,
     buildIrExtractRenderExtractsForTest,
@@ -21,12 +22,27 @@ import {
     getIrExtractVerticalInsetForMetrics,
     getIrExtractWrappedBlockPrefix,
     getIrExtractWrappedHeading,
+    findIrExtractInfoActionStartAtClientPoint,
+    isIrExtractNoteTooltipVisible,
     type MeasuredExtractBlock,
     type RenderExtract,
 } from "src/editor/ir-extract-decoration";
 import { parseIrExtracts } from "src/util/irExtractParser";
 
 describe("irExtractDecoration helpers", () => {
+    beforeAll(() => {
+        if (!HTMLElement.prototype.setCssProps) {
+            HTMLElement.prototype.setCssProps = function setCssProps(
+                this: HTMLElement,
+                props: Record<string, string>,
+            ) {
+                for (const [key, value] of Object.entries(props)) {
+                    this.style.setProperty(key, value);
+                }
+            };
+        }
+    });
+
     afterEach(() => {
         document.body.innerHTML = "";
     });
@@ -199,6 +215,46 @@ describe("irExtractDecoration helpers", () => {
             ]),
             40,
             null,
+            null,
+        );
+
+        expect([...visibleStarts]).toEqual([40, 20, 0]);
+    });
+
+    test("shows the same ancestor info actions when the cursor is inside a nested child block", () => {
+        const visibleStarts = getIrExtractInfoVisibleStarts(
+            new Map([
+                [0, { start: 0, left: 0, top: 0, width: 100, height: 100, depth: 1, maxDepth: 3 }],
+                [
+                    20,
+                    {
+                        start: 20,
+                        parentStart: 0,
+                        left: 0,
+                        top: 20,
+                        width: 100,
+                        height: 60,
+                        depth: 2,
+                        maxDepth: 3,
+                    },
+                ],
+                [
+                    40,
+                    {
+                        start: 40,
+                        parentStart: 20,
+                        left: 0,
+                        top: 30,
+                        width: 100,
+                        height: 20,
+                        depth: 3,
+                        maxDepth: 3,
+                    },
+                ],
+            ]),
+            null,
+            40,
+            null,
         );
 
         expect([...visibleStarts]).toEqual([40, 20, 0]);
@@ -339,6 +395,90 @@ describe("irExtractDecoration helpers", () => {
             [matches[1].start, -8],
             [matches[0].start, 0],
         ]);
+    });
+
+    test("creates an editable note-path tooltip for the info action", () => {
+        const pinnedStarts: number[] = [];
+        const hoverStarts: number[] = [];
+        const hoverEnds: number[] = [];
+        const element = createIrExtractBlockElement(42, {
+            onPinTooltip: (blockStart: number) => pinnedStarts.push(blockStart),
+            onTooltipHoverStart: (blockStart: number) => hoverStarts.push(blockStart),
+            onTooltipHoverEnd: (blockStart: number) => hoverEnds.push(blockStart),
+        });
+
+        const action = element.querySelector<HTMLElement>(".sr-ir-info-action");
+        const tooltip = element.querySelector<HTMLElement>(".sr-ir-note-tooltip");
+        const textarea = tooltip?.querySelector<HTMLTextAreaElement>("textarea");
+
+        expect(action).toBeTruthy();
+        expect(tooltip).toBeTruthy();
+        expect(tooltip?.classList.contains("sr-note-path-tooltip")).toBe(true);
+        expect(tooltip?.classList.contains("is-below")).toBe(true);
+        expect(action?.contains(tooltip ?? null)).toBe(true);
+        expect(textarea?.placeholder).toBe("输入备注...");
+
+        action?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+        expect(hoverStarts).toEqual([42]);
+
+        action?.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
+        expect(hoverEnds).toEqual([42]);
+
+        action?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
+        expect(pinnedStarts).toEqual([42]);
+
+        if (!textarea) {
+            throw new Error("Expected editable tooltip textarea");
+        }
+        textarea.value = "纯前端备注";
+        textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
+        expect(textarea.value).toBe("纯前端备注");
+    });
+
+    test("shows the note tooltip only from icon hover or pinned click state", () => {
+        expect(isIrExtractNoteTooltipVisible(42, null, null)).toBe(false);
+        expect(isIrExtractNoteTooltipVisible(42, 42, null)).toBe(true);
+        expect(isIrExtractNoteTooltipVisible(42, null, 42)).toBe(true);
+        expect(isIrExtractNoteTooltipVisible(42, 7, 9)).toBe(false);
+    });
+
+    test("detects visible info actions by pointer coordinates even when event target differs", () => {
+        const element = createIrExtractBlockElement(42, {
+            onPinTooltip: () => undefined,
+            onTooltipHoverStart: () => undefined,
+            onTooltipHoverEnd: () => undefined,
+        });
+        const action = element.querySelector<HTMLElement>(".sr-ir-info-action");
+        if (!action) {
+            throw new Error("Expected info action");
+        }
+
+        action.getBoundingClientRect = jest.fn(
+            () =>
+                ({
+                    left: 10,
+                    top: 20,
+                    right: 30,
+                    bottom: 40,
+                    width: 20,
+                    height: 20,
+                    x: 10,
+                    y: 20,
+                    toJSON: () => undefined,
+                }) as DOMRect,
+        );
+
+        expect(findIrExtractInfoActionStartAtClientPoint(new Map([[42, element]]), 15, 25)).toBe(
+            null,
+        );
+
+        action.classList.add("is-visible");
+        expect(findIrExtractInfoActionStartAtClientPoint(new Map([[42, element]]), 15, 25)).toBe(
+            42,
+        );
+        expect(findIrExtractInfoActionStartAtClientPoint(new Map([[42, element]]), 5, 25)).toBe(
+            null,
+        );
     });
 
     test("stacks info actions left when a parent start token is on the previous start-only line", () => {
