@@ -1157,6 +1157,29 @@ function findHoveredIrExtractBlockStart(
     return null;
 }
 
+export function getIrExtractInfoVisibleStarts(
+    blocks: ReadonlyMap<number, MeasuredExtractBlock>,
+    hoveredBlockStart: number | null,
+    openBlockStart: number | null,
+): Set<number> {
+    const starts = new Set<number>();
+    const addAncestorChain = (start: number | null): void => {
+        let currentStart = start;
+        while (currentStart !== null) {
+            const block = blocks.get(currentStart);
+            if (!block || starts.has(currentStart)) {
+                break;
+            }
+            starts.add(currentStart);
+            currentStart = block.parentStart ?? null;
+        }
+    };
+
+    addAncestorChain(hoveredBlockStart);
+    addAncestorChain(openBlockStart);
+    return starts;
+}
+
 function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {}): Extension {
     return ViewPlugin.fromClass(
         class {
@@ -1341,14 +1364,20 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             }
 
             private updateInteractiveBlockStates(): void {
+                const infoVisibleStarts = getIrExtractInfoVisibleStarts(
+                    this.blockMeasurements,
+                    this.hoveredBlockStart,
+                    this.openBlockStart,
+                );
                 for (const [blockStart, element] of this.blockDomCache) {
                     const isEditing = blockStart === this.openBlockStart;
                     const isHovered = isEditing || blockStart === this.hoveredBlockStart;
+                    const infoVisible = infoVisibleStarts.has(blockStart);
                     element.classList.toggle("is-editing", isEditing);
                     element.classList.toggle("is-hovered", isHovered);
-                    element
-                        .querySelector(".sr-ir-info-action")
-                        ?.classList.toggle("is-editing", isEditing);
+                    const infoAction = element.querySelector(".sr-ir-info-action");
+                    infoAction?.classList.toggle("is-editing", isEditing);
+                    infoAction?.classList.toggle("is-visible", infoVisible);
                 }
             }
 
@@ -1466,7 +1495,7 @@ const irExtractDecorationTheme = EditorView.baseTheme({
         width: "14px",
         height: "14px",
     },
-    ".sr-ir-extract-block.is-hovered .sr-ir-info-action, .sr-ir-info-action.is-editing": {
+    ".sr-ir-extract-block.is-hovered .sr-ir-info-action, .sr-ir-info-action.is-visible, .sr-ir-info-action.is-editing": {
         opacity: "1",
     },
     ".sr-ir-info-action:hover": {

@@ -11,6 +11,7 @@ import {
     findIrExtractSourceMatches,
     findIrExtractSourceMatchesAtPoint,
     findIrExtractSourceStartsAtSelectionPoint,
+    getIrExtractInfoVisibleStarts,
     getIrExtractLayerInset,
     getIrExtractLayerVerticalInset,
     getIrExtractHorizontalFrameForMetrics,
@@ -122,6 +123,44 @@ describe("irExtractDecoration helpers", () => {
         expect(blocks[0]).toMatchObject({ left: 2, width: 256 });
         expect(blocks[1]).toMatchObject({ left: 8, width: 244 });
         expect(blocks[2]).toMatchObject({ left: 14, width: 232 });
+    });
+
+    test("shows ancestor info actions when hovering a nested child block", () => {
+        const visibleStarts = getIrExtractInfoVisibleStarts(
+            new Map([
+                [0, { start: 0, left: 0, top: 0, width: 100, height: 100, depth: 1, maxDepth: 3 }],
+                [
+                    20,
+                    {
+                        start: 20,
+                        parentStart: 0,
+                        left: 0,
+                        top: 20,
+                        width: 100,
+                        height: 60,
+                        depth: 2,
+                        maxDepth: 3,
+                    },
+                ],
+                [
+                    40,
+                    {
+                        start: 40,
+                        parentStart: 20,
+                        left: 0,
+                        top: 30,
+                        width: 100,
+                        height: 20,
+                        depth: 3,
+                        maxDepth: 3,
+                    },
+                ],
+            ]),
+            40,
+            null,
+        );
+
+        expect([...visibleStarts]).toEqual([40, 20, 0]);
     });
 
     test("separates nested extract vertical borders by depth", () => {
