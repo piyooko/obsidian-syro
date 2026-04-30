@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { FC } from "react";
+import { history, historyKeymap } from "@codemirror/commands";
 import {
     Compartment,
     EditorSelection,
@@ -1093,6 +1094,7 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
                 hybridModeField,
                 editableCompartmentRef.current.of(EditorView.editable.of(mode === "edit")),
                 EditorView.lineWrapping,
+                history(),
                 dropCursor(),
                 EditorView.domEventHandlers({
                     keydown: (event) => {
@@ -1156,6 +1158,7 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
                         return false;
                     },
                 }),
+                keymap.of(historyKeymap),
                 keymap.of([
                     {
                         key: "Mod-Enter",

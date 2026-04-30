@@ -148,6 +148,72 @@ test("validates the hidden current extract wrapper before saving", () => {
     expect(hasCurrentExtractWrapper("before target after", ranges)).toBe(false);
 });
 
+test("extract hybrid editor preserves wrapper ranges when inserting at the current close boundary", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const markdown = "before {{ir::target}} after";
+    const context = createManualExtractContext(markdown, 7, 21);
+    const onUpdateExtractContext = jest.fn();
+    const plugin = createMinimalPlugin();
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "target", back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin,
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    editModeToggleToken: 0,
+                }),
+            );
+        });
+        await flushEffects();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "target", back: "" },
+                    extractContext: context,
+                    extractContextDraft: { markdown, ranges: context },
+                    onUpdateExtractContext,
+                    plugin,
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                    editModeToggleToken: 1,
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editorDom = container.querySelector<HTMLElement>(".cm-editor");
+        const view = editorDom ? EditorView.findFromDOM(editorDom) : null;
+        expect(view).not.toBeNull();
+
+        act(() => {
+            view?.dispatch({
+                changes: { from: context.currentCloseTokenFrom, insert: "1" },
+            });
+        });
+        await flushEffects();
+
+        const update = onUpdateExtractContext.mock.calls.at(-1)?.[0];
+        expect(update?.markdown).toBe("before {{ir::target1}} after");
+        expect(update && hasCurrentExtractWrapper(update.markdown, update.ranges)).toBe(true);
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
 test("extract review renders direct actions without show-answer or hard/easy labels", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -1938,6 +2004,97 @@ test("extract hybrid editor preserves native clipboard shortcuts in edit mode", 
         expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
     } finally {
         container.removeEventListener("keydown", bubbledKeydown);
+        act(() => root.unmount());
+        container.remove();
+    }
+});
+
+test("extract hybrid editor uses CodeMirror undo instead of Syro review undo in edit mode", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const originalGetClientRects = Range.prototype.getClientRects;
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    const rect = {
+        bottom: 24,
+        height: 20,
+        left: 16,
+        right: 240,
+        top: 4,
+        width: 224,
+        x: 16,
+        y: 4,
+        toJSON: () => ({}),
+    } as DOMRect;
+    const markdown = "front";
+    const onUndo = jest.fn();
+    const onUpdateExtractContext = jest.fn();
+
+    Range.prototype.getClientRects = () => [rect] as unknown as DOMRectList;
+    HTMLElement.prototype.getBoundingClientRect = () => rect;
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 0,
+                    onUndo,
+                    onUpdateExtractContext,
+                    plugin: createMinimalPlugin(),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...createExtractCardProps(markdown),
+                    editModeToggleToken: 1,
+                    onUndo,
+                    onUpdateExtractContext,
+                    plugin: createMinimalPlugin(),
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        const editorDom = container.querySelector<HTMLElement>(".cm-editor");
+        const content = container.querySelector<HTMLElement>(".cm-content");
+        const view = editorDom ? EditorView.findFromDOM(editorDom) : null;
+        expect(view).not.toBeNull();
+        expect(content).not.toBeNull();
+
+        act(() => {
+            view?.dispatch({
+                changes: { from: markdown.length, insert: " edited" },
+            });
+        });
+        expect(view?.state.doc.toString()).toBe("front edited");
+
+        act(() => {
+            content?.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                    bubbles: true,
+                    cancelable: true,
+                    code: "KeyZ",
+                    ctrlKey: true,
+                    key: "z",
+                }),
+            );
+        });
+        await flushEffects();
+
+        expect(view?.state.doc.toString()).toBe("front");
+        expect(onUpdateExtractContext.mock.calls.at(-1)?.[0].markdown).toBe("front");
+        expect(onUndo).not.toHaveBeenCalled();
+        expect(container.textContent).not.toContain("撤回");
+    } finally {
+        Range.prototype.getClientRects = originalGetClientRects;
+        HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
         act(() => root.unmount());
         container.remove();
     }

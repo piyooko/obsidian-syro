@@ -596,17 +596,14 @@ function uniqueIrExtractMatchesByStart(matches: IrExtractMatch[]): IrExtractMatc
 
 function getSelectionPointInScrollCoordinates(
     view: EditorView,
-    selection: { from: number; to: number },
+    selection: { from: number; to: number; head?: number },
 ): { x: number; y: number } | null {
-    if (selection.from !== selection.to) {
-        return null;
-    }
-
     if (!canMeasureDomRanges()) {
         return null;
     }
 
-    const coords = view.coordsAtPos(selection.from);
+    const position = selection.from === selection.to ? selection.from : (selection.head ?? selection.to);
+    const coords = view.coordsAtPos(position);
     if (!coords) {
         return null;
     }
@@ -618,16 +615,13 @@ function getSelectionPointInScrollCoordinates(
     };
 }
 
-function findIrExtractSourceStartsAtSelectionPoint(
+export function findIrExtractSourceStartsAtSelectionPoint(
     matches: IrExtractMatch[],
-    selection: { from: number; to: number },
+    _selection: { from: number; to: number },
     blocks: Pick<MeasuredExtractBlock, "start" | "left" | "top" | "width" | "height">[],
     point: { x: number; y: number } | null,
 ): number[] {
     if (!point) {
-        return [];
-    }
-    if (selection.from !== selection.to) {
         return [];
     }
     return findIrExtractSourceMatchesAtPoint(matches, blocks, point.x, point.y).map(
@@ -1076,8 +1070,6 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         !receivedPointSourceStarts &&
                         (update.docChanged ||
                             update.viewportChanged ||
-                            update.selectionSet ||
-                            update.focusChanged ||
                             receivedExtractContextRanges ||
                             sourceRevealChanged)
                     ) {
@@ -1140,7 +1132,6 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
 
                         const nextPointSourceStarts = new Set(result.pointSourceStarts);
                         if (!areNumberSetsEqual(this.pointSourceStarts, nextPointSourceStarts)) {
-                            this.pointSourceStarts = nextPointSourceStarts;
                             const nextStarts = [...nextPointSourceStarts];
                             window.requestAnimationFrame(() => {
                                 const selection = view.state.selection.main;

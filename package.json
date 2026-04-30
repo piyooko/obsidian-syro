@@ -67,7 +67,8 @@
         "typescript-eslint": "8.57.1"
     },
     "dependencies": {
-        "@codemirror/state": "^6.5.0",
+        "@codemirror/commands": "^6.9.0",
+        "@codemirror/state": "^6.5.4",
         "@codemirror/view": "^6.38.6",
         "@emotion/is-prop-valid": "^1.4.0",
         "clozecraft": "^0.4.0",
@@ -85,6 +86,11 @@
     "packageManager": "pnpm@9.10.0",
     "engines": {
         "pnpm": ">=9.10.0"
+    },
+    "pnpm": {
+        "overrides": {
+            "@codemirror/state": "6.5.4"
+        }
     },
     "engineStrict": true
 }

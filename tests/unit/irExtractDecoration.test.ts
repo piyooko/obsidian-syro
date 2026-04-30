@@ -7,6 +7,7 @@ import {
     findIrExtractEditingRoot,
     findIrExtractSourceMatches,
     findIrExtractSourceMatchesAtPoint,
+    findIrExtractSourceStartsAtSelectionPoint,
     getIrExtractLayerInset,
     getIrExtractLayerVerticalInset,
     getIrExtractLineRanges,
@@ -205,6 +206,26 @@ describe("irExtractDecoration helpers", () => {
                 (match) => match.rawMarkdown,
             ),
         ).toEqual(["outer {{ir::inner}} text", "inner"]);
+    });
+
+    test("keeps point source matches while selecting inside an extract block", () => {
+        const text = "{{ir::outer {{ir::inner}} text}}";
+        const matches = parseIrExtracts(text);
+        const blocks = [
+            { start: matches[0].start, left: 0, top: 0, width: 100, height: 40 },
+            { start: matches[1].start, left: 20, top: 10, width: 50, height: 20 },
+        ];
+        const selectionFrom = text.indexOf("inner");
+        const selectionTo = selectionFrom + "inn".length;
+
+        expect(
+            findIrExtractSourceStartsAtSelectionPoint(
+                matches,
+                { from: selectionFrom, to: selectionTo },
+                blocks,
+                { x: 30, y: 20 },
+            ),
+        ).toEqual([matches[0].start, matches[1].start]);
     });
 
     test("selects the outer extract when the selection crosses an inner extract", () => {

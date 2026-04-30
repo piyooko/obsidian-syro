@@ -30,6 +30,8 @@ export interface ExtractContextUpdate {
 }
 
 export const setExtractContextRangesEffect = StateEffect.define<ExtractContextRanges>();
+const LEFT_ASSOC = -1;
+const RIGHT_ASSOC = 1;
 
 function clampPosition(position: number, docLength: number): number {
     if (!Number.isFinite(position)) {
@@ -81,14 +83,32 @@ function mapExtractContextRanges(
     const safeRanges = normalizeExtractContextRangesForDoc(ranges, startDocLength);
     return normalizeExtractContextRangesForDoc(
         {
-            currentOuterFrom: transaction.changes.mapPos(safeRanges.currentOuterFrom),
-            currentOuterTo: transaction.changes.mapPos(safeRanges.currentOuterTo),
-            currentInnerFrom: transaction.changes.mapPos(safeRanges.currentInnerFrom),
-            currentInnerTo: transaction.changes.mapPos(safeRanges.currentInnerTo),
-            currentOpenTokenFrom: transaction.changes.mapPos(safeRanges.currentOpenTokenFrom),
-            currentOpenTokenTo: transaction.changes.mapPos(safeRanges.currentOpenTokenTo),
-            currentCloseTokenFrom: transaction.changes.mapPos(safeRanges.currentCloseTokenFrom),
-            currentCloseTokenTo: transaction.changes.mapPos(safeRanges.currentCloseTokenTo),
+            currentOuterFrom: transaction.changes.mapPos(
+                safeRanges.currentOuterFrom,
+                RIGHT_ASSOC,
+            ),
+            currentOuterTo: transaction.changes.mapPos(safeRanges.currentOuterTo, LEFT_ASSOC),
+            currentInnerFrom: transaction.changes.mapPos(
+                safeRanges.currentInnerFrom,
+                LEFT_ASSOC,
+            ),
+            currentInnerTo: transaction.changes.mapPos(safeRanges.currentInnerTo, RIGHT_ASSOC),
+            currentOpenTokenFrom: transaction.changes.mapPos(
+                safeRanges.currentOpenTokenFrom,
+                RIGHT_ASSOC,
+            ),
+            currentOpenTokenTo: transaction.changes.mapPos(
+                safeRanges.currentOpenTokenTo,
+                LEFT_ASSOC,
+            ),
+            currentCloseTokenFrom: transaction.changes.mapPos(
+                safeRanges.currentCloseTokenFrom,
+                RIGHT_ASSOC,
+            ),
+            currentCloseTokenTo: transaction.changes.mapPos(
+                safeRanges.currentCloseTokenTo,
+                LEFT_ASSOC,
+            ),
         },
         transaction.newDoc.length,
     );
@@ -107,6 +127,21 @@ export const extractContextRangesField = StateField.define<ExtractContextRanges 
     },
 });
 
+function selectionTouchesToken(view: EditorView, from: number, to: number): boolean {
+    if (to <= from) {
+        return false;
+    }
+    const selection = view.state.selection.main;
+    if (selection.empty) {
+        return selection.from >= from && selection.from <= to;
+    }
+    return selection.from <= to && selection.to >= from;
+}
+
+function shouldRevealToken(view: EditorView, from: number, to: number): boolean {
+    return view.state.facet(EditorView.editable) && selectionTouchesToken(view, from, to);
+}
+
 function buildExtractContextDecorations(view: EditorView): DecorationSet {
     const builder = new RangeSetBuilder<Decoration>();
     const ranges = view.state.field(extractContextRangesField);
@@ -117,6 +152,7 @@ function buildExtractContextDecorations(view: EditorView): DecorationSet {
     const docLength = view.state.doc.length;
     const decorations: Array<{ from: number; to: number; decoration: Decoration }> = [];
     const muted = Decoration.mark({ class: "sr-extract-context-muted" });
+    const boundary = Decoration.mark({ class: "sr-extract-context-boundary" });
 
     if (ranges.currentOuterFrom > 0) {
         decorations.push({ from: 0, to: ranges.currentOuterFrom, decoration: muted });
@@ -125,17 +161,31 @@ function buildExtractContextDecorations(view: EditorView): DecorationSet {
         decorations.push({ from: ranges.currentOuterTo, to: docLength, decoration: muted });
     }
     if (ranges.currentOpenTokenTo > ranges.currentOpenTokenFrom) {
+        const revealOpenToken = shouldRevealToken(
+            view,
+            ranges.currentOpenTokenFrom,
+            ranges.currentOpenTokenTo,
+        );
         decorations.push({
             from: ranges.currentOpenTokenFrom,
             to: ranges.currentOpenTokenTo,
-            decoration: Decoration.replace({ inclusive: false }),
+            decoration: revealOpenToken
+                ? boundary
+                : Decoration.replace({ inclusive: false }),
         });
     }
     if (ranges.currentCloseTokenTo > ranges.currentCloseTokenFrom) {
+        const revealCloseToken = shouldRevealToken(
+            view,
+            ranges.currentCloseTokenFrom,
+            ranges.currentCloseTokenTo,
+        );
         decorations.push({
             from: ranges.currentCloseTokenFrom,
             to: ranges.currentCloseTokenTo,
-            decoration: Decoration.replace({ inclusive: false }),
+            decoration: revealCloseToken
+                ? boundary
+                : Decoration.replace({ inclusive: false }),
         });
     }
 
@@ -171,6 +221,14 @@ function createExtractContextDecorationPlugin(): Extension {
 export const extractContextTheme = EditorView.baseTheme({
     ".sr-extract-context-muted": {
         opacity: "0.5",
+    },
+    ".sr-extract-context-boundary": {
+        color: "var(--text-accent)",
+        backgroundColor: "var(--background-modifier-hover)",
+        borderRadius: "3px",
+        boxShadow: "0 0 0 1px var(--background-modifier-border)",
+        fontFamily: "var(--font-monospace)",
+        fontWeight: "600",
     },
     ".sr-extract-context-editor .cm-content": {
         fontFamily: "var(--font-text)",
