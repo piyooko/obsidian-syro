@@ -16,7 +16,6 @@ import {
     Calendar,
     ThumbsDown,
     Check,
-    GraduationCap,
     Zap,
     ChevronRight,
     Eye,
@@ -39,6 +38,7 @@ import type { CardReviewTarget } from "src/question-type";
 import type { QuestionContextBreadcrumb } from "src/SRFile";
 import type { ExtractReviewContext } from "src/util/irExtractContext";
 import type { ExtractContextUpdate } from "src/editor/extract-context-decoration";
+import { finalizeIrExtractSyntaxOnlyInRenderedMarkdown } from "src/editor/ir-extract-postprocessor";
 import { getReviewEditModeHotkeyLabel } from "src/editor/obsidianHotkeyBridge";
 import "../styles/linear-card.css";
 import { t } from "src/lang/helpers";
@@ -946,10 +946,6 @@ export const LinearCard: FC<LinearCardProps> = ({
                     break;
                 case "DELETE":
                     if (isExtractReview) {
-                        showToast(
-                            t("EXTRACT_REVIEW_PENDING_GRADUATE"),
-                            <GraduationCap size={14} />,
-                        );
                         onDelete?.();
                         break;
                     }
@@ -2016,12 +2012,14 @@ const MarkdownDisplay = ({
             await renderSyroMarkdownToElement({
                 markdown: content,
                 renderMarkdown,
+                renderIrExtracts: false,
                 showAnswer: shouldRefreshForFlip ? showAnswer : false,
                 target: buffer,
             });
 
             if (isRenderCurrent()) {
                 target.replaceChildren(...Array.from(buffer.childNodes));
+                finalizeIrExtractSyntaxOnlyInRenderedMarkdown(target);
                 onRenderedRef.current?.(target);
             }
         };

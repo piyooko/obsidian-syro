@@ -273,6 +273,8 @@ test("extract review renders direct actions without show-answer or hard/easy lab
     expect(onAnswer).toHaveBeenNthCalledWith(2, 1);
     expect(onSetExtractDate).toHaveBeenCalled();
     expect(onDelete).toHaveBeenCalled();
+    expect(container.querySelector(".sr-toast")).toBeNull();
+    expect(container.textContent).not.toContain("Ctrl+Z");
 });
 
 test("extract review set date interval hint is localized in Chinese", () => {
@@ -2781,6 +2783,74 @@ test("hybrid editor initializes detached before appending to avoid first paint j
         /view\.dispatch\s*\(\s*\{[^}]*setExtractContextRangesEffect\.of\(ranges\)[^}]*setHybridModeEffect\.of\(mode\)/s,
     );
     expect(source).toMatch(/container\.appendChild\(view\.dom\)/);
+});
+
+test("basic review markdown strips IR extract syntax without drawing extract blocks", async () => {
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    const originalCancelAnimationFrame = window.cancelAnimationFrame;
+    const originalGetClientRects = Range.prototype.getClientRects;
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    const rect = {
+        bottom: 24,
+        height: 20,
+        left: 16,
+        right: 240,
+        top: 4,
+        width: 224,
+        x: 16,
+        y: 4,
+        toJSON: () => ({}),
+    } as DOMRect;
+    const renderMarkdown = jest.fn((content: string, el: HTMLElement) => {
+        el.textContent = content;
+    });
+    const { container, root } = mountCard(
+        {
+            front: "before {{ir::text}} after",
+            back: "",
+        },
+        renderMarkdown,
+        "basic",
+    );
+
+    window.requestAnimationFrame = ((cb: FrameRequestCallback) =>
+        window.setTimeout(() => cb(performance.now()), 0)) as typeof window.requestAnimationFrame;
+    window.cancelAnimationFrame = ((id: number) => {
+        window.clearTimeout(id);
+    }) as typeof window.cancelAnimationFrame;
+    Range.prototype.getClientRects = () => [rect] as unknown as DOMRectList;
+    HTMLElement.prototype.getBoundingClientRect = () => ({
+        ...rect,
+        bottom: 0,
+        height: 0,
+        left: 0,
+        right: 0,
+        top: 0,
+        width: 0,
+        x: 0,
+        y: 0,
+    });
+
+    try {
+        await flushEffects();
+        await act(async () => {
+            await new Promise((resolve) => window.setTimeout(resolve, 0));
+        });
+
+        const contentRoot = container.querySelector<HTMLElement>(".sr-markdown-content");
+        expect(contentRoot).not.toBeNull();
+        expect(contentRoot?.textContent).toBe("before text after");
+        expect(contentRoot?.textContent).not.toContain("{{ir::");
+        expect(contentRoot?.classList.contains("sr-ir-reading-root")).toBe(false);
+        expect(contentRoot?.querySelector(":scope > .sr-ir-reading-overlay")).toBeNull();
+        expect(contentRoot?.querySelector(".sr-ir-reading-block")).toBeNull();
+    } finally {
+        Range.prototype.getClientRects = originalGetClientRects;
+        HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+        window.requestAnimationFrame = originalRequestAnimationFrame;
+        window.cancelAnimationFrame = originalCancelAnimationFrame;
+        act(() => root.unmount());
+    }
 });
 
 function createDeferredRenderMarkdown() {

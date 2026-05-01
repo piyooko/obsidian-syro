@@ -3,7 +3,9 @@ import { parseIrExtracts, type IrExtractMatch } from "src/util/irExtractParser";
 import {
     alignNestedIrExtractBlocksHorizontally,
     containNestedIrExtractBlocks,
-    getIrExtractLayerInset,
+    getIrExtractHorizontalFrameForMetrics,
+    getIrExtractLayerVerticalInset,
+    getIrExtractVerticalInsetForMetrics,
 } from "./ir-extract-decoration";
 
 interface TextSlice {
@@ -30,6 +32,12 @@ interface ReadingBlock {
     height: number;
     depth: number;
     maxDepth: number;
+}
+
+export const SR_IR_POSTPROCESS_SKIP_ATTR = "data-sr-ir-postprocess-skip";
+
+function shouldSkipPostProcessing(root: HTMLElement): boolean {
+    return !!root.closest(`[${SR_IR_POSTPROCESS_SKIP_ATTR}]`);
 }
 
 function shouldSkipTextNode(node: Text): boolean {
@@ -193,8 +201,31 @@ function removeWrapperTokens(root: HTMLElement, matches: IrExtractMatch[]): void
         .forEach((range) => deleteTextRange(root, range.from, range.to));
 }
 
+function parseCssPixelValue(value: string): number | null {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getReadingLineHeight(root: HTMLElement): number {
+    const computed = getComputedStyle(root);
+    const lineHeight = parseCssPixelValue(computed.lineHeight);
+    if (lineHeight !== null) {
+        return lineHeight;
+    }
+
+    const fontSize = parseCssPixelValue(computed.fontSize);
+    return fontSize === null ? 0 : fontSize * 1.5;
+}
+
 function measureReadingBlocks(root: HTMLElement, pairs: MarkerPair[]): ReadingBlock[] {
     const rootRect = root.getBoundingClientRect();
+    const horizontalFrame = getIrExtractHorizontalFrameForMetrics(
+        rootRect.left,
+        rootRect.right,
+        rootRect.left,
+        0,
+    );
+    const lineHeight = getReadingLineHeight(root);
     const blocks: ReadingBlock[] = [];
 
     for (const pair of pairs) {
@@ -207,19 +238,25 @@ function measureReadingBlocks(root: HTMLElement, pairs: MarkerPair[]): ReadingBl
         range.detach();
         if (rects.length === 0) continue;
 
-        const minLeft = Math.min(...rects.map((rect) => rect.left));
-        const maxRight = Math.max(...rects.map((rect) => rect.right));
         const minTop = Math.min(...rects.map((rect) => rect.top));
         const maxBottom = Math.max(...rects.map((rect) => rect.bottom));
-        const inset = getIrExtractLayerInset(pair.depth, pair.maxDepth);
+        const baseVerticalInset = getIrExtractVerticalInsetForMetrics(
+            lineHeight,
+            rects.map((rect) => rect.height),
+        );
+        const verticalInset = getIrExtractLayerVerticalInset(
+            baseVerticalInset,
+            pair.depth,
+            pair.maxDepth,
+        );
 
         blocks.push({
             start: pair.matchStart,
             parentStart: pair.parentStart,
-            left: minLeft - rootRect.left - inset,
-            top: minTop - rootRect.top - 4,
-            width: maxRight - minLeft + inset * 2,
-            height: maxBottom - minTop + 8,
+            left: horizontalFrame.left,
+            top: minTop - rootRect.top - verticalInset,
+            width: horizontalFrame.width,
+            height: maxBottom - minTop + verticalInset * 2,
             depth: pair.depth,
             maxDepth: pair.maxDepth,
         });
@@ -254,6 +291,76 @@ function renderReadingOverlay(root: HTMLElement, blocks: ReadingBlock[]): void {
     root.prepend(overlay);
 }
 
+function requestNextFrame(root: HTMLElement, callback: FrameRequestCallback): void {
+    const ownerWindow =
+        root.ownerDocument.defaultView ?? (typeof window !== "undefined" ? window : null);
+
+    if (ownerWindow && typeof ownerWindow.requestAnimationFrame === "function") {
+        ownerWindow.requestAnimationFrame(callback);
+        return;
+    }
+
+    if (ownerWindow && typeof ownerWindow.setTimeout === "function") {
+        ownerWindow.setTimeout(() => callback(Date.now()), 0);
+        return;
+    }
+
+    callback(Date.now());
+}
+
+function scheduleReadingOverlay(root: HTMLElement, markerPairs: MarkerPair[]): void {
+    const renderIfConnected = (): boolean => {
+        if (!root.isConnected) {
+            return false;
+        }
+
+        requestNextFrame(root, () => {
+            if (!root.isConnected) {
+                return;
+            }
+            renderReadingOverlay(root, measureReadingBlocks(root, markerPairs));
+        });
+        return true;
+    };
+
+    if (renderIfConnected()) {
+        return;
+    }
+
+    const ownerWindow =
+        root.ownerDocument.defaultView ?? (typeof window !== "undefined" ? window : null);
+    const observerRoot = root.ownerDocument.documentElement ?? root.ownerDocument.body;
+    const MutationObserverCtor = ownerWindow?.MutationObserver;
+
+    if (!MutationObserverCtor || !observerRoot) {
+        const retry = (remainingFrames: number) => {
+            requestNextFrame(root, () => {
+                if (!renderIfConnected() && remainingFrames > 0) {
+                    retry(remainingFrames - 1);
+                }
+            });
+        };
+        retry(10);
+        return;
+    }
+
+    const observer = new MutationObserverCtor(() => {
+        if (!root.isConnected) {
+            return;
+        }
+
+        observer.disconnect();
+        renderIfConnected();
+    });
+    observer.observe(observerRoot, { childList: true, subtree: true });
+
+    requestNextFrame(root, () => {
+        if (renderIfConnected()) {
+            observer.disconnect();
+        }
+    });
+}
+
 export function renderIrExtractsInReadingMode(root: HTMLElement): number {
     const { text } = collectTextSlices(root);
     const matches = parseIrExtracts(text);
@@ -264,25 +371,39 @@ export function renderIrExtractsInReadingMode(root: HTMLElement): number {
     const markerPairs = createMarkerPairs(root, matches);
     removeWrapperTokens(root, matches);
     root.classList.add("sr-ir-reading-root");
-
-    const scheduleFrame =
-        typeof requestAnimationFrame === "function"
-            ? requestAnimationFrame
-            : (callback: FrameRequestCallback) => {
-                  callback(Date.now());
-                  return 0;
-              };
-
-    scheduleFrame(() => {
-        renderReadingOverlay(root, measureReadingBlocks(root, markerPairs));
-    });
+    scheduleReadingOverlay(root, markerPairs);
 
     return matches.length;
+}
+
+export function stripIrExtractSyntaxInRenderedMarkdown(root: HTMLElement): number {
+    const { text } = collectTextSlices(root);
+    const matches = parseIrExtracts(text);
+    if (matches.length === 0) {
+        return 0;
+    }
+
+    removeWrapperTokens(root, matches);
+    return matches.length;
+}
+
+export function finalizeIrExtractsInRenderedMarkdown(root: HTMLElement): void {
+    root.removeAttribute(SR_IR_POSTPROCESS_SKIP_ATTR);
+    renderIrExtractsInReadingMode(root);
+}
+
+export function finalizeIrExtractSyntaxOnlyInRenderedMarkdown(root: HTMLElement): void {
+    root.removeAttribute(SR_IR_POSTPROCESS_SKIP_ATTR);
+    stripIrExtractSyntaxInRenderedMarkdown(root);
 }
 
 export const irExtractPostProcessor = (
     el: HTMLElement,
     _ctx: MarkdownPostProcessorContext,
 ): void => {
+    if (shouldSkipPostProcessing(el)) {
+        return;
+    }
+
     renderIrExtractsInReadingMode(el);
 };
