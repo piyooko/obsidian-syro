@@ -94,6 +94,10 @@ class SingleDeckIterator {
         if (this.iteratorOrder.cardOrder == CardOrder.EveryCardRandomDeckAndCard) {
             this.nextRandomCard();
         } else {
+            if (this.nextHighestPriorityReviewableCard()) {
+                return true;
+            }
+
             // First return cards in the preferred list
             if (this.cardListType == null) {
                 this.setCardListType(this.preferredCardListType);
@@ -172,6 +176,12 @@ class SingleDeckIterator {
 
         const result: boolean = cardList.length > 0;
         if (result) {
+            const priorityIndex = this.getHighestPriorityCardIndex(cardList);
+            if (priorityIndex !== null) {
+                this.cardIdx = priorityIndex;
+                return result;
+            }
+
             switch (this.iteratorOrder.cardOrder) {
                 case CardOrder.DueFirstSequential:
                 case CardOrder.NewFirstSequential:
@@ -187,6 +197,66 @@ class SingleDeckIterator {
             }
         }
         return result;
+    }
+
+    private nextHighestPriorityReviewableCard(): boolean {
+        let bestPriority = Number.POSITIVE_INFINITY;
+        let bestCreatedAt = Number.POSITIVE_INFINITY;
+        let bestListType: CardListType | null = null;
+        let bestIndex = -1;
+        let hasCustomPriority = false;
+
+        const considerList = (cardListType: CardListType) => {
+            const cardList = this.deck.getCardListForCardType(cardListType);
+            for (let index = 0; index < cardList.length; index++) {
+                const card = cardList[index];
+                const priority = card?.repetitionItem?.priority ?? 5;
+                const data = card?.repetitionItem?.data as { created_at?: unknown } | undefined;
+                const createdAt =
+                    typeof data?.created_at === "number" ? data.created_at : (card?.Id ?? index);
+                if (priority !== 5) {
+                    hasCustomPriority = true;
+                }
+                if (
+                    priority < bestPriority ||
+                    (priority === bestPriority && createdAt < bestCreatedAt)
+                ) {
+                    bestPriority = priority;
+                    bestCreatedAt = createdAt;
+                    bestListType = cardListType;
+                    bestIndex = index;
+                }
+            }
+        };
+
+        considerList(CardListType.DueCard);
+        considerList(CardListType.NewCard);
+
+        if (!hasCustomPriority || bestListType === null) {
+            return false;
+        }
+
+        this.setCardListType(bestListType, bestIndex);
+        return true;
+    }
+
+    private getHighestPriorityCardIndex(cardList: Card[]): number | null {
+        let highestPriority = Number.POSITIVE_INFINITY;
+        let highestPriorityIndex: number | null = null;
+        let hasCustomPriority = false;
+
+        for (let index = 0; index < cardList.length; index++) {
+            const priority = cardList[index]?.repetitionItem?.priority ?? 5;
+            if (priority !== 5) {
+                hasCustomPriority = true;
+            }
+            if (priority < highestPriority) {
+                highestPriority = priority;
+                highestPriorityIndex = index;
+            }
+        }
+
+        return hasCustomPriority ? highestPriorityIndex : null;
     }
 
     moveCurrentCardToEndOfList(): void {

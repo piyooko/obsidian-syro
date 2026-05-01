@@ -135,6 +135,54 @@ describe("ExtractStore", () => {
         expect(stats).not.toHaveProperty("learningCount");
     });
 
+    test("orders reviewable due extracts by priority before due time", () => {
+        const store = createStore();
+        const created = store.syncFileExtracts(
+            "notes/source.md",
+            "{{ir::low}}\n{{ir::high}}",
+            "deck",
+        ).added;
+        const internalItems = (
+            store as unknown as {
+                items: Record<string, { timesReviewed: number; nextReview: number; priority: number }>;
+            }
+        ).items;
+        internalItems[created[0].uuid]!.timesReviewed = 2;
+        internalItems[created[0].uuid]!.nextReview = Date.now() - 60_000;
+        internalItems[created[0].uuid]!.priority = 9;
+        internalItems[created[1].uuid]!.timesReviewed = 1;
+        internalItems[created[1].uuid]!.nextReview = Date.now() - 1_000;
+        internalItems[created[1].uuid]!.priority = 1;
+
+        expect(store.getReviewCandidates("deck").map((item) => item.rawMarkdown)).toEqual([
+            "high",
+            "low",
+        ]);
+    });
+
+    test("mixes due and new extracts by priority once both are in the today pool", () => {
+        const store = createStore();
+        const created = store.syncFileExtracts(
+            "notes/source.md",
+            "{{ir::low due}}\n{{ir::high new}}",
+            "deck",
+        ).added;
+        const internalItems = (
+            store as unknown as {
+                items: Record<string, { timesReviewed: number; nextReview: number; priority: number }>;
+            }
+        ).items;
+        internalItems[created[0].uuid]!.timesReviewed = 2;
+        internalItems[created[0].uuid]!.nextReview = Date.now() - 60_000;
+        internalItems[created[0].uuid]!.priority = 9;
+        internalItems[created[1].uuid]!.priority = 1;
+
+        expect(store.getReviewCandidates("deck").map((item) => item.rawMarkdown)).toEqual([
+            "high new",
+            "low due",
+        ]);
+    });
+
     test("can filter review candidates by a resolved source deck instead of stale stored deck", () => {
         const store = createStore();
         const [created] = store.syncFileExtracts(

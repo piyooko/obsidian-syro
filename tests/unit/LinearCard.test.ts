@@ -442,6 +442,56 @@ test("extract review renders a memo pill only for extract cards", () => {
     }
 });
 
+test("extract review reserves a content safe area for the memo pill only on extract cards", () => {
+    const extractContainer = document.createElement("div");
+    const cardContainer = document.createElement("div");
+    document.body.appendChild(extractContainer);
+    document.body.appendChild(cardContainer);
+    const extractRoot = createRoot(extractContainer);
+    const cardRoot = createRoot(cardContainer);
+
+    try {
+        act(() => {
+            extractRoot.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "{{ir::text}}", back: "" },
+                    extractMemo: "",
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+            cardRoot.render(
+                React.createElement(LinearCard, {
+                    card: { front: "Q", back: "A" },
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+
+        expect(
+            extractContainer
+                .querySelector(".sr-card-content-area")
+                ?.classList.contains("sr-has-extract-memo-safe-area"),
+        ).toBe(true);
+        expect(
+            cardContainer
+                .querySelector(".sr-card-content-area")
+                ?.classList.contains("sr-has-extract-memo-safe-area"),
+        ).toBe(false);
+    } finally {
+        act(() => {
+            extractRoot.unmount();
+            cardRoot.unmount();
+        });
+        extractContainer.remove();
+        cardContainer.remove();
+    }
+});
+
 test("extract memo pill keeps preview and textarea layers while editing", () => {
     jest.useFakeTimers();
     const container = document.createElement("div");
@@ -497,10 +547,209 @@ test("extract memo pill keeps preview and textarea layers while editing", () => 
         expect(preview?.textContent).toBe("新的备注");
 
         act(() => {
-            jest.advanceTimersByTime(400);
+            jest.advanceTimersByTime(350);
         });
 
         expect(memoPill?.classList.contains("animate")).toBe(false);
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+        jest.useRealTimers();
+    }
+});
+
+test("extract memo pill locks inner text widths during collapse animation", () => {
+    jest.useFakeTimers();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "{{ir::text}}", back: "" },
+                    extractMemo: "第一行\n第二行\n第三行\n第四行",
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+
+        const memoPill = container.querySelector<HTMLElement>(".corner-pill-wrapper");
+        const preview = container.querySelector<HTMLElement>(".text-preview");
+        const textarea = container.querySelector<HTMLTextAreaElement>(
+            ".corner-pill-wrapper textarea",
+        );
+        expect(memoPill).not.toBeNull();
+        expect(preview).not.toBeNull();
+        expect(textarea).not.toBeNull();
+        if (!memoPill || !preview || !textarea) return;
+
+        Object.defineProperty(memoPill, "offsetWidth", {
+            configurable: true,
+            get: () => (memoPill.classList.contains("is-active") ? 400 : 180),
+        });
+        Object.defineProperty(memoPill, "offsetHeight", {
+            configurable: true,
+            get: () => (memoPill.classList.contains("is-active") ? 132 : 70),
+        });
+        Object.defineProperty(preview, "offsetWidth", {
+            configurable: true,
+            get: () => (memoPill.classList.contains("is-active") ? 340 : 120),
+        });
+        Object.defineProperty(textarea, "offsetWidth", {
+            configurable: true,
+            get: () => (memoPill.classList.contains("is-active") ? 340 : 120),
+        });
+        Object.defineProperty(textarea, "scrollHeight", { configurable: true, value: 108 });
+
+        act(() => {
+            memoPill.click();
+        });
+        act(() => {
+            jest.advanceTimersByTime(350);
+        });
+
+        expect(memoPill.classList.contains("is-active")).toBe(true);
+        expect(preview.style.getPropertyValue("--sr-extract-memo-preview-width")).toBe("");
+        expect(textarea.style.getPropertyValue("--sr-extract-memo-textarea-width")).toBe("");
+
+        act(() => {
+            document.body.click();
+        });
+
+        expect(memoPill.classList.contains("is-active")).toBe(false);
+        expect(memoPill.classList.contains("animate")).toBe(true);
+        expect(textarea.style.getPropertyValue("--sr-extract-memo-textarea-width")).toBe(
+            "340px",
+        );
+        expect(preview.style.getPropertyValue("--sr-extract-memo-preview-width")).toBe("120px");
+
+        act(() => {
+            jest.advanceTimersByTime(350);
+        });
+
+        expect(memoPill.classList.contains("animate")).toBe(false);
+        expect(textarea.style.getPropertyValue("--sr-extract-memo-textarea-width")).toBe("");
+        expect(preview.style.getPropertyValue("--sr-extract-memo-preview-width")).toBe("");
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+        jest.useRealTimers();
+    }
+});
+
+test("extract memo pill uses sharp panel timing when review square corners are enabled", () => {
+    jest.useFakeTimers();
+    document.body.classList.add("syro-desktop-review-square-corners");
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "{{ir::text}}", back: "" },
+                    extractMemo: "直角备注",
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+
+        const memoPill = container.querySelector<HTMLElement>(".corner-pill-wrapper");
+        const textarea = container.querySelector<HTMLTextAreaElement>(
+            ".corner-pill-wrapper textarea",
+        );
+        expect(memoPill).not.toBeNull();
+        expect(textarea).not.toBeNull();
+        if (!memoPill || !textarea) return;
+
+        Object.defineProperty(memoPill, "offsetWidth", { configurable: true, value: 180 });
+        Object.defineProperty(memoPill, "offsetHeight", { configurable: true, value: 70 });
+        Object.defineProperty(textarea, "scrollHeight", { configurable: true, value: 88 });
+
+        act(() => {
+            memoPill.click();
+        });
+
+        expect(memoPill.classList.contains("animate")).toBe(true);
+
+        act(() => {
+            jest.advanceTimersByTime(349);
+        });
+
+        expect(memoPill.classList.contains("animate")).toBe(true);
+
+        act(() => {
+            jest.advanceTimersByTime(1);
+        });
+
+        expect(memoPill.classList.contains("animate")).toBe(false);
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+        document.body.classList.remove("syro-desktop-review-square-corners");
+        jest.useRealTimers();
+    }
+});
+
+test("extract memo pill reads animation timing from the style setting variable", () => {
+    jest.useFakeTimers();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "{{ir::text}}", back: "" },
+                    extractMemo: "可调动画速度",
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+
+        const memoPill = container.querySelector<HTMLElement>(".corner-pill-wrapper");
+        const textarea = container.querySelector<HTMLTextAreaElement>(
+            ".corner-pill-wrapper textarea",
+        );
+        expect(memoPill).not.toBeNull();
+        expect(textarea).not.toBeNull();
+        if (!memoPill || !textarea) return;
+
+        memoPill.setCssProps({ "--sr-extract-memo-animation-duration": "520ms" });
+        Object.defineProperty(memoPill, "offsetWidth", { configurable: true, value: 180 });
+        Object.defineProperty(memoPill, "offsetHeight", { configurable: true, value: 70 });
+        Object.defineProperty(textarea, "scrollHeight", { configurable: true, value: 88 });
+
+        act(() => {
+            memoPill.click();
+        });
+
+        expect(memoPill.classList.contains("animate")).toBe(true);
+
+        act(() => {
+            jest.advanceTimersByTime(519);
+        });
+
+        expect(memoPill.classList.contains("animate")).toBe(true);
+
+        act(() => {
+            jest.advanceTimersByTime(1);
+        });
+
+        expect(memoPill.classList.contains("animate")).toBe(false);
     } finally {
         act(() => root.unmount());
         container.remove();
@@ -2829,6 +3078,89 @@ test("editing mode does not add a left border indicator", () => {
     const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
 
     expect(css).not.toMatch(/\.sr-card-content-area\.sr-is-editing\s*\{[^}]*border-left/s);
+});
+
+test("extract memo safe area extends only extract review content scroll space", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+
+    expect(css).toMatch(
+        /\.sr-card-content-area\.sr-has-extract-memo-safe-area\s+\.sr-hybrid-markdown-source\.markdown-source-view\.mod-cm6\s+\.cm-content\s*\{[^}]*padding-bottom:\s*calc\(\s*var\(--syro-desktop-review-content-padding-y,\s*24px\)\s*\+\s*var\(--sr-extract-memo-safe-area,\s*80px\)\s*\)\s*!important/s,
+    );
+    expect(css).toMatch(
+        /\.sr-linear-card-wrapper\.sr-phone-layout\s+\.sr-card-content-area\.sr-has-extract-memo-safe-area\s+\.sr-hybrid-markdown-source\.markdown-source-view\.mod-cm6\s+\.cm-content\s*\{[^}]*padding-bottom:\s*calc\(\s*var\(--syro-mobile-review-content-padding-y,\s*16px\)\s*\+\s*var\(--sr-extract-memo-safe-area,\s*96px\)\s*\)\s*!important/s,
+    );
+    expect(css).not.toMatch(/^\.cm-content\s*\{[^}]*sr-extract-memo-safe-area/ms);
+});
+
+test("extract memo textarea removes Obsidian focus chrome", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+
+    expect(css).toMatch(
+        /\.corner-pill-wrapper\s+textarea:focus,\s*\.corner-pill-wrapper\s+textarea:focus-visible\s*\{[^}]*border:\s*none\s*!important;[^}]*outline:\s*none\s*!important;[^}]*box-shadow:\s*none\s*!important/s,
+    );
+});
+
+test("extract memo active state does not add expanded background shadow", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+    const activeRule = css.match(/\.corner-pill-wrapper\.is-active\s*\{[^}]*\}/s)?.[0] ?? "";
+
+    expect(activeRule).not.toContain("box-shadow");
+});
+
+test("extract memo sharp active state does not add expanded background shadow", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+    const activeRule =
+        css.match(
+            /body\.syro-desktop-review-square-corners\s+\.sr-linear-card-wrapper:not\(\.sr-phone-layout\)\s+\.corner-pill-wrapper\.is-active,\s*body\.syro-mobile-review-square-corners\s+\.sr-linear-card-wrapper\.sr-phone-layout\s+\.corner-pill-wrapper\.is-active\s*\{[^}]*\}/s,
+        )?.[0] ?? "";
+
+    expect(activeRule).toContain("border-left: 2px solid var(--sr-extract-memo-text-bright)");
+    expect(activeRule).not.toContain("box-shadow");
+});
+
+test("extract memo animation defaults to the sharp 350ms speed in rounded mode", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+
+    expect(css).toMatch(
+        /--sr-extract-memo-animation-duration:\s*var\(\s*--syro-desktop-review-extract-memo-animation-duration,\s*350ms\s*\)/,
+    );
+    expect(css).toMatch(
+        /\.corner-pill-wrapper\.animate\s*\{[\s\S]*width var\(--sr-extract-memo-animation-duration\) cubic-bezier\(0\.2,\s*0\.8,\s*0\.2,\s*1\)/,
+    );
+    expect(css).not.toContain("width 0.4s cubic-bezier");
+});
+
+test("review square corners switch the extract memo pill to sharp panel styling", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+
+    expect(css).toMatch(
+        /body\.syro-desktop-review-square-corners[\s\S]*\.corner-pill-wrapper\s*\{[\s\S]*border-radius:\s*4px[\s\S]*border-left:\s*2px solid rgba\(255,\s*255,\s*255,\s*0\.15\)[\s\S]*box-shadow:\s*0 6px 12px rgba\(0,\s*0,\s*0,\s*0\.3\),\s*0 1px 2px rgba\(0,\s*0,\s*0,\s*0\.2\)/,
+    );
+    expect(css).toMatch(
+        /body\.syro-desktop-review-square-corners[\s\S]*\.corner-pill-wrapper\.animate\s*\{[\s\S]*width var\(--sr-extract-memo-animation-duration\) cubic-bezier\(0\.16,\s*1,\s*0\.3,\s*1\)/,
+    );
+    expect(css).toMatch(
+        /body\.syro-desktop-review-square-corners[\s\S]*\.corner-pill-wrapper\.is-active\s*\{[\s\S]*border-left:\s*2px solid var\(--sr-extract-memo-text-bright\)/,
+    );
+});
+
+test("review square corner style setting documents the extract memo panel", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/style-settings.css"), "utf8");
+
+    expect(css).toContain(
+        "Force the review card, stats panel, action buttons, and extract memo panel to use square styling.",
+    );
+    expect(css).toContain("强制复习卡片、统计面板、操作按钮和摘录备注面板使用直角样式。");
+    expect(css).toContain(
+        "Force the phone review card, stats panel, action buttons, and extract memo panel to use square styling.",
+    );
+    expect(css).toContain("强制手机复习卡片、统计面板、操作按钮和摘录备注面板使用直角样式。");
+    expect(css).toMatch(
+        /id: syro-desktop-review-extract-memo-animation-duration[\s\S]*default: 350[\s\S]*format: ms[\s\S]*min: 150[\s\S]*max: 800[\s\S]*step: 25/,
+    );
+    expect(css).toMatch(
+        /id: syro-mobile-review-extract-memo-animation-duration[\s\S]*default: 350[\s\S]*format: ms[\s\S]*min: 150[\s\S]*max: 800[\s\S]*step: 25/,
+    );
 });
 
 test("exit edit button uses show-answer typography without inheriting show-answer font color", () => {

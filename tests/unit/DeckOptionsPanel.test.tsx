@@ -114,6 +114,20 @@ function findInputByLabel(container: HTMLElement, label: string): HTMLInputEleme
     return input;
 }
 
+function findSelectByLabel(container: HTMLElement, label: string): HTMLSelectElement {
+    const settingItem =
+        Array.from(container.querySelectorAll<HTMLElement>(".setting-item")).find(
+            (item) => item.querySelector(".setting-item-name")?.textContent === label,
+        ) ?? null;
+
+    const select = settingItem?.querySelector("select") as HTMLSelectElement | null;
+    if (!select) {
+        throw new Error(`Unable to find select for label: ${label}`);
+    }
+
+    return select;
+}
+
 function findButtonByText(container: HTMLElement, label: string): HTMLButtonElement {
     const button =
         Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
@@ -140,6 +154,22 @@ function changeInputValue(input: HTMLInputElement, value: string) {
     act(() => {
         valueSetter.call(input, value);
         input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+}
+
+function changeSelectValue(select: HTMLSelectElement, value: string) {
+    const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLSelectElement.prototype,
+        "value",
+    )?.set;
+
+    if (!valueSetter) {
+        throw new Error("Unable to resolve HTMLSelectElement.value setter");
+    }
+
+    act(() => {
+        valueSetter.call(select, value);
+        select.dispatchEvent(new Event("change", { bubbles: true }));
     });
 }
 
@@ -269,6 +299,28 @@ describe("DeckOptionsPanel", () => {
         }
     });
 
+    it("groups deck options by preset, daily limits, intervals, order, and auto advance", () => {
+        const view = renderPanel();
+
+        try {
+            const sectionHeadings = Array.from(
+                view.container.querySelectorAll<HTMLElement>(
+                    ".sr-deck-options-scroll > .sr-setting-section > .setting-item-heading .setting-item-name",
+                ),
+            ).map((heading) => heading.textContent);
+
+            expect(sectionHeadings.slice(0, 5)).toEqual([
+                t("DECK_OPTIONS_PRESET_SELECT"),
+                t("DECK_OPTIONS_SECTION_DAILY_LIMITS"),
+                t("DECK_OPTIONS_SECTION_LEARNING_INTERVALS"),
+                t("DECK_OPTIONS_SECTION_DISPLAY_ORDER"),
+                t("DECK_OPTIONS_SECTION_AUTO_ADVANCE"),
+            ]);
+        } finally {
+            view.cleanup();
+        }
+    });
+
     it("persists extract limits on the current deck option preset", async () => {
         const view = renderPanel();
 
@@ -289,6 +341,41 @@ describe("DeckOptionsPanel", () => {
             expect(view.plugin.saveDeckOptionsAndRequestSync).toHaveBeenCalledTimes(1);
             expect(view.plugin.data.settings.deckOptionsPresets[0]?.maxNewExtracts).toBe(4);
             expect(view.plugin.data.settings.deckOptionsPresets[0]?.maxExtractReviews).toBe(18);
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("shows interleave count only for interleaved queue mode and persists both fields", async () => {
+        const view = renderPanel();
+
+        try {
+            expect(() =>
+                findInputByLabel(view.container, t("DECK_OPTIONS_INTERLEAVE_FLASHCARD_COUNT")),
+            ).toThrow();
+
+            const modeSelect = findSelectByLabel(
+                view.container,
+                t("DECK_OPTIONS_REVIEW_QUEUE_MODE"),
+            );
+            changeSelectValue(modeSelect, "interleaved");
+
+            const interleaveInput = findInputByLabel(
+                view.container,
+                t("DECK_OPTIONS_INTERLEAVE_FLASHCARD_COUNT"),
+            );
+            expect(interleaveInput.value).toBe("4");
+
+            changeInputValue(interleaveInput, "6");
+            await clickButton(findButtonByText(view.container, t("DECK_OPTIONS_BTN_SAVE")));
+
+            expect(view.plugin.saveDeckOptionsAndRequestSync).toHaveBeenCalledTimes(1);
+            expect(view.plugin.data.settings.deckOptionsPresets[0]?.reviewQueueMode).toBe(
+                "interleaved",
+            );
+            expect(view.plugin.data.settings.deckOptionsPresets[0]?.interleaveFlashcardCount).toBe(
+                6,
+            );
         } finally {
             view.cleanup();
         }

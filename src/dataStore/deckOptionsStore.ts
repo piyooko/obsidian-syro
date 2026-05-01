@@ -127,6 +127,8 @@ function serializeDeckOptionsPresetForComparison(preset: DeckOptionsPreset): str
         maxReviews: preset.maxReviews,
         maxNewExtracts: preset.maxNewExtracts,
         maxExtractReviews: preset.maxExtractReviews,
+        reviewQueueMode: preset.reviewQueueMode,
+        interleaveFlashcardCount: preset.interleaveFlashcardCount,
         learningSteps: preset.learningSteps,
         lapseSteps: preset.lapseSteps,
         fsrs: preset.fsrs

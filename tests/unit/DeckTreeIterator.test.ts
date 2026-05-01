@@ -1,10 +1,12 @@
+import { Card } from "src/Card";
 import { NoteQuestionParser } from "src/NoteQuestionParser";
-import { CardListType, Deck } from "src/Deck";
+import { CardListType, Deck, DeckTreeFilter } from "src/Deck";
 import { DEFAULT_SETTINGS } from "src/settings";
 import { SampleItemDecks } from "./SampleItems";
 import { TopicPath } from "src/TopicPath";
 import { CardOrder, DeckTreeIterator, IIteratorOrder, DeckOrder } from "src/DeckTreeIterator";
 import { StaticDateProvider, globalDateProvider } from "src/util/DateProvider";
+import { CardQueue, RepetitionItem, RPITEMTYPE } from "src/dataStore/repetitionItem";
 import { setupStaticDateProvider_20230906 } from "./helpers/DateProviderTestUtils";
 import {
     setupNextRandomNumber,
@@ -555,6 +557,71 @@ QS3::Q <!--SR:!2023-09-02,4,270-->`;
     });
 });
 
+describe("priority ordering", () => {
+    test("applies flashcard priority before daily limits decide which cards enter today's pool", () => {
+        const root = new Deck("Root", null);
+        const deck = root.getOrCreateDeck(TopicPath.getTopicPathFromTag("#flashcards"));
+        const lowPriority = createPriorityCard("Low", 1, 9, CardListType.NewCard);
+        const highPriority = createPriorityCard("High", 2, 1, CardListType.NewCard);
+        deck.newFlashcards.push(lowPriority, highPriority);
+
+        const filtered = DeckTreeFilter.filterByDailyLimits(root, {
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    deckOptionsPresets: [
+                        {
+                            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                            maxNewCards: 1,
+                        },
+                    ],
+                    deckPresetAssignment: {},
+                },
+            },
+            getDailyCounts: jest.fn(() => ({ new: 0, review: 0 })),
+            loadDailyDeckStats: jest.fn(),
+        } as never);
+
+        const filteredDeck = filtered.getDeck(TopicPath.getTopicPathFromTag("#flashcards"));
+        expect(filteredDeck.newFlashcards).toEqual([highPriority]);
+    });
+
+    test("returns the most important reviewable flashcard before lower-priority cards", () => {
+        const root = new Deck("Root", null);
+        const deck = root.getOrCreateDeck(TopicPath.getTopicPathFromTag("#flashcards"));
+        const lowPriority = createPriorityCard("Low", 1, 9, CardListType.DueCard);
+        const highPriority = createPriorityCard("High", 2, 1, CardListType.DueCard);
+        deck.dueFlashcards.push(lowPriority, highPriority);
+
+        iterator = new DeckTreeIterator(
+            {
+                cardOrder: CardOrder.DueFirstSequential,
+                deckOrder: DeckOrder.PrevDeckComplete_Sequential,
+            },
+            root,
+        );
+        iterator.setIteratorTopicPath(TopicPath.getTopicPathFromTag("#flashcards"));
+
+        nextCardThenCheck("High");
+        nextCardThenCheck("Low");
+    });
+
+    test("mixes due and new flashcards by priority once both are in the today pool", () => {
+        const root = new Deck("Root", null);
+        const deck = root.getOrCreateDeck(TopicPath.getTopicPathFromTag("#flashcards"));
+        const lowPriorityDue = createPriorityCard("Low due", 1, 9, CardListType.DueCard);
+        const highPriorityNew = createPriorityCard("High new", 2, 1, CardListType.NewCard);
+        deck.dueFlashcards.push(lowPriorityDue);
+        deck.newFlashcards.push(highPriorityNew);
+
+        iterator = new DeckTreeIterator(order_DueFirst_Sequential, root);
+        iterator.setIteratorTopicPath(TopicPath.getTopicPathFromTag("#flashcards"));
+
+        nextCardThenCheck("High new");
+        nextCardThenCheck("Low due");
+    });
+});
+
 describe("nextCard - Some cards present in multiple decks", () => {
     describe("DeckOrder.PrevDeckComplete_Sequential; Sequential card ordering", () => {
         test("Iterating over complete deck tree", async () => {
@@ -738,4 +805,26 @@ Q3::A3`;
 function nextCardThenCheck(expectedFront: string): void {
     expect(iterator.nextCard()).toEqual(true);
     expect(iterator.currentCard.front).toEqual(expectedFront);
+}
+
+function createPriorityCard(
+    front: string,
+    id: number,
+    priority: number,
+    listType: CardListType,
+): Card {
+    const item = new RepetitionItem(id, `file-${id}`, RPITEMTYPE.CARD, "flashcards", {});
+    item.priority = priority;
+    item.queue = listType === CardListType.DueCard ? CardQueue.Review : CardQueue.New;
+    return new Card({
+        Id: id,
+        front,
+        repetitionItem: item,
+        question: {
+            topicPathList: {
+                list: [TopicPath.getTopicPathFromTag("#flashcards")],
+            },
+            cards: [],
+        } as never,
+    });
 }

@@ -170,6 +170,10 @@ function applyRepetitionItemState(target: ExtractItem, source: RepetitionItem): 
     target.updatedAt = Date.now();
 }
 
+function getExtractReviewOrderTime(item: ExtractItem): number {
+    return item.timesReviewed > 0 && item.nextReview > 0 ? item.nextReview : item.createdAt;
+}
+
 function normalizeExtractItem(value: unknown): ExtractItem | null {
     if (!value || typeof value !== "object") {
         return null;
@@ -897,7 +901,7 @@ export class ExtractStore {
         };
         const due = activeItems
             .filter((item) => item.timesReviewed > 0 && item.nextReview <= now)
-            .sort((left, right) => left.nextReview - right.nextReview || left.priority - right.priority)
+            .sort((left, right) => left.priority - right.priority || left.nextReview - right.nextReview)
             .filter(() => takeWithinDailyLimit("due"))
             .slice(0, Math.max(0, limits?.maxDue ?? Number.POSITIVE_INFINITY));
         const fresh = activeItems
@@ -905,7 +909,13 @@ export class ExtractStore {
             .sort((left, right) => left.priority - right.priority || left.createdAt - right.createdAt)
             .filter(() => takeWithinDailyLimit("new"))
             .slice(0, Math.max(0, limits?.maxNew ?? Number.POSITIVE_INFINITY));
-        return [...due, ...fresh].map((item) => cloneItem(item));
+        return [...due, ...fresh]
+            .sort(
+                (left, right) =>
+                    left.priority - right.priority ||
+                    getExtractReviewOrderTime(left) - getExtractReviewOrderTime(right),
+            )
+            .map((item) => cloneItem(item));
     }
 
     getStats(

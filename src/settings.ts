@@ -32,6 +32,7 @@ export type SidebarProgressRingDirection = "clockwise" | "counterclockwise";
 export type NoteReviewIgnoreReason = "ignored-folder" | "ignored-tag";
 export type AutoExtractRuleKind = "heading";
 export type AutoExtractHeadingLevel = number;
+export type ReviewQueueMode = "extract-first" | "flashcard-first" | "interleaved";
 export const DEFAULT_SYNC_PROGRESS_DISPLAY_MODE: SyncProgressDisplayMode = "full-only";
 
 export interface AutoExtractRule {
@@ -136,6 +137,8 @@ export interface DeckOptionsPreset {
     maxReviews: number; // Daily review limit
     maxNewExtracts: number; // Daily new extract limit
     maxExtractReviews: number; // Daily extract review limit
+    reviewQueueMode: ReviewQueueMode; // Flashcard/extract review ordering strategy
+    interleaveFlashcardCount: number; // Flashcards before one extract in interleaved mode
     learningSteps: string; // Learning steps, e.g. "1m 10m"
     lapseSteps: string; // Relearning steps, e.g. "10m"
     fsrs?: FsrsSettings; // Future runtime truth for preset-scoped FSRS parameters
@@ -207,6 +210,10 @@ export const DEFAULT_DECK_OPTIONS_PRESET_UUID = "deck-preset-default";
 export const DEFAULT_DECK_OPTIONS_PRESET_CREATED_AT = "1970-01-01T00:00:00.000Z";
 export const DEFAULT_MAX_NEW_EXTRACTS = 10;
 export const DEFAULT_MAX_EXTRACT_REVIEWS = 50;
+export const DEFAULT_REVIEW_QUEUE_MODE: ReviewQueueMode = "extract-first";
+export const DEFAULT_INTERLEAVE_FLASHCARD_COUNT = 4;
+export const MIN_INTERLEAVE_FLASHCARD_COUNT = 1;
+export const MAX_INTERLEAVE_FLASHCARD_COUNT = 99;
 
 function isFsrsStepUnit(value: unknown): value is tsfsrs.StepUnit {
     return typeof value === "string" && FSRS_STEP_PATTERN.test(value.trim());
@@ -442,6 +449,23 @@ function normalizeDailyLimit(value: unknown, fallback: number): number {
     return Math.max(0, Math.round(numberValue));
 }
 
+export function normalizeReviewQueueMode(value: unknown): ReviewQueueMode {
+    return value === "extract-first" || value === "flashcard-first" || value === "interleaved"
+        ? value
+        : DEFAULT_REVIEW_QUEUE_MODE;
+}
+
+export function normalizeInterleaveFlashcardCount(value: unknown): number {
+    const numberValue =
+        typeof value === "number" && Number.isFinite(value)
+            ? value
+            : DEFAULT_INTERLEAVE_FLASHCARD_COUNT;
+    return Math.max(
+        MIN_INTERLEAVE_FLASHCARD_COUNT,
+        Math.min(MAX_INTERLEAVE_FLASHCARD_COUNT, Math.round(numberValue)),
+    );
+}
+
 interface DeckOptionsNormalizeOptions {
     legacyIndex?: number;
     extractLimitDefaults?: {
@@ -461,6 +485,8 @@ export const DEFAULT_DECK_OPTIONS_PRESET: DeckOptionsPreset = {
     maxReviews: 200, // Default daily review limit
     maxNewExtracts: DEFAULT_MAX_NEW_EXTRACTS,
     maxExtractReviews: DEFAULT_MAX_EXTRACT_REVIEWS,
+    reviewQueueMode: DEFAULT_REVIEW_QUEUE_MODE,
+    interleaveFlashcardCount: DEFAULT_INTERLEAVE_FLASHCARD_COUNT,
     learningSteps: "1m 10m", // Default learning steps
     lapseSteps: "10m", // Default relearning steps
     fsrs: createDefaultFsrsSettings(),
@@ -574,6 +600,10 @@ export function normalizeDeckOptionsPreset(
                 extractLimitDefaults.maxExtractReviews,
                 DEFAULT_DECK_OPTIONS_PRESET.maxExtractReviews,
             ),
+        ),
+        reviewQueueMode: normalizeReviewQueueMode(rawPreset.reviewQueueMode),
+        interleaveFlashcardCount: normalizeInterleaveFlashcardCount(
+            rawPreset.interleaveFlashcardCount,
         ),
         learningSteps:
             getStringProp(rawPreset, "learningSteps") ?? DEFAULT_DECK_OPTIONS_PRESET.learningSteps,

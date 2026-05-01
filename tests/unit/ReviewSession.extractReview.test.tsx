@@ -4,13 +4,15 @@ import { EditorView } from "@codemirror/view";
 import { Component, TFile, type WorkspaceLeaf } from "obsidian";
 import { Card } from "src/Card";
 import { CardListType, Deck } from "src/Deck";
+import { CardQueue, RepetitionItem, RPITEMTYPE } from "src/dataStore/repetitionItem";
 import type SRPlugin from "src/main";
 import { ExtractStore, type ExtractItem } from "src/dataStore/extractStore";
 import { FlashcardReviewMode, type IFlashcardReviewSequencer } from "src/FlashcardReviewSequencer";
-import { DEFAULT_SETTINGS } from "src/settings";
+import { CardType } from "src/Question";
+import { DEFAULT_SETTINGS, type ReviewQueueMode } from "src/settings";
 import { parseIrExtracts } from "src/util/irExtractParser";
 import type { ExtractReviewContext } from "src/util/irExtractContext";
-import { ReviewSession } from "src/ui/containers/ReviewSession";
+import { resolveActiveReviewItemByQueue, ReviewSession } from "src/ui/containers/ReviewSession";
 
 (
     globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -137,6 +139,33 @@ function createSequencer(): IFlashcardReviewSequencer {
     } as unknown as IFlashcardReviewSequencer;
 }
 
+function createRenderableCard(id: number, front: string): Card {
+    return new Card({
+        Id: id,
+        cardIdx: 0,
+        front,
+        back: "back",
+        question: {
+            questionText: {
+                actualQuestion: `${front}::back`,
+            },
+            questionType: CardType.SingleLineBasic,
+            lineNo: 0,
+            cards: [],
+            topicPathList: {
+                list: [],
+            },
+            questionContext: [],
+            note: {
+                file: {
+                    basename: "card",
+                    path: "card.md",
+                },
+            },
+        } as never,
+    });
+}
+
 function createTestSyncEvents() {
     const listeners = new Map<string, Set<() => void>>();
     return {
@@ -163,6 +192,10 @@ function createPlugin(
     itemOrItems: ExtractItem | ExtractItem[],
     getExtractReviewContext: jest.Mock<Promise<ExtractReviewContext | null>, [string, string?]>,
     intervals: string[] = ["1d", "1d", "1d", "1d"],
+    options: {
+        reviewQueueMode?: ReviewQueueMode;
+        interleaveFlashcardCount?: number;
+    } = {},
 ): SRPlugin {
     const items = Array.isArray(itemOrItems) ? itemOrItems : [itemOrItems];
     const item = items[0];
@@ -179,6 +212,13 @@ function createPlugin(
                 ...DEFAULT_SETTINGS,
                 enableExtracts: true,
                 showRuntimeDebugMessages: false,
+                deckOptionsPresets: [
+                    {
+                        ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                        reviewQueueMode: options.reviewQueueMode ?? "extract-first",
+                        interleaveFlashcardCount: options.interleaveFlashcardCount ?? 4,
+                    },
+                ],
             },
         },
         app: {
@@ -234,6 +274,8 @@ function createPlugin(
         getDailyCounts: jest.fn(() => ({ new: 0, review: 0 })),
         savePluginData: jest.fn(() => Promise.resolve()),
         setSRViewInFocus: jest.fn(),
+        setTimelineReviewCardPath: jest.fn(),
+        getTimelineReviewCardPath: jest.fn(() => null),
     } as unknown as SRPlugin;
 }
 
@@ -672,6 +714,158 @@ test("extract review does not highlight due when intervals are unavailable", asy
     } finally {
         act(() => root.unmount());
     }
+});
+
+test("extract-first queue mode keeps a reviewable extract ahead of the current flashcard", async () => {
+    const item = createExtractItem({ rawMarkdown: "extract first", priority: 8 });
+    const markdown = "before {{ir::extract first}} after";
+    const context = createManualExtractContext(markdown, 7, 28);
+    const plugin = createPlugin(
+        item,
+        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+        ["1d", "1d", "1d", "1d"],
+        { reviewQueueMode: "extract-first" },
+    );
+    const sequencer = {
+        ...createSequencer(),
+        hasCurrentCard: true,
+        currentCard: createRenderableCard(101, "card first"),
+    } as unknown as IFlashcardReviewSequencer;
+    const { container, root } = renderExtractReviewSession(plugin, undefined, { sequencer });
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        expect(container.textContent).toContain("extract first");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("flashcard-first queue mode keeps the current flashcard ahead of a reviewable extract", async () => {
+    const item = createExtractItem({ rawMarkdown: "extract second", priority: 1 });
+    const plugin = createPlugin(
+        item,
+        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(
+            createManualExtractContext("before {{ir::extract second}} after", 7, 29),
+        ),
+        ["1d", "1d", "1d", "1d"],
+        { reviewQueueMode: "flashcard-first" },
+    );
+    const sequencer = {
+        ...createSequencer(),
+        hasCurrentCard: true,
+        currentCard: createRenderableCard(102, "card first"),
+    } as unknown as IFlashcardReviewSequencer;
+    const { container, root } = renderExtractReviewSession(plugin, undefined, { sequencer });
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        expect(container.textContent).not.toContain("extract second");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("flashcard-first queue mode does not show a learn-ahead card before a reviewable extract", async () => {
+    const item = createExtractItem({ rawMarkdown: "eligible extract", priority: 5 });
+    const plugin = createPlugin(
+        item,
+        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(
+            createManualExtractContext("before {{ir::eligible extract}} after", 7, 31),
+        ),
+        ["1d", "1d", "1d", "1d"],
+        { reviewQueueMode: "flashcard-first" },
+    );
+    const learnAheadItem = new RepetitionItem(103, "file-103", RPITEMTYPE.CARD, "deck", {});
+    learnAheadItem.queue = CardQueue.Learn;
+    learnAheadItem.nextReview = Date.now() + 10 * 60 * 1000;
+    const sequencer = {
+        ...createSequencer(),
+        hasCurrentCard: true,
+        isCurrentCardFromLearningQueue: true,
+        currentCard: Object.assign(createRenderableCard(103, "learn ahead"), {
+            repetitionItem: learnAheadItem,
+        }),
+    } as unknown as IFlashcardReviewSequencer;
+    const { container, root } = renderExtractReviewSession(plugin, undefined, { sequencer });
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        expect(container.textContent).toContain("eligible extract");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("interleaved queue mode defaults to four flashcards before one extract", async () => {
+    const item = createExtractItem({ rawMarkdown: "after four cards" });
+    const plugin = createPlugin(
+        item,
+        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(
+            createManualExtractContext("before {{ir::after four cards}} after", 7, 31),
+        ),
+        ["1d", "1d", "1d", "1d"],
+        { reviewQueueMode: "interleaved", interleaveFlashcardCount: 4 },
+    );
+    const sequencer = {
+        ...createSequencer(),
+        hasCurrentCard: true,
+        currentCard: createRenderableCard(103, "card first"),
+    } as unknown as IFlashcardReviewSequencer;
+    const { container, root } = renderExtractReviewSession(plugin, undefined, { sequencer });
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        expect(container.textContent).not.toContain("after four cards");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("interleaved queue mode selects an extract after the configured number of flashcards", () => {
+    expect(
+        resolveActiveReviewItemByQueue({
+            hasCard: true,
+            extractUuid: "ir_after_two",
+            reviewQueueMode: "interleaved",
+            interleaveFlashcardCount: 2,
+            interleavedFlashcardRun: 0,
+            isCurrentCardLearnAhead: false,
+        }).item,
+    ).toEqual({ kind: "card" });
+
+    expect(
+        resolveActiveReviewItemByQueue({
+            hasCard: true,
+            extractUuid: "ir_after_two",
+            reviewQueueMode: "interleaved",
+            interleaveFlashcardCount: 2,
+            interleavedFlashcardRun: 1,
+            isCurrentCardLearnAhead: false,
+        }).item,
+    ).toEqual({ kind: "card" });
+
+    expect(
+        resolveActiveReviewItemByQueue({
+            hasCard: true,
+            extractUuid: "ir_after_two",
+            reviewQueueMode: "interleaved",
+            interleaveFlashcardCount: 2,
+            interleavedFlashcardRun: 2,
+            isCurrentCardLearnAhead: false,
+        }),
+    ).toEqual({
+        item: { kind: "extract", uuid: "ir_after_two" },
+        interleavedFlashcardRun: 0,
+    });
 });
 
 test("extract graduate is pending until review exits", async () => {

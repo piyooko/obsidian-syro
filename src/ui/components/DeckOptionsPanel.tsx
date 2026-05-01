@@ -21,11 +21,13 @@ import {
     DEFAULT_DECK_OPTIONS_PRESET,
     findDeckOptionsPresetIndexByUuid,
     getDeckOptionsPresetDisplayName,
+    normalizeInterleaveFlashcardCount,
     normalizeDeckOptionsPreset,
     parseDeckOptionsStepInput,
+    ReviewQueueMode,
     syncFsrsSettingsCompatibilityMirror,
 } from "src/settings";
-import { BaseComponent, InputRow, Section, ToggleRow } from "./common/SettingsComponents";
+import { BaseComponent, InputRow, Section, SelectRow, ToggleRow } from "./common/SettingsComponents";
 import { useMobileNavbarOffset } from "./useMobileNavbarOffset";
 
 interface DeckOptionsPanelProps {
@@ -141,6 +143,23 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                 ).length,
         );
     }, [draft.assignment, draft.presets, plugin.deckTree]);
+    const reviewQueueModeOptions = useMemo(
+        () => [
+            {
+                label: t("DECK_OPTIONS_REVIEW_QUEUE_MODE_EXTRACT_FIRST"),
+                value: "extract-first",
+            },
+            {
+                label: t("DECK_OPTIONS_REVIEW_QUEUE_MODE_FLASHCARD_FIRST"),
+                value: "flashcard-first",
+            },
+            {
+                label: t("DECK_OPTIONS_REVIEW_QUEUE_MODE_INTERLEAVED"),
+                value: "interleaved",
+            },
+        ],
+        [],
+    );
 
     const updateCurrentPreset = useCallback(
         (updater: (preset: DeckOptionsPreset) => DeckOptionsPreset) => {
@@ -414,13 +433,7 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                         />
                     </Section>
 
-                    <Section title={t("DECK_OPTIONS_SECTION_NEW_CARDS")}>
-                        <InputRow
-                            label={t("DECK_OPTIONS_LEARNING_STEPS")}
-                            desc={t("DECK_OPTIONS_LEARNING_STEPS_DESC")}
-                            value={currentPreset.learningSteps}
-                            onChange={(value) => updateCurrentPresetSteps("learningSteps", value)}
-                        />
+                    <Section title={t("DECK_OPTIONS_SECTION_DAILY_LIMITS")}>
                         <InputRow
                             label={t("DECK_OPTIONS_MAX_NEW_CARDS")}
                             desc={t("DECK_OPTIONS_MAX_NEW_CARDS_DESC")}
@@ -446,18 +459,6 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                                 }));
                             }}
                         />
-                    </Section>
-
-                    <Section title={t("DECK_OPTIONS_SECTION_LAPSES")}>
-                        <InputRow
-                            label={t("DECK_OPTIONS_RELEARNING_STEPS")}
-                            desc={t("DECK_OPTIONS_RELEARNING_STEPS_DESC")}
-                            value={currentPreset.lapseSteps}
-                            onChange={(value) => updateCurrentPresetSteps("lapseSteps", value)}
-                        />
-                    </Section>
-
-                    <Section title={t("DECK_OPTIONS_SECTION_REVIEWS")}>
                         <InputRow
                             label={t("DECK_OPTIONS_MAX_REVIEWS")}
                             desc={t("DECK_OPTIONS_MAX_REVIEWS_DESC")}
@@ -483,6 +484,54 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                                 }));
                             }}
                         />
+                    </Section>
+
+                    <Section title={t("DECK_OPTIONS_SECTION_LEARNING_INTERVALS")}>
+                        <InputRow
+                            label={t("DECK_OPTIONS_LEARNING_STEPS")}
+                            desc={t("DECK_OPTIONS_LEARNING_STEPS_DESC")}
+                            value={currentPreset.learningSteps}
+                            onChange={(value) => updateCurrentPresetSteps("learningSteps", value)}
+                        />
+                        <InputRow
+                            label={t("DECK_OPTIONS_RELEARNING_STEPS")}
+                            desc={t("DECK_OPTIONS_RELEARNING_STEPS_DESC")}
+                            value={currentPreset.lapseSteps}
+                            onChange={(value) => updateCurrentPresetSteps("lapseSteps", value)}
+                        />
+                    </Section>
+
+                    <Section title={t("DECK_OPTIONS_SECTION_DISPLAY_ORDER")}>
+                        <SelectRow
+                            label={t("DECK_OPTIONS_REVIEW_QUEUE_MODE")}
+                            desc={t("DECK_OPTIONS_REVIEW_QUEUE_MODE_DESC")}
+                            value={currentPreset.reviewQueueMode}
+                            options={reviewQueueModeOptions}
+                            onChange={(value) =>
+                                updateCurrentPreset((preset) => ({
+                                    ...preset,
+                                    reviewQueueMode: value as ReviewQueueMode,
+                                }))
+                            }
+                        />
+                        {currentPreset.reviewQueueMode === "interleaved" && (
+                            <InputRow
+                                label={t("DECK_OPTIONS_INTERLEAVE_FLASHCARD_COUNT")}
+                                desc={t("DECK_OPTIONS_INTERLEAVE_FLASHCARD_COUNT_DESC")}
+                                type="number"
+                                value={currentPreset.interleaveFlashcardCount}
+                                onChange={(value) => {
+                                    const num = Number(value);
+                                    if (Number.isNaN(num)) return;
+                                    updateCurrentPreset((preset) => ({
+                                        ...preset,
+                                        interleaveFlashcardCount: normalizeInterleaveFlashcardCount(
+                                            num,
+                                        ),
+                                    }));
+                                }}
+                            />
+                        )}
                     </Section>
 
                     <Section title={t("DECK_OPTIONS_SECTION_AUTO_ADVANCE")}>

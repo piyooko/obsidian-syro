@@ -1537,7 +1537,15 @@ export const LinearCard: FC<LinearCardProps> = ({
                             </AnimatePresence>
                         </div>
 
-                        <div className={`sr-card-content-area ${isEditing ? "sr-is-editing" : ""}`}>
+                        <div
+                            className={[
+                                "sr-card-content-area",
+                                isEditing ? "sr-is-editing" : "",
+                                isExtractReview ? "sr-has-extract-memo-safe-area" : "",
+                            ]
+                                .filter(Boolean)
+                                .join(" ")}
+                        >
                             {isExtractReview ? (
                                 hasPreparedExtractContext &&
                                 extractContext &&
@@ -2540,7 +2548,42 @@ const InlineBreadcrumbs: FC<InlineBreadcrumbsProps> = ({
 };
 
 const EXTRACT_MEMO_PLACEHOLDER = "添加备注...";
-const EXTRACT_MEMO_ANIMATION_MS = 400;
+const EXTRACT_MEMO_DEFAULT_ANIMATION_MS = 350;
+
+const parseExtractMemoAnimationMs = (duration: string): number | null => {
+    const trimmed = duration.trim();
+    const match = trimmed.match(/^(\d+(?:\.\d+)?)(ms|s)$/);
+    if (!match) {
+        return null;
+    }
+
+    const value = Number(match[1]);
+    if (!Number.isFinite(value) || value <= 0) {
+        return null;
+    }
+
+    return match[2] === "s" ? value * 1000 : value;
+};
+
+const getExtractMemoAnimationMs = (widget: HTMLElement): number => {
+    const styles = window.getComputedStyle(widget);
+    const localDuration = parseExtractMemoAnimationMs(
+        styles.getPropertyValue("--sr-extract-memo-animation-duration"),
+    );
+    if (localDuration !== null) {
+        return localDuration;
+    }
+
+    const isPhoneLayout = widget.closest(".sr-phone-layout") !== null;
+    const settingDuration = parseExtractMemoAnimationMs(
+        styles.getPropertyValue(
+            isPhoneLayout
+                ? "--syro-mobile-review-extract-memo-animation-duration"
+                : "--syro-desktop-review-extract-memo-animation-duration",
+        ),
+    );
+    return settingDuration ?? EXTRACT_MEMO_DEFAULT_ANIMATION_MS;
+};
 
 interface ExtractMemoPillProps {
     memo: string;
@@ -2589,6 +2632,8 @@ const ExtractMemoPill: FC<ExtractMemoPillProps> = ({ memo, onUpdateMemo }) => {
             isAnimatingRef.current = true;
             clearAnimationTimer();
 
+            const animationMs = getExtractMemoAnimationMs(widget);
+            const currentInnerW = expand ? preview.offsetWidth : textarea.offsetWidth;
             const startW = widget.offsetWidth;
             const startH = widget.offsetHeight;
 
@@ -2608,12 +2653,20 @@ const ExtractMemoPill: FC<ExtractMemoPillProps> = ({ memo, onUpdateMemo }) => {
 
             const targetW = widget.offsetWidth;
             const targetH = widget.offsetHeight;
+            const targetInnerW = expand ? textarea.offsetWidth : preview.offsetWidth;
 
             widget.classList.remove("animate");
             widget.setCssProps({
                 "--sr-extract-memo-width": `${startW}px`,
                 "--sr-extract-memo-height": `${startH}px`,
             });
+            if (expand) {
+                preview.setCssProps({ "--sr-extract-memo-preview-width": `${currentInnerW}px` });
+                textarea.setCssProps({ "--sr-extract-memo-textarea-width": `${targetInnerW}px` });
+            } else {
+                textarea.setCssProps({ "--sr-extract-memo-textarea-width": `${currentInnerW}px` });
+                preview.setCssProps({ "--sr-extract-memo-preview-width": `${targetInnerW}px` });
+            }
 
             void widget.offsetHeight;
 
@@ -2628,6 +2681,8 @@ const ExtractMemoPill: FC<ExtractMemoPillProps> = ({ memo, onUpdateMemo }) => {
                     "--sr-extract-memo-width": "",
                     "--sr-extract-memo-height": "",
                 });
+                preview.setCssProps({ "--sr-extract-memo-preview-width": "" });
+                textarea.setCssProps({ "--sr-extract-memo-textarea-width": "" });
                 widget.classList.remove("animate");
                 isAnimatingRef.current = false;
                 animationTimerRef.current = null;
@@ -2635,7 +2690,7 @@ const ExtractMemoPill: FC<ExtractMemoPillProps> = ({ memo, onUpdateMemo }) => {
                 if (expand) {
                     textarea.focus();
                 }
-            }, EXTRACT_MEMO_ANIMATION_MS);
+            }, animationMs);
         },
         [clearAnimationTimer],
     );

@@ -1,8 +1,11 @@
 import {
     cloneFsrsSettings,
+    DEFAULT_INTERLEAVE_FLASHCARD_COUNT,
+    DEFAULT_REVIEW_QUEUE_MODE,
     DEFAULT_SETTINGS,
     DEFAULT_SYNC_PROGRESS_DISPLAY_MODE,
     getDeckOptionsPresetDisplayName,
+    normalizeDeckOptionsPreset,
     parseDeckOptionsStepInput,
     resolveDeckFsrsSettings,
     resolveDeckOptionsPreset,
@@ -35,6 +38,34 @@ describe("sync progress display defaults", () => {
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.showProgressBar).toBe(true);
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.maxNewExtracts).toBe(10);
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.maxExtractReviews).toBe(50);
+        expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.reviewQueueMode).toBe(
+            DEFAULT_REVIEW_QUEUE_MODE,
+        );
+        expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.interleaveFlashcardCount).toBe(
+            DEFAULT_INTERLEAVE_FLASHCARD_COUNT,
+        );
+    });
+
+    test("deck queue strategy settings normalize missing and invalid values", () => {
+        expect(
+            normalizeDeckOptionsPreset({
+                ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                reviewQueueMode: "interleaved",
+                interleaveFlashcardCount: 120,
+            }).interleaveFlashcardCount,
+        ).toBe(99);
+        expect(
+            normalizeDeckOptionsPreset({
+                ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                reviewQueueMode: "unknown",
+                interleaveFlashcardCount: 0,
+            }),
+        ).toEqual(
+            expect.objectContaining({
+                reviewQueueMode: DEFAULT_REVIEW_QUEUE_MODE,
+                interleaveFlashcardCount: 1,
+            }),
+        );
     });
 
     test("deck option step parser accepts valid values, blanks, and rejects malformed entries", () => {

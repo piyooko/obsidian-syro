@@ -736,8 +736,8 @@ settings:
     id: syro-desktop-review-square-corners
     title: Square corners
     title.zh: 直角边框
-    description: Force the review card, stats panel, and action buttons to use 0 radius.
-    description.zh: 强制复习卡片、统计面板和操作按钮使用 0 圆角。
+    description: Force the review card, stats panel, action buttons, and extract memo panel to use square styling.
+    description.zh: 强制复习卡片、统计面板、操作按钮和摘录备注面板使用直角样式。
     type: class-toggle
   -
     id: syro-desktop-review-card-radius
@@ -823,6 +823,18 @@ settings:
     min: 0
     max: 20
     step: 1
+  -
+    id: syro-desktop-review-extract-memo-animation-duration
+    title: Extract memo animation speed
+    title.zh: 摘录备注动画速度
+    description: Controls the expand and collapse duration of the extract memo panel.
+    description.zh: 控制摘录备注面板展开和收回的动画时长。
+    type: variable-number-slider
+    default: 350
+    format: ms
+    min: 150
+    max: 800
+    step: 25
   -
     id: syro-desktop-review-button-height
     title: Button height
@@ -1225,8 +1237,8 @@ settings:
     id: syro-mobile-review-square-corners
     title: Square corners
     title.zh: 直角边框
-    description: Force the phone review card, stats panel, and action buttons to use 0 radius.
-    description.zh: 强制手机复习卡片、统计面板和操作按钮使用 0 圆角。
+    description: Force the phone review card, stats panel, action buttons, and extract memo panel to use square styling.
+    description.zh: 强制手机复习卡片、统计面板、操作按钮和摘录备注面板使用直角样式。
     type: class-toggle
   -
     id: syro-mobile-review-card-radius
@@ -1336,6 +1348,18 @@ settings:
     min: 0
     max: 20
     step: 1
+  -
+    id: syro-mobile-review-extract-memo-animation-duration
+    title: Extract memo animation speed
+    title.zh: 摘录备注动画速度
+    description: Controls the expand and collapse duration of the extract memo panel on phone layout.
+    description.zh: 控制手机布局下摘录备注面板展开和收回的动画时长。
+    type: variable-number-slider
+    default: 350
+    format: ms
+    min: 150
+    max: 800
+    step: 25
   -
     id: syro-mobile-review-button-height
     title: Button height

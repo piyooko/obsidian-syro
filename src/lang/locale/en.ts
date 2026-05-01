@@ -1094,6 +1094,9 @@ export default normalizeSentenceCaseLocale({
     DECK_OPTIONS_EDIT_PRESET: "Edit Preset",
     DECK_OPTIONS_PRESET_NAME: "Preset Name",
     DECK_OPTIONS_SECTION_NEW_CARDS: "New Cards",
+    DECK_OPTIONS_SECTION_DAILY_LIMITS: "Daily Limits",
+    DECK_OPTIONS_SECTION_LEARNING_INTERVALS: "Learning & Lapse Intervals",
+    DECK_OPTIONS_SECTION_DISPLAY_ORDER: "Display Order",
     DECK_OPTIONS_LEARNING_STEPS: "Learning Steps",
     DECK_OPTIONS_LEARNING_STEPS_DESC:
         "Space separated intervals (e.g. 1m 10m). Supports m(min) h(hour) d(day)",
@@ -1108,6 +1111,15 @@ export default normalizeSentenceCaseLocale({
     DECK_OPTIONS_INVALID_STEP_FORMAT:
         "Deck option steps must use space separated values like 1m 10m, using only m, h, or d.",
     DECK_OPTIONS_SECTION_REVIEWS: "Reviews",
+    DECK_OPTIONS_REVIEW_QUEUE_MODE: "Flashcard / Extract Order",
+    DECK_OPTIONS_REVIEW_QUEUE_MODE_DESC:
+        "Choose how this deck moves between flashcards and extracts during review",
+    DECK_OPTIONS_REVIEW_QUEUE_MODE_EXTRACT_FIRST: "Extracts first",
+    DECK_OPTIONS_REVIEW_QUEUE_MODE_FLASHCARD_FIRST: "Flashcards first",
+    DECK_OPTIONS_REVIEW_QUEUE_MODE_INTERLEAVED: "Interleaved",
+    DECK_OPTIONS_INTERLEAVE_FLASHCARD_COUNT: "Flashcards before each extract",
+    DECK_OPTIONS_INTERLEAVE_FLASHCARD_COUNT_DESC:
+        "When interleaving, review this many flashcards before showing one extract",
     DECK_OPTIONS_MAX_REVIEWS: "Reviews/Day",
     DECK_OPTIONS_MAX_REVIEWS_DESC: "Maximum number of reviews to show per day",
     DECK_OPTIONS_MAX_EXTRACT_REVIEWS: "Extract Reviews/Day",

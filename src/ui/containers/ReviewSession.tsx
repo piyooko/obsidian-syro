@@ -17,7 +17,6 @@ import {
     type Editor,
 } from "obsidian";
 import { SR_TAB_VIEW } from "src/constants";
-import { DataStore } from "src/dataStore/data";
 import { t } from "src/lang/helpers";
 import { ReviewContext } from "../context/ReviewContext";
 import { DeckOptionsPanel } from "../components/DeckOptionsPanel";
@@ -37,7 +36,11 @@ import { ExtractReviewDateModal } from "src/ui/modals/ExtractReviewDateModal";
 import { CardType } from "src/Question";
 import { CardFrontBackUtil, type CardReviewTarget } from "src/question-type";
 import { SrTFile, type QuestionContextBreadcrumb } from "src/SRFile";
-import { resolveDeckOptionsPreset } from "src/settings";
+import {
+    normalizeInterleaveFlashcardCount,
+    resolveDeckOptionsPreset,
+    type ReviewQueueMode,
+} from "src/settings";
 import type { ExtractItem } from "src/dataStore/extractStore";
 import {
     applyReviewMobileHeaderCover,
@@ -57,7 +60,96 @@ import {
 
 export type ReviewSessionView = "deck-list" | "review";
 type ReviewEntrySource = "global-deck-list" | "manual-deck-click" | "in-note-auto-enter";
-type ActiveReviewItem = { kind: "card" } | { kind: "extract"; uuid: string };
+export type ActiveReviewItem = { kind: "card" } | { kind: "extract"; uuid: string };
+
+interface ReviewQueueSelectionInput {
+    hasCard: boolean;
+    extractUuid: string | null;
+    reviewQueueMode: ReviewQueueMode;
+    interleaveFlashcardCount: number;
+    interleavedFlashcardRun: number;
+    isCurrentCardLearnAhead: boolean;
+}
+
+interface ReviewQueueSelectionResult {
+    item: ActiveReviewItem | null;
+    interleavedFlashcardRun: number;
+}
+
+export function resolveActiveReviewItemByQueue({
+    hasCard,
+    extractUuid,
+    reviewQueueMode,
+    interleaveFlashcardCount,
+    interleavedFlashcardRun,
+    isCurrentCardLearnAhead,
+}: ReviewQueueSelectionInput): ReviewQueueSelectionResult {
+    const hasExtract = extractUuid != null;
+    const normalizedRun = Math.max(0, Math.floor(interleavedFlashcardRun));
+
+    if (!hasCard && hasExtract) {
+        return {
+            item: { kind: "extract", uuid: extractUuid },
+            interleavedFlashcardRun: 0,
+        };
+    }
+
+    if (hasCard && !hasExtract) {
+        return {
+            item: { kind: "card" },
+            interleavedFlashcardRun: normalizedRun,
+        };
+    }
+
+    if (hasCard && hasExtract) {
+        if (isCurrentCardLearnAhead) {
+            return {
+                item: { kind: "extract", uuid: extractUuid },
+                interleavedFlashcardRun: 0,
+            };
+        }
+
+        if (reviewQueueMode === "flashcard-first") {
+            return {
+                item: { kind: "card" },
+                interleavedFlashcardRun: 0,
+            };
+        }
+
+        if (reviewQueueMode === "interleaved") {
+            const flashcardCount = normalizeInterleaveFlashcardCount(interleaveFlashcardCount);
+            if (normalizedRun >= flashcardCount) {
+                return {
+                    item: { kind: "extract", uuid: extractUuid },
+                    interleavedFlashcardRun: 0,
+                };
+            }
+            return {
+                item: { kind: "card" },
+                interleavedFlashcardRun: normalizedRun,
+            };
+        }
+
+        return {
+            item: { kind: "extract", uuid: extractUuid },
+            interleavedFlashcardRun: 0,
+        };
+    }
+
+    return {
+        item: null,
+        interleavedFlashcardRun: normalizedRun,
+    };
+}
+
+function isCurrentCardLearnAhead(sequencer: IFlashcardReviewSequencer): boolean {
+    if (!sequencer.isCurrentCardFromLearningQueue) {
+        return false;
+    }
+
+    const nextReview = sequencer.currentCard?.repetitionItem?.nextReview;
+    return typeof nextReview === "number" && nextReview > Date.now();
+}
 
 function isReviewHostLeafActive(plugin: SRPlugin, hostLeaf: WorkspaceLeaf): boolean {
     const workspace = (
@@ -488,31 +580,6 @@ function combineCardAndExtractReviewStats(
     };
 }
 
-function getExtractDueAt(item: ExtractItem): number {
-    return item.timesReviewed === 0 || item.nextReview === 0 ? 0 : item.nextReview;
-}
-
-function getCurrentCardDueAt(plugin: SRPlugin, sequencer: IFlashcardReviewSequencer): number {
-    const card = sequencer.currentCard;
-    if (!card) {
-        return Number.POSITIVE_INFINITY;
-    }
-    const item = plugin.store?.getItembyID(card.Id) ?? DataStore.getInstance().getItembyID(card.Id);
-    if (!item || item.isNew) {
-        return 0;
-    }
-    return item.nextReview || Date.now();
-}
-
-function getCurrentCardPriority(plugin: SRPlugin, sequencer: IFlashcardReviewSequencer): number {
-    const card = sequencer.currentCard;
-    if (!card) {
-        return 5;
-    }
-    const item = plugin.store?.getItembyID(card.Id) ?? DataStore.getInstance().getItembyID(card.Id);
-    return item?.priority ?? 5;
-}
-
 // ==========================================
 // Review session
 // ==========================================
@@ -577,6 +644,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     const pendingExtractGraduationOrderRef = useRef<string[]>([]);
     const [pendingExtractGraduationVersion, setPendingExtractGraduationVersion] = useState(0);
     const [, setPreparedExtractVersion] = useState(0);
+    const interleavedFlashcardRunRef = useRef(0);
 
     useEffect(() => {
         if (!editModeRequestTarget) {
@@ -831,29 +899,18 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 null;
             const extract = getReviewableExtractCandidates(deckPath)[0];
             const hasCard = sequencer.hasCurrentCard;
+            const preset = resolveDeckOptionsPreset(plugin.data.settings, deckPath);
+            const selection = resolveActiveReviewItemByQueue({
+                hasCard,
+                extractUuid: extract?.uuid ?? null,
+                reviewQueueMode: preset.reviewQueueMode,
+                interleaveFlashcardCount: preset.interleaveFlashcardCount,
+                interleavedFlashcardRun: interleavedFlashcardRunRef.current,
+                isCurrentCardLearnAhead: isCurrentCardLearnAhead(sequencer),
+            });
 
-            if (!hasCard && extract) {
-                return { kind: "extract", uuid: extract.uuid };
-            }
-            if (hasCard && !extract) {
-                return { kind: "card" };
-            }
-            if (hasCard && extract) {
-                const cardDueAt = getCurrentCardDueAt(plugin, sequencer);
-                const extractDueAt = getExtractDueAt(extract);
-                if (extractDueAt < cardDueAt) {
-                    return { kind: "extract", uuid: extract.uuid };
-                }
-                if (
-                    extractDueAt === cardDueAt &&
-                    extract.priority < getCurrentCardPriority(plugin, sequencer)
-                ) {
-                    return { kind: "extract", uuid: extract.uuid };
-                }
-                return { kind: "card" };
-            }
-
-            return null;
+            interleavedFlashcardRunRef.current = selection.interleavedFlashcardRun;
+            return selection.item;
         },
         [getReviewableExtractCandidates, plugin, sequencer],
     );
@@ -1344,6 +1401,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                     : responseMap[rating] ?? ReviewResponse.Good;
 
             if (activeReviewItem?.kind === "extract") {
+                interleavedFlashcardRunRef.current = 0;
                 const reviewedExtract = plugin.extractStore?.get(activeReviewItem.uuid) ?? null;
                 let reviewed: ExtractItem | null = null;
                 try {
@@ -1382,6 +1440,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 logRuntimeDebug("[SR-DynSync] ReviewSession: calling sequencer.processReview");
                 sequencer.processReview(response);
                 reviewUndoStackRef.current.push({ kind: "card" });
+                interleavedFlashcardRunRef.current += 1;
                 logRuntimeDebug("[SR-DynSync] ReviewSession: sequencer.processReview completed");
             } catch (e) {
                 console.error("[SR] processReview 鐎殿喖鍊搁悥?", e);

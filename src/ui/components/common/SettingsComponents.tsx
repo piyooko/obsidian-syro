@@ -38,6 +38,7 @@ export const BaseComponent: React.FC<BaseComponentProps> = ({
 // ==========================================
 interface SectionProps {
     title?: React.ReactNode;
+    desc?: React.ReactNode;
     children: React.ReactNode;
     className?: string;
     contentClassName?: string;
@@ -47,6 +48,7 @@ interface SectionProps {
 // Keep layout styling in CSS so sections stay aligned with the Obsidian theme.
 export const Section: React.FC<SectionProps> = ({
     title,
+    desc,
     children,
     className = "",
     contentClassName = "",
@@ -55,7 +57,10 @@ export const Section: React.FC<SectionProps> = ({
     <div className={["setting-group", "sr-setting-section", className].filter(Boolean).join(" ")}>
         {title && (
             <div className="setting-item setting-item-heading">
-                <div className="setting-item-name">{title}</div>
+                <div className="setting-item-info">
+                    <div className="setting-item-name">{title}</div>
+                    {desc && <div className="setting-item-description">{desc}</div>}
+                </div>
                 <div className="setting-item-control" />
             </div>
         )}

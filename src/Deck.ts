@@ -470,13 +470,13 @@ export class DeckTreeFilter {
         const result = new Deck(node.deckName, null);
         result.learningFlashcards = [...node.learningFlashcards];
 
-        for (const card of node.newFlashcards) {
+        for (const card of this.getDailyLimitOrderedCards(node.newFlashcards)) {
             if (currentLimits.newCards > 0) {
                 result.newFlashcards.push(card);
                 currentLimits.newCards--;
             }
         }
-        for (const card of node.dueFlashcards) {
+        for (const card of this.getDailyLimitOrderedCards(node.dueFlashcards)) {
             if (currentLimits.dueCards > 0) {
                 result.dueFlashcards.push(card);
                 currentLimits.dueCards--;
@@ -490,5 +490,41 @@ export class DeckTreeFilter {
         }
 
         return result;
+    }
+
+    private static getDailyLimitOrderedCards(cards: Card[]): Card[] {
+        if (!cards.some((card) => (card.repetitionItem?.priority ?? 5) !== 5)) {
+            return cards;
+        }
+
+        return cards
+            .map((card, index) => ({ card, index }))
+            .sort((left, right) => {
+                const priorityDelta =
+                    (left.card.repetitionItem?.priority ?? 5) -
+                    (right.card.repetitionItem?.priority ?? 5);
+                if (priorityDelta !== 0) {
+                    return priorityDelta;
+                }
+
+                const createdAtDelta =
+                    this.getCardCreatedAt(left.card, left.index) -
+                    this.getCardCreatedAt(right.card, right.index);
+                if (createdAtDelta !== 0) {
+                    return createdAtDelta;
+                }
+
+                return left.index - right.index;
+            })
+            .map(({ card }) => card);
+    }
+
+    private static getCardCreatedAt(card: Card, fallbackIndex: number): number {
+        const data = card.repetitionItem?.data as { created_at?: unknown } | undefined;
+        if (typeof data?.created_at === "number") {
+            return data.created_at;
+        }
+
+        return typeof card.Id === "number" ? card.Id : fallbackIndex;
     }
 }
