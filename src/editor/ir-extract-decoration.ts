@@ -15,8 +15,8 @@ const MAX_VERTICAL_INSET = 8;
 const INNERMOST_CONTAINER_OUTSET = 6;
 const INFO_ICON_STACK_STEP = 24;
 const INFO_ICON_BASE_RIGHT = 24;
-const INFO_ICON_SIZE = 20;
-const INFO_ICON_TOP = -10;
+const INFO_ICON_SIZE = 14;
+const INFO_ICON_TOP = -7;
 export const IR_EXTRACT_INFO_NOTE_COLOR = "#44cf6e";
 const INFO_ICON_VISUAL_ROW_TOLERANCE = 12;
 const NOTE_TOOLTIP_VIEWPORT_PADDING = 12;
@@ -1098,6 +1098,7 @@ function createInfoIconSvg(): SVGSVGElement {
     circle.setAttribute("cx", "12");
     circle.setAttribute("cy", "12");
     circle.setAttribute("r", "10");
+    circle.setAttribute("fill", "var(--background-primary)");
 
     const verticalPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
     verticalPath.setAttribute("d", "M12 16v-4");
@@ -2403,14 +2404,14 @@ const irExtractDecorationTheme = EditorView.baseTheme({
     },
     ".sr-ir-info-action": {
         position: "absolute",
-        top: "-10px",
+        top: "-7px",
         right: "calc(24px + var(--sr-ir-info-offset, 0px))",
-        width: "20px",
-        height: "20px",
+        width: "14px",
+        height: "14px",
         padding: "0",
         border: "none",
         borderRadius: "50%",
-        backgroundColor: "var(--background-primary)",
+        backgroundColor: "transparent",
         color: "var(--text-faint)",
         display: "flex",
         alignItems: "center",
