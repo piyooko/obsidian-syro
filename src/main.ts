@@ -1703,6 +1703,7 @@ export default class SRPlugin extends Plugin {
                     this.handleExtractTooltipNoteSaveError(error),
                 logExtractTooltipNoteDebug: (event: string, details?: Record<string, unknown>) =>
                     this.logExtractTooltipNoteDebug(event, details),
+                trackInitialLayout: () => true,
             },
         );
         this.registerEditorExtension(createIrExtractDecorationExtensions(irExtractDecorationOptions));

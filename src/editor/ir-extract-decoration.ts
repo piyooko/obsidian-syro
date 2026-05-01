@@ -24,6 +24,9 @@ const NOTE_TOOLTIP_GAP = 10;
 const NOTE_TOOLTIP_FALLBACK_HEIGHT = 120;
 const NOTE_TOOLTIP_FALLBACK_WIDTH = 240;
 const NOTE_TOOLTIP_ARROW_SIZE = 8;
+const INITIAL_LAYOUT_TRACKING_MAX_FRAMES = 18;
+const INITIAL_LAYOUT_STABLE_FRAME_TARGET = 3;
+const INITIAL_LAYOUT_CHANGE_EPSILON = 0.5;
 interface DecorationItem {
     from: number;
     to: number;
@@ -63,6 +66,7 @@ export interface IrExtractDecorationOptions {
     saveExtractTooltipNote?: (uuid: string, memo: string) => Promise<void>;
     onExtractTooltipNoteSaveError?: (error: unknown) => void;
     logExtractTooltipNoteDebug?: (event: string, details?: Record<string, unknown>) => void;
+    trackInitialLayout?: (view: EditorView) => boolean;
 }
 
 export interface MeasuredExtractBlock {
@@ -1645,6 +1649,11 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             private readonly noteUuidsByStart = new Map<number, string>();
             private hydratedNoteStartsKey = "";
             private hydrateNotesRequestId = 0;
+            private trackInitialLayout = false;
+            private initialLayoutFrameId: number | null = null;
+            private initialLayoutFrameCount = 0;
+            private initialLayoutStableFrameCount = 0;
+            private lastInitialLayoutSignature: string | null = null;
             private readonly handleScrollMouseMove = (event: MouseEvent): void => {
                 const point = getMousePointInScrollCoordinates(this.scrollDOM, event);
                 const hoveredStart = findHoveredIrExtractBlockStart(
@@ -1748,6 +1757,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 document.addEventListener("mousedown", this.handleDocumentMouseDown, true);
                 window.addEventListener("resize", this.handleViewportTooltipReposition);
                 window.addEventListener("scroll", this.handleViewportTooltipReposition, true);
+                this.trackInitialLayout = options.trackInitialLayout?.(view) === true;
                 this.scheduleMeasure(view);
             }
 
@@ -1778,6 +1788,11 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     sourceRevealChanged;
 
                 if (shouldRebuild) {
+                    const previousSourceText = this.sourceText;
+                    const previousSourceLength = previousSourceText.length;
+                    const previousRenderStarts = this.renderExtracts
+                        .map((renderExtract) => renderExtract.match.start)
+                        .join(",");
                     if (
                         !receivedPointSourceStarts &&
                         (update.docChanged ||
@@ -1797,6 +1812,31 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     this.renderExtracts = state.renderExtracts;
                     this.activeSourceStart = state.activeSourceStart;
                     this.sourceText = update.view.state.doc.toString();
+                    const nextRenderStarts = this.renderExtracts
+                        .map((renderExtract) => renderExtract.match.start)
+                        .join(",");
+                    const nextSourceLength = this.sourceText.length;
+                    let largestPreviousChangedLength = 0;
+                    let largestNextChangedLength = 0;
+                    update.changes.iterChangedRanges((fromA, toA, fromB, toB) => {
+                        largestPreviousChangedLength = Math.max(
+                            largestPreviousChangedLength,
+                            toA - fromA,
+                        );
+                        largestNextChangedLength = Math.max(largestNextChangedLength, toB - fromB);
+                    });
+                    const isLikelyDocumentReplacement =
+                        largestPreviousChangedLength >= Math.max(1, previousSourceLength * 0.8) &&
+                        largestNextChangedLength >= Math.max(1, nextSourceLength * 0.8);
+                    if (
+                        update.docChanged &&
+                        this.renderExtracts.length > 0 &&
+                        isLikelyDocumentReplacement &&
+                        (previousRenderStarts !== nextRenderStarts ||
+                            previousSourceText !== this.sourceText)
+                    ) {
+                        this.restartInitialLayoutTracking(update.view);
+                    }
                     this.matchesByStart = new Map(
                         this.renderExtracts.map((renderExtract) => [
                             renderExtract.match.start,
@@ -1823,6 +1863,10 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 document.removeEventListener("mousedown", this.handleDocumentMouseDown, true);
                 window.removeEventListener("resize", this.handleViewportTooltipReposition);
                 window.removeEventListener("scroll", this.handleViewportTooltipReposition, true);
+                if (this.initialLayoutFrameId !== null) {
+                    window.cancelAnimationFrame(this.initialLayoutFrameId);
+                    this.initialLayoutFrameId = null;
+                }
                 this.noteTooltip.removeEventListener("input", this.handleTooltipInput);
                 this.clearOverlayBlocks();
                 this.overlay.remove();
@@ -2299,6 +2343,85 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 }
             }
 
+            private getInitialLayoutSignature(view: EditorView): string | null {
+                if (this.renderExtracts.length === 0) {
+                    return null;
+                }
+                const scrollRect = view.scrollDOM.getBoundingClientRect();
+                const contentRect = view.contentDOM.getBoundingClientRect();
+                const text = view.state.doc.toString();
+                const range = getIrExtractRenderRange(this.renderExtracts[0]);
+                const rects = getVisualLineClientRectsForRange(view, text, range.from, range.to);
+                const firstRect = rects[0];
+                if (!firstRect) {
+                    return null;
+                }
+                const round = (value: number): number =>
+                    Math.round(value / INITIAL_LAYOUT_CHANGE_EPSILON) *
+                    INITIAL_LAYOUT_CHANGE_EPSILON;
+                return [
+                    round(scrollRect.top),
+                    round(scrollRect.left),
+                    round(contentRect.top),
+                    round(contentRect.left),
+                    round(contentRect.width),
+                    round(view.scrollDOM.scrollTop),
+                    round(firstRect.top),
+                    round(firstRect.left),
+                    round(firstRect.height),
+                ].join("|");
+            }
+
+            private scheduleInitialLayoutTracking(view: EditorView): void {
+                if (!this.trackInitialLayout || this.initialLayoutFrameId !== null) {
+                    return;
+                }
+                const tick = () => {
+                    this.initialLayoutFrameId = null;
+                    if (!view.dom.isConnected || !this.trackInitialLayout) {
+                        return;
+                    }
+                    const signature = this.getInitialLayoutSignature(view);
+                    const changed =
+                        signature !== null &&
+                        this.lastInitialLayoutSignature !== null &&
+                        signature !== this.lastInitialLayoutSignature;
+                    if (signature !== null) {
+                        if (changed) {
+                            this.initialLayoutStableFrameCount = 0;
+                            this.scheduleMeasure(view);
+                        } else {
+                            this.initialLayoutStableFrameCount += 1;
+                        }
+                        this.lastInitialLayoutSignature = signature;
+                    }
+                    this.initialLayoutFrameCount += 1;
+                    if (
+                        this.initialLayoutFrameCount >= INITIAL_LAYOUT_TRACKING_MAX_FRAMES ||
+                        this.initialLayoutStableFrameCount >= INITIAL_LAYOUT_STABLE_FRAME_TARGET
+                    ) {
+                        this.trackInitialLayout = false;
+                        return;
+                    }
+                    this.initialLayoutFrameId = window.requestAnimationFrame(tick);
+                };
+                this.initialLayoutFrameId = window.requestAnimationFrame(tick);
+            }
+
+            private restartInitialLayoutTracking(view: EditorView): void {
+                if (options.trackInitialLayout?.(view) !== true) {
+                    return;
+                }
+                if (this.initialLayoutFrameId !== null) {
+                    window.cancelAnimationFrame(this.initialLayoutFrameId);
+                    this.initialLayoutFrameId = null;
+                }
+                this.trackInitialLayout = true;
+                this.initialLayoutFrameCount = 0;
+                this.initialLayoutStableFrameCount = 0;
+                this.lastInitialLayoutSignature = null;
+            }
+
             private scheduleMeasure(view: EditorView): void {
                 if (!isLivePreview(view, options) || this.renderExtracts.length === 0) {
                     this.clearOverlayBlocks();
@@ -2342,6 +2465,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         this.cursorBlockStart = result.cursorBlockStart;
                         this.renderBlocks(result.overlayBlocks);
                         this.hydrateVisibleNoteStates();
+                        this.scheduleInitialLayoutTracking(view);
 
                         const nextPointSourceStarts = new Set(result.pointSourceStarts);
                         if (!areNumberSetsEqual(this.pointSourceStarts, nextPointSourceStarts)) {

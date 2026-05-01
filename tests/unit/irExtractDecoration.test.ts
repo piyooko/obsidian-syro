@@ -143,8 +143,100 @@ describe("irExtractDecoration helpers", () => {
         };
     }
 
+    function installIrExtractMeasureMocksWithDynamicRangeTop(
+        getRangeTop: () => number,
+    ): () => void {
+        const originalCreateRange = document.createRange;
+        const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+        const originalDOMRect = globalThis.DOMRect;
+        const rect = (left: number, top: number, width: number, height: number): DOMRect => {
+            const right = left + width;
+            const bottom = top + height;
+            return {
+                x: left,
+                y: top,
+                left,
+                top,
+                right,
+                bottom,
+                width,
+                height,
+                toJSON: () => undefined,
+            } as DOMRect;
+        };
+        Object.defineProperty(globalThis, "DOMRect", {
+            configurable: true,
+            value: class MockDOMRect {
+                x: number;
+                y: number;
+                left: number;
+                top: number;
+                right: number;
+                bottom: number;
+                width: number;
+                height: number;
+
+                constructor(left = 0, top = 0, width = 0, height = 0) {
+                    this.x = left;
+                    this.y = top;
+                    this.left = left;
+                    this.top = top;
+                    this.width = width;
+                    this.height = height;
+                    this.right = left + width;
+                    this.bottom = top + height;
+                }
+
+                toJSON(): undefined {
+                    return undefined;
+                }
+            },
+        });
+        document.createRange = jest.fn(
+            () =>
+                ({
+                    setStart: jest.fn(),
+                    setEnd: jest.fn(),
+                    detach: jest.fn(),
+                    getClientRects: jest.fn(() => [rect(10, getRangeTop(), 120, 20)]),
+                }) as unknown as Range,
+        );
+        HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+            if ((this as HTMLElement).classList?.contains("cm-scroller")) {
+                return rect(0, 0, 500, 500);
+            }
+            if ((this as HTMLElement).classList?.contains("cm-content")) {
+                return rect(0, 0, 500, 500);
+            }
+            if ((this as HTMLElement).classList?.contains("sr-ir-info-action")) {
+                return rect(110, 10, 14, 14);
+            }
+            if ((this as HTMLElement).classList?.contains("sr-ir-note-tooltip")) {
+                return rect(0, 0, 240, 80);
+            }
+            return originalGetBoundingClientRect.call(this);
+        };
+
+        return () => {
+            document.createRange = originalCreateRange;
+            HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+            if (originalDOMRect) {
+                Object.defineProperty(globalThis, "DOMRect", {
+                    configurable: true,
+                    value: originalDOMRect,
+                });
+            } else {
+                delete (globalThis as typeof globalThis & { DOMRect?: typeof DOMRect }).DOMRect;
+            }
+        };
+    }
+
     async function waitForIrExtractMeasure(): Promise<void> {
         await new Promise((resolve) => setTimeout(resolve, 60));
+    }
+
+    async function waitForInitialIrExtractLayoutTracking(): Promise<void> {
+        await new Promise((resolve) => setTimeout(resolve, 80));
     }
 
     function getInfoRightOffsetEntries(
@@ -1626,6 +1718,191 @@ describe("irExtractDecoration helpers", () => {
             expect(actions[1]?.classList.contains("has-note")).toBe(false);
             expect(resolveExtractTooltipNotes).toHaveBeenCalledTimes(1);
             expect(resolveExtractTooltipNotes).toHaveBeenCalledWith(view, [firstStart, secondStart]);
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("tracks initial layout changes and remeasures each editor when requested", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const firstParent = document.createElement("div");
+        firstParent.className = "is-live-preview";
+        const secondParent = document.createElement("div");
+        secondParent.className = "is-live-preview";
+        document.body.append(firstParent, secondParent);
+        const trackInitialLayout = jest.fn(() => true);
+
+        const firstView = new EditorView({
+            parent: firstParent,
+            state: EditorState.create({
+                doc: "{{ir::one}}",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        trackInitialLayout,
+                    }),
+                ],
+            }),
+        });
+        const secondView = new EditorView({
+            parent: secondParent,
+            state: EditorState.create({
+                doc: "{{ir::two}}",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        trackInitialLayout,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+
+            expect(trackInitialLayout).toHaveBeenCalledTimes(2);
+            expect(firstParent.querySelector(".sr-ir-extract-block")).toBeTruthy();
+            expect(secondParent.querySelector(".sr-ir-extract-block")).toBeTruthy();
+
+            await waitForInitialIrExtractLayoutTracking();
+            expect(firstParent.querySelector(".sr-ir-extract-block")).toBeTruthy();
+            expect(secondParent.querySelector(".sr-ir-extract-block")).toBeTruthy();
+        } finally {
+            firstView.destroy();
+            secondView.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("initial layout tracking follows range position changes after first render", async () => {
+        let rangeTop = 10;
+        const restoreMeasureMocks = installIrExtractMeasureMocksWithDynamicRangeTop(() => rangeTop);
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: "{{ir::one}}",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        trackInitialLayout: () => true,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            const block = parent.querySelector<HTMLElement>(".sr-ir-extract-block");
+            expect(block?.style.top).toBe("10px");
+
+            rangeTop = 18;
+            await waitForInitialIrExtractLayoutTracking();
+
+            expect(parent.querySelector<HTMLElement>(".sr-ir-extract-block")?.style.top).toBe(
+                "18px",
+            );
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("restarts initial layout tracking when a reused editor receives a replacement document", async () => {
+        let rangeTop = 10;
+        const restoreMeasureMocks = installIrExtractMeasureMocksWithDynamicRangeTop(() => rangeTop);
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const trackInitialLayout = jest.fn(() => true);
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: "{{ir::one}}",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        trackInitialLayout,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            await waitForInitialIrExtractLayoutTracking();
+            expect(parent.querySelector<HTMLElement>(".sr-ir-extract-block")?.style.top).toBe(
+                "10px",
+            );
+            expect(trackInitialLayout).toHaveBeenCalledTimes(1);
+
+            rangeTop = 20;
+            view.dispatch({
+                changes: {
+                    from: 0,
+                    to: view.state.doc.length,
+                    insert: "{{ir::two}}",
+                },
+            });
+            await waitForIrExtractMeasure();
+            expect(parent.querySelector<HTMLElement>(".sr-ir-extract-block")?.style.top).toBe(
+                "20px",
+            );
+            expect(trackInitialLayout).toHaveBeenCalledTimes(2);
+
+            rangeTop = 28;
+            await waitForInitialIrExtractLayoutTracking();
+
+            expect(parent.querySelector<HTMLElement>(".sr-ir-extract-block")?.style.top).toBe(
+                "28px",
+            );
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("does not restart initial layout tracking for small edits in the same document", async () => {
+        let rangeTop = 10;
+        const restoreMeasureMocks = installIrExtractMeasureMocksWithDynamicRangeTop(() => rangeTop);
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const trackInitialLayout = jest.fn(() => true);
+        const doc = "prefix {{ir::one}} suffix";
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc,
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        trackInitialLayout,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            await waitForInitialIrExtractLayoutTracking();
+            expect(trackInitialLayout).toHaveBeenCalledTimes(1);
+
+            view.dispatch({
+                changes: {
+                    from: 0,
+                    insert: "x",
+                },
+            });
+            await waitForIrExtractMeasure();
+
+            expect(trackInitialLayout).toHaveBeenCalledTimes(1);
         } finally {
             view.destroy();
             restoreMeasureMocks();
