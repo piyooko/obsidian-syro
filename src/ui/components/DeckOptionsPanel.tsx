@@ -3,12 +3,10 @@ import React, {
     useCallback,
     useEffect,
     useId,
-    useLayoutEffect,
     useMemo,
-    useRef,
     useState,
 } from "react";
-import { Notice, Platform } from "obsidian";
+import { Notice } from "obsidian";
 import { X } from "lucide-react";
 import type SRPlugin from "src/main";
 import { t } from "src/lang/helpers";
@@ -34,8 +32,6 @@ interface DeckOptionsPanelProps {
     plugin: SRPlugin;
     deckName: string;
     deckPath: string;
-    containerElement: HTMLElement | null;
-    preferredWidth: number;
     onClose: () => void;
     onSaved?: () => void;
 }
@@ -44,12 +40,6 @@ interface DeckOptionsDraft {
     presets: DeckOptionsPreset[];
     assignment: Record<string, string>;
     currentPresetUuid: string;
-}
-
-interface PanelLayout {
-    width: number;
-    maxHeight: number;
-    ready: boolean;
 }
 
 function normalizePreset(
@@ -101,20 +91,12 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
     plugin,
     deckName,
     deckPath,
-    containerElement,
-    preferredWidth,
     onClose,
     onSaved,
 }) => {
-    const panelRef = useRef<HTMLDivElement>(null);
     const titleId = useId();
     const mobileNavbarOffset = useMobileNavbarOffset();
     const [draft, setDraft] = useState<DeckOptionsDraft>(() => createDraft(plugin, deckPath));
-    const [layout, setLayout] = useState<PanelLayout>({
-        width: 680,
-        maxHeight: 640,
-        ready: false,
-    });
 
     useEffect(() => {
         setDraft(createDraft(plugin, deckPath));
@@ -207,49 +189,17 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
         [plugin, updateCurrentPreset],
     );
 
-    const recalculateLayout = useCallback(() => {
-        if (!containerElement) return;
-
-        const isMobileLayout = Platform.isMobile;
-        const horizontalPadding = isMobileLayout ? 16 : 48;
-        const verticalPadding = (isMobileLayout ? 16 : 40) + mobileNavbarOffset;
-        const availableWidth = Math.max(320, containerElement.clientWidth - horizontalPadding);
-        const width = Math.max(320, Math.min(preferredWidth, availableWidth));
-        const maxHeight = Math.max(220, containerElement.clientHeight - verticalPadding);
-
-        setLayout({
-            width,
-            maxHeight,
-            ready: true,
-        });
-    }, [containerElement, mobileNavbarOffset, preferredWidth]);
-
-    useLayoutEffect(() => {
-        recalculateLayout();
-    }, [currentPreset.autoAdvance, currentPresetIndex, recalculateLayout]);
-
     useEffect(() => {
-        if (!containerElement) return;
-
-        const handleResize = () => recalculateLayout();
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === "Escape") onClose();
         };
 
-        const resizeObserver = new ResizeObserver(() => {
-            recalculateLayout();
-        });
-        resizeObserver.observe(containerElement);
-
-        window.addEventListener("resize", handleResize);
         document.addEventListener("keydown", handleKeyDown);
 
         return () => {
-            resizeObserver.disconnect();
-            window.removeEventListener("resize", handleResize);
             document.removeEventListener("keydown", handleKeyDown);
         };
-    }, [containerElement, onClose, recalculateLayout]);
+    }, [onClose]);
 
     const handlePresetUuidChange = useCallback(
         (value: string) => {
@@ -350,19 +300,12 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
         <div
             className="sr-deck-options-overlay"
             style={{ ["--sr-mobile-navbar-offset" as string]: `${mobileNavbarOffset}px` }}
-            onMouseDown={onClose}
         >
             <div
-                ref={panelRef}
-                className={`sr-settings-panel sr-deck-options-anchor-panel ${layout.ready ? "is-ready" : ""}`}
+                className="sr-settings-panel sr-deck-options-anchor-panel is-ready"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={titleId}
-                style={{
-                    width: `${layout.width}px`,
-                    maxHeight: `${layout.maxHeight}px`,
-                }}
-                onMouseDown={(event) => event.stopPropagation()}
             >
                 <div className="sr-style-setting-header sr-deck-options-toolbar">
                     <div className="sr-style-setting-tab-group">

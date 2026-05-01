@@ -896,6 +896,94 @@ describe("SRPlugin extract deck paths", () => {
         expect(emit).toHaveBeenCalledWith("extracts-updated");
     });
 
+    test("resolves automatic heading extract tooltip memo by heading start", async () => {
+        const parent = document.createElement("div");
+        document.body.appendChild(parent);
+        const file = createTFile("摘录测试.md");
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({ doc: "# 自动摘录标题\n正文" }),
+        });
+        const extractStore = new ExtractStore(DEFAULT_SETTINGS, { extractsPath: "extracts.json" });
+        extractStore.save = jest.fn(() => Promise.resolve());
+        const rule = {
+            sourcePath: "摘录测试.md",
+            rule: "heading" as const,
+            headingLevel: 1 as const,
+            enabled: true,
+            createdAt: 1,
+            updatedAt: 1,
+        };
+        const [created] = extractStore.syncAutoExtractsForFile(
+            file.path,
+            "# 自动摘录标题\n正文",
+            "deck",
+            rule,
+        ).added;
+        if (!created) {
+            throw new Error("Expected automatic extract");
+        }
+        extractStore.setMemo(created.uuid, "自动标题备注");
+        const markdownView = Object.assign(new MarkdownView({} as never), {
+            file,
+            containerEl: parent,
+        });
+
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    enableExtracts: true,
+                    autoExtractRules: {
+                        "摘录测试.md": rule,
+                    },
+                    convertFoldersToDecks: true,
+                    trackedNoteToDecks: false,
+                },
+            },
+            app: {
+                workspace: {
+                    iterateAllLeaves: jest.fn((callback) => {
+                        callback({
+                            view: markdownView,
+                            containerEl: parent,
+                        });
+                    }),
+                },
+                vault: {
+                    getAbstractFileByPath: jest.fn(() => file),
+                },
+            },
+            extractStore,
+            noteExtractCache: new Map(),
+            appendExtractSyncResult: jest.fn(() => Promise.resolve()),
+            syncEvents: { emit: jest.fn() },
+            getReviewDeckPathForFile: jest.fn(() => "摘录测试"),
+            shouldLogRuntimeDebug: jest.fn(() => false),
+            logDetectedManualIrExtractsForDebug: jest.fn(),
+            logExtractSyncResultForDebug: jest.fn(),
+        });
+
+        try {
+            const notes = await SRPlugin.prototype.resolveExtractTooltipNotes.call(plugin, view, [
+                0,
+            ]);
+
+            expect(notes).toEqual([
+                expect.objectContaining({
+                    sourceStart: 0,
+                    uuid: created.uuid,
+                    memo: "自动标题备注",
+                    priority: 5,
+                    sourceMode: "auto-slice",
+                }),
+            ]);
+        } finally {
+            view.destroy();
+            parent.remove();
+        }
+    });
+
     test("undoes an extract review action by restoring the previous snapshot", async () => {
         const emit = jest.fn();
         const updateStatusBar = jest.fn();

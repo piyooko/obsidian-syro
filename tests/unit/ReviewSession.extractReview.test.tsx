@@ -235,24 +235,25 @@ function createPlugin(
         store: null,
         extractStore,
         getExtractReviewCandidates: jest.fn(() =>
-            items.filter((candidate) => candidate.stage === "active"),
+            extractStore.list().filter((candidate) => candidate.stage === "active"),
         ),
         getExtractReviewContext,
         updateExtractContextMarkdown: jest.fn(() => Promise.resolve(item)),
         getExtractReviewIntervals: jest.fn(() => intervals),
         getExtractReviewStats: jest.fn(() => ({
-            newCount: items.filter(
+            newCount: extractStore.list().filter(
                 (candidate) =>
                     candidate.stage === "active" &&
                     (candidate.timesReviewed === 0 || candidate.nextReview === 0),
             ).length,
-            dueCount: items.filter(
+            dueCount: extractStore.list().filter(
                 (candidate) =>
                     candidate.stage === "active" &&
                     candidate.timesReviewed > 0 &&
                     candidate.nextReview !== 0,
             ).length,
-            totalCount: items.filter((candidate) => candidate.stage === "active").length,
+            totalCount: extractStore.list().filter((candidate) => candidate.stage === "active")
+                .length,
         })),
         graduateExtract: jest.fn((uuid: string) => {
             const current = extractStore.get(uuid);
@@ -334,7 +335,8 @@ function getLiveHeaderNewCount(container: HTMLElement): number {
 
 function findButton(container: HTMLElement, label: string): HTMLButtonElement {
     const button = Array.from(container.querySelectorAll("button")).find((candidate) =>
-        candidate.textContent?.includes(label) || candidate.title.includes(label),
+        candidate.textContent?.includes(label) ||
+        candidate.getAttribute("aria-label")?.includes(label),
     );
     if (!(button instanceof HTMLButtonElement)) {
         throw new Error(`Expected button with label ${label}`);
@@ -868,7 +870,7 @@ test("interleaved queue mode selects an extract after the configured number of f
     });
 });
 
-test("extract graduate is pending until review exits", async () => {
+test("extract graduate waits for the real commit before advancing", async () => {
     const first = createExtractItem({ uuid: "ir_first", rawMarkdown: "first" });
     const second = createExtractItem({ uuid: "ir_second", rawMarkdown: "second" });
     const contexts = new Map<string, ExtractReviewContext>([
@@ -881,6 +883,13 @@ test("extract graduate is pending until review exits", async () => {
             Promise.resolve(contexts.get(uuid) ?? null),
         ),
     );
+    const firstGraduation = createDeferred<ExtractItem | null>();
+    (plugin.graduateExtract as jest.Mock).mockImplementation((uuid: string) => {
+        if (uuid !== first.uuid) {
+            return Promise.resolve(null);
+        }
+        return firstGraduation.promise;
+    });
     const { container, root } = renderExtractReviewSession(plugin);
 
     try {
@@ -893,25 +902,29 @@ test("extract graduate is pending until review exits", async () => {
         await flushEffects();
         await flushEffects();
 
-        expect(plugin.graduateExtract).not.toHaveBeenCalled();
+        expect(plugin.graduateExtract).toHaveBeenCalledWith(first.uuid, null);
         expect(plugin.extractStore?.get(first.uuid)?.stage).toBe("active");
-        expect(container.textContent).not.toContain("Marked for graduation");
         expect(container.querySelector(".sr-extract-review-overlay")).toBeNull();
-        expect(container.textContent).toContain("second");
+        expect(container.textContent).toContain("first");
+        expect(container.textContent).not.toContain("second");
 
-        act(() => {
-            findButton(container, "Back").click();
+        const graduatedFirst = { ...first, stage: "graduated" as const };
+        await act(async () => {
+            plugin.extractStore?.upsertSnapshot({ item: graduatedFirst });
+            firstGraduation.resolve(graduatedFirst);
+            await Promise.resolve();
         });
         await flushEffects();
-        await flushEffects();
 
-        expect(plugin.graduateExtract).toHaveBeenCalledWith(first.uuid, null);
+        expect(plugin.graduateExtract).toHaveBeenCalledTimes(1);
+        expect(plugin.extractStore?.get(first.uuid)?.stage).toBe("graduated");
+        expect(container.textContent).toContain("second");
     } finally {
         act(() => root.unmount());
     }
 });
 
-test("extract pending graduate can be undone without store undo", async () => {
+test("extract committed graduate can be undone through store undo", async () => {
     const first = createExtractItem({ uuid: "ir_first", rawMarkdown: "first" });
     const second = createExtractItem({ uuid: "ir_second", rawMarkdown: "second" });
     const contexts = new Map<string, ExtractReviewContext>([
@@ -924,6 +937,10 @@ test("extract pending graduate can be undone without store undo", async () => {
             Promise.resolve(contexts.get(uuid) ?? null),
         ),
     );
+    (plugin.undoExtractReviewAction as jest.Mock).mockImplementation((action) => {
+        plugin.extractStore?.upsertSnapshot(action.snapshot);
+        return Promise.resolve(action.snapshot.item);
+    });
     const { container, root } = renderExtractReviewSession(plugin);
 
     try {
@@ -938,9 +955,52 @@ test("extract pending graduate can be undone without store undo", async () => {
         await flushEffects();
         await flushEffects();
 
-        expect(plugin.graduateExtract).not.toHaveBeenCalled();
-        expect(plugin.undoExtractReviewAction).not.toHaveBeenCalled();
+        expect(plugin.graduateExtract).toHaveBeenCalledWith(first.uuid, null);
+        expect(plugin.undoExtractReviewAction).toHaveBeenCalledWith({
+            snapshot: { item: first },
+            countDeckName: null,
+        });
         expect(plugin.extractStore?.get(first.uuid)?.stage).toBe("active");
+        expect(container.textContent).toContain("first");
+    } finally {
+        act(() => root.unmount());
+    }
+});
+
+test("extract move-to-end button advances to the next extract and undo restores it", async () => {
+    const first = createExtractItem({ uuid: "ir_first", rawMarkdown: "first" });
+    const second = createExtractItem({ uuid: "ir_second", rawMarkdown: "second" });
+    const contexts = new Map<string, ExtractReviewContext>([
+        [first.uuid, createManualExtractContext("before {{ir::first}} after", 7, 20)],
+        [second.uuid, createManualExtractContext("before {{ir::second}} after", 7, 21)],
+    ]);
+    const plugin = createPlugin(
+        [first, second],
+        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>((uuid) =>
+            Promise.resolve(contexts.get(uuid) ?? null),
+        ),
+    );
+    const { container, root } = renderExtractReviewSession(plugin);
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        expect(container.textContent).toContain("first");
+
+        act(() => {
+            findButton(container, "Move this extract to the end of the learning queue").click();
+        });
+        await flushEffects();
+        await flushEffects();
+
+        expect(container.textContent).toContain("second");
+
+        pressUndo();
+        await flushEffects();
+        await flushEffects();
+
+        expect(plugin.undoExtractReviewAction).not.toHaveBeenCalled();
         expect(container.textContent).toContain("first");
     } finally {
         act(() => root.unmount());

@@ -1724,6 +1724,258 @@ describe("irExtractDecoration helpers", () => {
         }
     });
 
+    test("hydrates automatic heading memo actions on initial render", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const resolveExtractTooltipNotes = jest.fn(
+            (_view: EditorView, sourceStarts: readonly number[]) =>
+                Promise.resolve(
+                    sourceStarts.map((sourceStart) => ({
+                        sourceStart,
+                        uuid: "auto-extract-uuid-1",
+                        memo: "标题备注",
+                        priority: 5,
+                        sourceMode: "auto-slice" as const,
+                    })),
+                ),
+        );
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: "# 自动摘录标题\n正文",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNotes,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+
+            const action = parent.querySelector<HTMLElement>(".sr-ir-heading-note-action");
+            expect(action).not.toBeNull();
+            expect(action?.dataset.srIrExtractStart).toBe("0");
+            expect(action?.classList.contains("is-visible")).toBe(true);
+            expect(action?.classList.contains("has-note")).toBe(true);
+            expect(resolveExtractTooltipNotes).toHaveBeenCalledWith(view, [0]);
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("opens and saves the existing memo tooltip from an automatic heading action", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const resolveExtractTooltipNote = jest.fn(() =>
+            Promise.resolve({ uuid: "auto-extract-uuid-1", memo: "标题备注", priority: 5 }),
+        );
+        const resolveExtractTooltipNotes = jest.fn(
+            (_view: EditorView, sourceStarts: readonly number[]) =>
+                Promise.resolve(
+                    sourceStarts.map((sourceStart) => ({
+                        sourceStart,
+                        uuid: "auto-extract-uuid-1",
+                        memo: "",
+                        priority: 5,
+                        sourceMode: "auto-slice" as const,
+                    })),
+                ),
+        );
+        const saveExtractTooltipNote = jest.fn(() => Promise.resolve());
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: "# 自动摘录标题\n正文",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNote,
+                        resolveExtractTooltipNotes,
+                        saveExtractTooltipNote,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            const action = parent.querySelector<HTMLElement>(".sr-ir-heading-note-action");
+            if (!action) {
+                throw new Error("Expected heading note action");
+            }
+
+            action.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+            action.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+            await waitForIrExtractMeasure();
+
+            const textarea = document.querySelector<HTMLTextAreaElement>(
+                ".sr-ir-note-tooltip-input",
+            );
+            expect(resolveExtractTooltipNote).toHaveBeenCalledWith(view, 0);
+            expect(textarea?.value).toBe("标题备注");
+            expect(
+                document
+                    .querySelector<HTMLElement>(".sr-ir-note-tooltip")
+                    ?.classList.contains("is-visible"),
+            ).toBe(true);
+
+            if (!textarea) {
+                throw new Error("Expected tooltip textarea");
+            }
+            textarea.value = "新的标题备注";
+            textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            textarea.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                    key: "Enter",
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            );
+            await waitForIrExtractMeasure();
+
+            expect(saveExtractTooltipNote).toHaveBeenCalledWith(
+                "auto-extract-uuid-1",
+                "新的标题备注",
+            );
+            expect(action.classList.contains("has-note")).toBe(true);
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("keeps the existing memo tooltip open while hovering an automatic heading action", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const resolveExtractTooltipNote = jest.fn(() =>
+            Promise.resolve({ uuid: "auto-extract-uuid-1", memo: "标题备注", priority: 5 }),
+        );
+        const resolveExtractTooltipNotes = jest.fn(
+            (_view: EditorView, sourceStarts: readonly number[]) =>
+                Promise.resolve(
+                    sourceStarts.map((sourceStart) => ({
+                        sourceStart,
+                        uuid: "auto-extract-uuid-1",
+                        memo: "标题备注",
+                        priority: 5,
+                        sourceMode: "auto-slice" as const,
+                    })),
+                ),
+        );
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: "# 自动摘录标题\n正文",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNote,
+                        resolveExtractTooltipNotes,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            const action = parent.querySelector<HTMLElement>(".sr-ir-heading-note-action");
+            if (!action) {
+                throw new Error("Expected heading note action");
+            }
+
+            action.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false }));
+            await waitForIrExtractMeasure();
+            action.dispatchEvent(
+                new MouseEvent("mousemove", {
+                    bubbles: true,
+                    clientX: 12,
+                    clientY: 12,
+                }),
+            );
+            await waitForIrExtractMeasure();
+
+            expect(resolveExtractTooltipNote).toHaveBeenCalledWith(view, 0);
+            expect(
+                document
+                    .querySelector<HTMLElement>(".sr-ir-note-tooltip")
+                    ?.classList.contains("is-visible"),
+            ).toBe(true);
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("refreshes automatic heading memo actions when the heading line changes at the same offset", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const resolveExtractTooltipNotes = jest.fn(
+            (viewArg: EditorView, sourceStarts: readonly number[]) => {
+                if (!viewArg.state.doc.toString().startsWith("# ")) {
+                    return Promise.resolve([]);
+                }
+                return Promise.resolve(
+                    sourceStarts.map((sourceStart) => ({
+                        sourceStart,
+                        uuid: "auto-extract-uuid-1",
+                        memo: "标题备注",
+                        priority: 5,
+                        sourceMode: "auto-slice" as const,
+                    })),
+                );
+            },
+        );
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: "# 自动摘录标题\n正文",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNotes,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            expect(
+                parent
+                    .querySelector<HTMLElement>(".sr-ir-heading-note-action")
+                    ?.classList.contains("is-visible"),
+            ).toBe(true);
+
+            view.dispatch({ changes: { from: 0, to: 1, insert: "##" } });
+            await waitForIrExtractMeasure();
+
+            const action = parent.querySelector<HTMLElement>(".sr-ir-heading-note-action");
+            expect(resolveExtractTooltipNotes).toHaveBeenCalledTimes(2);
+            expect(action?.dataset.srIrExtractStart).toBe("0");
+            expect(action?.classList.contains("is-visible")).toBe(false);
+            expect(action?.getAttribute("aria-hidden")).toBe("true");
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
     test("tracks initial layout changes and remeasures each editor when requested", async () => {
         const restoreMeasureMocks = installIrExtractMeasureMocks();
         const firstParent = document.createElement("div");

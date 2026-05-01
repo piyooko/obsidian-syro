@@ -28,7 +28,7 @@ import {
     Undo2,
     ArrowLeft,
     Save,
-    MessageSquare,
+    SquarePen,
 } from "lucide-react";
 import { CardDebugModal } from "./CardDebugModal";
 import type { CardDebugData } from "./CardDebugModal";
@@ -89,6 +89,7 @@ interface LinearCardProps {
         options?: OpenNoteTargetOptions,
     ) => void;
     onEditCard?: () => void;
+    onMoveToEnd?: () => void;
     onPostpone?: () => void;
     onDelete?: () => void;
     onExit?: () => void;
@@ -359,6 +360,7 @@ export const LinearCard: FC<LinearCardProps> = ({
     onOpenNote,
     onOpenBreadcrumb,
     onEditCard,
+    onMoveToEnd,
     onPostpone,
     onDelete,
     onExit,
@@ -388,6 +390,7 @@ export const LinearCard: FC<LinearCardProps> = ({
 }) => {
     const isExtractReview = reviewKind === "extract";
     const canToggleEditMode = isExtractReview;
+    const canMoveToEnd = isExtractReview && !!onMoveToEnd;
     const [size, setSize] = useState({ width, height });
     const wrapperRef = useRef<HTMLDivElement>(null);
     const cardRef = useRef<HTMLDivElement>(null);
@@ -949,6 +952,10 @@ export const LinearCard: FC<LinearCardProps> = ({
                     showToast(t("UI_CARD_POSTPONED"), <Clock size={14} />);
                     onPostpone?.();
                     break;
+                case "MOVE_TO_END":
+                    showToast(t("EXTRACT_MOVED_TO_END"), <Clock size={14} />);
+                    onMoveToEnd?.();
+                    break;
                 case "DELETE":
                     if (isExtractReview) {
                         onDelete?.();
@@ -963,7 +970,16 @@ export const LinearCard: FC<LinearCardProps> = ({
                     break;
             }
         },
-        [isExtractReview, showToast, onUndo, onOpenNote, onEditCard, onPostpone, onDelete],
+        [
+            isExtractReview,
+            showToast,
+            onUndo,
+            onOpenNote,
+            onEditCard,
+            onMoveToEnd,
+            onPostpone,
+            onDelete,
+        ],
     );
 
     const handleReviewShortcutKeyDown = useCallback(
@@ -1034,8 +1050,11 @@ export const LinearCard: FC<LinearCardProps> = ({
                     }
                     return false;
                 case "p":
-                    handleMenuAction("POSTPONE");
-                    return true;
+                    if (!isExtractReview) {
+                        handleMenuAction("POSTPONE");
+                        return true;
+                    }
+                    return false;
                 case "delete":
                 case "backspace":
                     handleMenuAction("DELETE");
@@ -1095,6 +1114,8 @@ export const LinearCard: FC<LinearCardProps> = ({
     };
     const editModeHotkeyLabel =
         getReviewEditModeHotkeyLabel(plugin?.app) ?? t("UI_EDIT_TOGGLE_KEY_UNSET");
+    const editModeButtonLabel = isEditing ? t("UI_FINISH_EDITING") : t("EXTRACT_EDIT_BODY");
+    const moreActionsLabel = t("UI_MORE_ACTIONS");
     return (
         <div className={wrapperClassName} ref={wrapperRef}>
             {isMobile && <div className="sr-absolute sr-inset-0 sr-bg-black/50" />}
@@ -1228,6 +1249,15 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                 <Edit3 size={16} />
                                             </button>
                                         )}
+                                        {canMoveToEnd && (
+                                            <button
+                                                type="button"
+                                                className="sr-header-btn"
+                                                tabIndex={-1}
+                                            >
+                                                <Clock size={16} />
+                                            </button>
+                                        )}
                                         <button
                                             type="button"
                                             className="sr-header-btn"
@@ -1274,6 +1304,15 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                 <Edit3 size={16} />
                                             </button>
                                         )}
+                                        {canMoveToEnd && (
+                                            <button
+                                                type="button"
+                                                className="sr-header-btn"
+                                                tabIndex={-1}
+                                            >
+                                                <Clock size={16} />
+                                            </button>
+                                        )}
                                         <button
                                             type="button"
                                             className="sr-header-btn"
@@ -1318,6 +1357,15 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                 tabIndex={-1}
                                             >
                                                 <Edit3 size={16} />
+                                            </button>
+                                        )}
+                                        {canMoveToEnd && (
+                                            <button
+                                                type="button"
+                                                className="sr-header-btn"
+                                                tabIndex={-1}
+                                            >
+                                                <Clock size={16} />
                                             </button>
                                         )}
                                         <button
@@ -1367,6 +1415,15 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                 <Edit3 size={16} />
                                             </button>
                                         )}
+                                        {canMoveToEnd && (
+                                            <button
+                                                type="button"
+                                                className="sr-header-btn"
+                                                tabIndex={-1}
+                                            >
+                                                <Clock size={16} />
+                                            </button>
+                                        )}
                                         <button
                                             type="button"
                                             className="sr-header-btn"
@@ -1401,7 +1458,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                         type="button"
                                         className="sr-header-btn"
                                         onClick={onExit}
-                                        title={t("UI_BACK")}
+                                        aria-label={t("UI_BACK")}
                                     >
                                         <ArrowLeft size={16} />
                                     </button>
@@ -1430,13 +1487,20 @@ export const LinearCard: FC<LinearCardProps> = ({
                                         type="button"
                                         className={`sr-header-btn ${isEditing ? "active" : ""}`}
                                         onClick={toggleEditMode}
-                                        title={
-                                            isEditing
-                                                ? t("UI_FINISH_EDITING")
-                                                : t("EXTRACT_EDIT_BODY")
-                                        }
+                                        aria-label={editModeButtonLabel}
                                     >
                                         <Edit3 size={16} />
+                                    </button>
+                                )}
+
+                                {canMoveToEnd && (
+                                    <button
+                                        type="button"
+                                        className="sr-header-btn"
+                                        onClick={() => handleMenuAction("MOVE_TO_END")}
+                                        aria-label={t("EXTRACT_MOVE_TO_END")}
+                                    >
+                                        <Clock size={16} />
                                     </button>
                                 )}
 
@@ -1445,6 +1509,7 @@ export const LinearCard: FC<LinearCardProps> = ({
                                         type="button"
                                         onClick={() => setShowMenu(!showMenu)}
                                         className={`sr-header-btn ${showMenu ? "active" : ""}`}
+                                        aria-label={moreActionsLabel}
                                     >
                                         <MoreHorizontal size={16} />
                                     </button>
@@ -1491,14 +1556,16 @@ export const LinearCard: FC<LinearCardProps> = ({
                                                                 kbd="I"
                                                             />
                                                         )}
-                                                        <MenuItem
-                                                            onClick={() =>
-                                                                handleMenuAction("POSTPONE")
-                                                            }
-                                                            icon={<Clock size={14} />}
-                                                            label={t("UI_POSTPONE_ONE_DAY")}
-                                                            kbd="P"
-                                                        />
+                                                        {!isExtractReview && (
+                                                            <MenuItem
+                                                                onClick={() =>
+                                                                    handleMenuAction("POSTPONE")
+                                                                }
+                                                                icon={<Clock size={14} />}
+                                                                label={t("UI_POSTPONE_ONE_DAY")}
+                                                                kbd="P"
+                                                            />
+                                                        )}
                                                         <div className="sr-menu-divider" />
                                                         <MenuItem
                                                             onClick={() =>
@@ -2739,7 +2806,7 @@ const ExtractMemoPill: FC<ExtractMemoPillProps> = ({ memo, onUpdateMemo }) => {
             onClick={() => toggleWidget(true)}
         >
             <div className="pill-icon">
-                <MessageSquare size={16} strokeWidth={2} />
+                <SquarePen size={16} strokeWidth={2} />
             </div>
 
             <div className="input-container">

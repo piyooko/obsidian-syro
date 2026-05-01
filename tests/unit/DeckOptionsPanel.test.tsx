@@ -20,61 +20,6 @@ const { Notice: mockNotice } = jest.requireMock("obsidian") as {
     globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-function installMockResizeObserver() {
-    const originalResizeObserver = globalThis.ResizeObserver;
-
-    class MockResizeObserver {
-        static instances: MockResizeObserver[] = [];
-        private readonly callback: ResizeObserverCallback;
-
-        constructor(callback: ResizeObserverCallback) {
-            this.callback = callback;
-            MockResizeObserver.instances.push(this);
-        }
-
-        observe() {}
-
-        unobserve() {}
-
-        disconnect() {}
-
-        trigger() {
-            this.callback([], this as unknown as ResizeObserver);
-        }
-    }
-
-    Object.defineProperty(globalThis, "ResizeObserver", {
-        configurable: true,
-        value: MockResizeObserver,
-    });
-
-    return {
-        restore() {
-            if (originalResizeObserver) {
-                Object.defineProperty(globalThis, "ResizeObserver", {
-                    configurable: true,
-                    value: originalResizeObserver,
-                });
-                return;
-            }
-
-            delete (globalThis as typeof globalThis & { ResizeObserver?: typeof ResizeObserver })
-                .ResizeObserver;
-        },
-    };
-}
-
-function setElementClientSize(element: HTMLElement, width: number, height: number) {
-    Object.defineProperty(element, "clientWidth", {
-        configurable: true,
-        value: width,
-    });
-    Object.defineProperty(element, "clientHeight", {
-        configurable: true,
-        value: height,
-    });
-}
-
 function createPlugin(): SRPlugin {
     return {
         deckTree: null,
@@ -181,12 +126,8 @@ async function clickButton(button: HTMLButtonElement) {
 }
 
 function renderPanel() {
-    const resizeObserver = installMockResizeObserver();
     const renderTarget = document.createElement("div");
-    const panelHost = document.createElement("div");
-    setElementClientSize(panelHost, 960, 720);
     document.body.appendChild(renderTarget);
-    document.body.appendChild(panelHost);
 
     const root = createRoot(renderTarget);
     const plugin = createPlugin();
@@ -199,8 +140,6 @@ function renderPanel() {
                 plugin={plugin}
                 deckName="Spanish"
                 deckPath="Spanish"
-                containerElement={panelHost}
-                preferredWidth={680}
                 onClose={onClose}
                 onSaved={onSaved}
             />,
@@ -214,9 +153,7 @@ function renderPanel() {
         onSaved,
         cleanup() {
             act(() => root.unmount());
-            resizeObserver.restore();
             renderTarget.remove();
-            panelHost.remove();
         },
     };
 }

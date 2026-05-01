@@ -2377,7 +2377,8 @@ export default class SRPlugin extends Plugin {
         const notes = activeItems
             .filter(
                 (candidate) =>
-                    candidate.sourceMode === "manual-ir" &&
+                    (candidate.sourceMode === "manual-ir" ||
+                        candidate.sourceMode === "auto-slice") &&
                     sourceStartSet.has(candidate.sourceAnchor.start),
             )
             .map((item) => ({
@@ -2385,6 +2386,7 @@ export default class SRPlugin extends Plugin {
                 uuid: item.uuid,
                 memo: item.memo,
                 priority: item.priority,
+                sourceMode: item.sourceMode,
             }));
         const hitStarts = new Set(notes.map((note) => note.sourceStart));
         const missingStarts = sourceStarts.filter((sourceStart) => !hitStarts.has(sourceStart));

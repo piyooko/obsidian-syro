@@ -1271,10 +1271,10 @@ settings:
     description: Controls extra space between the phone review card and the top edge of the screen. Safe area is added automatically.
     description.zh: 控制手机复习卡片与屏幕顶部之间的额外距离，系统安全区会自动叠加。
     type: variable-number-slider
-    default: 8
+    default: 36
     format: px
     min: 0
-    max: 36
+    max: 120
     step: 1
   -
     id: syro-mobile-review-screen-bottom-gap

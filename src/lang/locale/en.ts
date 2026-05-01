@@ -201,6 +201,8 @@ export default normalizeSentenceCaseLocale({
     EXTRACT_REVIEW_SET_DATE: "Set",
     EXTRACT_REVIEW_SET_DATE_INTERVAL_HINT: "${interval}d",
     EXTRACT_REVIEW_GRADUATE: "Graduate",
+    EXTRACT_MOVE_TO_END: "Move this extract to the end of the learning queue",
+    EXTRACT_MOVED_TO_END: "Moved this extract to the end of the learning queue",
     EXTRACT_RENDER_DEBUG_TITLE: "Extract render is still waiting",
     EXTRACT_RENDER_DEBUG_STEP: "Step: ${stage}",
     EXTRACT_RENDER_DEBUG_DETAIL: "Detail: ${detail}",
@@ -682,6 +684,7 @@ export default normalizeSentenceCaseLocale({
     UI_EDIT_MODE: "Edit Mode",
     UI_BOLD_KEY_HINT: "Ctrl+B Bold",
     UI_BACK: "Back",
+    UI_MORE_ACTIONS: "More actions",
     UI_DECK_OPTIONS: "Deck options",
     // ReactNoteReviewView.tsx - Sidebar context menus
     SIDEBAR_IGNORE_TAG: "Ignore tag",

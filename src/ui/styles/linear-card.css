@@ -1680,7 +1680,7 @@ body.syro-desktop-review-square-corners
     /* 使用 padding 定义"安全区域"和卡片边距 */
     /* Keep only a small buffer above the safe area so the card can start higher on phones. */
     padding-top: calc(
-        env(safe-area-inset-top) + var(--syro-mobile-review-screen-top-gap, 8px)
+        env(safe-area-inset-top) + var(--syro-mobile-review-screen-top-gap, 36px)
     ) !important;
     padding-bottom: calc(
         env(safe-area-inset-bottom) + var(--syro-mobile-review-screen-bottom-gap, 12px)
@@ -1970,19 +1970,8 @@ body.syro-mobile-review-square-corners
 
 /* 移动端：隐藏键盘快捷键提示 */
 .sr-linear-card-wrapper.sr-phone-layout .sr-kbd,
-.sr-linear-card-wrapper.sr-phone-layout .sr-linear-btn-shortcut,
-.sr-linear-card-wrapper.sr-phone-layout .sr-menu-item-kbd {
+.sr-linear-card-wrapper.sr-phone-layout .sr-linear-btn-shortcut {
     display: none !important;
-}
-
-/* 移动端：菜单优化 */
-.sr-linear-card-wrapper.sr-phone-layout .sr-dropdown-menu {
-    width: 160px;
-}
-
-.sr-linear-card-wrapper.sr-phone-layout .sr-menu-item {
-    padding: 10px 12px;
-    font-size: 14px;
 }
 
 /* 移动端：返回按钮更大触摸区域 */
@@ -2495,7 +2484,11 @@ body.syro-mobile-review-square-corners
     .sr-hybrid-markdown-source.markdown-source-view.mod-cm6
     .cm-content {
     padding: var(--syro-mobile-review-content-padding-y, 16px)
-        var(--syro-mobile-review-content-padding-x, 16px) !important;
+        18px !important;
+}
+
+.sr-linear-card-wrapper.sr-phone-layout .sr-hybrid-markdown-source .cm-scroller {
+    overflow-x: hidden !important;
 }
 
 .sr-linear-card-wrapper.sr-phone-layout
@@ -2600,6 +2593,13 @@ body.syro-mobile-review-square-corners
     position: relative;
     flex: 1;
     min-width: 0;
+}
+
+.input-container,
+.text-preview,
+.corner-pill-wrapper textarea {
+    border-radius: 0 !important;
+    background-clip: padding-box;
 }
 
 .text-preview,
@@ -2752,10 +2752,6 @@ body.syro-mobile-review-square-corners
 }
 
 @media (max-width: 640px) {
-    .sr-extract-rating-buttons {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
     .corner-pill-wrapper {
         right: 16px;
         bottom: 16px;

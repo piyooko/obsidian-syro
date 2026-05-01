@@ -110,6 +110,130 @@ class Menu {
     showAtMouseEvent() {}
 }
 
+class ClassListShim {
+    constructor() {
+        this.values = new Set();
+    }
+
+    add(...classNames) {
+        classNames.forEach((className) => this.values.add(className));
+    }
+
+    remove(...classNames) {
+        classNames.forEach((className) => this.values.delete(className));
+    }
+
+    contains(className) {
+        return this.values.has(className);
+    }
+
+    toString() {
+        return Array.from(this.values).join(" ");
+    }
+}
+
+function createMockElement(tagName = "div") {
+    if (typeof document !== "undefined") {
+        const element = document.createElement(tagName);
+        element.addClass = function addClass(...classNames) {
+            this.classList.add(...classNames);
+        };
+        element.removeClass = function removeClass(...classNames) {
+            this.classList.remove(...classNames);
+        };
+        element.empty = function empty() {
+            this.replaceChildren();
+        };
+        element.createDiv = function createDiv(options = {}) {
+            const child = createMockElement("div");
+            if (typeof options === "string") {
+                child.addClass(options);
+            } else if (options?.cls) {
+                child.addClass(options.cls);
+            }
+            if (options?.text) {
+                child.textContent = options.text;
+            }
+            this.appendChild(child);
+            return child;
+        };
+        element.createEl = function createEl(childTagName, options = {}) {
+            const child = createMockElement(childTagName);
+            if (options?.cls) {
+                child.addClass(options.cls);
+            }
+            if (options?.text) {
+                child.textContent = options.text;
+            }
+            this.appendChild(child);
+            return child;
+        };
+        return element;
+    }
+
+    return {
+        children: [],
+        classList: new ClassListShim(),
+        textContent: "",
+        innerHTML: "",
+        style: {},
+        addClass(...classNames) {
+            this.classList.add(...classNames);
+        },
+        removeClass(...classNames) {
+            this.classList.remove(...classNames);
+        },
+        empty() {
+            this.children = [];
+            this.textContent = "";
+            this.innerHTML = "";
+        },
+        createDiv(options = {}) {
+            const child = createMockElement("div");
+            if (typeof options === "string") {
+                child.addClass(options);
+            } else if (options?.cls) {
+                child.addClass(options.cls);
+            }
+            if (options?.text) {
+                child.textContent = options.text;
+            }
+            this.children.push(child);
+            return child;
+        },
+        createEl(tag, options = {}) {
+            const child = createMockElement(tag);
+            if (options?.cls) {
+                child.addClass(options.cls);
+            }
+            if (options?.text) {
+                child.textContent = options.text;
+            }
+            this.children.push(child);
+            return child;
+        },
+    };
+}
+
+class Modal {
+    constructor(app) {
+        this.app = app;
+        this.modalEl = createMockElement("div");
+        this.contentEl = createMockElement("div");
+        this.isOpen = false;
+    }
+
+    open() {
+        this.isOpen = true;
+        this.onOpen?.();
+    }
+
+    close() {
+        this.isOpen = false;
+        this.onClose?.();
+    }
+}
+
 class TAbstractFile {}
 
 class TFile extends TAbstractFile {}
@@ -159,7 +283,7 @@ module.exports = new Proxy(
         MarkdownRenderer,
         MarkdownView,
         Menu,
-        Modal: class Modal {},
+        Modal,
         Notice,
         Plugin,
         PluginSettingTab: jest.fn().mockImplementation(() => ({})),

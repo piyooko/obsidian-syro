@@ -361,6 +361,63 @@ test("extract review menu hides card info", () => {
 
     expect(container.textContent).not.toContain("Card info");
     expect(container.textContent).not.toContain("卡片信息");
+    expect(container.textContent).not.toContain("Postpone 1 day");
+    expect(container.textContent).not.toContain("推迟一天");
+});
+
+test("extract review header actions do not rely on title attributes", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onExit = jest.fn();
+    const onMoveToEnd = jest.fn();
+    const props = createExtractCardProps("front");
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    ...props,
+                    onExit,
+                    onMoveToEnd,
+                    type: "basic",
+                }),
+            );
+        });
+        await flushEffects();
+
+        const liveHeader = container.querySelector<HTMLElement>(
+            ".sr-card-header:not(.sr-card-header-measure)",
+        );
+        const headerButtonWithIcon = (iconClass: string) =>
+            Array.from(liveHeader?.querySelectorAll<HTMLButtonElement>("button.sr-header-btn") ?? [])
+                .find((button) => button.querySelector(iconClass));
+        const headerButtonWithLabel = (label: string) =>
+            Array.from(liveHeader?.querySelectorAll<HTMLButtonElement>("button.sr-header-btn") ?? [])
+                .find((button) => button.getAttribute("aria-label") === label);
+
+        const backButton = headerButtonWithIcon(".lucide-arrow-left");
+        const editButton = headerButtonWithLabel("Edit");
+        const moveButton = headerButtonWithLabel(
+            "Move this extract to the end of the learning queue",
+        );
+
+        expect(backButton?.getAttribute("title")).toBeNull();
+        expect(backButton?.getAttribute("aria-label")).toBe("Back");
+
+        expect(editButton?.getAttribute("title")).toBeNull();
+        expect(editButton?.getAttribute("aria-label")).toBe("Edit");
+
+        expect(moveButton?.getAttribute("title")).toBeNull();
+        expect(moveButton?.querySelector(".lucide-clock")).not.toBeNull();
+        expect(moveButton?.querySelector(".lucide-arrow-right")).toBeNull();
+        expect(moveButton?.getAttribute("aria-label")).toBe(
+            "Move this extract to the end of the learning queue",
+        );
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+    }
 });
 
 test("extract review Ctrl+Z calls undo", () => {
@@ -392,6 +449,39 @@ test("extract review Ctrl+Z calls undo", () => {
     expect(onUndo).toHaveBeenCalledTimes(1);
 
     act(() => root.unmount());
+});
+
+test("extract review P shortcut does not postpone", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onPostpone = jest.fn();
+
+    act(() => {
+        root.render(
+            React.createElement(LinearCard, {
+                reviewKind: "extract",
+                card: {
+                    front: "{{ir::text}}",
+                    back: "",
+                },
+                renderMarkdown: (content: string, el: HTMLElement) => {
+                    el.textContent = content;
+                },
+                onPostpone,
+            }),
+        );
+    });
+
+    act(() => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "p" }));
+    });
+
+    expect(onPostpone).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("Card postponed");
+
+    act(() => root.unmount());
+    container.remove();
 });
 
 test("extract review renders a memo pill only for extract cards", () => {
@@ -3092,11 +3182,69 @@ test("extract memo safe area extends only extract review content scroll space", 
     expect(css).not.toMatch(/^\.cm-content\s*\{[^}]*sr-extract-memo-safe-area/ms);
 });
 
+test("mobile extract review keeps the same one-row four-action grid as card review", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+    const mobileMediaBlocks = Array.from(css.matchAll(/@media\s*\(max-width:\s*640px\)\s*\{[\s\S]*?\n\}/g))
+        .map((match) => match[0])
+        .join("\n");
+
+    expect(css).toMatch(
+        /\.sr-extract-rating-buttons\s*\{\s*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/s,
+    );
+    expect(mobileMediaBlocks).not.toContain(".sr-extract-rating-buttons");
+    expect(mobileMediaBlocks).not.toContain("repeat(2, minmax(0, 1fr))");
+});
+
+test("mobile review menu does not override the desktop dropdown menu styling", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+
+    expect(css).not.toMatch(
+        /\.sr-linear-card-wrapper\.sr-phone-layout\s+\.sr-dropdown-menu\s*\{/,
+    );
+    expect(css).not.toMatch(/\.sr-linear-card-wrapper\.sr-phone-layout\s+\.sr-menu-item\s*\{/);
+    expect(css).not.toMatch(
+        /\.sr-linear-card-wrapper\.sr-phone-layout\s+\.sr-menu-item-kbd\s*\{/,
+    );
+    expect(css).not.toMatch(
+        /\.sr-linear-card-wrapper\.sr-phone-layout\s+[^{}]*\.sr-menu-item-kbd[^{}]*\{[^}]*display:\s*none\s*!important/s,
+    );
+});
+
+test("mobile extract hybrid editor keeps 18px side padding without horizontal scrolling", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+
+    expect(css).toMatch(
+        /\.sr-linear-card-wrapper\.sr-phone-layout\s+\.sr-hybrid-markdown-source\.markdown-source-view\.mod-cm6\s+\.cm-content\s*\{[^}]*padding:\s*var\(--syro-mobile-review-content-padding-y,\s*16px\)\s+18px\s*!important/s,
+    );
+    expect(css).toMatch(
+        /\.sr-linear-card-wrapper\.sr-phone-layout\s+\.sr-hybrid-markdown-source\s+\.cm-scroller\s*\{[^}]*overflow-x:\s*hidden\s*!important/s,
+    );
+});
+
 test("extract memo textarea removes Obsidian focus chrome", () => {
     const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
 
     expect(css).toMatch(
         /\.corner-pill-wrapper\s+textarea:focus,\s*\.corner-pill-wrapper\s+textarea:focus-visible\s*\{[^}]*border:\s*none\s*!important;[^}]*outline:\s*none\s*!important;[^}]*box-shadow:\s*none\s*!important/s,
+    );
+});
+
+test("extract memo uses the square pen icon", () => {
+    const source = readFileSync(join(process.cwd(), "src/ui/components/LinearCard.tsx"), "utf8");
+
+    expect(source).toContain("SquarePen");
+    expect(source).toContain("<SquarePen size={16} strokeWidth={2} />");
+    expect(source).not.toContain("<MessageSquare size={16} strokeWidth={2} />");
+});
+
+test("extract memo keeps internal text containers square in every corner mode", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+
+    expect(css).toMatch(
+        /\.input-container,\s*\.text-preview,\s*\.corner-pill-wrapper\s+textarea\s*\{[^}]*border-radius:\s*0\s*!important/s,
+    );
+    expect(css).toMatch(
+        /\.input-container,\s*\.text-preview,\s*\.corner-pill-wrapper\s+textarea\s*\{[^}]*background-clip:\s*padding-box/s,
     );
 });
 

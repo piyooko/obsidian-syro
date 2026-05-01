@@ -5,6 +5,7 @@ import {
     EditorView,
     ViewPlugin,
     type ViewUpdate,
+    WidgetType,
 } from "@codemirror/view";
 import { setExtractContextRangesEffect } from "src/editor/extract-context-decoration";
 import { parseIrExtracts, type IrExtractMatch } from "src/util/irExtractParser";
@@ -27,6 +28,7 @@ const NOTE_TOOLTIP_ARROW_SIZE = 8;
 const INITIAL_LAYOUT_TRACKING_MAX_FRAMES = 18;
 const INITIAL_LAYOUT_STABLE_FRAME_TARGET = 3;
 const INITIAL_LAYOUT_CHANGE_EPSILON = 0.5;
+const MARKDOWN_HEADING_LINE_RE = /^(#{1,6})[ \t]+/;
 interface DecorationItem {
     from: number;
     to: number;
@@ -49,6 +51,7 @@ export interface IrExtractTooltipNote {
 
 export interface IrExtractTooltipNoteState extends IrExtractTooltipNote {
     sourceStart: number;
+    sourceMode?: "manual-ir" | "auto-slice";
 }
 
 export interface IrExtractDecorationOptions {
@@ -93,8 +96,15 @@ interface PendingMeasuredExtractBlock {
     maxDepth: number;
 }
 
+interface IrExtractHeadingNote {
+    sourceStart: number;
+    lineFrom: number;
+    textFrom: number;
+}
+
 interface IrExtractMeasureReadResult {
     overlayBlocks: MeasuredExtractBlock[];
+    headingNoteStarts: number[];
     pointSourceStarts: number[];
     cursorBlockStart: number | null;
     selectionFrom: number;
@@ -346,6 +356,31 @@ function getLineAtOffset(text: string, offset: number): IrExtractLineRange {
         if (text[index] === "\n") line++;
     }
     return { from, to, line };
+}
+
+function getIrExtractAutoHeadingNotes(text: string): IrExtractHeadingNote[] {
+    const notes: IrExtractHeadingNote[] = [];
+    let lineFrom = 0;
+
+    while (lineFrom <= text.length) {
+        const newlineIndex = text.indexOf("\n", lineFrom);
+        const lineTo = newlineIndex === -1 ? text.length : newlineIndex;
+        const lineText = text.slice(lineFrom, lineTo);
+        const match = lineText.match(MARKDOWN_HEADING_LINE_RE);
+        if (match) {
+            notes.push({
+                sourceStart: lineFrom,
+                lineFrom,
+                textFrom: lineFrom + match[0].length,
+            });
+        }
+        if (newlineIndex === -1) {
+            break;
+        }
+        lineFrom = newlineIndex + 1;
+    }
+
+    return notes;
 }
 
 export function getIrExtractLineRanges(
@@ -700,10 +735,112 @@ function getIrExtractDepthProgress(depth: number, maxDepth: number): number {
     return Math.max(0, Math.min(1, (depth - 1) / (maxDepth - 1)));
 }
 
+export interface IrExtractHeadingNoteActionHandlers {
+    onPinTooltip: (sourceStart: number) => void;
+    onTooltipHoverStart: (sourceStart: number) => void;
+    onTooltipHoverEnd: (sourceStart: number) => void;
+}
+
+function createLibraryBigIconSvg(): SVGSVGElement {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    svg.classList.add("svg-icon", "lucide", "lucide-library-big");
+
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("width", "8");
+    rect.setAttribute("height", "18");
+    rect.setAttribute("x", "3");
+    rect.setAttribute("y", "3");
+    rect.setAttribute("rx", "1");
+
+    const spine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    spine.setAttribute("d", "M7 3v18");
+
+    const book = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    book.setAttribute(
+        "d",
+        "M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z",
+    );
+
+    svg.append(rect, spine, book);
+    return svg;
+}
+
+export function createIrExtractHeadingNoteActionElement(
+    sourceStart: number,
+    handlers: IrExtractHeadingNoteActionHandlers,
+): HTMLElement {
+    const action = document.createElement("span");
+    action.className = "sr-ir-heading-note-action";
+    action.dataset.srIrExtractStart = String(sourceStart);
+    action.setAttribute("role", "button");
+    action.setAttribute("tabindex", "-1");
+    action.setAttribute("aria-hidden", "true");
+    action.setAttribute("aria-expanded", "false");
+    action.appendChild(createLibraryBigIconSvg());
+
+    const pinTooltip = (event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        handlers.onPinTooltip(sourceStart);
+    };
+    const showTooltip = () => {
+        handlers.onTooltipHoverStart(sourceStart);
+    };
+    const hideTooltip = () => {
+        handlers.onTooltipHoverEnd(sourceStart);
+    };
+    const stopOverlayEvent = (event: Event) => {
+        event.stopPropagation();
+    };
+
+    action.addEventListener("mouseenter", showTooltip);
+    action.addEventListener("mouseleave", hideTooltip);
+    action.addEventListener("pointerdown", pinTooltip);
+    action.addEventListener("mousedown", stopOverlayEvent);
+    action.addEventListener("click", stopOverlayEvent);
+    action.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+            return;
+        }
+        pinTooltip(event);
+    });
+
+    return action;
+}
+
+class IrExtractHeadingNoteWidget extends WidgetType {
+    constructor(
+        private readonly sourceStart: number,
+        private readonly handlers: IrExtractHeadingNoteActionHandlers,
+    ) {
+        super();
+    }
+
+    eq(other: IrExtractHeadingNoteWidget): boolean {
+        return other.sourceStart === this.sourceStart;
+    }
+
+    toDOM(): HTMLElement {
+        return createIrExtractHeadingNoteActionElement(this.sourceStart, this.handlers);
+    }
+
+    ignoreEvent(): boolean {
+        return false;
+    }
+}
+
 function buildIrExtractDecorations(
     view: EditorView,
     pointSourceStarts: Set<number> = new Set(),
     options: IrExtractDecorationOptions = {},
+    headingNoteHandlers: IrExtractHeadingNoteActionHandlers | null = null,
 ): {
     decorations: DecorationSet;
     renderExtracts: RenderExtract[];
@@ -748,6 +885,23 @@ function buildIrExtractDecorations(
         : null;
     const renderExtracts = createRenderExtracts(matches, sourceStarts, excludedStarts);
     const decorations: DecorationItem[] = [];
+
+    if (headingNoteHandlers) {
+        for (const headingNote of getIrExtractAutoHeadingNotes(text)) {
+            decorations.push({
+                from: headingNote.textFrom,
+                to: headingNote.textFrom,
+                decoration: Decoration.widget({
+                    side: -1,
+                    widget: new IrExtractHeadingNoteWidget(
+                        headingNote.sourceStart,
+                        headingNoteHandlers,
+                    ),
+                }),
+                allowEmpty: true,
+            });
+        }
+    }
 
     for (const match of visibleMatches) {
         if (sourceStarts.has(match.start)) {
@@ -1349,6 +1503,18 @@ export function findIrExtractInfoActionStartAtClientPoint(
     return null;
 }
 
+function getIrExtractHeadingNoteActionStartFromTarget(target: EventTarget | null): number | null {
+    if (!(target instanceof Element)) {
+        return null;
+    }
+    const action = target.closest<HTMLElement>(".sr-ir-heading-note-action");
+    if (!action?.classList.contains("is-visible") && !action?.classList.contains("is-editing")) {
+        return null;
+    }
+    const sourceStart = Number(action.dataset.srIrExtractStart);
+    return Number.isFinite(sourceStart) ? sourceStart : null;
+}
+
 export function syncIrExtractInfoCursorAtClientPoint(
     scrollDOM: HTMLElement,
     blockDomCache: ReadonlyMap<number, HTMLElement>,
@@ -1442,10 +1608,17 @@ export function shouldCloseIrExtractPinnedTooltip(
     target: EventTarget | null,
     overlay: HTMLElement,
     tooltip?: HTMLElement,
+    editorRoot?: HTMLElement,
 ): boolean {
     return (
         !(target instanceof Node) ||
-        (!overlay.contains(target) && !tooltip?.contains(target))
+        (!overlay.contains(target) &&
+            !tooltip?.contains(target) &&
+            !(
+                target instanceof Element &&
+                editorRoot?.contains(target) &&
+                !!target.closest(".sr-ir-heading-note-action")
+            ))
     );
 }
 
@@ -1649,6 +1822,8 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             private readonly noteUuidsByStart = new Map<number, string>();
             private hydratedNoteStartsKey = "";
             private hydrateNotesRequestId = 0;
+            private headingNoteStarts: number[] = [];
+            private readonly headingNoteHandlers: IrExtractHeadingNoteActionHandlers;
             private trackInitialLayout = false;
             private initialLayoutFrameId: number | null = null;
             private initialLayoutFrameCount = 0;
@@ -1666,6 +1841,10 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     event.clientX,
                     event.clientY,
                 );
+                const hoveredHeadingActionStart = getIrExtractHeadingNoteActionStartFromTarget(
+                    event.target,
+                );
+                const hoveredTooltipStart = hoveredInfoStart ?? hoveredHeadingActionStart;
                 syncIrExtractInfoCursorAtClientPoint(
                     this.scrollDOM,
                     this.blockDomCache,
@@ -1675,13 +1854,13 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
 
                 if (
                     this.hoveredBlockStart === hoveredStart &&
-                    this.hoveredTooltipStart === hoveredInfoStart
+                    this.hoveredTooltipStart === hoveredTooltipStart
                 ) {
                     return;
                 }
 
                 this.hoveredBlockStart = hoveredStart;
-                this.hoveredTooltipStart = hoveredInfoStart;
+                this.hoveredTooltipStart = hoveredTooltipStart;
                 this.updateInteractiveBlockStates();
             };
             private readonly handleScrollMouseLeave = (): void => {
@@ -1713,6 +1892,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         event.target,
                         this.overlay,
                         this.noteTooltip,
+                        this.view.dom,
                     )
                 ) {
                     return;
@@ -1730,8 +1910,18 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
 
             constructor(view: EditorView) {
                 this.view = view;
+                this.headingNoteHandlers = {
+                    onPinTooltip: (sourceStart) => this.pinTooltip(sourceStart),
+                    onTooltipHoverStart: (sourceStart) => this.showTooltipFromIcon(sourceStart),
+                    onTooltipHoverEnd: (sourceStart) => this.hideTooltipFromIcon(sourceStart),
+                };
                 this.sourceRevealEnabled = canRevealIrExtractSource(view, options);
-                const state = buildIrExtractDecorations(view, this.pointSourceStarts, options);
+                const state = buildIrExtractDecorations(
+                    view,
+                    this.pointSourceStarts,
+                    options,
+                    this.headingNoteHandlers,
+                );
                 this.decorations = state.decorations;
                 this.renderExtracts = state.renderExtracts;
                 this.activeSourceStart = state.activeSourceStart;
@@ -1807,6 +1997,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         update.view,
                         this.pointSourceStarts,
                         options,
+                        this.headingNoteHandlers,
                     );
                     this.decorations = state.decorations;
                     this.renderExtracts = state.renderExtracts;
@@ -1843,6 +2034,9 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                             renderExtract.match,
                         ]),
                     );
+                    if (update.docChanged) {
+                        this.hydratedNoteStartsKey = "";
+                    }
                     this.scheduleMeasure(update.view);
                     return;
                 }
@@ -1885,27 +2079,34 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     this.blockMeasurements.set(block.start, block);
                 }
 
+                const currentHeadingStarts = new Set(
+                    getIrExtractAutoHeadingNotes(this.sourceText).map(
+                        (heading) => heading.sourceStart,
+                    ),
+                );
+                const hasInteractiveStart = (start: number): boolean =>
+                    this.blockMeasurements.has(start) || currentHeadingStarts.has(start);
                 if (
                     this.pinnedTooltipStart !== null &&
-                    !this.blockMeasurements.has(this.pinnedTooltipStart)
+                    !hasInteractiveStart(this.pinnedTooltipStart)
                 ) {
                     this.pinnedTooltipStart = null;
                 }
                 if (
                     this.hoveredBlockStart !== null &&
-                    !this.blockMeasurements.has(this.hoveredBlockStart)
+                    !hasInteractiveStart(this.hoveredBlockStart)
                 ) {
                     this.hoveredBlockStart = null;
                 }
                 if (
                     this.cursorBlockStart !== null &&
-                    !this.blockMeasurements.has(this.cursorBlockStart)
+                    !hasInteractiveStart(this.cursorBlockStart)
                 ) {
                     this.cursorBlockStart = null;
                 }
                 if (
                     this.hoveredTooltipStart !== null &&
-                    !this.blockMeasurements.has(this.hoveredTooltipStart)
+                    !hasInteractiveStart(this.hoveredTooltipStart)
                 ) {
                     this.hoveredTooltipStart = null;
                 }
@@ -1925,13 +2126,14 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.tooltipResolveStart = null;
                 this.tooltipResolvePromise = null;
                 this.hydratedNoteStartsKey = "";
+                this.headingNoteStarts = [];
                 this.blockMeasurements.clear();
                 this.blockDomCache.clear();
                 this.overlay.replaceChildren();
                 this.noteTooltip.classList.remove("is-visible", "is-above", "is-below");
             }
 
-            private pinTooltip(blockStart: number): void {
+            public pinTooltip(blockStart: number): void {
                 if (this.pinnedTooltipStart !== null && this.pinnedTooltipStart !== blockStart) {
                     void this.saveVisibleTooltipDraft();
                 }
@@ -1967,7 +2169,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 }
             }
 
-            private showTooltipFromIcon(blockStart: number): void {
+            public showTooltipFromIcon(blockStart: number): void {
                 this.hoveredTooltipStart = blockStart;
                 if (this.pinnedTooltipStart === null) {
                     this.prepareTooltipNoteForStart(blockStart, false);
@@ -1976,7 +2178,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.updateInteractiveBlockStates();
             }
 
-            private hideTooltipFromIcon(blockStart: number): void {
+            public hideTooltipFromIcon(blockStart: number): void {
                 if (this.hoveredTooltipStart !== blockStart) {
                     return;
                 }
@@ -2093,14 +2295,71 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     );
                     infoAction?.style.setProperty("top", `${INFO_ICON_TOP + topOffset}px`);
                 }
+
+                for (const headingAction of Array.from(
+                    this.view.dom.querySelectorAll<HTMLElement>(".sr-ir-heading-note-action"),
+                )) {
+                    const blockStart = Number(headingAction.dataset.srIrExtractStart);
+                    if (!Number.isFinite(blockStart)) {
+                        continue;
+                    }
+                    const isEditing = blockStart === this.pinnedTooltipStart;
+                    const isTooltipVisible = isIrExtractNoteTooltipVisible(
+                        blockStart,
+                        this.hoveredTooltipStart,
+                        this.pinnedTooltipStart,
+                    );
+                    const infoState = getIrExtractInfoState(
+                        blockStart,
+                        infoVisibleStarts,
+                        notedStarts,
+                    );
+                    const isHydratedAutoHeading = this.headingNoteStarts.includes(blockStart);
+                    const isActiveSource = blockStart === this.activeSourceStart;
+                    const isVisible =
+                        isHydratedAutoHeading || infoState.visible || isEditing || isActiveSource;
+                    headingAction.classList.toggle("is-editing", isEditing);
+                    headingAction.classList.toggle("has-note", infoState.hasNote);
+                    headingAction.classList.toggle("is-visible", isVisible);
+                    headingAction.setAttribute("tabindex", isVisible ? "0" : "-1");
+                    headingAction.setAttribute("aria-hidden", isVisible ? "false" : "true");
+                    const infoActionColor = getIrExtractInfoActionColor(
+                        infoState.hasNote,
+                        isEditing,
+                        isActiveSource,
+                    );
+                    if (infoActionColor) {
+                        headingAction.style.setProperty("color", infoActionColor);
+                    } else {
+                        headingAction.style.removeProperty("color");
+                    }
+                    headingAction.setAttribute(
+                        "aria-expanded",
+                        isTooltipVisible ? "true" : "false",
+                    );
+                    if (isTooltipVisible && isVisible) {
+                        visibleTooltipAction = headingAction;
+                        visibleTooltip = true;
+                    }
+                }
                 this.updateNoteTooltipPosition(visibleTooltipAction, visibleTooltip);
             }
 
             private hydrateVisibleNoteStates(): void {
-                if (!options.resolveExtractTooltipNotes || this.blockMeasurements.size === 0) {
+                if (!options.resolveExtractTooltipNotes) {
                     return;
                 }
-                const starts = [...this.blockMeasurements.keys()].sort((left, right) => left - right);
+                const starts = Array.from(
+                    new Set([
+                        ...this.blockMeasurements.keys(),
+                        ...getIrExtractAutoHeadingNotes(this.sourceText).map(
+                            (heading) => heading.sourceStart,
+                        ),
+                    ]),
+                ).sort((left, right) => left - right);
+                if (starts.length === 0) {
+                    return;
+                }
                 const startsKey = starts.join(",");
                 if (startsKey === this.hydratedNoteStartsKey) {
                     return;
@@ -2121,6 +2380,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                             return;
                         }
                         const visibleStarts = new Set(starts);
+                        const nextHeadingNoteStarts = new Set<number>();
                         let memoCount = 0;
                         for (const start of starts) {
                             const note = notes.find((candidate) => candidate.sourceStart === start);
@@ -2131,10 +2391,14 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                             }
                             this.noteUuidsByStart.set(start, note.uuid);
                             this.noteDraftsByStart.set(start, note.memo);
+                            if (note.sourceMode === "auto-slice") {
+                                nextHeadingNoteStarts.add(start);
+                            }
                             if (note.memo.trim().length > 0) {
                                 memoCount += 1;
                             }
                         }
+                        this.headingNoteStarts = [...nextHeadingNoteStarts];
                         for (const start of [...this.noteDraftsByStart.keys()]) {
                             if (!visibleStarts.has(start)) {
                                 this.noteDraftsByStart.delete(start);
@@ -2423,7 +2687,13 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             }
 
             private scheduleMeasure(view: EditorView): void {
-                if (!isLivePreview(view, options) || this.renderExtracts.length === 0) {
+                const headingNoteStarts = getIrExtractAutoHeadingNotes(
+                    view.state.doc.toString(),
+                ).map((heading) => heading.sourceStart);
+                if (
+                    !isLivePreview(view, options) ||
+                    (this.renderExtracts.length === 0 && headingNoteStarts.length === 0)
+                ) {
                     this.clearOverlayBlocks();
                     return;
                 }
@@ -2431,6 +2701,9 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 view.requestMeasure({
                     read: (): IrExtractMeasureReadResult => {
                         const overlayBlocks = measureExtractBlocks(view, this.renderExtracts);
+                        const headingNoteStarts = getIrExtractAutoHeadingNotes(
+                            view.state.doc.toString(),
+                        ).map((heading) => heading.sourceStart);
                         const selection = view.state.selection.main;
                         const matches = parseIrExtracts(view.state.doc.toString());
                         const sourceRevealEnabled = canRevealIrExtractSource(view, options);
@@ -2446,6 +2719,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                             : null;
                         return {
                             overlayBlocks,
+                            headingNoteStarts,
                             pointSourceStarts: sourceRevealEnabled
                                 ? findIrExtractSourceStartsAtSelectionPoint(
                                       matches,
@@ -2464,6 +2738,9 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         this.overlay.style.height = `${view.scrollDOM.scrollHeight}px`;
                         this.cursorBlockStart = result.cursorBlockStart;
                         this.renderBlocks(result.overlayBlocks);
+                        if (result.headingNoteStarts.length === 0) {
+                            this.headingNoteStarts = [];
+                        }
                         this.hydrateVisibleNoteStates();
                         this.scheduleInitialLayoutTracking(view);
 
@@ -2555,6 +2832,43 @@ const irExtractDecorationTheme = EditorView.baseTheme({
     },
     ".sr-ir-info-action:hover": {
         color: "var(--text-normal)",
+    },
+    ".sr-ir-heading-note-action": {
+        alignItems: "center",
+        border: "none",
+        borderRadius: "4px",
+        color: "var(--text-faint)",
+        cursor: "pointer",
+        display: "inline-flex",
+        height: "1em",
+        justifyContent: "center",
+        marginRight: "0",
+        opacity: "0",
+        overflow: "hidden",
+        padding: "0",
+        pointerEvents: "none",
+        transition: "opacity 0.15s ease, color 0.15s ease",
+        verticalAlign: "-0.08em",
+        width: "0",
+    },
+    ".sr-ir-heading-note-action.is-visible, .sr-ir-heading-note-action.is-editing, .sr-ir-heading-note-action.has-note": {
+        marginRight: "0.28em",
+        opacity: "1",
+        pointerEvents: "auto",
+        width: "1em",
+    },
+    ".sr-ir-heading-note-action svg": {
+        height: "0.82em",
+        width: "0.82em",
+    },
+    ".sr-ir-heading-note-action:hover": {
+        color: "var(--text-normal)",
+    },
+    ".sr-ir-heading-note-action.has-note": {
+        color: IR_EXTRACT_INFO_NOTE_COLOR,
+    },
+    ".sr-ir-heading-note-action.is-editing": {
+        color: "var(--interactive-accent)",
     },
     ".sr-ir-info-action.has-note": {
         color: IR_EXTRACT_INFO_NOTE_COLOR,
