@@ -40,7 +40,6 @@ function createSettings(overrides: Partial<UISettingsState> = {}): UISettingsSta
         flashcardTags: [],
         convertFoldersToDecks: false,
         burySiblingCards: false,
-        flashcardCardOrder: "DueFirstSequential",
         singleLineCardSeparator: "::",
         multilineCardSeparator: "?",
         convertHighlightsToClozes: true,
@@ -473,6 +472,16 @@ describe("EmbeddedSettingsPanel", () => {
         try {
             expect(findSettingItemByName(view.container, ["Code block cloze"])).not.toBeNull();
             expect(findSettingItemByName(view.container, ["Code context lines"])).toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("does not show global card order controls in flashcard settings", () => {
+        const view = renderPanel(createSettings());
+
+        try {
+            expect(findSettingItemByName(view.container, ["Card Order"])).toBeNull();
         } finally {
             view.cleanup();
         }

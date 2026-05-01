@@ -33,6 +33,11 @@ export type NoteReviewIgnoreReason = "ignored-folder" | "ignored-tag";
 export type AutoExtractRuleKind = "heading";
 export type AutoExtractHeadingLevel = number;
 export type ReviewQueueMode = "extract-first" | "flashcard-first" | "interleaved";
+export type DeckCardOrder =
+    | "DueFirstRandom"
+    | "DueFirstSequential"
+    | "NewFirstRandom"
+    | "NewFirstSequential";
 export const DEFAULT_SYNC_PROGRESS_DISPLAY_MODE: SyncProgressDisplayMode = "full-only";
 
 export interface AutoExtractRule {
@@ -137,6 +142,7 @@ export interface DeckOptionsPreset {
     maxReviews: number; // Daily review limit
     maxNewExtracts: number; // Daily new extract limit
     maxExtractReviews: number; // Daily extract review limit
+    cardOrder: DeckCardOrder; // Flashcard display order for this preset
     reviewQueueMode: ReviewQueueMode; // Flashcard/extract review ordering strategy
     interleaveFlashcardCount: number; // Flashcards before one extract in interleaved mode
     learningSteps: string; // Learning steps, e.g. "1m 10m"
@@ -210,6 +216,7 @@ export const DEFAULT_DECK_OPTIONS_PRESET_UUID = "deck-preset-default";
 export const DEFAULT_DECK_OPTIONS_PRESET_CREATED_AT = "1970-01-01T00:00:00.000Z";
 export const DEFAULT_MAX_NEW_EXTRACTS = 10;
 export const DEFAULT_MAX_EXTRACT_REVIEWS = 50;
+export const DEFAULT_DECK_CARD_ORDER: DeckCardOrder = "DueFirstRandom";
 export const DEFAULT_REVIEW_QUEUE_MODE: ReviewQueueMode = "extract-first";
 export const DEFAULT_INTERLEAVE_FLASHCARD_COUNT = 4;
 export const MIN_INTERLEAVE_FLASHCARD_COUNT = 1;
@@ -449,6 +456,15 @@ function normalizeDailyLimit(value: unknown, fallback: number): number {
     return Math.max(0, Math.round(numberValue));
 }
 
+export function normalizeDeckCardOrder(value: unknown): DeckCardOrder {
+    return value === "DueFirstRandom" ||
+        value === "DueFirstSequential" ||
+        value === "NewFirstRandom" ||
+        value === "NewFirstSequential"
+        ? value
+        : DEFAULT_DECK_CARD_ORDER;
+}
+
 export function normalizeReviewQueueMode(value: unknown): ReviewQueueMode {
     return value === "extract-first" || value === "flashcard-first" || value === "interleaved"
         ? value
@@ -485,6 +501,7 @@ export const DEFAULT_DECK_OPTIONS_PRESET: DeckOptionsPreset = {
     maxReviews: 200, // Default daily review limit
     maxNewExtracts: DEFAULT_MAX_NEW_EXTRACTS,
     maxExtractReviews: DEFAULT_MAX_EXTRACT_REVIEWS,
+    cardOrder: DEFAULT_DECK_CARD_ORDER,
     reviewQueueMode: DEFAULT_REVIEW_QUEUE_MODE,
     interleaveFlashcardCount: DEFAULT_INTERLEAVE_FLASHCARD_COUNT,
     learningSteps: "1m 10m", // Default learning steps
@@ -601,6 +618,7 @@ export function normalizeDeckOptionsPreset(
                 DEFAULT_DECK_OPTIONS_PRESET.maxExtractReviews,
             ),
         ),
+        cardOrder: normalizeDeckCardOrder(rawPreset.cardOrder),
         reviewQueueMode: normalizeReviewQueueMode(rawPreset.reviewQueueMode),
         interleaveFlashcardCount: normalizeInterleaveFlashcardCount(
             rawPreset.interleaveFlashcardCount,
@@ -866,6 +884,13 @@ export function resolveDeckFsrsSettings(
 
 export function syncFsrsSettingsCompatibilityMirror(settings: SRSettings): void {
     const normalizedFsrsSettings = normalizeFsrsSettings(settings.fsrsSettings);
+    const legacyCardOrder = normalizeDeckCardOrder(settings.flashcardCardOrder);
+    const rawDefaultPreset = Array.isArray(settings.deckOptionsPresets)
+        ? settings.deckOptionsPresets[0]
+        : undefined;
+    const shouldApplyLegacyDefaultCardOrder =
+        !isRecord(rawDefaultPreset) ||
+        !Object.prototype.hasOwnProperty.call(rawDefaultPreset, "cardOrder");
     settings.deckOptionsPresets = normalizeDeckOptionsPresets(
         settings.deckOptionsPresets,
         normalizedFsrsSettings,
@@ -875,6 +900,16 @@ export function syncFsrsSettingsCompatibilityMirror(settings: SRSettings): void 
                 maxExtractReviews: settings.maxExtractReviewsPerDay,
             },
         },
+    ).map((preset, index) =>
+        index === 0 && shouldApplyLegacyDefaultCardOrder
+            ? normalizeDeckOptionsPreset(
+                  {
+                      ...preset,
+                      cardOrder: legacyCardOrder,
+                  },
+                  normalizedFsrsSettings,
+              )
+            : preset,
     );
     settings.deckPresetAssignment = normalizeDeckPresetAssignment(
         settings.deckPresetAssignment,

@@ -94,7 +94,6 @@ export function settingsToUIState(settings: SRSettings): UISettingsState {
         flashcardTags: settings.flashcardTags || [],
         convertFoldersToDecks: settings.convertFoldersToDecks ?? false,
         burySiblingCards: settings.burySiblingCards ?? false,
-        flashcardCardOrder: settings.flashcardCardOrder || "DueFirstSequential",
         singleLineCardSeparator: settings.singleLineCardSeparator || "::",
         multilineCardSeparator: settings.multilineCardSeparator || "?",
         convertHighlightsToClozes: settings.convertHighlightsToClozes ?? true,
@@ -213,8 +212,6 @@ export function mergeUIStateToSettings(
         merged.convertFoldersToDecks = uiChanges.convertFoldersToDecks;
     if (uiChanges.burySiblingCards !== undefined)
         merged.burySiblingCards = uiChanges.burySiblingCards;
-    if (uiChanges.flashcardCardOrder !== undefined)
-        merged.flashcardCardOrder = uiChanges.flashcardCardOrder;
     if (uiChanges.singleLineCardSeparator !== undefined)
         merged.singleLineCardSeparator = uiChanges.singleLineCardSeparator;
     if (uiChanges.multilineCardSeparator !== undefined)

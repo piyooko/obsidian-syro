@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
+import { moment } from "obsidian";
 import type SRPlugin from "src/main";
 import { t } from "src/lang/helpers";
 import { cloneFsrsSettings, DEFAULT_SETTINGS } from "src/settings";
@@ -258,6 +259,36 @@ describe("DeckOptionsPanel", () => {
         }
     });
 
+    it("shows Chinese daily limit labels without per-day units", () => {
+        const previousLocale = moment.locale();
+        moment.locale("zh-cn");
+
+        const view = renderPanel();
+
+        try {
+            const dailyLimitLabels = Array.from(
+                view.container.querySelectorAll<HTMLElement>(
+                    ".sr-setting-section:nth-of-type(2) .setting-item-name",
+                ),
+            )
+                .map((label) => label.textContent)
+                .slice(1);
+
+            expect(dailyLimitLabels).toEqual([
+                "每日新卡片上限",
+                "每日新摘录上限",
+                "每日卡片复习上限",
+                "每日摘录复习上限",
+            ]);
+            for (const label of dailyLimitLabels) {
+                expect(label).not.toMatch(/张\/天|个\/天|次\/天/);
+            }
+        } finally {
+            view.cleanup();
+            moment.locale(previousLocale);
+        }
+    });
+
     it("persists extract limits on the current deck option preset", async () => {
         const view = renderPanel();
 
@@ -312,6 +343,26 @@ describe("DeckOptionsPanel", () => {
             );
             expect(view.plugin.data.settings.deckOptionsPresets[0]?.interleaveFlashcardCount).toBe(
                 6,
+            );
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("persists card order on the current deck option preset", async () => {
+        const view = renderPanel();
+
+        try {
+            const cardOrderSelect = findSelectByLabel(view.container, t("SETTINGS_CARD_ORDER"));
+
+            expect(cardOrderSelect.value).toBe("DueFirstRandom");
+
+            changeSelectValue(cardOrderSelect, "NewFirstSequential");
+            await clickButton(findButtonByText(view.container, t("DECK_OPTIONS_BTN_SAVE")));
+
+            expect(view.plugin.saveDeckOptionsAndRequestSync).toHaveBeenCalledTimes(1);
+            expect(view.plugin.data.settings.deckOptionsPresets[0]?.cardOrder).toBe(
+                "NewFirstSequential",
             );
         } finally {
             view.cleanup();

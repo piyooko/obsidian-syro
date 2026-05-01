@@ -22,6 +22,7 @@ import {
     FsrsSettings,
     NoteReviewIgnoreReason,
     normalizeAutoExtractRule,
+    normalizeDeckCardOrder,
     resolveDeckOptionsPreset,
     SettingsUtil,
     SRSettings,
@@ -3991,8 +3992,13 @@ export default class SRPlugin extends Plugin {
         this.requestPluginDataSave({ domains: ["daily-state"] });
     }
 
-    private static createDeckTreeIterator(settings: SRSettings, baseDeck: Deck): IDeckTreeIterator {
-        let cardOrder: CardOrder = CardOrder[settings.flashcardCardOrder as keyof typeof CardOrder];
+    private static createDeckTreeIterator(
+        settings: SRSettings,
+        baseDeck: Deck,
+        deckPath?: string | null,
+    ): IDeckTreeIterator {
+        const preset = resolveDeckOptionsPreset(settings, deckPath);
+        let cardOrder: CardOrder = CardOrder[normalizeDeckCardOrder(preset.cardOrder)];
         if (cardOrder === undefined) cardOrder = CardOrder.DueFirstSequential;
         let deckOrder: DeckOrder = DeckOrder[settings.flashcardDeckOrder as keyof typeof DeckOrder];
         if (deckOrder === undefined) deckOrder = DeckOrder.PrevDeckComplete_Sequential;
@@ -10111,6 +10117,7 @@ export default class SRPlugin extends Plugin {
         const deckIterator: IDeckTreeIterator = SRPlugin.createDeckTreeIterator(
             this.data.settings,
             remainingDeckTree,
+            sessionCounterDeckPath,
         );
 
         const reviewSequencer: IFlashcardReviewSequencer = new FlashcardReviewSequencer(

@@ -1,5 +1,6 @@
 import {
     cloneFsrsSettings,
+    DEFAULT_DECK_CARD_ORDER,
     DEFAULT_INTERLEAVE_FLASHCARD_COUNT,
     DEFAULT_REVIEW_QUEUE_MODE,
     DEFAULT_SETTINGS,
@@ -36,6 +37,7 @@ describe("sync progress display defaults", () => {
     test("new deck presets enable auto-advance with the progress bar by default", () => {
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.autoAdvance).toBe(true);
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.showProgressBar).toBe(true);
+        expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.cardOrder).toBe(DEFAULT_DECK_CARD_ORDER);
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.maxNewExtracts).toBe(10);
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.maxExtractReviews).toBe(50);
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.reviewQueueMode).toBe(
@@ -44,6 +46,27 @@ describe("sync progress display defaults", () => {
         expect(DEFAULT_SETTINGS.deckOptionsPresets[0]?.interleaveFlashcardCount).toBe(
             DEFAULT_INTERLEAVE_FLASHCARD_COUNT,
         );
+    });
+
+    test("deck card order settings normalize missing and invalid values", () => {
+        expect(
+            normalizeDeckOptionsPreset({
+                ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                cardOrder: "NewFirstSequential",
+            }).cardOrder,
+        ).toBe("NewFirstSequential");
+        expect(
+            normalizeDeckOptionsPreset({
+                ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                cardOrder: "unknown",
+            }).cardOrder,
+        ).toBe(DEFAULT_DECK_CARD_ORDER);
+        expect(
+            normalizeDeckOptionsPreset({
+                ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+                cardOrder: undefined,
+            }).cardOrder,
+        ).toBe(DEFAULT_DECK_CARD_ORDER);
     });
 
     test("deck queue strategy settings normalize missing and invalid values", () => {
@@ -176,6 +199,20 @@ describe("sync progress display defaults", () => {
 
         expect(settings.deckOptionsPresets[0]?.maxNewExtracts).toBe(7);
         expect(settings.deckOptionsPresets[0]?.maxExtractReviews).toBe(33);
+    });
+
+    test("upgradeSettings migrates legacy global card order into the default deck preset", () => {
+        const legacyPreset = { ...DEFAULT_SETTINGS.deckOptionsPresets[0] } as Record<string, unknown>;
+        delete legacyPreset.cardOrder;
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            flashcardCardOrder: "NewFirstSequential",
+            deckOptionsPresets: [legacyPreset],
+        } as unknown as SRSettings;
+
+        upgradeSettings(settings);
+
+        expect(settings.deckOptionsPresets[0]?.cardOrder).toBe("NewFirstSequential");
     });
 
     test("upgradeSettings keeps preset extract limits ahead of legacy global extract limits", () => {

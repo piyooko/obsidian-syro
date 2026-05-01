@@ -1159,27 +1159,6 @@ const FlashcardsTab: React.FC<TabProps> = ({ settings, onChange }) => {
 
     return (
         <div className="sr-settings-sections">
-            <Section title={t("SETTINGS_SECTION_BEHAVIOR")}>
-                <SelectRow
-                    label={t("SETTINGS_CARD_ORDER")}
-                    desc={t("SETTINGS_CARD_ORDER_DESC")}
-                    value={settings.flashcardCardOrder}
-                    options={[
-                        {
-                            label: t("SETTINGS_OPT_DUE_FIRST_SEQUENTIAL"),
-                            value: "DueFirstSequential",
-                        },
-                        { label: t("SETTINGS_OPT_DUE_FIRST_RANDOM"), value: "DueFirstRandom" },
-                        {
-                            label: t("SETTINGS_OPT_NEW_FIRST_SEQUENTIAL"),
-                            value: "NewFirstSequential",
-                        },
-                        { label: t("SETTINGS_OPT_NEW_FIRST_RANDOM"), value: "NewFirstRandom" },
-                    ]}
-                    onChange={(v) => onChange("flashcardCardOrder", v)}
-                />
-            </Section>
-
             <Section title={t("SETTINGS_SECTION_CLOZE")}>
                 <ToggleRow
                     label={t("SETTINGS_HIGHLIGHT_TO_CLOZE")}

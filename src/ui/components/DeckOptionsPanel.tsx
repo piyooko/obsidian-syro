@@ -24,6 +24,7 @@ import {
     parseDeckOptionsStepInput,
     ReviewQueueMode,
     syncFsrsSettingsCompatibilityMirror,
+    type DeckCardOrder,
 } from "src/settings";
 import { BaseComponent, InputRow, Section, SelectRow, ToggleRow } from "./common/SettingsComponents";
 import { useMobileNavbarOffset } from "./useMobileNavbarOffset";
@@ -138,6 +139,27 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
             {
                 label: t("DECK_OPTIONS_REVIEW_QUEUE_MODE_INTERLEAVED"),
                 value: "interleaved",
+            },
+        ],
+        [],
+    );
+    const cardOrderOptions = useMemo(
+        () => [
+            {
+                label: t("SETTINGS_OPT_DUE_FIRST_RANDOM"),
+                value: "DueFirstRandom",
+            },
+            {
+                label: t("SETTINGS_OPT_DUE_FIRST_SEQUENTIAL"),
+                value: "DueFirstSequential",
+            },
+            {
+                label: t("SETTINGS_OPT_NEW_FIRST_RANDOM"),
+                value: "NewFirstRandom",
+            },
+            {
+                label: t("SETTINGS_OPT_NEW_FIRST_SEQUENTIAL"),
+                value: "NewFirstSequential",
             },
         ],
         [],
@@ -445,6 +467,18 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                     </Section>
 
                     <Section title={t("DECK_OPTIONS_SECTION_DISPLAY_ORDER")}>
+                        <SelectRow
+                            label={t("SETTINGS_CARD_ORDER")}
+                            desc={t("SETTINGS_CARD_ORDER_DESC")}
+                            value={currentPreset.cardOrder}
+                            options={cardOrderOptions}
+                            onChange={(value) =>
+                                updateCurrentPreset((preset) => ({
+                                    ...preset,
+                                    cardOrder: value as DeckCardOrder,
+                                }))
+                            }
+                        />
                         <SelectRow
                             label={t("DECK_OPTIONS_REVIEW_QUEUE_MODE")}
                             desc={t("DECK_OPTIONS_REVIEW_QUEUE_MODE_DESC")}

@@ -507,6 +507,47 @@ describe("FlashcardReviewSequencer", () => {
         expect(plugin.incrementDailyCounts).toHaveBeenCalledTimes(1);
     });
 
+    test("prepared review sequencer uses deck preset card order instead of the legacy global setting", () => {
+        const settings = createSettings();
+        const alphaPreset = {
+            ...DEFAULT_SETTINGS.deckOptionsPresets[0],
+            uuid: "deck-preset-alpha",
+            createdAt: "2026-05-02T00:00:00.000Z",
+            name: "Alpha",
+            cardOrder: "NewFirstSequential" as const,
+        };
+        settings.flashcardCardOrder = "DueFirstSequential";
+        settings.deckOptionsPresets = [DEFAULT_SETTINGS.deckOptionsPresets[0], alphaPreset];
+        settings.deckPresetAssignment = {
+            DeckA: alphaPreset.uuid,
+        };
+
+        installSequencerPlugin(settings, createStore(settings));
+
+        const root = new Deck("root", null);
+        const deck = root.getOrCreateDeck(new TopicPath(["DeckA"]));
+        const dueCard = createCardForDeck(new TopicPath(["DeckA"]), 1);
+        const newCard = createCardForDeck(new TopicPath(["DeckA"]), 2);
+        deck.dueFlashcards.push(dueCard);
+        deck.newFlashcards.push(newCard);
+
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: { settings },
+            questionPostponementList: createQuestionPostponementList(),
+        });
+
+        const { reviewSequencer } = SRPlugin.prototype.getPreparedReviewSequencer.call(
+            plugin,
+            root,
+            root,
+            FlashcardReviewMode.Review,
+            root,
+            "DeckA",
+        );
+
+        expect(reviewSequencer.currentCard?.Id).toBe(newCard.Id);
+    });
+
     test("undoReview emits syro cards undo session with restored snapshot", async () => {
         const settings = createSettings();
         const sequencer = createSequencer(settings);

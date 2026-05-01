@@ -27,7 +27,6 @@ export interface UISettingsState {
     flashcardTags: string[];
     convertFoldersToDecks: boolean;
     burySiblingCards: boolean;
-    flashcardCardOrder: string;
     singleLineCardSeparator: string;
     multilineCardSeparator: string;
     convertHighlightsToClozes: boolean;
