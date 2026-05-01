@@ -2028,6 +2028,7 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
 }) => {
     const extract = plugin.extractStore?.get(extractUuid) ?? null;
     const [body, setBody] = useState(preparedExtract?.rawMarkdown ?? extract?.rawMarkdown ?? "");
+    const [memo, setMemo] = useState(extract?.memo ?? "");
     const [context, setContext] = useState<ExtractReviewContext | null>(
         preparedExtract?.context ?? null,
     );
@@ -2038,6 +2039,9 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     const [contextRetryToken, setContextRetryToken] = useState(0);
     const bodyValueRef = useRef(body);
     const bodyDirtyRef = useRef(false);
+    const memoValueRef = useRef(extract?.memo ?? "");
+    const memoDirtyRef = useRef(false);
+    const memoSaveTimerRef = useRef<number | null>(null);
     const contextRef = useRef<ExtractReviewContext | null>(null);
     const contextDraftRef = useRef<ExtractContextUpdate | null>(null);
     const contextDirtyRef = useRef(false);
@@ -2252,10 +2256,28 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
         bodyValueRef.current = body;
     }, [body]);
 
+    useEffect(() => {
+        const nextMemo = extract?.memo ?? "";
+        setMemo(nextMemo);
+        memoValueRef.current = nextMemo;
+        memoDirtyRef.current = false;
+        if (memoSaveTimerRef.current !== null) {
+            window.clearTimeout(memoSaveTimerRef.current);
+            memoSaveTimerRef.current = null;
+        }
+    }, [extractUuid, extract?.memo]);
+
     const clearSaveTimer = useCallback(() => {
         if (bodySaveTimerRef.current !== null) {
             window.clearTimeout(bodySaveTimerRef.current);
             bodySaveTimerRef.current = null;
+        }
+    }, []);
+
+    const clearMemoSaveTimer = useCallback(() => {
+        if (memoSaveTimerRef.current !== null) {
+            window.clearTimeout(memoSaveTimerRef.current);
+            memoSaveTimerRef.current = null;
         }
     }, []);
 
@@ -2382,15 +2404,46 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
         plugin,
     ]);
 
+    const saveMemoNow = useCallback(async () => {
+        clearMemoSaveTimer();
+        if (!memoDirtyRef.current) {
+            return;
+        }
+        const memoToSave = memoValueRef.current;
+        logRuntimeDebug("[SR-ExtractMemo] saveMemoNow:start", {
+            extractUuid,
+            memoLength: memoToSave.length,
+        });
+        const updated = await plugin.updateExtractMemo(extractUuid, memoToSave);
+        if (memoValueRef.current === memoToSave) {
+            memoDirtyRef.current = false;
+        }
+        if (updated) {
+            logRuntimeDebug("[SR-ExtractMemo] saveMemoNow:success", {
+                extractUuid,
+                memoLength: updated.memo.length,
+            });
+        } else {
+            logRuntimeDebug("[SR-ExtractMemo] saveMemoNow:null", {
+                extractUuid,
+            });
+        }
+    }, [clearMemoSaveTimer, extractUuid, logRuntimeDebug, plugin]);
+
     const flushBodySave = useCallback(async () => {
         await saveBodyNow();
     }, [saveBodyNow]);
 
+    const flushMemoSave = useCallback(async () => {
+        await saveMemoNow();
+    }, [saveMemoNow]);
+
     useEffect(() => {
         return () => {
             clearSaveTimer();
+            clearMemoSaveTimer();
         };
-    }, [clearSaveTimer]);
+    }, [clearMemoSaveTimer, clearSaveTimer]);
 
     const scheduleBodySave = useCallback(
         (value: string) => {
@@ -2406,6 +2459,22 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
             }, 700);
         },
         [clearSaveTimer, saveBodyNow],
+    );
+
+    const scheduleMemoSave = useCallback(
+        (value: string) => {
+            setMemo(value);
+            memoValueRef.current = value;
+            memoDirtyRef.current = true;
+            clearMemoSaveTimer();
+            memoSaveTimerRef.current = window.setTimeout(() => {
+                void saveMemoNow().catch((error) => {
+                    console.error("[SR-Extract] Failed to save extract memo", error);
+                    new Notice(t("EXTRACT_SAVE_FAILED"));
+                });
+            }, 700);
+        },
+        [clearMemoSaveTimer, saveMemoNow],
     );
 
     const scheduleContextSave = useCallback(
@@ -2447,6 +2516,7 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     const handleAnswer = useCallback(
         async (rating: number) => {
             try {
+                await flushMemoSave();
                 await flushBodySave();
             } catch (error) {
                 console.error("[SR-Extract] Failed to flush before review", error);
@@ -2454,23 +2524,25 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
             }
             onAnswer(rating);
         },
-        [flushBodySave, onAnswer],
+        [flushBodySave, flushMemoSave, onAnswer],
     );
 
     const handleDelete = useCallback(async () => {
         try {
+            await flushMemoSave();
             await flushBodySave();
         } catch (error) {
             console.error("[SR-Extract] Failed to flush before graduation", error);
             new Notice(t("EXTRACT_SAVE_FAILED"));
         }
         onDelete();
-    }, [flushBodySave, onDelete]);
+    }, [flushBodySave, flushMemoSave, onDelete]);
 
     const handleSetExtractDate = useCallback(() => {
         new ExtractReviewDateModal(plugin.app, (dueAt) => {
             void (async () => {
                 try {
+                    await flushMemoSave();
                     await flushBodySave();
                 } catch (error) {
                     console.error("[SR-Extract] Failed to flush before custom review date", error);
@@ -2480,7 +2552,7 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
                 onSetExtractDate(dueAt);
             })();
         }).open();
-    }, [flushBodySave, onSetExtractDate, plugin.app]);
+    }, [flushBodySave, flushMemoSave, onSetExtractDate, plugin.app]);
 
     const handleOpenSource = useCallback(
         async (options?: { newTab?: boolean }) => {
@@ -2645,6 +2717,8 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
                 plugin={plugin}
                 rawContent={body}
                 onUpdateContent={scheduleBodySave}
+                extractMemo={memo}
+                onUpdateExtractMemo={scheduleMemoSave}
                 extractContext={context}
                 extractContextDraft={contextDraft}
                 extractDebugStatus={extractDebugStatus}

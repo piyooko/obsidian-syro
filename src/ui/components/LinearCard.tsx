@@ -28,6 +28,7 @@ import {
     Undo2,
     ArrowLeft,
     Save,
+    MessageSquare,
 } from "lucide-react";
 import { CardDebugModal } from "./CardDebugModal";
 import type { CardDebugData } from "./CardDebugModal";
@@ -109,6 +110,8 @@ interface LinearCardProps {
     extractContext?: ExtractReviewContext | null;
     extractContextDraft?: ExtractContextUpdate | null;
     onUpdateExtractContext?: (update: ExtractContextUpdate) => void;
+    extractMemo?: string;
+    onUpdateExtractMemo?: (memo: string) => void;
     onSetExtractDate?: () => void;
     extractDebugStatus?: ExtractDebugStatus | null;
     extractActionLabels?: {
@@ -377,6 +380,8 @@ export const LinearCard: FC<LinearCardProps> = ({
     extractContext,
     extractContextDraft,
     onUpdateExtractContext,
+    extractMemo = "",
+    onUpdateExtractMemo,
     onSetExtractDate,
     extractDebugStatus,
     extractActionLabels,
@@ -1682,6 +1687,12 @@ export const LinearCard: FC<LinearCardProps> = ({
                                     )}
                                 </div>
                             )}
+                            {isExtractReview && (
+                                <ExtractMemoPill
+                                    memo={extractMemo}
+                                    onUpdateMemo={onUpdateExtractMemo}
+                                />
+                            )}
                         </div>
 
                         <div className="sr-card-footer">
@@ -2524,6 +2535,177 @@ const InlineBreadcrumbs: FC<InlineBreadcrumbsProps> = ({
                     </span>
                 </Fragment>
             ))}
+        </div>
+    );
+};
+
+const EXTRACT_MEMO_PLACEHOLDER = "添加备注...";
+const EXTRACT_MEMO_ANIMATION_MS = 400;
+
+interface ExtractMemoPillProps {
+    memo: string;
+    onUpdateMemo?: (memo: string) => void;
+}
+
+const ExtractMemoPill: FC<ExtractMemoPillProps> = ({ memo, onUpdateMemo }) => {
+    const widgetRef = useRef<HTMLDivElement>(null);
+    const previewRef = useRef<HTMLDivElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const animationTimerRef = useRef<number | null>(null);
+    const isAnimatingRef = useRef(false);
+    const [draft, setDraft] = useState(memo);
+
+    const clearAnimationTimer = useCallback(() => {
+        if (animationTimerRef.current !== null) {
+            window.clearTimeout(animationTimerRef.current);
+            animationTimerRef.current = null;
+        }
+    }, []);
+
+    const resizeTextarea = useCallback(() => {
+        const textarea = textareaRef.current;
+        const widget = widgetRef.current;
+        if (!textarea || !widget?.classList.contains("is-active")) {
+            return;
+        }
+        textarea.setCssProps({ "--sr-extract-memo-textarea-height": "auto" });
+        textarea.setCssProps({ "--sr-extract-memo-textarea-height": `${textarea.scrollHeight}px` });
+    }, []);
+
+    const toggleWidget = useCallback(
+        (expand: boolean) => {
+            const widget = widgetRef.current;
+            const preview = previewRef.current;
+            const textarea = textareaRef.current;
+            if (!widget || !preview || !textarea || isAnimatingRef.current) {
+                return;
+            }
+
+            const isCurrentlyActive = widget.classList.contains("is-active");
+            if (expand === isCurrentlyActive) {
+                return;
+            }
+
+            isAnimatingRef.current = true;
+            clearAnimationTimer();
+
+            const startW = widget.offsetWidth;
+            const startH = widget.offsetHeight;
+
+            if (!expand) {
+                preview.textContent = textarea.value;
+                textarea.setCssProps({ "--sr-extract-memo-textarea-height": "" });
+            }
+
+            widget.classList.toggle("is-active", expand);
+
+            if (expand) {
+                textarea.setCssProps({ "--sr-extract-memo-textarea-height": "auto" });
+                textarea.setCssProps({
+                    "--sr-extract-memo-textarea-height": `${textarea.scrollHeight}px`,
+                });
+            }
+
+            const targetW = widget.offsetWidth;
+            const targetH = widget.offsetHeight;
+
+            widget.classList.remove("animate");
+            widget.setCssProps({
+                "--sr-extract-memo-width": `${startW}px`,
+                "--sr-extract-memo-height": `${startH}px`,
+            });
+
+            void widget.offsetHeight;
+
+            widget.classList.add("animate");
+            widget.setCssProps({
+                "--sr-extract-memo-width": `${targetW}px`,
+                "--sr-extract-memo-height": `${targetH}px`,
+            });
+
+            animationTimerRef.current = window.setTimeout(() => {
+                widget.setCssProps({
+                    "--sr-extract-memo-width": "",
+                    "--sr-extract-memo-height": "",
+                });
+                widget.classList.remove("animate");
+                isAnimatingRef.current = false;
+                animationTimerRef.current = null;
+
+                if (expand) {
+                    textarea.focus();
+                }
+            }, EXTRACT_MEMO_ANIMATION_MS);
+        },
+        [clearAnimationTimer],
+    );
+
+    useEffect(() => {
+        setDraft(memo);
+    }, [memo]);
+
+    useLayoutEffect(() => {
+        resizeTextarea();
+    }, [draft, resizeTextarea]);
+
+    useEffect(() => {
+        const handleDocumentClick = (event: MouseEvent) => {
+            const widget = widgetRef.current;
+            if (!widget || widget.contains(event.target as Node)) {
+                return;
+            }
+            toggleWidget(false);
+        };
+
+        document.addEventListener("click", handleDocumentClick);
+        return () => {
+            document.removeEventListener("click", handleDocumentClick);
+            clearAnimationTimer();
+        };
+    }, [clearAnimationTimer, toggleWidget]);
+
+    const handleInput = useCallback(
+        (event: React.SyntheticEvent<HTMLTextAreaElement>) => {
+            const nextMemo = event.currentTarget.value;
+            setDraft(nextMemo);
+            if (previewRef.current) {
+                previewRef.current.textContent = nextMemo;
+            }
+            resizeTextarea();
+            onUpdateMemo?.(nextMemo);
+        },
+        [onUpdateMemo, resizeTextarea],
+    );
+
+    return (
+        <div
+            className="corner-pill-wrapper"
+            ref={widgetRef}
+            onClick={() => toggleWidget(true)}
+        >
+            <div className="pill-icon">
+                <MessageSquare size={16} strokeWidth={2} />
+            </div>
+
+            <div className="input-container">
+                <div
+                    className="text-preview"
+                    data-placeholder={EXTRACT_MEMO_PLACEHOLDER}
+                    ref={previewRef}
+                >
+                    {draft}
+                </div>
+
+                <textarea
+                    ref={textareaRef}
+                    rows={1}
+                    data-max-lines="9"
+                    placeholder={EXTRACT_MEMO_PLACEHOLDER}
+                    value={draft}
+                    onInput={handleInput}
+                    onClick={(event) => event.stopPropagation()}
+                />
+            </div>
         </div>
     );
 };

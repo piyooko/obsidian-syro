@@ -2501,8 +2501,176 @@ body.syro-mobile-review-square-corners
     grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.corner-pill-wrapper {
+    --sr-extract-memo-bg-app: #121212;
+    --sr-extract-memo-surface: #1e1e1e;
+    --sr-extract-memo-border-dim: rgba(255, 255, 255, 0.06);
+    --sr-extract-memo-border-focus: rgba(255, 255, 255, 0.25);
+    --sr-extract-memo-text-main: #dadada;
+    --sr-extract-memo-text-muted: #666666;
+    --sr-extract-memo-text-bright: #ffffff;
+
+    position: absolute;
+    right: 40px;
+    bottom: 40px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    background: rgba(30, 30, 30, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--sr-extract-memo-border-dim);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    padding: 12px 16px;
+    border-radius: 20px;
+    cursor: text;
+    width: var(--sr-extract-memo-width, 180px);
+    height: var(--sr-extract-memo-height, auto);
+    box-sizing: border-box;
+    z-index: 50;
+    overflow: hidden;
+}
+
+.corner-pill-wrapper.animate {
+    transition:
+        width 0.4s cubic-bezier(0.2, 0.8, 0.2, 1),
+        height 0.4s cubic-bezier(0.2, 0.8, 0.2, 1),
+        border-radius 0.4s ease,
+        border-color 0.4s ease,
+        box-shadow 0.4s ease,
+        background-color 0.4s ease;
+}
+
+.corner-pill-wrapper.is-active {
+    width: var(--sr-extract-memo-width, 400px);
+    border-radius: 10px;
+    border-color: var(--sr-extract-memo-border-focus);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+    background: rgba(26, 26, 26, 0.98);
+}
+
+.pill-icon {
+    color: var(--sr-extract-memo-text-muted);
+    margin-top: 1px;
+    transition: color 0.4s;
+    flex-shrink: 0;
+}
+
+.pill-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+.corner-pill-wrapper.is-active .pill-icon {
+    color: var(--sr-extract-memo-text-bright);
+}
+
+.input-container {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+
+.text-preview,
+.corner-pill-wrapper textarea {
+    width: 100%;
+    font-family: inherit;
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--sr-extract-memo-text-main);
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+.text-preview {
+    position: relative;
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+.text-preview:empty::before {
+    content: attr(data-placeholder);
+    color: var(--sr-extract-memo-text-muted);
+}
+
+.corner-pill-wrapper.is-active .text-preview {
+    position: absolute;
+    top: 0;
+    left: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.corner-pill-wrapper textarea {
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: transparent;
+    border: none;
+    resize: none;
+    outline: none;
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transition:
+        opacity 0.3s ease,
+        visibility 0.3s;
+    overflow-y: auto;
+    overflow-x: hidden;
+    max-height: 196px;
+    height: var(--sr-extract-memo-textarea-height, auto);
+    padding-right: 4px;
+}
+
+.corner-pill-wrapper textarea::placeholder {
+    color: var(--sr-extract-memo-text-muted);
+    opacity: 0.5;
+}
+
+.corner-pill-wrapper.is-active textarea {
+    position: relative;
+    opacity: 1;
+    pointer-events: auto;
+    visibility: visible;
+}
+
+.corner-pill-wrapper textarea::-webkit-scrollbar {
+    width: 4px;
+    background: transparent;
+}
+
+.corner-pill-wrapper textarea::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+}
+
+.corner-pill-wrapper textarea::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.35);
+}
+
+.corner-pill-wrapper textarea::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
 @media (max-width: 640px) {
     .sr-extract-rating-buttons {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .corner-pill-wrapper {
+        right: 16px;
+        bottom: 16px;
+        width: min(var(--sr-extract-memo-width, 180px), calc(100% - 32px));
+    }
+
+    .corner-pill-wrapper.is-active {
+        width: min(var(--sr-extract-memo-width, 400px), calc(100% - 32px));
     }
 }

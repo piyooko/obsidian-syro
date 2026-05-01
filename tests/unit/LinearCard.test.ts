@@ -16,6 +16,19 @@ import { LinearCard, CardState } from "src/ui/components/LinearCard";
     globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+beforeAll(() => {
+    if (!HTMLElement.prototype.setCssProps) {
+        HTMLElement.prototype.setCssProps = function setCssProps(
+            this: HTMLElement,
+            props: Record<string, string>,
+        ) {
+            for (const [key, value] of Object.entries(props)) {
+                this.style.setProperty(key, value);
+            }
+        };
+    }
+});
+
 jest.mock("framer-motion", () => {
     const React = require("react");
     const componentCache = new Map<string, React.ComponentType<Record<string, unknown>>>();
@@ -379,6 +392,120 @@ test("extract review Ctrl+Z calls undo", () => {
     expect(onUndo).toHaveBeenCalledTimes(1);
 
     act(() => root.unmount());
+});
+
+test("extract review renders a memo pill only for extract cards", () => {
+    const extractContainer = document.createElement("div");
+    const cardContainer = document.createElement("div");
+    document.body.appendChild(extractContainer);
+    document.body.appendChild(cardContainer);
+    const extractRoot = createRoot(extractContainer);
+    const cardRoot = createRoot(cardContainer);
+
+    try {
+        act(() => {
+            extractRoot.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "{{ir::text}}", back: "" },
+                    extractMemo: "",
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+            cardRoot.render(
+                React.createElement(LinearCard, {
+                    card: { front: "Q", back: "A" },
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+
+        const memoPill = extractContainer.querySelector(".corner-pill-wrapper");
+        expect(memoPill).not.toBeNull();
+        expect(memoPill?.querySelector(".text-preview")).not.toBeNull();
+        expect(memoPill?.querySelector("textarea")).not.toBeNull();
+        expect(memoPill?.querySelector(".text-preview")?.getAttribute("data-placeholder")).toBe(
+            "添加备注...",
+        );
+        expect(cardContainer.querySelector(".corner-pill-wrapper")).toBeNull();
+    } finally {
+        act(() => {
+            extractRoot.unmount();
+            cardRoot.unmount();
+        });
+        extractContainer.remove();
+        cardContainer.remove();
+    }
+});
+
+test("extract memo pill keeps preview and textarea layers while editing", () => {
+    jest.useFakeTimers();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onUpdateExtractMemo = jest.fn();
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "{{ir::text}}", back: "" },
+                    extractMemo: "第一行\n第二行\n第三行\n第四行",
+                    onUpdateExtractMemo,
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+
+        const memoPill = container.querySelector<HTMLElement>(".corner-pill-wrapper");
+        const preview = container.querySelector<HTMLElement>(".text-preview");
+        const textarea = container.querySelector<HTMLTextAreaElement>(
+            ".corner-pill-wrapper textarea",
+        );
+        expect(memoPill).not.toBeNull();
+        expect(preview?.textContent).toBe("第一行\n第二行\n第三行\n第四行");
+        expect(textarea?.value).toBe("第一行\n第二行\n第三行\n第四行");
+
+        Object.defineProperty(memoPill, "offsetWidth", { configurable: true, value: 180 });
+        Object.defineProperty(memoPill, "offsetHeight", { configurable: true, value: 70 });
+        Object.defineProperty(textarea, "scrollHeight", { configurable: true, value: 88 });
+
+        act(() => {
+            memoPill?.click();
+        });
+
+        expect(memoPill?.classList.contains("is-active")).toBe(true);
+        expect(memoPill?.classList.contains("animate")).toBe(true);
+        expect(textarea?.style.getPropertyValue("--sr-extract-memo-textarea-height")).toBe("88px");
+        expect(textarea?.getAttribute("data-max-lines")).toBe("9");
+
+        act(() => {
+            if (textarea) {
+                textarea.value = "新的备注";
+                textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            }
+        });
+
+        expect(onUpdateExtractMemo).toHaveBeenCalledWith("新的备注");
+        expect(preview?.textContent).toBe("新的备注");
+
+        act(() => {
+            jest.advanceTimersByTime(400);
+        });
+
+        expect(memoPill?.classList.contains("animate")).toBe(false);
+    } finally {
+        act(() => root.unmount());
+        container.remove();
+        jest.useRealTimers();
+    }
 });
 
 test("extract review without cardType does not default the header to due", () => {

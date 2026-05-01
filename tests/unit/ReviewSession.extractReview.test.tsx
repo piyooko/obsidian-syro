@@ -224,6 +224,10 @@ function createPlugin(
             return Promise.resolve(graduated);
         }),
         undoExtractReviewAction: jest.fn(() => Promise.resolve(null)),
+        updateExtractMemo: jest.fn((uuid: string, memo: string) => {
+            const updated = extractStore.setMemo(uuid, memo);
+            return Promise.resolve(updated);
+        }),
         syncEvents,
         flushReviewPersistence: jest.fn(() => Promise.resolve()),
         loadDailyDeckStats: jest.fn(),
@@ -355,6 +359,151 @@ test("extract review highlights reviewed extracts with nextReview zero as new", 
         expect(liveHeader?.querySelector(".sr-stat-badge.active")?.textContent).toContain("NEW");
     } finally {
         act(() => root.unmount());
+    }
+});
+
+test("extract review displays and saves the active extract memo", async () => {
+    jest.useFakeTimers();
+    const item = createExtractItem({ memo: "已有摘录备注" });
+    const markdown = "before {{ir::target}} after";
+    const context = createManualExtractContext(markdown, 7, 21);
+    const plugin = createPlugin(
+        item,
+        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+    );
+    const { container, root } = renderExtractReviewSession(plugin);
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        const preview = container.querySelector<HTMLElement>(".text-preview");
+        const textarea = container.querySelector<HTMLTextAreaElement>(
+            ".corner-pill-wrapper textarea",
+        );
+        expect(preview?.textContent).toBe("已有摘录备注");
+        expect(textarea?.value).toBe("已有摘录备注");
+
+        act(() => {
+            if (textarea) {
+                textarea.value = "复习时更新的备注";
+                textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            }
+        });
+
+        expect(plugin.updateExtractMemo).not.toHaveBeenCalled();
+
+        act(() => {
+            jest.advanceTimersByTime(700);
+        });
+        await flushEffects();
+
+        expect(plugin.updateExtractMemo).toHaveBeenCalledWith(item.uuid, "复习时更新的备注");
+    } finally {
+        act(() => root.unmount());
+        jest.useRealTimers();
+    }
+});
+
+test("extract review flushes pending memo before answering", async () => {
+    jest.useFakeTimers();
+    const item = createExtractItem({ memo: "旧备注" });
+    const markdown = "before {{ir::target}} after";
+    const context = createManualExtractContext(markdown, 7, 21);
+    const plugin = createPlugin(
+        item,
+        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+    );
+    const reviewExtract = jest.fn(() => Promise.resolve(item));
+    (plugin as SRPlugin & { reviewExtract: typeof reviewExtract }).reviewExtract = reviewExtract;
+    const { container, root } = renderExtractReviewSession(plugin);
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        const textarea = container.querySelector<HTMLTextAreaElement>(
+            ".corner-pill-wrapper textarea",
+        );
+        act(() => {
+            if (textarea) {
+                textarea.value = "离开前保存";
+                textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            }
+        });
+
+        act(() => {
+            findButton(container, "Again").click();
+        });
+        await flushEffects();
+
+        expect(plugin.updateExtractMemo).toHaveBeenCalledWith(item.uuid, "离开前保存");
+        expect(reviewExtract).toHaveBeenCalled();
+    } finally {
+        act(() => root.unmount());
+        jest.useRealTimers();
+    }
+});
+
+test("extract review keeps pending memo dirty after a failed autosave", async () => {
+    jest.useFakeTimers();
+    const item = createExtractItem({ memo: "旧备注" });
+    const markdown = "before {{ir::target}} after";
+    const context = createManualExtractContext(markdown, 7, 21);
+    const plugin = createPlugin(
+        item,
+        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+    );
+    const updateExtractMemo = plugin.updateExtractMemo as jest.MockedFunction<
+        (uuid: string, memo: string) => Promise<ExtractItem | null>
+    >;
+    updateExtractMemo.mockRejectedValueOnce(new Error("memo save failed"));
+    updateExtractMemo.mockImplementationOnce((uuid: string, memo: string) => {
+        const updated = plugin.extractStore?.setMemo(uuid, memo) ?? null;
+        return Promise.resolve(updated);
+    });
+    const reviewExtract = jest.fn(() => Promise.resolve(item));
+    (plugin as SRPlugin & { reviewExtract: typeof reviewExtract }).reviewExtract = reviewExtract;
+    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    const { container, root } = renderExtractReviewSession(plugin);
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        const textarea = container.querySelector<HTMLTextAreaElement>(
+            ".corner-pill-wrapper textarea",
+        );
+        act(() => {
+            if (textarea) {
+                textarea.value = "失败后仍待保存";
+                textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            }
+        });
+
+        act(() => {
+            jest.advanceTimersByTime(700);
+        });
+        await flushEffects();
+
+        expect(updateExtractMemo).toHaveBeenCalledTimes(1);
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            "[SR-Extract] Failed to save extract memo",
+            expect.any(Error),
+        );
+        expect(textarea?.value).toBe("失败后仍待保存");
+
+        act(() => {
+            findButton(container, "Again").click();
+        });
+        await flushEffects();
+
+        expect(updateExtractMemo).toHaveBeenCalledTimes(2);
+        expect(updateExtractMemo).toHaveBeenLastCalledWith(item.uuid, "失败后仍待保存");
+    } finally {
+        consoleErrorSpy.mockRestore();
+        act(() => root.unmount());
+        jest.useRealTimers();
     }
 });
 
