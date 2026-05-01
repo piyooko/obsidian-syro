@@ -582,6 +582,113 @@ test("extract review reserves a content safe area for the memo pill only on extr
     }
 });
 
+test("extract memo pill renders the priority dial and changes it with wheel and drag", async () => {
+    jest.useFakeTimers();
+    const addEventListenerSpy = jest.spyOn(HTMLElement.prototype, "addEventListener");
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onUpdateExtractPriority = jest.fn();
+
+    try {
+        act(() => {
+            root.render(
+                React.createElement(LinearCard, {
+                    reviewKind: "extract",
+                    card: { front: "{{ir::text}}", back: "" },
+                    extractMemo: "权重备注",
+                    extractPriority: 5,
+                    onUpdateExtractPriority,
+                    renderMarkdown: (content: string, el: HTMLElement) => {
+                        el.textContent = content;
+                    },
+                }),
+            );
+        });
+        await flushEffects();
+
+        const memoPill = container.querySelector<HTMLElement>(".corner-pill-wrapper");
+        const dial = container.querySelector<HTMLElement>(".importance-widget");
+        const value = container.querySelector<HTMLElement>(".importance-value");
+        expect(dial).not.toBeNull();
+        expect(value?.textContent).toBe("5");
+        expect(dial?.hasAttribute("title")).toBe(false);
+        expect(addEventListenerSpy).toHaveBeenCalledWith(
+            "wheel",
+            expect.any(Function),
+            { passive: false },
+        );
+
+        act(() => {
+            memoPill?.click();
+        });
+
+        act(() => {
+            dial?.dispatchEvent(new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }));
+        });
+        expect(value?.textContent).toBe("6");
+        expect(onUpdateExtractPriority).not.toHaveBeenCalled();
+        expect(dial?.classList.contains("tick-up")).toBe(true);
+
+        act(() => {
+            dial?.dispatchEvent(new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }));
+        });
+        expect(value?.textContent).toBe("7");
+        expect(onUpdateExtractPriority).not.toHaveBeenCalled();
+
+        act(() => {
+            jest.advanceTimersByTime(280);
+        });
+        expect(onUpdateExtractPriority).toHaveBeenCalledTimes(1);
+        expect(onUpdateExtractPriority).toHaveBeenLastCalledWith(7);
+
+        act(() => {
+            const pointerDown = new MouseEvent("pointerdown", {
+                clientY: 100,
+                bubbles: true,
+                cancelable: true,
+            });
+            Object.defineProperty(pointerDown, "pointerId", { value: 1 });
+            dial?.dispatchEvent(pointerDown);
+
+            const pointerMove = new MouseEvent("pointermove", {
+                clientY: 130,
+                bubbles: true,
+                cancelable: true,
+            });
+            Object.defineProperty(pointerMove, "pointerId", { value: 1 });
+            dial?.dispatchEvent(pointerMove);
+        });
+
+        expect(value?.textContent).toBe("5");
+        expect(onUpdateExtractPriority).toHaveBeenCalledTimes(1);
+        expect(dial?.classList.contains("tick-down")).toBe(true);
+
+        act(() => {
+            const pointerUp = new MouseEvent("pointerup", {
+                clientY: 130,
+                bubbles: true,
+                cancelable: true,
+            });
+            Object.defineProperty(pointerUp, "pointerId", { value: 1 });
+            dial?.dispatchEvent(pointerUp);
+        });
+        expect(onUpdateExtractPriority).toHaveBeenCalledTimes(2);
+        expect(onUpdateExtractPriority).toHaveBeenLastCalledWith(5);
+
+        act(() => {
+            jest.advanceTimersByTime(100);
+        });
+
+        expect(dial?.classList.contains("tick-down")).toBe(false);
+    } finally {
+        addEventListenerSpy.mockRestore();
+        act(() => root.unmount());
+        container.remove();
+        jest.useRealTimers();
+    }
+});
+
 test("extract memo pill keeps preview and textarea layers while editing", () => {
     jest.useFakeTimers();
     const container = document.createElement("div");
@@ -615,7 +722,9 @@ test("extract memo pill keeps preview and textarea layers while editing", () => 
 
         Object.defineProperty(memoPill, "offsetWidth", { configurable: true, value: 180 });
         Object.defineProperty(memoPill, "offsetHeight", { configurable: true, value: 70 });
-        Object.defineProperty(textarea, "scrollHeight", { configurable: true, value: 88 });
+        if (textarea) {
+            Object.defineProperty(textarea, "scrollHeight", { configurable: true, value: 88 });
+        }
 
         act(() => {
             memoPill?.click();
@@ -3246,6 +3355,39 @@ test("extract memo keeps internal text containers square in every corner mode", 
     expect(css).toMatch(
         /\.input-container,\s*\.text-preview,\s*\.corner-pill-wrapper\s+textarea\s*\{[^}]*background-clip:\s*padding-box/s,
     );
+});
+
+test("extract memo uses a top control row with full-width text", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+
+    const wrapperRule = css.match(/\.corner-pill-wrapper\s*\{[^}]*\}/s)?.[0] ?? "";
+    const iconRule = css.match(/\.pill-icon\s*\{[^}]*\}/s)?.[0] ?? "";
+    const inputRule = css.match(/\.input-container\s*\{[^}]*\}/s)?.[0] ?? "";
+    const importanceRule = css.match(/\.importance-widget\s*\{[^}]*\}/s)?.[0] ?? "";
+
+    expect(wrapperRule).toContain("padding: 36px 14px 12px 14px");
+    expect(wrapperRule).not.toContain("display: flex");
+    expect(iconRule).toContain("position: absolute");
+    expect(iconRule).toContain("top: 10px");
+    expect(iconRule).toContain("left: 14px");
+    expect(inputRule).toContain("width: 100%");
+    expect(inputRule).not.toContain("flex: 1");
+    expect(importanceRule).toContain("top: 6px");
+    expect(importanceRule).toContain("right: 8px");
+    expect(importanceRule).not.toContain("bottom:");
+});
+
+test("extract memo sits 15px from bottom and 10px from right", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+    const wrapperRule = css.match(/\.corner-pill-wrapper\s*\{[^}]*\}/s)?.[0] ?? "";
+    const mobileRule =
+        css.match(/@media \(max-width: 640px\)\s*\{[\s\S]*?\.corner-pill-wrapper\s*\{[^}]*\}/s)?.[0] ??
+        "";
+
+    expect(wrapperRule).toContain("right: 10px");
+    expect(wrapperRule).toContain("bottom: 15px");
+    expect(mobileRule).toContain("right: 10px");
+    expect(mobileRule).toContain("bottom: 15px");
 });
 
 test("extract memo active state does not add expanded background shadow", () => {

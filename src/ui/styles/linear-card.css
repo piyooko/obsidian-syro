@@ -2529,17 +2529,14 @@ body.syro-mobile-review-square-corners
     );
 
     position: absolute;
-    right: 40px;
-    bottom: 40px;
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
+    right: 10px;
+    bottom: 15px;
     background: rgba(30, 30, 30, 0.5);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--sr-extract-memo-border-dim);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    padding: 12px 16px;
+    padding: 36px 14px 12px 14px;
     border-radius: 20px;
     cursor: text;
     width: var(--sr-extract-memo-width, 180px);
@@ -2574,15 +2571,16 @@ body.syro-mobile-review-square-corners
 }
 
 .pill-icon {
+    position: absolute;
+    top: 10px;
+    left: 14px;
     color: var(--sr-extract-memo-text-muted);
-    margin-top: 1px;
     transition: color 0.4s;
-    flex-shrink: 0;
 }
 
 .pill-icon svg {
-    width: 16px;
-    height: 16px;
+    width: 15px;
+    height: 15px;
 }
 
 .corner-pill-wrapper.is-active .pill-icon {
@@ -2591,8 +2589,7 @@ body.syro-mobile-review-square-corners
 
 .input-container {
     position: relative;
-    flex: 1;
-    min-width: 0;
+    width: 100%;
 }
 
 .input-container,
@@ -2681,21 +2678,91 @@ body.syro-mobile-review-square-corners
 }
 
 .corner-pill-wrapper textarea::-webkit-scrollbar {
-    width: 4px;
-    background: transparent;
+    width: 4px !important;
+    background: transparent !important;
+}
+
+.corner-pill-wrapper textarea::-webkit-scrollbar-track {
+    background: transparent !important;
+    border: none !important;
 }
 
 .corner-pill-wrapper textarea::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.15) !important;
+    border-radius: 4px !important;
 }
 
 .corner-pill-wrapper textarea::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.35) !important;
 }
 
 .corner-pill-wrapper textarea::-webkit-scrollbar-corner {
+    background: transparent !important;
+}
+
+.importance-widget {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-family: "JetBrains Mono", Consolas, Monaco, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--sr-extract-memo-text-muted);
+    padding: 4px 6px;
+    border-radius: 4px;
     background: transparent;
+    cursor: ns-resize;
+    user-select: none;
+    touch-action: none;
+    opacity: 0.6;
+    transition:
+        opacity 0.2s ease,
+        color 0.2s ease,
+        background 0.2s ease;
+}
+
+.corner-pill-wrapper:hover .importance-widget,
+.corner-pill-wrapper.is-active .importance-widget {
+    opacity: 1;
+}
+
+.importance-widget:hover {
+    color: #aaaaaa;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.scroll-hint-icon {
+    width: 10px;
+    height: 10px;
+    opacity: 0;
+    transform: translateX(4px);
+    transition:
+        opacity 0.2s ease,
+        transform 0.2s ease;
+}
+
+.importance-widget:hover .scroll-hint-icon {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.importance-widget.tick-up {
+    color: var(--sr-extract-memo-text-bright);
+    transform: translateY(-2px);
+    transition:
+        transform 0.05s ease-out,
+        color 0s;
+}
+
+.importance-widget.tick-down {
+    color: var(--sr-extract-memo-text-bright);
+    transform: translateY(2px);
+    transition:
+        transform 0.05s ease-out,
+        color 0s;
 }
 
 body.syro-desktop-review-square-corners
@@ -2709,7 +2776,7 @@ body.syro-mobile-review-square-corners
     box-shadow:
         0 6px 12px rgba(0, 0, 0, 0.3),
         0 1px 2px rgba(0, 0, 0, 0.2);
-    padding: 10px 14px;
+    padding: 36px 14px 12px 14px;
 }
 
 body.syro-desktop-review-square-corners
@@ -2753,8 +2820,8 @@ body.syro-mobile-review-square-corners
 
 @media (max-width: 640px) {
     .corner-pill-wrapper {
-        right: 16px;
-        bottom: 16px;
+        right: 10px;
+        bottom: 15px;
         width: min(var(--sr-extract-memo-width, 180px), calc(100% - 32px));
     }
 

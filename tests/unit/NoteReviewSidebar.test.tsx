@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { NoteReviewSidebar } from "src/ui/components/NoteReviewSidebar";
 import type { NoteReviewItem, NoteReviewSidebarState } from "src/ui/types/noteReview";
 import type { SidebarProgressIndicatorMode, SidebarProgressRingDirection } from "src/settings";
+import type { ReviewCommitLog } from "src/dataStore/reviewCommitStore";
+import { MarkdownRenderer } from "obsidian";
 
 jest.mock("obsidian");
 
@@ -82,12 +84,18 @@ function renderSidebar(
         timelineHeight?: number;
         filterBarHeight?: number;
         onTimelineToggle?: jest.Mock;
+        onPriorityChange?: jest.Mock;
         activeFilePath?: string;
         autoRevealTargetPath?: string;
         autoRevealRequestKey?: number;
         selectedItem?: NoteReviewItem | null;
         onNoteClick?: jest.Mock;
         onNoteSelect?: jest.Mock;
+        commitLogs?: ReviewCommitLog[];
+        onCommitContextMenu?: jest.Mock;
+        onCommitSelect?: jest.Mock;
+        onEditCommit?: jest.Mock;
+        editingId?: string | null;
     } = {},
 ) {
     const container = document.createElement("div");
@@ -151,8 +159,14 @@ function renderSidebar(
                 isTimelineOpen: options.isTimelineOpen,
                 timelineHeight: options.timelineHeight,
                 onTimelineToggle: options.onTimelineToggle,
+                onPriorityChange: options.onPriorityChange,
                 selectedItem: options.selectedItem,
                 onNoteSelect: options.onNoteSelect,
+                commitLogs: options.commitLogs,
+                onCommitContextMenu: options.onCommitContextMenu,
+                onCommitSelect: options.onCommitSelect,
+                onEditCommit: options.onEditCommit,
+                editingId: options.editingId,
             }),
         );
     });
@@ -755,6 +769,333 @@ describe("NoteReviewSidebar", () => {
 
             expect(onNoteSelect).toHaveBeenCalledTimes(1);
             expect(onNoteClick).toHaveBeenCalledTimes(1);
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("renders extract timeline entries as quote and memo blocks", () => {
+        const item = createItem();
+        const view = renderSidebar([item], {
+            selectedItem: item,
+            isTimelineOpen: true,
+            commitLogs: [
+                {
+                    id: "extract:ir_1",
+                    message: "memo body",
+                    timestamp: 1,
+                    entryType: "extract",
+                    extract: {
+                        originUuid: "ir_1",
+                        quoteText: "### **quoted** source",
+                        memoText: "memo `body`",
+                        sourcePath: item.path,
+                        sourceAnchor: { start: 0, end: 12, ordinal: 0 },
+                        sourceMode: "manual-ir",
+                        extractCreatedAt: 1,
+                    },
+                },
+            ],
+        });
+
+        try {
+            const quote = view.container.querySelector(".sr-quote-block");
+            const memo = view.container.querySelector(".sr-memo-text");
+            const entry = view.container.querySelector(".sr-timeline-entry");
+
+            expect(quote?.textContent).toBe("\\### **quoted** source");
+            expect(memo?.textContent).toBe("memo `body`");
+            expect(MarkdownRenderer.render).toHaveBeenCalledWith(
+                expect.anything(),
+                "\\### **quoted** source",
+                quote,
+                "",
+                expect.anything(),
+            );
+            expect(MarkdownRenderer.render).toHaveBeenCalledWith(
+                expect.anything(),
+                "memo `body`",
+                memo,
+                "",
+                expect.anything(),
+            );
+            expect(memo?.getAttribute("title")).toBeNull();
+            expect(entry?.classList.contains("is-extract")).toBe(true);
+            expect(quote?.classList.contains("sr-timeline-extract-part")).toBe(true);
+            expect(memo?.classList.contains("sr-timeline-extract-part")).toBe(true);
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("shows extract quote tooltips above the quote after a two second hover", () => {
+        jest.useFakeTimers();
+        const item = createItem();
+        const view = renderSidebar([item], {
+            selectedItem: item,
+            isTimelineOpen: true,
+            commitLogs: [
+                {
+                    id: "extract:ir_1",
+                    message: "memo body",
+                    timestamp: 1,
+                    entryType: "extract",
+                    extract: {
+                        originUuid: "ir_1",
+                        quoteText: "quoted source",
+                        memoText: "memo body",
+                        memoEditedAt: Date.now() - 60 * 1000,
+                        sourcePath: item.path,
+                        sourceAnchor: { start: 0, end: 12, ordinal: 0 },
+                        sourceMode: "manual-ir",
+                        extractCreatedAt: 1,
+                    },
+                },
+            ],
+        });
+
+        try {
+            const quote = view.container.querySelector(".sr-quote-block") as HTMLElement | null;
+            expect(quote).not.toBeNull();
+            Object.defineProperty(quote, "offsetWidth", { configurable: true, value: 160 });
+            Object.defineProperty(quote, "offsetHeight", { configurable: true, value: 34 });
+            quote!.getBoundingClientRect = () =>
+                ({
+                    left: 40,
+                    right: 200,
+                    top: 120,
+                    bottom: 154,
+                    width: 160,
+                    height: 34,
+                    x: 40,
+                    y: 120,
+                    toJSON: () => ({}),
+                }) as DOMRect;
+
+            act(() => {
+                quote?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+            });
+            expect(document.body.querySelector(".sr-extract-quote-tooltip")).toBeNull();
+
+            act(() => {
+                jest.advanceTimersByTime(1999);
+            });
+            expect(document.body.querySelector(".sr-extract-quote-tooltip")).toBeNull();
+
+            act(() => {
+                jest.advanceTimersByTime(1);
+            });
+
+            const tooltip = document.body.querySelector(
+                ".sr-extract-quote-tooltip",
+            ) as HTMLElement | null;
+            expect(tooltip?.textContent).toBe("quoted source");
+            expect(tooltip?.classList.contains("is-above")).toBe(true);
+        } finally {
+            view.cleanup();
+            document.body.querySelector(".sr-extract-quote-tooltip")?.remove();
+            jest.useRealTimers();
+        }
+    });
+
+    it("passes extract ids through timeline context menu and click handlers", () => {
+        const item = createItem();
+        const onCommitContextMenu = jest.fn();
+        const onCommitSelect = jest.fn();
+        const extractLog: ReviewCommitLog = {
+            id: "extract-preview:ir_1",
+            message: "",
+            timestamp: 1,
+            entryType: "extract",
+            isExtractPreview: true,
+            extract: {
+                originUuid: "ir_1",
+                quoteText: "quoted source",
+                memoText: "",
+                sourcePath: item.path,
+                sourceAnchor: { start: 0, end: 12, ordinal: 0 },
+                sourceMode: "manual-ir",
+                extractCreatedAt: 1,
+            },
+        };
+        const view = renderSidebar([item], {
+            selectedItem: item,
+            isTimelineOpen: true,
+            commitLogs: [extractLog],
+            onCommitContextMenu,
+            onCommitSelect,
+        });
+
+        try {
+            const entry = view.container.querySelector(".sr-timeline-entry") as HTMLElement | null;
+            expect(entry).not.toBeNull();
+
+            act(() => {
+                entry?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+            expect(onCommitSelect).toHaveBeenCalledWith(expect.objectContaining({ id: extractLog.id }));
+
+            act(() => {
+                entry?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+            });
+            expect(onCommitContextMenu).toHaveBeenCalledWith(
+                expect.any(Object),
+                "extract-preview:ir_1",
+            );
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("only edits the memo field for extract timeline entries", () => {
+        const item = createItem();
+        const onEditCommit = jest.fn();
+        const view = renderSidebar([item], {
+            selectedItem: item,
+            isTimelineOpen: true,
+            editingId: "extract:ir_1",
+            onEditCommit,
+            commitLogs: [
+                {
+                    id: "extract:ir_1",
+                    message: "memo body",
+                    timestamp: 1,
+                    entryType: "extract",
+                    extract: {
+                        originUuid: "ir_1",
+                        quoteText: "quoted source",
+                        memoText: "memo body",
+                        memoEditedAt: Date.now() - 60 * 1000,
+                        sourcePath: item.path,
+                        sourceAnchor: { start: 0, end: 12, ordinal: 0 },
+                        sourceMode: "manual-ir",
+                        extractCreatedAt: 1,
+                    },
+                },
+            ],
+        });
+
+        try {
+            expect(view.container.querySelector(".sr-quote-block")?.textContent).toBe(
+                "quoted source",
+            );
+            expect(view.container.querySelector(".sr-timeline-time")?.textContent).toContain(
+                "Edited at",
+            );
+            expect(view.container.querySelector(".sr-timeline-extract-edit-quote")).toBeNull();
+            expect(view.container.querySelectorAll(".sr-timeline-extract-edit-field")).toHaveLength(
+                1,
+            );
+            expect(
+                (view.container.querySelector(
+                    ".sr-timeline-extract-edit-memo",
+                ) as HTMLTextAreaElement | null)?.value,
+            ).toBe("memo body");
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("does not save extract memo edit when focus moves into the memo textarea", () => {
+        jest.useFakeTimers();
+        const item = createItem();
+        const onEditCommit = jest.fn();
+        const view = renderSidebar([item], {
+            selectedItem: item,
+            isTimelineOpen: true,
+            editingId: "extract:ir_1",
+            onEditCommit,
+            commitLogs: [
+                {
+                    id: "extract:ir_1",
+                    message: "memo body",
+                    timestamp: 1,
+                    entryType: "extract",
+                    extract: {
+                        originUuid: "ir_1",
+                        quoteText: "quoted source",
+                        memoText: "memo body",
+                        sourcePath: item.path,
+                        sourceAnchor: { start: 0, end: 12, ordinal: 0 },
+                        sourceMode: "manual-ir",
+                        extractCreatedAt: 1,
+                    },
+                },
+            ],
+        });
+
+        try {
+            const editContainer = view.container.querySelector(
+                ".sr-timeline-extract-edit",
+            ) as HTMLElement | null;
+            const textarea = view.container.querySelector(
+                ".sr-timeline-extract-edit-memo",
+            ) as HTMLTextAreaElement | null;
+            expect(editContainer).not.toBeNull();
+            expect(textarea).not.toBeNull();
+
+            act(() => {
+                editContainer?.dispatchEvent(
+                    new FocusEvent("focusout", {
+                        bubbles: true,
+                        relatedTarget: null,
+                    }),
+                );
+                textarea?.focus();
+            });
+
+            act(() => {
+                jest.runOnlyPendingTimers();
+            });
+
+            expect(onEditCommit).not.toHaveBeenCalled();
+        } finally {
+            view.cleanup();
+            jest.useRealTimers();
+        }
+    });
+
+    it("keeps extract memo textarea clicks inside edit mode", () => {
+        const item = createItem();
+        const onCommitSelect = jest.fn();
+        const onEditCommit = jest.fn();
+        const view = renderSidebar([item], {
+            selectedItem: item,
+            isTimelineOpen: true,
+            editingId: "extract:ir_1",
+            onCommitSelect,
+            onEditCommit,
+            commitLogs: [
+                {
+                    id: "extract:ir_1",
+                    message: "memo body",
+                    timestamp: 1,
+                    entryType: "extract",
+                    extract: {
+                        originUuid: "ir_1",
+                        quoteText: "quoted source",
+                        memoText: "memo body",
+                        sourcePath: item.path,
+                        sourceAnchor: { start: 0, end: 12, ordinal: 0 },
+                        sourceMode: "manual-ir",
+                        extractCreatedAt: 1,
+                    },
+                },
+            ],
+        });
+
+        try {
+            const textarea = view.container.querySelector(
+                ".sr-timeline-extract-edit-memo",
+            ) as HTMLTextAreaElement | null;
+            expect(textarea).not.toBeNull();
+
+            act(() => {
+                textarea?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            });
+
+            expect(onCommitSelect).not.toHaveBeenCalled();
+            expect(onEditCommit).not.toHaveBeenCalled();
         } finally {
             view.cleanup();
         }

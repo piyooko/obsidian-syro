@@ -48,6 +48,17 @@ const TIMELINE_TOUCH_BLOCK_COOLDOWN_MS = 120;
 const MOBILE_DRAWER_HOST_CLASS = "sr-note-sidebar--mobile-drawer-host";
 const MOBILE_DRAWER_SHELL_CLASS = "sr-note-sidebar--mobile-drawer-shell";
 const TIMELINE_RESIZE_BODY_CLASS = "sr-timeline-resize-active";
+const EXTRACT_QUOTE_TOOLTIP_DELAY_MS = 2000;
+const EXTRACT_QUOTE_TOOLTIP_ARROW_SIZE = 8;
+const EXTRACT_QUOTE_TOOLTIP_ARROW_PADDING = 12;
+
+function normalizePriority(value: number, fallback: number): number {
+    if (!Number.isFinite(value)) {
+        return fallback;
+    }
+
+    return Math.max(1, Math.min(10, Math.round(value)));
+}
 
 type DocumentWithViewTransition = Document & {
     startViewTransition?: (callback: () => void) => void;
@@ -808,6 +819,7 @@ interface TimelinePaneProps {
     logs: ReviewCommitLog[];
     onCommit: (message: string) => void;
     onCommitContextMenu?: (e: React.MouseEvent, commitId: string) => void;
+    onTimelineContextMenu?: (e: React.MouseEvent) => void;
     editingId?: string | null;
     onEditCommit?: (commitId: string, payload: ReviewCommitEditPayload) => void;
     onStartEdit?: (commitId: string) => void;
@@ -942,6 +954,232 @@ const TimelineRenderedMessage: React.FC<{
     );
 };
 
+interface ExtractQuoteTooltipPosition {
+    top: number;
+    left: number;
+    maxWidth: number;
+    arrowLeft: number;
+    placement: "above" | "below";
+}
+
+const ExtractQuoteTooltip: React.FC<{
+    anchorEl: HTMLElement | null;
+    text: string;
+    visible: boolean;
+}> = ({ anchorEl, text, visible }) => {
+    const tooltipRef = useRef<HTMLDivElement>(null);
+    const [position, setPosition] = useState<ExtractQuoteTooltipPosition | null>(null);
+
+    const updatePosition = useCallback(() => {
+        if (!anchorEl || !tooltipRef.current) {
+            return;
+        }
+
+        const rect = anchorEl.getBoundingClientRect();
+        const tooltipEl = tooltipRef.current;
+        const viewportPadding = 12;
+        const gap = 10;
+        const maxWidth = Math.max(240, Math.min(520, window.innerWidth - viewportPadding * 2));
+        const tooltipHeight = tooltipEl.offsetHeight;
+        const tooltipWidth = Math.min(tooltipEl.offsetWidth || maxWidth, maxWidth);
+        const anchorCenterX = rect.left + rect.width / 2;
+        const left = Math.min(
+            Math.max(anchorCenterX - tooltipWidth / 2, viewportPadding),
+            window.innerWidth - viewportPadding - tooltipWidth,
+        );
+        const minArrowLeft = EXTRACT_QUOTE_TOOLTIP_ARROW_PADDING;
+        const maxArrowLeft = Math.max(
+            minArrowLeft,
+            tooltipWidth - EXTRACT_QUOTE_TOOLTIP_ARROW_PADDING - EXTRACT_QUOTE_TOOLTIP_ARROW_SIZE,
+        );
+        const arrowLeft = Math.min(
+            Math.max(
+                anchorCenterX - left - EXTRACT_QUOTE_TOOLTIP_ARROW_SIZE / 2,
+                minArrowLeft,
+            ),
+            maxArrowLeft,
+        );
+        const aboveTop = rect.top - tooltipHeight - gap;
+        const belowTop = rect.bottom + gap;
+        const placeAbove =
+            aboveTop >= viewportPadding ||
+            belowTop + tooltipHeight > window.innerHeight - viewportPadding;
+        const top = placeAbove
+            ? Math.max(viewportPadding, aboveTop)
+            : Math.min(window.innerHeight - viewportPadding - tooltipHeight, belowTop);
+
+        setPosition({
+            top,
+            left,
+            maxWidth,
+            arrowLeft,
+            placement: placeAbove ? "above" : "below",
+        });
+    }, [anchorEl]);
+
+    useLayoutEffect(() => {
+        if (!visible || !anchorEl) {
+            setPosition(null);
+            return;
+        }
+
+        const syncPosition = () => {
+            window.requestAnimationFrame(updatePosition);
+        };
+
+        syncPosition();
+        window.addEventListener("resize", syncPosition);
+        window.addEventListener("scroll", syncPosition, true);
+
+        return () => {
+            window.removeEventListener("resize", syncPosition);
+            window.removeEventListener("scroll", syncPosition, true);
+        };
+    }, [anchorEl, updatePosition, visible]);
+
+    if (!visible || !anchorEl || !text) {
+        return null;
+    }
+
+    return createPortal(
+        <div
+            ref={tooltipRef}
+            className={`sr-extract-quote-tooltip ${position?.placement === "below" ? "is-below" : "is-above"}`}
+            role="tooltip"
+            style={{
+                top: position ? `${position.top}px` : "0px",
+                left: position ? `${position.left}px` : "0px",
+                maxWidth: position ? `${position.maxWidth}px` : undefined,
+                opacity: position ? 1 : 0,
+                ["--sr-extract-quote-tooltip-arrow-left" as string]: position
+                    ? `${position.arrowLeft}px`
+                    : undefined,
+            }}
+        >
+            {text}
+        </div>,
+        document.body,
+    );
+};
+
+const TimelineMarkdownBlock: React.FC<{
+    app: App;
+    text: string;
+    className: string;
+    onMouseEnter?: (event: React.MouseEvent<HTMLDivElement>) => void;
+    onMouseLeave?: () => void;
+}> = ({ app, text, className, onMouseEnter, onMouseLeave }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container || !text) return;
+
+        container.replaceChildren();
+        const renderComponent = new Component();
+        renderComponent.load();
+        let cancelled = false;
+
+        const render = async () => {
+            await MarkdownRenderer.render(
+                app,
+                sanitizeTimelineInlineMarkdown(text),
+                container,
+                "",
+                renderComponent,
+            );
+            if (cancelled) {
+                container.replaceChildren();
+            }
+        };
+
+        void render();
+
+        return () => {
+            cancelled = true;
+            renderComponent.unload();
+        };
+    }, [app, text]);
+
+    return (
+        <div
+            ref={containerRef}
+            className={className}
+            onMouseEnter={onMouseEnter}
+            onMouseLeave={onMouseLeave}
+        />
+    );
+};
+
+const TimelineExtractMessage: React.FC<{
+    app: App;
+    log: ReviewCommitLog;
+    isEditing?: boolean;
+}> = ({ app, log, isEditing = false }) => {
+    const quoteText = log.extract?.quoteText ?? "";
+    const memoText = log.extract?.memoText ?? log.message ?? "";
+    const [tooltipAnchor, setTooltipAnchor] = useState<HTMLElement | null>(null);
+    const [isTooltipVisible, setIsTooltipVisible] = useState(false);
+    const tooltipTimerRef = useRef<number | null>(null);
+
+    const clearTooltipTimer = useCallback(() => {
+        if (tooltipTimerRef.current !== null) {
+            window.clearTimeout(tooltipTimerRef.current);
+            tooltipTimerRef.current = null;
+        }
+    }, []);
+
+    const hideTooltip = useCallback(() => {
+        clearTooltipTimer();
+        setIsTooltipVisible(false);
+        setTooltipAnchor(null);
+    }, [clearTooltipTimer]);
+
+    const showTooltipLater = useCallback(
+        (event: React.MouseEvent<HTMLDivElement>) => {
+            clearTooltipTimer();
+            const anchor = event.currentTarget;
+            tooltipTimerRef.current = window.setTimeout(() => {
+                setTooltipAnchor(anchor);
+                setIsTooltipVisible(true);
+                tooltipTimerRef.current = null;
+            }, EXTRACT_QUOTE_TOOLTIP_DELAY_MS);
+        },
+        [clearTooltipTimer],
+    );
+
+    useEffect(() => hideTooltip, [hideTooltip]);
+
+    return (
+        <div className="sr-timeline-extract">
+            {quoteText && (
+                <TimelineMarkdownBlock
+                    app={app}
+                    text={quoteText}
+                    className="sr-quote-block sr-timeline-extract-part"
+                    onMouseEnter={showTooltipLater}
+                    onMouseLeave={hideTooltip}
+                />
+            )}
+            {memoText &&
+                (isEditing ? null : (
+                    <TimelineMarkdownBlock
+                        app={app}
+                        text={memoText}
+                        className="sr-memo-text sr-timeline-extract-part"
+                    />
+                ))}
+            {quoteText && (
+                <ExtractQuoteTooltip
+                    anchorEl={tooltipAnchor}
+                    text={quoteText}
+                    visible={isTooltipVisible}
+                />
+            )}
+        </div>
+    );
+};
+
 /**
  * 格式化时间戳为可读的相对时间或日期字符串
  */
@@ -977,6 +1215,7 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
     logs,
     onCommit,
     onCommitContextMenu,
+    onTimelineContextMenu,
     editingId,
     onEditCommit,
     onStartEdit: _onStartEdit,
@@ -986,6 +1225,8 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
 }) => {
     const [message, setMessage] = useState("");
     const [editText, setEditText] = useState("");
+    const [editMemoText, setEditMemoText] = useState("");
+    const extractEditRef = useRef<HTMLDivElement>(null);
     const editingLog = useMemo(
         () => logs.find((log) => log.id === editingId) ?? null,
         [editingId, logs],
@@ -1009,9 +1250,16 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
     // 进入编辑模式时初始化文本并聚焦
     useEffect(() => {
         if (editingLog) {
-            setEditText(materializeTimelineReviewResponseEditMessage(editingLog));
+            if (editingLog.entryType === "extract") {
+                setEditMemoText(editingLog.extract?.memoText ?? editingLog.message ?? "");
+                setEditText("");
+            } else {
+                setEditText(materializeTimelineReviewResponseEditMessage(editingLog));
+                setEditMemoText("");
+            }
         } else {
             setEditText("");
+            setEditMemoText("");
         }
     }, [editingLog]);
 
@@ -1023,14 +1271,42 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
 
     const submitEdit = useCallback(() => {
         if (editingId && onEditCommit && editingLog) {
+            if (editingLog.entryType === "extract") {
+                onEditCommit(editingId, {
+                    message: editMemoText,
+                    entryType: "extract",
+                    extract: editingLog.extract
+                        ? {
+                              ...editingLog.extract,
+                              memoText: editMemoText,
+                          }
+                        : undefined,
+                });
+                return;
+            }
             onEditCommit(editingId, buildTimelineCommitEditPayload(editingLog, editText));
         }
-    }, [editText, editingId, editingLog, onEditCommit]);
+    }, [editMemoText, editText, editingId, editingLog, onEditCommit]);
 
     const handleEditBlur = useCallback(() => {
         submitEdit();
         if (onCancelEdit) onCancelEdit();
     }, [onCancelEdit, submitEdit]);
+
+    const handleExtractEditBlur = useCallback(() => {
+        window.setTimeout(() => {
+            const editContainer = extractEditRef.current;
+            const activeElement = document.activeElement;
+            if (
+                editContainer &&
+                activeElement instanceof Node &&
+                editContainer.contains(activeElement)
+            ) {
+                return;
+            }
+            handleEditBlur();
+        }, 0);
+    }, [handleEditBlur]);
 
     return (
         <div style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%" }}>
@@ -1110,10 +1386,24 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
                             </div>
 
                             {/* Timeline List */}
-                            <div className="sr-timeline-list-scroll">
+                            <div
+                                className="sr-timeline-list-scroll"
+                                onContextMenu={(event) => {
+                                    if (!onTimelineContextMenu) {
+                                        return;
+                                    }
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    onTimelineContextMenu(event);
+                                }}
+                            >
                                 <div className="sr-timeline-track">
                                     {logs.map((log) => {
                                         const isEditing = editingId === log.id;
+                                        const editedAt =
+                                            log.entryType === "extract"
+                                                ? log.extract?.memoEditedAt
+                                                : log.lastEdited;
                                         return (
                                             <div
                                                 key={log.id}
@@ -1121,6 +1411,8 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
                                                     log.entryType === "review-response"
                                                         ? "is-review-response"
                                                         : ""
+                                                } ${
+                                                    log.entryType === "extract" ? "is-extract" : ""
                                                 }`}
                                                 onClick={() =>
                                                     onCommitSelect && onCommitSelect(log)
@@ -1143,42 +1435,90 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
                                                     }}
                                                 >
                                                     {isEditing ? (
-                                                        <TimelineCodeMirror
-                                                            app={app}
-                                                            value={editText}
-                                                            onChange={setEditText}
-                                                            enableDurationPrefixSyntax={
-                                                                enableDurationPrefixSyntax
-                                                            }
-                                                            reviewResponsePrefixText={
-                                                                reviewResponsePrefixText
-                                                            }
-                                                            className="sr-timeline-edit-textarea"
-                                                            maxHeight={150}
-                                                            minHeight={32}
-                                                            autoFocus={true}
-                                                            onSubmit={submitEdit}
-                                                            onCancel={onCancelEdit}
-                                                            onBlur={handleEditBlur}
-                                                        />
-                                                    ) : (
-                                                        <div className="sr-timeline-message">
-                                                            <TimelineRenderedMessage
+                                                        log.entryType === "extract" ? (
+                                                            <div
+                                                                ref={extractEditRef}
+                                                                className="sr-timeline-extract-edit"
+                                                                onClick={(event) => {
+                                                                    event.stopPropagation();
+                                                                }}
+                                                                onMouseDown={(event) => {
+                                                                    event.stopPropagation();
+                                                                }}
+                                                                onBlur={(event) => {
+                                                                    if (
+                                                                        event.currentTarget.contains(
+                                                                            event.relatedTarget,
+                                                                        )
+                                                                    ) {
+                                                                        return;
+                                                                    }
+                                                                    handleExtractEditBlur();
+                                                                }}
+                                                            >
+                                                                <TimelineExtractMessage
+                                                                    app={app}
+                                                                    log={log}
+                                                                    isEditing={true}
+                                                                />
+                                                                <textarea
+                                                                    className="sr-timeline-extract-edit-field sr-timeline-extract-edit-memo"
+                                                                    value={editMemoText}
+                                                                    onChange={(event) =>
+                                                                        setEditMemoText(
+                                                                            event.currentTarget
+                                                                                .value,
+                                                                        )
+                                                                    }
+                                                                />
+                                                            </div>
+                                                        ) : (
+                                                            <TimelineCodeMirror
                                                                 app={app}
-                                                                message={log.message}
+                                                                value={editText}
+                                                                onChange={setEditText}
                                                                 enableDurationPrefixSyntax={
                                                                     enableDurationPrefixSyntax
                                                                 }
-                                                                displayDuration={
-                                                                    log.displayDuration
+                                                                reviewResponsePrefixText={
+                                                                    reviewResponsePrefixText
                                                                 }
-                                                                reviewResponse={log.reviewResponse}
-                                                                durationPlacement={
-                                                                    log.displayDuration
-                                                                        ? "inline-after-label"
-                                                                        : "top"
-                                                                }
+                                                                className="sr-timeline-edit-textarea"
+                                                                maxHeight={150}
+                                                                minHeight={32}
+                                                                autoFocus={true}
+                                                                onSubmit={submitEdit}
+                                                                onCancel={onCancelEdit}
+                                                                onBlur={handleEditBlur}
                                                             />
+                                                        )
+                                                    ) : (
+                                                        <div className="sr-timeline-message">
+                                                            {log.entryType === "extract" ? (
+                                                                <TimelineExtractMessage
+                                                                    app={app}
+                                                                    log={log}
+                                                                />
+                                                            ) : (
+                                                                <TimelineRenderedMessage
+                                                                    app={app}
+                                                                    message={log.message}
+                                                                    enableDurationPrefixSyntax={
+                                                                        enableDurationPrefixSyntax
+                                                                    }
+                                                                    displayDuration={
+                                                                        log.displayDuration
+                                                                    }
+                                                                    reviewResponse={
+                                                                        log.reviewResponse
+                                                                    }
+                                                                    durationPlacement={
+                                                                        log.displayDuration
+                                                                            ? "inline-after-label"
+                                                                            : "top"
+                                                                    }
+                                                                />
+                                                            )}
                                                         </div>
                                                     )}
                                                     <span className="sr-timeline-time">
@@ -1192,8 +1532,10 @@ const TimelinePane: React.FC<TimelinePaneProps> = ({
                                                                 </>
                                                             )}
                                                         {formatTimestamp(log.timestamp)}
-                                                        {log.lastEdited &&
-                                                            ` (${t("TIMELINE_EDITED_AT")} ${formatTimestamp(log.lastEdited)})`}
+                                                        {editedAt &&
+                                                            ` (${t("TIMELINE_EDITED_AT")} ${formatTimestamp(
+                                                                editedAt,
+                                                            )})`}
                                                     </span>
                                                 </div>
                                             </div>
@@ -1637,7 +1979,8 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
     }, [isEditingPriority]);
 
     const savePriority = useCallback(() => {
-        const newPriority = parseInt(editValue) || item.priority;
+        const parsedPriority = Number.parseInt(editValue, 10);
+        const newPriority = normalizePriority(parsedPriority, item.priority);
         setIsEditingPriority(false);
         if (newPriority !== item.priority && onPriorityChange) {
             onPriorityChange(item, newPriority);
@@ -1730,6 +2073,9 @@ const NoteItemModern: React.FC<NoteItemModernProps> = ({
                         <input
                             ref={inputRef}
                             type="number"
+                            min={1}
+                            max={10}
+                            step={1}
                             className="sr-priority-input"
                             value={editValue}
                             onChange={(e) => setEditValue(e.target.value)}
@@ -1807,6 +2153,7 @@ interface NoteReviewSidebarProps {
     onNoteSelect?: (item: NoteReviewItem) => void;
     onNoteDoubleClick?: (item: NoteReviewItem) => void;
     onCommitContextMenu?: (e: React.MouseEvent, commitId: string) => void;
+    onTimelineContextMenu?: (e: React.MouseEvent) => void;
     editingId?: string | null;
     onEditCommit?: (commitId: string, payload: ReviewCommitEditPayload) => void;
     onStartEdit?: (commitId: string) => void;
@@ -1857,6 +2204,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
     onNoteSelect,
     onNoteDoubleClick: _onNoteDoubleClick,
     onCommitContextMenu,
+    onTimelineContextMenu,
     editingId = null,
     onEditCommit,
     onStartEdit: _onStartEdit,
@@ -2753,6 +3101,7 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                     logs={commitLogs}
                     onCommit={handleCommitMessage}
                     onCommitContextMenu={onCommitContextMenu}
+                    onTimelineContextMenu={onTimelineContextMenu}
                     editingId={editingId}
                     onEditCommit={onEditCommit}
                     onStartEdit={_onStartEdit}

@@ -37,6 +37,7 @@ export type ExtractSliceRule = "manual-ir" | "heading" | "blank-block";
 
 export interface ExtractSourceAnchor extends IrExtractAnchor {
     ordinal: number;
+    sourceLength?: number;
 }
 
 export interface ExtractItem {
@@ -47,6 +48,7 @@ export interface ExtractItem {
     sourceAnchor: ExtractSourceAnchor;
     rawMarkdown: string;
     memo: string;
+    memoEditedAt?: number;
     deckName: string;
     sourceMode: ExtractSourceMode;
     sliceRule: ExtractSliceRule;
@@ -59,6 +61,7 @@ export interface ExtractItem {
     stage: ExtractStage;
     parentUuid?: string;
     createdAt: number;
+    timelineCreatedAt?: number;
     updatedAt: number;
     graduatedAt?: number;
     data: {
@@ -192,9 +195,14 @@ function normalizeExtractItem(value: unknown): ExtractItem | null {
         sourceAnchor: {
             ...rawSourceAnchor,
             ordinal: typeof rawSourceAnchor.ordinal === "number" ? rawSourceAnchor.ordinal : 0,
+            sourceLength:
+                typeof rawSourceAnchor.sourceLength === "number"
+                    ? rawSourceAnchor.sourceLength
+                    : undefined,
         },
         rawMarkdown: String(raw.rawMarkdown ?? ""),
         memo: String(raw.memo ?? ""),
+        memoEditedAt: typeof raw.memoEditedAt === "number" ? raw.memoEditedAt : undefined,
         deckName: raw.deckName || DEFAULT_DECKNAME,
         sourceMode: raw.sourceMode === "auto-slice" ? "auto-slice" : "manual-ir",
         sliceRule:
@@ -213,6 +221,8 @@ function normalizeExtractItem(value: unknown): ExtractItem | null {
         stage: raw.stage === "graduated" ? "graduated" : "active",
         parentUuid: raw.parentUuid || undefined,
         createdAt: typeof raw.createdAt === "number" ? raw.createdAt : now,
+        timelineCreatedAt:
+            typeof raw.timelineCreatedAt === "number" ? raw.timelineCreatedAt : undefined,
         updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : now,
         graduatedAt: typeof raw.graduatedAt === "number" ? raw.graduatedAt : undefined,
         data: {
@@ -577,6 +587,7 @@ export class ExtractStore {
             const sourceAnchor: ExtractSourceAnchor = {
                 ...match.anchor,
                 ordinal,
+                sourceLength: text.length,
             };
             if (existing) {
                 const nextDeckName = deckName || existing.deckName || DEFAULT_DECKNAME;
@@ -606,6 +617,7 @@ export class ExtractStore {
                 sourceAnchor,
                 rawMarkdown: match.rawMarkdown,
                 memo: "",
+                memoEditedAt: undefined,
                 deckName: deckName || DEFAULT_DECKNAME,
                 sourceMode: "manual-ir",
                 sliceRule: "manual-ir",
@@ -680,6 +692,7 @@ export class ExtractStore {
             const sourceAnchor: ExtractSourceAnchor = {
                 ...slice.sourceAnchor,
                 ordinal,
+                sourceLength: text.length,
             };
 
             if (existing) {
@@ -716,6 +729,7 @@ export class ExtractStore {
                 sourceAnchor,
                 rawMarkdown: slice.rawMarkdown,
                 memo: "",
+                memoEditedAt: undefined,
                 deckName: deckName || DEFAULT_DECKNAME,
                 sourceMode: "auto-slice",
                 sliceRule: slice.rule,
@@ -757,8 +771,19 @@ export class ExtractStore {
     setMemo(uuid: string, memo: string): ExtractItem | null {
         const item = this.get(uuid);
         if (!item) return null;
+        const previousMemo = item.memo.trim();
+        const now = Date.now();
         item.memo = memo;
-        item.updatedAt = Date.now();
+        item.memoEditedAt = now;
+        if (
+            item.sourceMode === "auto-slice" &&
+            !item.timelineCreatedAt &&
+            previousMemo.length === 0 &&
+            memo.trim().length > 0
+        ) {
+            item.timelineCreatedAt = now;
+        }
+        item.updatedAt = now;
         return cloneItem(item);
     }
 

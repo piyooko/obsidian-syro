@@ -244,6 +244,7 @@ describe("ExtractStore", () => {
     });
 
     test("stores independent extract memo while preserving default priority", () => {
+        jest.spyOn(Date, "now").mockReturnValue(12345);
         const store = createStore();
         const [created] = store.syncFileExtracts("notes/source.md", "{{ir::one}}", "deck").added;
 
@@ -251,8 +252,10 @@ describe("ExtractStore", () => {
 
         expect(created.priority).toBe(5);
         expect(updated?.memo).toBe("摘录备注");
+        expect(updated?.memoEditedAt).toBe(12345);
         expect(updated?.priority).toBe(5);
         expect(store.get(created.uuid)?.memo).toBe("摘录备注");
+        expect(store.get(created.uuid)?.memoEditedAt).toBe(12345);
     });
 
     test("stores an empty extract memo without resetting priority", () => {
@@ -266,6 +269,20 @@ describe("ExtractStore", () => {
         expect(updated?.memo).toBe("");
         expect(updated?.priority).toBe(8);
         expect(store.get(created.uuid)?.stage).toBe("active");
+    });
+
+    test("changing extract priority does not update memo edit time", () => {
+        jest.spyOn(Date, "now").mockReturnValue(12345);
+        const store = createStore();
+        const [created] = store.syncFileExtracts("notes/source.md", "{{ir::one}}", "deck").added;
+        store.setMemo(created.uuid, "摘录备注");
+
+        jest.spyOn(Date, "now").mockReturnValue(67890);
+        const updated = store.setPriority(created.uuid, 8);
+
+        expect(updated?.priority).toBe(8);
+        expect(updated?.memoEditedAt).toBe(12345);
+        expect(store.get(created.uuid)?.memoEditedAt).toBe(12345);
     });
 
     test("sets a custom next review date and counts the extract as reviewed", () => {
@@ -416,6 +433,48 @@ describe("ExtractStore", () => {
         expect(result.updated.map((item) => item.uuid)).toEqual([first.uuid]);
         expect(store.get(first.uuid)?.stage).toBe("active");
         expect(store.get(first.uuid)?.rawMarkdown).toBe("# A\nalpha edited");
+    });
+
+    test("sets auto heading timeline creation time when memo first makes it visible", () => {
+        const nowSpy = jest.spyOn(Date, "now").mockReturnValue(1000);
+        try {
+            const store = createStore();
+            const rule = {
+                sourcePath: "notes/source.md",
+                rule: "heading" as const,
+                headingLevel: 1 as const,
+                enabled: true,
+                createdAt: 1,
+                updatedAt: 1,
+            };
+            const [created] = store.syncAutoExtractsForFile(
+                "notes/source.md",
+                "# A\nalpha",
+                "deck",
+                rule,
+            ).added;
+
+            expect(store.get(created.uuid)?.createdAt).toBe(1000);
+            expect(store.get(created.uuid)?.timelineCreatedAt).toBeUndefined();
+
+            nowSpy.mockReturnValue(2000);
+            store.setMemo(created.uuid, "first memo");
+            expect(store.get(created.uuid)?.timelineCreatedAt).toBe(2000);
+
+            nowSpy.mockReturnValue(3000);
+            store.setMemo(created.uuid, "edited memo");
+            expect(store.get(created.uuid)?.timelineCreatedAt).toBe(2000);
+
+            nowSpy.mockReturnValue(4000);
+            store.setMemo(created.uuid, "");
+            expect(store.get(created.uuid)?.timelineCreatedAt).toBe(2000);
+
+            nowSpy.mockReturnValue(5000);
+            store.setMemo(created.uuid, "memo again");
+            expect(store.get(created.uuid)?.timelineCreatedAt).toBe(2000);
+        } finally {
+            nowSpy.mockRestore();
+        }
     });
 
     test("does not recreate a graduated auto slice on later sync", () => {

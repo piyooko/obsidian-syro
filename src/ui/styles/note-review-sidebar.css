@@ -655,6 +655,47 @@ body.sr-timeline-resize-active {
     transform: rotate(45deg);
 }
 
+.sr-extract-quote-tooltip {
+    position: fixed;
+    z-index: 10000;
+    pointer-events: none;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--background-primary-alt, var(--background-primary));
+    border: 1px solid var(--background-modifier-border);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    box-sizing: border-box;
+    transition: opacity 0.12s ease;
+}
+
+.sr-extract-quote-tooltip::after {
+    content: "";
+    position: absolute;
+    left: var(--sr-extract-quote-tooltip-arrow-left, 18px);
+    width: 8px;
+    height: 8px;
+    background: inherit;
+}
+
+.sr-extract-quote-tooltip.is-above::after {
+    bottom: -5px;
+    border-right: 1px solid var(--background-modifier-border);
+    border-bottom: 1px solid var(--background-modifier-border);
+    transform: rotate(45deg);
+}
+
+.sr-extract-quote-tooltip.is-below::after {
+    top: -5px;
+    border-left: 1px solid var(--background-modifier-border);
+    border-top: 1px solid var(--background-modifier-border);
+    transform: rotate(45deg);
+}
+
 /* ==========================================
    颜色变体
    ========================================== */
@@ -1255,8 +1296,18 @@ body.sr-timeline-resize-active {
     background: var(--background-modifier-hover);
 }
 
+.sr-timeline-entry.is-extract:hover {
+    background: transparent;
+}
+
 .sr-timeline-entry.is-review-response .sr-timeline-dot {
     border-color: var(--sr-timeline-accent);
+}
+
+.sr-timeline-entry.is-extract .sr-timeline-dot {
+    border-radius: 0;
+    background: var(--background-secondary);
+    box-sizing: border-box;
 }
 
 /* 时间线圆点 */
@@ -1334,9 +1385,86 @@ body.sr-timeline-resize-active {
     margin: 0;
 }
 
+.sr-timeline-extract-part p {
+    margin: 0;
+}
+
+.sr-timeline-extract-part code,
+.sr-timeline-extract-part .math {
+    font-size: 0.95em;
+}
+
 .sr-timeline-message-line .math,
 .sr-timeline-message-line code {
     font-size: 0.95em;
+}
+
+.sr-timeline-extract {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+.sr-timeline-extract-part {
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.sr-timeline-extract-part:hover {
+    background: var(--background-modifier-hover);
+}
+
+.sr-timeline-content .sr-quote-block,
+.sr-timeline-message .sr-quote-block,
+.sr-quote-block {
+    margin: 0;
+    padding-left: 6px;
+    border-left: 3px solid var(--background-modifier-border, var(--background-modifier-border-hover));
+    border-radius: 2px;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+}
+
+.sr-timeline-message .sr-memo-text,
+.sr-memo-text {
+    margin: 8px 0 0;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-normal);
+    overflow-wrap: anywhere;
+}
+
+.sr-timeline-extract-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sr-timeline-extract-edit-field {
+    width: 100%;
+    min-height: 34px;
+    resize: vertical;
+    border: 1px solid var(--sr-timeline-accent);
+    border-radius: 6px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-interface);
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 8px;
+    box-sizing: border-box;
+}
+
+.sr-timeline-extract-edit-quote {
+    color: var(--text-muted);
 }
 
 .sr-timeline-duration-pill {

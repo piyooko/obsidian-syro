@@ -20,7 +20,7 @@ type SubmenuCapableMenuItem = {
 
 function addAutoExtractMenuItem(plugin: SRPlugin, menu: Menu, fileish: TFile): void {
     menu.addItem((item) => {
-        item.setIcon("list-tree");
+        item.setIcon("library-big");
         item.setTitle(t("AUTO_EXTRACT_MENU_TITLE"));
 
         const submenu = (item as unknown as SubmenuCapableMenuItem).setSubmenu?.() ?? menu;
@@ -36,7 +36,7 @@ function addAutoExtractMenuItem(plugin: SRPlugin, menu: Menu, fileish: TFile): v
         const isAllHeadingsChecked = activeRule?.allHeadingLevels === true;
 
         submenu.addItem((submenuItem) => {
-            submenuItem.setIcon("list-tree");
+            submenuItem.setIcon("library-big");
             submenuItem.setTitle(t("AUTO_EXTRACT_ALL_HEADINGS"));
             (submenuItem as unknown as SubmenuCapableMenuItem).setChecked?.(
                 isAllHeadingsChecked,

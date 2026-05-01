@@ -67,6 +67,7 @@ export interface IrExtractDecorationOptions {
         sourceStarts: readonly number[],
     ) => Promise<IrExtractTooltipNoteState[]>;
     saveExtractTooltipNote?: (uuid: string, memo: string) => Promise<void>;
+    saveExtractTooltipNotePriority?: (uuid: string, priority: number) => Promise<void>;
     onExtractTooltipNoteSaveError?: (error: unknown) => void;
     logExtractTooltipNoteDebug?: (event: string, details?: Record<string, unknown>) => void;
     trackInitialLayout?: (view: EditorView) => boolean;
@@ -119,6 +120,7 @@ export interface IrExtractInfoTooltipHandlers {
 
 export interface IrExtractNoteTooltipOptions {
     onSubmit?: () => void;
+    onPriorityChange?: (priority: number) => void;
 }
 
 export interface IrExtractVerticalInsetBlock {
@@ -1242,6 +1244,10 @@ function resizeIrExtractTextarea(textarea: HTMLTextAreaElement): void {
     textarea.setCssProps({ "--sr-ir-note-textarea-height": `${textarea.scrollHeight}px` });
 }
 
+function clampIrExtractNotePriority(value: number): number {
+    return Math.max(1, Math.min(10, Math.round(value)));
+}
+
 function createInfoIconSvg(): SVGSVGElement {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 24 24");
@@ -1319,12 +1325,70 @@ export function createIrExtractNoteTooltipElement(
     const tooltip = document.createElement("div");
     tooltip.className = "sr-note-path-tooltip sr-ir-note-tooltip is-below";
     tooltip.setAttribute("role", "tooltip");
+    tooltip.dataset.srIrPriority = "5";
 
     const textarea = document.createElement("textarea");
     textarea.className = "sr-ir-note-tooltip-input";
     textarea.rows = 1;
     textarea.placeholder = "输入备注...";
     textarea.title = "";
+
+    const importanceWidget = document.createElement("div");
+    importanceWidget.className = "sr-ir-importance-widget";
+
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.classList.add("sr-scroll-hint-icon");
+    icon.setAttribute("viewBox", "0 0 24 24");
+    icon.setAttribute("fill", "none");
+    icon.setAttribute("stroke", "currentColor");
+    icon.setAttribute("stroke-width", "2.5");
+    icon.setAttribute("stroke-linecap", "round");
+    icon.setAttribute("stroke-linejoin", "round");
+    icon.setAttribute("aria-hidden", "true");
+    const upPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    upPath.setAttribute("d", "M8 9l4-4 4 4");
+    const downPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    downPath.setAttribute("d", "M16 15l-4 4-4-4");
+    icon.append(upPath, downPath);
+
+    const label = document.createElement("span");
+    label.textContent = "W:";
+    const value = document.createElement("span");
+    value.className = "sr-ir-importance-value";
+    value.textContent = "5";
+    importanceWidget.append(icon, label, value);
+
+    let tickTimeout: number | null = null;
+    let isDragging = false;
+    let startY = 0;
+    let startPriority = 5;
+
+    const clearTickTimeout = () => {
+        if (tickTimeout !== null) {
+            window.clearTimeout(tickTimeout);
+            tickTimeout = null;
+        }
+    };
+
+    const setPriority = (nextValue: number, direction: "up" | "down") => {
+        const current = clampIrExtractNotePriority(Number(tooltip.dataset.srIrPriority ?? 5));
+        const next = clampIrExtractNotePriority(nextValue);
+        if (next === current) {
+            return;
+        }
+        tooltip.dataset.srIrPriority = String(next);
+        value.textContent = String(next);
+        options.onPriorityChange?.(next);
+
+        clearTickTimeout();
+        importanceWidget.classList.remove("tick-up", "tick-down");
+        void importanceWidget.offsetWidth;
+        importanceWidget.classList.add(direction === "up" ? "tick-up" : "tick-down");
+        tickTimeout = window.setTimeout(() => {
+            importanceWidget.classList.remove("tick-up", "tick-down");
+            tickTimeout = null;
+        }, 100);
+    };
 
     const stopOverlayEvent = (event: Event) => {
         event.stopPropagation();
@@ -1345,7 +1409,46 @@ export function createIrExtractNoteTooltipElement(
         options.onSubmit?.();
     });
 
-    tooltip.appendChild(textarea);
+    importanceWidget.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const current = clampIrExtractNotePriority(Number(tooltip.dataset.srIrPriority ?? 5));
+        if (event.deltaY < 0) {
+            setPriority(current + 1, "up");
+        } else if (event.deltaY > 0) {
+            setPriority(current - 1, "down");
+        }
+    });
+    importanceWidget.addEventListener("pointerdown", (event) => {
+        isDragging = true;
+        startY = event.clientY;
+        startPriority = clampIrExtractNotePriority(Number(tooltip.dataset.srIrPriority ?? 5));
+        importanceWidget.classList.add("is-touch-active");
+        importanceWidget.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+        event.stopPropagation();
+    });
+    importanceWidget.addEventListener("pointermove", (event) => {
+        if (!isDragging) {
+            return;
+        }
+        const deltaY = startY - event.clientY;
+        const steps = Math.floor(deltaY / 15);
+        const next = clampIrExtractNotePriority(startPriority + steps);
+        const current = clampIrExtractNotePriority(Number(tooltip.dataset.srIrPriority ?? 5));
+        if (next !== current) {
+            setPriority(next, next > current ? "up" : "down");
+        }
+    });
+    const stopDrag = (event: PointerEvent) => {
+        isDragging = false;
+        importanceWidget.classList.remove("is-touch-active");
+        importanceWidget.releasePointerCapture?.(event.pointerId);
+    };
+    importanceWidget.addEventListener("pointerup", stopDrag);
+    importanceWidget.addEventListener("pointercancel", stopDrag);
+
+    tooltip.append(textarea, importanceWidget);
     return tooltip;
 }
 
@@ -1820,6 +1923,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             private tooltipResolvePromise: Promise<IrExtractTooltipNote | null> | null = null;
             private readonly noteDraftsByStart = new Map<number, string>();
             private readonly noteUuidsByStart = new Map<number, string>();
+            private readonly notePrioritiesByStart = new Map<number, number>();
             private hydratedNoteStartsKey = "";
             private hydrateNotesRequestId = 0;
             private headingNoteStarts: number[] = [];
@@ -1852,15 +1956,25 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     event.clientY,
                 );
 
+                const previousHoveredTooltipStart = this.hoveredTooltipStart;
                 if (
                     this.hoveredBlockStart === hoveredStart &&
-                    this.hoveredTooltipStart === hoveredTooltipStart
+                    previousHoveredTooltipStart === hoveredTooltipStart
                 ) {
                     return;
                 }
 
                 this.hoveredBlockStart = hoveredStart;
-                this.hoveredTooltipStart = hoveredTooltipStart;
+                if (previousHoveredTooltipStart !== hoveredTooltipStart) {
+                    if (hoveredTooltipStart !== null) {
+                        this.showTooltipFromIcon(hoveredTooltipStart);
+                    } else if (previousHoveredTooltipStart !== null) {
+                        this.hideTooltipFromIcon(previousHoveredTooltipStart);
+                    } else {
+                        this.updateInteractiveBlockStates();
+                    }
+                    return;
+                }
                 this.updateInteractiveBlockStates();
             };
             private readonly handleScrollMouseLeave = (): void => {
@@ -1936,6 +2050,9 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.overlay.className = "sr-ir-extract-overlay";
                 this.noteTooltip = createIrExtractNoteTooltipElement({
                     onSubmit: () => this.closePinnedTooltip(),
+                    onPriorityChange: (priority) => {
+                        void this.saveVisibleTooltipPriority(priority);
+                    },
                 });
                 document.body.appendChild(this.noteTooltip);
                 this.scrollDOM = view.scrollDOM;
@@ -2129,6 +2246,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.headingNoteStarts = [];
                 this.blockMeasurements.clear();
                 this.blockDomCache.clear();
+                this.notePrioritiesByStart.clear();
                 this.overlay.replaceChildren();
                 this.noteTooltip.classList.remove("is-visible", "is-above", "is-below");
             }
@@ -2204,6 +2322,15 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.updateInteractiveBlockStates();
             }
 
+            private updateTooltipPriority(priority: number): void {
+                const nextPriority = clampIrExtractNotePriority(priority);
+                this.noteTooltip.dataset.srIrPriority = String(nextPriority);
+                const value = this.noteTooltip.querySelector<HTMLElement>(".sr-ir-importance-value");
+                if (value) {
+                    value.textContent = String(nextPriority);
+                }
+            }
+
             private prepareTooltipNoteForStart(blockStart: number, editable: boolean): void {
                 const textarea = this.noteTooltip.querySelector<HTMLTextAreaElement>("textarea");
                 if (!textarea) {
@@ -2215,6 +2342,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     this.tooltipDraftUuid = null;
                 }
                 const cachedMemo = this.noteDraftsByStart.get(blockStart) ?? "";
+                this.updateTooltipPriority(this.notePrioritiesByStart.get(blockStart) ?? 5);
                 textarea.value = cachedMemo;
                 resizeIrExtractTextarea(textarea);
                 options.logExtractTooltipNoteDebug?.("display-start", {
@@ -2387,10 +2515,15 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                             if (!note) {
                                 this.noteUuidsByStart.delete(start);
                                 this.noteDraftsByStart.delete(start);
+                                this.notePrioritiesByStart.delete(start);
                                 continue;
                             }
                             this.noteUuidsByStart.set(start, note.uuid);
                             this.noteDraftsByStart.set(start, note.memo);
+                            this.notePrioritiesByStart.set(
+                                start,
+                                clampIrExtractNotePriority(note.priority),
+                            );
                             if (note.sourceMode === "auto-slice") {
                                 nextHeadingNoteStarts.add(start);
                             }
@@ -2403,6 +2536,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                             if (!visibleStarts.has(start)) {
                                 this.noteDraftsByStart.delete(start);
                                 this.noteUuidsByStart.delete(start);
+                                this.notePrioritiesByStart.delete(start);
                             }
                         }
                         this.updateInteractiveBlockStates();
@@ -2480,6 +2614,9 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.tooltipResolveStart = blockStart;
                 const textarea = this.noteTooltip.querySelector<HTMLTextAreaElement>("textarea");
                 const draftAtRequest = textarea?.value ?? "";
+                const priorityAtRequest = clampIrExtractNotePriority(
+                    Number(this.noteTooltip.dataset.srIrPriority ?? 5),
+                );
                 const promise: Promise<IrExtractTooltipNote | null> = options
                     .resolveExtractTooltipNote(this.view, blockStart)
                     .then((note: IrExtractTooltipNote | null): IrExtractTooltipNote | null => {
@@ -2494,6 +2631,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         if (!note) {
                             this.tooltipDraftUuid = null;
                             this.noteUuidsByStart.delete(blockStart);
+                            this.notePrioritiesByStart.delete(blockStart);
                             options.logExtractTooltipNoteDebug?.("resolve-miss", { blockStart });
                             return null;
                         }
@@ -2501,6 +2639,16 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         this.noteUuidsByStart.set(blockStart, note.uuid);
                         const activeTooltipStart =
                             this.tooltipDraftStart ?? this.tooltipDisplayStart;
+                        const priorityChanged =
+                            clampIrExtractNotePriority(
+                                Number(this.noteTooltip.dataset.srIrPriority ?? 5),
+                            ) !== priorityAtRequest && activeTooltipStart === blockStart;
+                        if (!priorityChanged) {
+                            this.notePrioritiesByStart.set(
+                                blockStart,
+                                clampIrExtractNotePriority(note.priority),
+                            );
+                        }
                         if (
                             activeTooltipStart !== blockStart ||
                             !textarea ||
@@ -2516,6 +2664,9 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                             return note;
                         }
                         this.noteDraftsByStart.set(blockStart, note.memo);
+                        if (!priorityChanged) {
+                            this.updateTooltipPriority(note.priority);
+                        }
                         textarea.value = note.memo;
                         resizeIrExtractTextarea(textarea);
                         this.updateInteractiveBlockStates();
@@ -2559,6 +2710,48 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 }
                 const note = await this.resolveTooltipNote(draftStart);
                 return note?.uuid ?? this.noteUuidsByStart.get(draftStart) ?? null;
+            }
+
+            private async saveVisibleTooltipPriority(priority: number): Promise<void> {
+                if (this.tooltipDraftStart === null) {
+                    return;
+                }
+                const draftStart = this.tooltipDraftStart;
+                const nextPriority = clampIrExtractNotePriority(priority);
+                this.notePrioritiesByStart.set(draftStart, nextPriority);
+                if (!options.saveExtractTooltipNotePriority) {
+                    return;
+                }
+                const uuid = await this.resolveTooltipDraftUuid(draftStart);
+                if (!uuid) {
+                    options.logExtractTooltipNoteDebug?.("priority-save-skip:no-uuid", {
+                        draftStart,
+                        priority: nextPriority,
+                    });
+                    return;
+                }
+                try {
+                    await options.saveExtractTooltipNotePriority(uuid, nextPriority);
+                    this.noteUuidsByStart.set(draftStart, uuid);
+                    options.logExtractTooltipNoteDebug?.("priority-save-hit", {
+                        draftStart,
+                        uuid,
+                        priority: nextPriority,
+                    });
+                } catch (error) {
+                    options.onExtractTooltipNoteSaveError?.(error);
+                    options.logExtractTooltipNoteDebug?.("priority-save-error", {
+                        draftStart,
+                        uuid,
+                        priority: nextPriority,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : typeof error === "string"
+                                  ? error
+                                  : JSON.stringify(error),
+                    });
+                }
             }
 
             private async saveVisibleTooltipDraft(persist = true): Promise<void> {

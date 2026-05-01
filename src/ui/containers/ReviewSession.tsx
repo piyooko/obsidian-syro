@@ -2086,6 +2086,8 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
     const contextIdentityRef = useRef({ extractUuid, uiResetToken });
     const preparedRefreshTokenRef = useRef(preparedRefreshToken);
     const bodySaveTimerRef = useRef<number | null>(null);
+    const [extractPriority, setExtractPriority] = useState(extract?.priority ?? 5);
+    const [priorityRefreshToken, setPriorityRefreshToken] = useState(0);
     const logRuntimeDebug = useCallback(
         (...args: unknown[]) => {
             if (plugin.data.settings.showRuntimeDebugMessages) {
@@ -2108,7 +2110,7 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
 
     const reviewIntervals = useMemo(
         () => plugin.getExtractReviewIntervals(extractUuid),
-        [extractUuid, plugin, uiResetToken],
+        [extractUuid, plugin, priorityRefreshToken, uiResetToken],
     );
     const extractReviewButtonLabels = useMemo(
         () => [reviewIntervals[0] ?? "", reviewIntervals[2] ?? reviewIntervals[1] ?? ""],
@@ -2127,6 +2129,10 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
             anchorLine,
         );
     }, [anchorLine, plugin.app.metadataCache, plugin.app.vault, sourceFile]);
+
+    useEffect(() => {
+        setExtractPriority(extract?.priority ?? 5);
+    }, [extract?.priority, extractUuid]);
 
     useEffect(() => {
         let cancelled = false;
@@ -2502,6 +2508,25 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
         [clearMemoSaveTimer, saveMemoNow],
     );
 
+    const handleUpdateExtractPriority = useCallback(
+        (priority: number) => {
+            setExtractPriority(priority);
+            void plugin
+                .updateExtractPriority(extractUuid, priority)
+                .then((updated) => {
+                    if (updated) {
+                        setExtractPriority(updated.priority);
+                        setPriorityRefreshToken((token) => token + 1);
+                    }
+                })
+                .catch((error) => {
+                    console.error("[SR-Extract] Failed to save extract priority", error);
+                    new Notice(t("EXTRACT_SAVE_FAILED"));
+                });
+        },
+        [extractUuid, plugin],
+    );
+
     const scheduleContextSave = useCallback(
         (update: ExtractContextUpdate) => {
             const hadTimer = bodySaveTimerRef.current !== null;
@@ -2759,6 +2784,8 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
                 onUpdateContent={scheduleBodySave}
                 extractMemo={memo}
                 onUpdateExtractMemo={scheduleMemoSave}
+                extractPriority={extractPriority}
+                onUpdateExtractPriority={handleUpdateExtractPriority}
                 extractContext={context}
                 extractContextDraft={contextDraft}
                 extractDebugStatus={extractDebugStatus}

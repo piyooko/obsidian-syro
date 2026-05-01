@@ -256,6 +256,7 @@ export const DEVICE_STATE_FIELDS = [
     "sidebarTimelineHeight",
     "sidebarTimelineOpen",
     "sidebarTimelineSelectedPath",
+    "timelineDisplayPreferences",
     "previousRelease",
 ] as const satisfies readonly (keyof SRSettings)[];
 

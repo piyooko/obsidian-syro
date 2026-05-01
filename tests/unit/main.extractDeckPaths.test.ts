@@ -1233,6 +1233,126 @@ describe("SRPlugin extract deck paths", () => {
         expect(updateStatusBar).toHaveBeenCalled();
     });
 
+    test("graduating an extract with memo creates a formal extract timeline item", async () => {
+        const file = createTFile("摘录测试.md");
+        const sourceText = "before {{ir::target}} after";
+        const match = parseIrExtracts(sourceText)[0];
+        const item = {
+            uuid: "ir_1",
+            stage: "active",
+            sourcePath: "摘录测试.md",
+            sourceMode: "manual-ir",
+            sourceAnchor: { ...match.anchor, ordinal: 0 },
+            rawMarkdown: "target",
+            memo: "memo body",
+            deckName: "摘录测试",
+            createdAt: 1234,
+        };
+        const graduated = { ...item, stage: "graduated", timesReviewed: 1 };
+        const formalCommit = {
+            id: "extract:ir_1",
+            message: "memo body",
+            timestamp: 1234,
+            entryType: "extract",
+        };
+        const emit = jest.fn();
+
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            app: {
+                vault: {
+                    getAbstractFileByPath: jest.fn(() => file),
+                    read: jest.fn(() => Promise.resolve(sourceText)),
+                    modify: jest.fn(() => Promise.resolve()),
+                },
+            },
+            extractStore: {
+                get: jest.fn(() => item),
+                graduateWithReviewCount: jest.fn(() => graduated),
+                syncFileExtracts: jest.fn(() => ({ added: [], updated: [], graduated: [] })),
+                save: jest.fn(() => Promise.resolve()),
+            },
+            getExtractDeckNameForFile: jest.fn(() => "摘录测试"),
+            appendExtractSyncResult: jest.fn(() => Promise.resolve()),
+            appendSyroExtractGraduate: jest.fn(() => Promise.resolve()),
+            reviewCommitStore: {
+                addExtractCommit: jest.fn(() => Promise.resolve(formalCommit)),
+                addCommit: jest.fn(),
+            },
+            appendSyroTimelineAdd: jest.fn(() => Promise.resolve()),
+            saveNoteExtractCacheToDiskIfEnabled: jest.fn(() => Promise.resolve()),
+            syncEvents: { emit },
+            updateStatusBar: jest.fn(),
+        });
+
+        await SRPlugin.prototype.graduateExtract.call(plugin, "ir_1", "deck");
+
+        expect(plugin.reviewCommitStore.addExtractCommit).toHaveBeenCalledWith(
+            "摘录测试.md",
+            expect.objectContaining({
+                originUuid: "ir_1",
+                quoteText: "target",
+                memoText: "memo body",
+                sourcePath: "摘录测试.md",
+                sourceMode: "manual-ir",
+                extractCreatedAt: 1234,
+            }),
+            expect.closeTo(match.anchor.start / sourceText.length, 5),
+        );
+        expect(plugin.reviewCommitStore.addCommit).not.toHaveBeenCalled();
+        expect(plugin.appendSyroTimelineAdd).toHaveBeenCalledWith("摘录测试.md", formalCommit);
+    });
+
+    test("graduating an extract without memo does not create a timeline item", async () => {
+        const file = createTFile("摘录测试.md");
+        const sourceText = "before {{ir::target}} after";
+        const match = parseIrExtracts(sourceText)[0];
+        const item = {
+            uuid: "ir_1",
+            stage: "active",
+            sourcePath: "摘录测试.md",
+            sourceMode: "manual-ir",
+            sourceAnchor: { ...match.anchor, ordinal: 0 },
+            rawMarkdown: "target",
+            memo: "",
+            deckName: "摘录测试",
+            createdAt: 1234,
+        };
+        const graduated = { ...item, stage: "graduated", timesReviewed: 1 };
+
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            app: {
+                vault: {
+                    getAbstractFileByPath: jest.fn(() => file),
+                    read: jest.fn(() => Promise.resolve(sourceText)),
+                    modify: jest.fn(() => Promise.resolve()),
+                },
+            },
+            extractStore: {
+                get: jest.fn(() => item),
+                graduateWithReviewCount: jest.fn(() => graduated),
+                syncFileExtracts: jest.fn(() => ({ added: [], updated: [], graduated: [] })),
+                save: jest.fn(() => Promise.resolve()),
+            },
+            getExtractDeckNameForFile: jest.fn(() => "摘录测试"),
+            appendExtractSyncResult: jest.fn(() => Promise.resolve()),
+            appendSyroExtractGraduate: jest.fn(() => Promise.resolve()),
+            reviewCommitStore: {
+                addExtractCommit: jest.fn(),
+                addCommit: jest.fn(),
+            },
+            appendSyroTimelineAdd: jest.fn(() => Promise.resolve()),
+            saveNoteExtractCacheToDiskIfEnabled: jest.fn(() => Promise.resolve()),
+            syncEvents: { emit: jest.fn() },
+            updateStatusBar: jest.fn(),
+        });
+
+        await SRPlugin.prototype.graduateExtract.call(plugin, "ir_1", "deck");
+
+        expect(plugin.reviewCommitStore.addExtractCommit).not.toHaveBeenCalled();
+        expect(plugin.reviewCommitStore.addCommit).not.toHaveBeenCalled();
+        expect(plugin.appendSyroTimelineAdd).not.toHaveBeenCalled();
+    });
+
     test("syncs extracts from a single markdown file and emits updates when changed", async () => {
         const file = createTFile("摘录测试.md");
         const emit = jest.fn();
@@ -1483,6 +1603,7 @@ describe("SRPlugin extract deck paths", () => {
     });
 
     test("automatic extract graduation does not edit source markdown", async () => {
+        const file = createTFile("摘录测试.md");
         const graduated = {
             uuid: "auto_1",
             sourceMode: "auto-slice",
@@ -1498,7 +1619,8 @@ describe("SRPlugin extract deck paths", () => {
         const plugin = Object.assign(Object.create(SRPlugin.prototype), {
             app: {
                 vault: {
-                    read: jest.fn(),
+                    getAbstractFileByPath: jest.fn(() => file),
+                    read: jest.fn(() => Promise.resolve("# A\none")),
                     modify: jest.fn(),
                 },
             },

@@ -68,14 +68,66 @@ describe("reviewCommitStore", () => {
         expect(store.getCommits("note.md")[0].reviewResponse).toBe("Good");
     });
 
-    it("returns the latest saved scroll percentage and preserves zero", async () => {
+    it("stores extract timeline entries as independent snapshots", async () => {
+        const store = new ReviewCommitStore(DEFAULT_SETTINGS, ".obsidian/plugins/syro");
+        await store.load();
+
+        const entry = await store.addExtractCommit("notes/source.md", {
+            originUuid: "ir_1",
+            quoteText: "quoted source",
+            memoText: "memo body",
+            sourcePath: "notes/source.md",
+            sourceAnchor: {
+                start: 10,
+                end: 23,
+                startLine: 2,
+                endLine: 2,
+                ordinal: 0,
+            },
+            sourceMode: "manual-ir",
+            extractCreatedAt: 1234,
+        });
+
+        expect(entry).toMatchObject({
+            id: "extract:ir_1",
+            message: "memo body",
+            timestamp: 1234,
+            entryType: "extract",
+            extract: {
+                originUuid: "ir_1",
+                quoteText: "quoted source",
+                memoText: "memo body",
+                sourcePath: "notes/source.md",
+                sourceMode: "manual-ir",
+                extractCreatedAt: 1234,
+            },
+        });
+        expect(store.getCommits("notes/source.md")).toHaveLength(1);
+
+        const updated = await store.editCommit("notes/source.md", entry.id, {
+            message: "updated memo",
+            entryType: "extract",
+            extract: {
+                ...entry.extract!,
+                quoteText: "updated quote",
+                memoText: "updated memo",
+            },
+        });
+
+        expect(updated?.extract?.quoteText).toBe("updated quote");
+        expect(updated?.extract?.memoText).toBe("updated memo");
+        expect(updated?.extract?.memoEditedAt).toEqual(expect.any(Number));
+        expect(updated?.message).toBe("updated memo");
+    });
+
+    it("returns the highest saved scroll percentage and preserves zero", async () => {
         const store = new ReviewCommitStore(DEFAULT_SETTINGS, ".obsidian/plugins/syro");
         await store.load();
 
         await store.addCommit("note.md", "older", undefined, 0.42);
         await store.addCommit("note.md", "latest", undefined, 0);
 
-        expect(store.getLatestScrollPercentage("note.md")).toBe(0);
+        expect(store.getLatestScrollPercentage("note.md")).toBe(0.42);
     });
 
     it("falls back to an earlier saved scroll percentage when the latest entry has none", async () => {
@@ -96,7 +148,57 @@ describe("reviewCommitStore", () => {
         expect(store.getLatestScrollPercentage("note.md")).toBe(1);
 
         await store.addCommit("note.md", "before start", undefined, -0.25);
-        expect(store.getLatestScrollPercentage("note.md")).toBe(0);
+        expect(store.getLatestScrollPercentage("note.md")).toBe(1);
+    });
+
+    it("preserves extract memo edit time snapshots", async () => {
+        const store = new ReviewCommitStore(DEFAULT_SETTINGS, ".obsidian/plugins/syro");
+        await store.load();
+
+        const entry = await store.addExtractCommit("note.md", {
+            originUuid: "ir_1",
+            quoteText: "quote",
+            memoText: "memo",
+            memoEditedAt: 456,
+            sourcePath: "note.md",
+            sourceAnchor: { start: 0, end: 5 },
+            sourceMode: "manual-ir",
+            extractCreatedAt: 123,
+        });
+
+        expect(entry.extract?.memoEditedAt).toBe(456);
+        expect(store.getCommits("note.md")[0]?.extract?.memoEditedAt).toBe(456);
+    });
+
+    it("does not refresh extract memo edit time when timeline extract metadata changes", async () => {
+        const store = new ReviewCommitStore(DEFAULT_SETTINGS, ".obsidian/plugins/syro");
+        await store.load();
+
+        const entry = await store.addExtractCommit("note.md", {
+            originUuid: "ir_1",
+            quoteText: "quote",
+            memoText: "memo",
+            memoEditedAt: 456,
+            sourcePath: "note.md",
+            sourceAnchor: { start: 0, end: 5 },
+            sourceMode: "manual-ir",
+            extractCreatedAt: 123,
+        });
+
+        jest.spyOn(Date, "now").mockReturnValue(999);
+        const updated = await store.editCommit("note.md", entry.id, {
+            message: "memo",
+            entryType: "extract",
+            extract: {
+                ...entry.extract!,
+                quoteText: "updated quote",
+            },
+        });
+
+        expect(updated?.extract?.quoteText).toBe("updated quote");
+        expect(updated?.extract?.memoText).toBe("memo");
+        expect(updated?.extract?.memoEditedAt).toBe(456);
+        expect(updated?.lastEdited).toBe(999);
     });
 
     it("returns cloned snapshots for commit and file mutations", async () => {
@@ -146,5 +248,28 @@ describe("reviewCommitStore", () => {
         expect(store.getCommits("archive/folder/a.md")).toHaveLength(0);
         expect(store.getCommits("archive/folder/sub/b.md")).toHaveLength(0);
         expect(store.getCommits("elsewhere/c.md")).toHaveLength(1);
+    });
+
+    it("renames extract source snapshots together with timeline file paths", async () => {
+        const store = new ReviewCommitStore(DEFAULT_SETTINGS, ".obsidian/plugins/syro");
+        await store.load();
+
+        await store.addExtractCommit("folder/a.md", {
+            originUuid: "ir_1",
+            quoteText: "quote",
+            memoText: "memo",
+            sourcePath: "folder/a.md",
+            sourceAnchor: { start: 0, end: 5, ordinal: 0 },
+            sourceMode: "manual-ir",
+            extractCreatedAt: 10,
+        });
+
+        store.renameFileWithSnapshot("folder/a.md", "folder/b.md");
+        expect(store.getCommits("folder/b.md")[0].extract?.sourcePath).toBe("folder/b.md");
+
+        store.renamePathPrefixWithSnapshots("folder", "archive/folder");
+        expect(store.getCommits("archive/folder/b.md")[0].extract?.sourcePath).toBe(
+            "archive/folder/b.md",
+        );
     });
 });

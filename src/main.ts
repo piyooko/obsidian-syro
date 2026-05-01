@@ -301,7 +301,11 @@ import {
     type ManualIrLocator,
     type PersistedExtractNoteCache,
 } from "src/cache/extractNoteCache";
-import { ReviewCommitStore, type ReviewCommitLog } from "src/dataStore/reviewCommitStore";
+import {
+    ReviewCommitStore,
+    type ReviewCommitLog,
+    type ReviewTimelineExtractSnapshot,
+} from "src/dataStore/reviewCommitStore";
 import { ReviewPersistenceCoordinator } from "src/services/reviewPersistenceCoordinator";
 import { ReviewStateCommitCoordinator } from "src/services/reviewStateCommitCoordinator";
 import { autoCommitReviewResponseToTimeline } from "src/ui/timeline/reviewResponseTimeline";
@@ -1700,6 +1704,8 @@ export default class SRPlugin extends Plugin {
                     this.resolveExtractTooltipNotes(view, sourceStarts),
                 saveExtractTooltipNote: (uuid: string, memo: string) =>
                     this.updateExtractMemo(uuid, memo),
+                saveExtractTooltipNotePriority: (uuid: string, priority: number) =>
+                    this.updateExtractPriority(uuid, priority),
                 onExtractTooltipNoteSaveError: (error: unknown) =>
                     this.handleExtractTooltipNoteSaveError(error),
                 logExtractTooltipNoteDebug: (event: string, details?: Record<string, unknown>) =>
@@ -1966,7 +1972,10 @@ export default class SRPlugin extends Plugin {
 
                                             this.runAsync(
                                                 (async () => {
-                                                    noteItem.priority = newPriority;
+                                                    noteReviewStore.setPriority(
+                                                        fileish.path,
+                                                        newPriority,
+                                                    );
                                                     await noteReviewStore.save();
                                                     this.updateAndSortDueNotes();
                                                     this.syncEvents.emit("note-review-updated");
@@ -3437,6 +3446,49 @@ export default class SRPlugin extends Plugin {
         return updated;
     }
 
+    public async removeExtractFromTimelinePreview(uuid: string): Promise<ExtractItem | null> {
+        if (!this.extractStore) {
+            return null;
+        }
+
+        const item = this.extractStore.get(uuid);
+        if (!item || item.stage !== "active") {
+            return null;
+        }
+
+        if (item.sourceMode === "auto-slice") {
+            return this.updateExtractMemo(uuid, "");
+        }
+
+        const sourceFile = this.resolveExtractSourceFile(item);
+        if (!sourceFile) {
+            return null;
+        }
+
+        const sourceText = await this.app.vault.read(sourceFile);
+        const match = this.findCurrentExtractMatch(item, sourceText);
+        if (!match) {
+            return null;
+        }
+
+        const nextText = removeExtractWrapperKeepInnerContent(sourceText, match);
+        await this.app.vault.modify(sourceFile, nextText);
+        const removedSnapshot = this.extractStore.getSnapshot(uuid);
+        const removed = this.extractStore.removeByUuid(uuid);
+        if (removedSnapshot && removed) {
+            await this.appendSyroExtractRemove(removedSnapshot);
+        }
+        this.getNoteExtractCache().delete(sourceFile.path);
+        const result = this.syncExtractTextForFile(sourceFile, nextText, { auto: false });
+        await this.appendExtractSyncResult(result);
+        await this.extractStore.save();
+        await this.saveNoteExtractCacheToDiskIfEnabled();
+        this.syncEvents.emit("extracts-updated");
+        this.syncEvents.emit("note-review-updated");
+        this.updateStatusBar();
+        return this.extractStore.get(uuid);
+    }
+
     public async updateExtractPriority(
         uuid: string,
         priority: number,
@@ -3680,14 +3732,47 @@ export default class SRPlugin extends Plugin {
         return this.updateExtractRawMarkdown(uuid, wrapped.text);
     }
 
-    private async preserveGraduatedExtractMemo(item: ExtractItem): Promise<void> {
+    private buildTimelineExtractSnapshot(item: ExtractItem): ReviewTimelineExtractSnapshot {
+        const extractCreatedAt =
+            item.sourceMode === "auto-slice" ? item.timelineCreatedAt ?? item.createdAt : item.createdAt;
+        return {
+            originUuid: item.uuid,
+            quoteText: item.rawMarkdown,
+            memoText: item.memo.trim(),
+            memoEditedAt: item.memoEditedAt,
+            sourcePath: item.sourcePath,
+            sourceAnchor: { ...item.sourceAnchor },
+            sourceMode: item.sourceMode,
+            extractCreatedAt,
+        };
+    }
+
+    private getExtractScrollPercentage(item: ExtractItem, sourceText: string): number | undefined {
+        const start = item.sourceAnchor?.start;
+        if (
+            typeof start !== "number" ||
+            !Number.isFinite(start) ||
+            start < 0 ||
+            sourceText.length <= 0
+        ) {
+            return undefined;
+        }
+
+        return Math.min(1, Math.max(0, start / sourceText.length));
+    }
+
+    private async preserveGraduatedExtractTimelineItem(
+        item: ExtractItem,
+        sourceText?: string,
+    ): Promise<void> {
         if (!this.reviewCommitStore || !item.memo.trim()) {
             return;
         }
-        const commit = await this.reviewCommitStore.addCommit(item.sourcePath, item.memo.trim(), {
-            textSnippet: item.rawMarkdown.slice(0, 160),
-            offset: item.sourceAnchor.start,
-        });
+        const commit = await this.reviewCommitStore.addExtractCommit(
+            item.sourcePath,
+            this.buildTimelineExtractSnapshot(item),
+            sourceText ? this.getExtractScrollPercentage(item, sourceText) : undefined,
+        );
         await this.appendSyroTimelineAdd(item.sourcePath, commit);
     }
 
@@ -3707,9 +3792,14 @@ export default class SRPlugin extends Plugin {
             if (!graduated) {
                 return null;
             }
+            let sourceText: string | undefined;
+            const sourceFile = this.resolveExtractSourceFile(item);
+            if (sourceFile) {
+                sourceText = await this.app.vault.read(sourceFile);
+            }
             await this.extractStore.save();
             await this.appendSyroExtractGraduate({ item: graduated });
-            await this.preserveGraduatedExtractMemo(graduated);
+            await this.preserveGraduatedExtractTimelineItem(graduated, sourceText);
             this.syncEvents.emit("extracts-updated");
             this.syncEvents.emit("note-review-updated");
             this.updateStatusBar();
@@ -3730,7 +3820,7 @@ export default class SRPlugin extends Plugin {
                 }
                 await this.extractStore.save();
                 await this.saveNoteExtractCacheToDiskIfEnabled();
-                await this.preserveGraduatedExtractMemo(graduated ?? item);
+                await this.preserveGraduatedExtractTimelineItem(graduated ?? item, sourceText);
                 this.syncEvents.emit("extracts-updated");
                 this.syncEvents.emit("note-review-updated");
                 this.updateStatusBar();
@@ -3744,7 +3834,7 @@ export default class SRPlugin extends Plugin {
         }
         await this.extractStore.save();
         await this.appendSyroExtractGraduate({ item: graduated });
-        await this.preserveGraduatedExtractMemo(graduated);
+        await this.preserveGraduatedExtractTimelineItem(graduated);
         this.syncEvents.emit("extracts-updated");
         this.syncEvents.emit("note-review-updated");
         this.updateStatusBar();

@@ -63,6 +63,14 @@ export interface ParsedNoteReviewStoreSnapshots {
 
 const NOTE_REVIEW_STORE_VERSION = 1;
 
+function normalizePriority(priority: number): number {
+    if (!Number.isFinite(priority)) {
+        return 5;
+    }
+
+    return Math.max(1, Math.min(10, Math.round(priority)));
+}
+
 function cloneItem(item: RepetitionItem): RepetitionItem {
     const cloned = parseJsonUnknown(JSON.stringify(item)) as RepetitionItem;
     return RepetitionItem.create(cloned);
@@ -159,6 +167,7 @@ export class NoteReviewStore {
             for (const [path, entry] of Object.entries(parsed.items)) {
                 if (!entry?.item) continue;
                 const item = RepetitionItem.create(entry.item);
+                item.priority = normalizePriority(item.priority);
                 item.setTracked(path);
                 item.updateDeckName(entry.deckName ?? DEFAULT_DECKNAME, false);
                 this.data[path] = {
@@ -354,7 +363,7 @@ export class NoteReviewStore {
     setPriority(path: string, priority: number): boolean {
         const item = this.getItem(path);
         if (!item) return false;
-        item.priority = priority;
+        item.priority = normalizePriority(priority);
         return true;
     }
 
@@ -452,6 +461,7 @@ export class NoteReviewStore {
         }
 
         const item = cloneItem(snapshot.item);
+        item.priority = normalizePriority(item.priority);
         const pathEntry = this.data[snapshot.path];
         item.aliases = mergeEquivalentUuids(item.uuid, item.aliases, [
             ...(existingEntry

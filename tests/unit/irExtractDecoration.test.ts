@@ -1,5 +1,7 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { readFileSync } from "fs";
+import { join } from "path";
 import {
     alignNestedIrExtractBlocksHorizontally,
     clampIrExtractVerticalInsetsForAdjacentBlocks,
@@ -635,6 +637,11 @@ describe("irExtractDecoration helpers", () => {
         expect(textarea?.placeholder).toBe("输入备注...");
         expect(textarea?.hasAttribute("aria-label")).toBe(false);
         expect(textarea?.getAttribute("title")).toBe("");
+        const importanceWidget = tooltip.querySelector<HTMLElement>(".sr-ir-importance-widget");
+        expect(importanceWidget).not.toBeNull();
+        expect(importanceWidget?.hasAttribute("title")).toBe(false);
+        expect(importanceWidget?.querySelector(".sr-scroll-hint-icon")).not.toBeNull();
+        expect(importanceWidget?.textContent?.replace(/\s/g, "")).toBe("W:5");
 
         action?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
         expect(hoverStarts).toEqual([42]);
@@ -672,6 +679,81 @@ describe("irExtractDecoration helpers", () => {
         textarea.dispatchEvent(shiftEnterEvent);
         expect(shiftEnterEvent.defaultPrevented).toBe(false);
         expect(submit).toHaveBeenCalledTimes(1);
+    });
+
+    test("saves tooltip note priority when using the importance wheel", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const saveExtractTooltipNotePriority = jest.fn(() => Promise.resolve());
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: "{{ir::one}}",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNote: () =>
+                            Promise.resolve({ uuid: "extract-uuid-1", memo: "备注", priority: 5 }),
+                        saveExtractTooltipNotePriority,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            document
+                .querySelector<HTMLElement>(".sr-ir-info-action")
+                ?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+            await waitForIrExtractMeasure();
+
+            const widget = document.querySelector<HTMLElement>(".sr-ir-importance-widget");
+            const value = document.querySelector<HTMLElement>(".sr-ir-importance-value");
+            expect(value?.textContent).toBe("5");
+
+            const event = new WheelEvent("wheel", {
+                deltaY: -1,
+                bubbles: true,
+                cancelable: true,
+            });
+            widget?.dispatchEvent(event);
+            await waitForIrExtractMeasure();
+
+            expect(event.defaultPrevented).toBe(true);
+            expect(value?.textContent).toBe("6");
+            expect(widget?.classList.contains("tick-up")).toBe(true);
+            expect(saveExtractTooltipNotePriority).toHaveBeenCalledWith("extract-uuid-1", 6);
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("shows the importance hover treatment while touch dragging", () => {
+        const tooltip = createIrExtractNoteTooltipElement();
+        const widget = tooltip.querySelector<HTMLElement>(".sr-ir-importance-widget");
+
+        const pointerDown = new MouseEvent("pointerdown", {
+            clientY: 100,
+            bubbles: true,
+            cancelable: true,
+        });
+        Object.defineProperty(pointerDown, "pointerId", { value: 1 });
+        widget?.dispatchEvent(pointerDown);
+
+        expect(widget?.classList.contains("is-touch-active")).toBe(true);
+
+        const pointerCancel = new MouseEvent("pointercancel", {
+            bubbles: true,
+            cancelable: true,
+        });
+        Object.defineProperty(pointerCancel, "pointerId", { value: 1 });
+        widget?.dispatchEvent(pointerCancel);
+
+        expect(widget?.classList.contains("is-touch-active")).toBe(false);
     });
 
     test("shows the note tooltip only from icon hover or pinned click state", () => {
@@ -757,6 +839,21 @@ describe("irExtractDecoration helpers", () => {
         expect(shouldCloseIrExtractPinnedTooltip(textarea, overlay, tooltip)).toBe(false);
         expect(shouldCloseIrExtractPinnedTooltip(tooltip, overlay, tooltip)).toBe(false);
         expect(shouldCloseIrExtractPinnedTooltip(document.body, overlay, tooltip)).toBe(true);
+    });
+
+    test("extract tooltip importance styles stay scoped to the note tooltip", () => {
+        const css = readFileSync(join(process.cwd(), "src/ui/styles/editor.css"), "utf8");
+
+        expect(css).toMatch(
+            /\.sr-ir-note-tooltip\s+\.sr-ir-importance-widget\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*4px;[^}]*right:\s*4px/s,
+        );
+        expect(css).toMatch(
+            /\.sr-ir-note-tooltip\s+textarea\s*\{[^}]*padding:\s*0 4px 24px 0\s*!important/s,
+        );
+        expect(css).toMatch(
+            /\.sr-ir-note-tooltip\s+\.sr-ir-importance-widget:hover,\s*\.sr-ir-note-tooltip\s+\.sr-ir-importance-widget\.is-touch-active\s*\{[^}]*color:\s*var\(--text-normal\);[^}]*background:\s*rgba\(128,\s*128,\s*128,\s*0\.15\)/s,
+        );
+        expect(css).not.toMatch(/(^|\n)\.sr-ir-importance-widget\s*\{/);
     });
 
     test("does not highlight the extract block only because its tooltip is pinned", () => {
@@ -1614,6 +1711,57 @@ describe("irExtractDecoration helpers", () => {
             expect(actions[1]?.classList.contains("has-note")).toBe(false);
             expect(resolveExtractTooltipNote).toHaveBeenCalledWith(view, firstStart);
             expect(resolveExtractTooltipNote).toHaveBeenCalledWith(view, secondStart);
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("loads tooltip notes when scroll mousemove detects an info icon hover", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const doc = "{{ir::one}}";
+        const resolveExtractTooltipNote = jest.fn(() =>
+            Promise.resolve({ uuid: "extract-uuid-1", memo: "坐标悬浮备注", priority: 5 }),
+        );
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc,
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNote,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            const action = document.querySelector<HTMLElement>(".sr-ir-info-action");
+            if (!action) {
+                throw new Error("Expected info action");
+            }
+            action.classList.add("is-visible");
+
+            view.scrollDOM.dispatchEvent(
+                new MouseEvent("mousemove", {
+                    bubbles: true,
+                    clientX: 112,
+                    clientY: 12,
+                }),
+            );
+            await waitForIrExtractMeasure();
+
+            const textarea = document.querySelector<HTMLTextAreaElement>(
+                ".sr-ir-note-tooltip-input",
+            );
+            expect(resolveExtractTooltipNote).toHaveBeenCalledWith(view, 0);
+            expect(textarea?.value).toBe("坐标悬浮备注");
         } finally {
             view.destroy();
             restoreMeasureMocks();

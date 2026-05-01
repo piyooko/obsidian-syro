@@ -38,7 +38,19 @@ export type DeckCardOrder =
     | "DueFirstSequential"
     | "NewFirstRandom"
     | "NewFirstSequential";
+export interface TimelineDisplayPreferences {
+    extracts: boolean;
+    autoExtracts: boolean;
+    graduatedExtracts: boolean;
+    commitMessages: boolean;
+}
 export const DEFAULT_SYNC_PROGRESS_DISPLAY_MODE: SyncProgressDisplayMode = "full-only";
+export const DEFAULT_TIMELINE_DISPLAY_PREFERENCES: TimelineDisplayPreferences = {
+    extracts: true,
+    autoExtracts: true,
+    graduatedExtracts: true,
+    commitMessages: true,
+};
 
 export interface AutoExtractRule {
     sourcePath: string;
@@ -71,6 +83,31 @@ function normalizeAutoExtractHeadingLevels(value: unknown): AutoExtractHeadingLe
                 .filter((item): item is AutoExtractHeadingLevel => item !== undefined),
         ),
     ).sort((a, b) => a - b);
+}
+
+function normalizeTimelineDisplayPreferences(value: unknown): TimelineDisplayPreferences {
+    if (!isRecord(value)) {
+        return { ...DEFAULT_TIMELINE_DISPLAY_PREFERENCES };
+    }
+
+    return {
+        extracts:
+            typeof value.extracts === "boolean"
+                ? value.extracts
+                : DEFAULT_TIMELINE_DISPLAY_PREFERENCES.extracts,
+        autoExtracts:
+            typeof value.autoExtracts === "boolean"
+                ? value.autoExtracts
+                : DEFAULT_TIMELINE_DISPLAY_PREFERENCES.autoExtracts,
+        graduatedExtracts:
+            typeof value.graduatedExtracts === "boolean"
+                ? value.graduatedExtracts
+                : DEFAULT_TIMELINE_DISPLAY_PREFERENCES.graduatedExtracts,
+        commitMessages:
+            typeof value.commitMessages === "boolean"
+                ? value.commitMessages
+                : DEFAULT_TIMELINE_DISPLAY_PREFERENCES.commitMessages,
+    };
 }
 
 export function normalizeAutoExtractRule(value: unknown, pathHint = ""): AutoExtractRule | null {
@@ -1105,6 +1142,7 @@ export interface SRSettings {
     timelineAutoFollowReviewCards: boolean;
     timelineAutoCommitReviewSelection: boolean;
     timelineEnableDurationPrefixSyntax: boolean;
+    timelineDisplayPreferences: TimelineDisplayPreferences;
 
     // License state
     licenseKey: string; // User-entered license key
@@ -1264,6 +1302,7 @@ export const DEFAULT_SETTINGS: SRSettings = {
     timelineAutoFollowReviewCards: false,
     timelineAutoCommitReviewSelection: true,
     timelineEnableDurationPrefixSyntax: true,
+    timelineDisplayPreferences: { ...DEFAULT_TIMELINE_DISPLAY_PREFERENCES },
 
     // License defaults
     licenseKey: "",
@@ -1492,6 +1531,10 @@ export function upgradeSettings(settings: SRSettings) {
     ) {
         settings.sidebarTimelineSelectedPath = null;
     }
+
+    settings.timelineDisplayPreferences = normalizeTimelineDisplayPreferences(
+        settings.timelineDisplayPreferences,
+    );
 
     settings.openViewInNewTab = true;
     if (settings.clozeContextMode === undefined) {

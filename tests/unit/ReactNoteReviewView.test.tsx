@@ -5,7 +5,8 @@ import {
 } from "src/ui/views/ReactNoteReviewView";
 import { reviewDecksToSidebarState } from "src/ui/adapters/noteReviewAdapter";
 import { DEFAULT_DECKNAME } from "src/constants";
-import { MarkdownView, TFile } from "obsidian";
+import { MarkdownView, Menu, TFile } from "obsidian";
+import { LicenseManager } from "src/services/LicenseManager";
 
 jest.mock("src/ui/components/NoteReviewSidebar", () => ({
     MOBILE_TIMELINE_MIN_HEIGHT_PX: 64,
@@ -66,7 +67,60 @@ jest.mock("obsidian", () => {
     }
 
     class Menu {
-        addItem(): Menu {
+        static lastItems: Array<{
+            title?: string;
+            icon?: string;
+            checked?: boolean;
+            submenu?: Menu;
+            onClick?: () => void;
+        }> = [];
+
+        items: typeof Menu.lastItems = [];
+
+        constructor(isSubmenu = false) {
+            if (!isSubmenu) {
+                Menu.lastItems = this.items;
+            }
+        }
+
+        addItem(callback?: (item: unknown) => void): Menu {
+            const menuItem = {
+                submenu: undefined as Menu | undefined,
+                setTitle(title: string) {
+                    this.title = title;
+                    return this;
+                },
+                setIcon(icon: string) {
+                    this.icon = icon;
+                    return this;
+                },
+                setChecked(checked: boolean) {
+                    this.checked = checked;
+                    return this;
+                },
+                setSubmenu() {
+                    this.submenu = new Menu(true);
+                    return this.submenu;
+                },
+                onClick(callback: () => void) {
+                    this.onClick = callback;
+                    return this;
+                },
+            } as {
+                title?: string;
+                icon?: string;
+                checked?: boolean;
+                submenu?: Menu;
+                onClick?: () => void;
+            } & {
+                setTitle: (title: string) => typeof menuItem;
+                setIcon: (icon: string) => typeof menuItem;
+                setChecked: (checked: boolean) => typeof menuItem;
+                setSubmenu: () => Menu;
+                onClick: (callback: () => void) => typeof menuItem;
+            };
+            callback?.(menuItem);
+            this.items.push(menuItem);
             return this;
         }
 
@@ -269,6 +323,11 @@ function createView(options: {
         clearFolderTrackingExclusion: jest.fn(),
         getTimelineReviewCardPath: jest.fn(() => null),
         setTimelineReviewCardPath: jest.fn(),
+        extractStore: {
+            getActiveByPath: jest.fn(() => []),
+        },
+        updateExtractMemo: jest.fn(async () => null),
+        removeExtractFromTimelinePreview: jest.fn(async () => null),
         noteAlgorithm: {},
         reviewDecks: {},
         updateAndSortDueNotes: jest.fn(),
@@ -792,6 +851,406 @@ describe("ReactNoteReviewView", () => {
         expect(plugin.syncEvents.emit).toHaveBeenCalledWith("note-review-updated");
     });
 
+    it("does not gate timeline commits behind the old ten-entry free limit", async () => {
+        const path = "notes/Many Logs.md";
+        const { plugin, view } = createView({
+            activeMarkdownPath: path,
+            availableFiles: [path],
+        });
+        const license = {
+            checkFeatureAccess: jest.fn(async () => true),
+        };
+        jest.mocked(LicenseManager.getInstance).mockReturnValue(license as never);
+        const existingCommits = Array.from({ length: 10 }, (_, index) => ({
+            id: `commit-${index}`,
+            message: `entry ${index}`,
+            timestamp: index,
+        }));
+        const commitStore = {
+            getCommits: jest.fn(() => existingCommits),
+            addCommit: jest.fn(async () => ({
+                id: "timeline-11",
+                message: "entry 11",
+                timestamp: 11,
+            })),
+        };
+        (view as any).commitStore = commitStore;
+
+        await (view as any).handleCommit(path, "entry 11");
+
+        expect(license.checkFeatureAccess).not.toHaveBeenCalled();
+        expect(commitStore.addCommit).toHaveBeenCalledWith(path, "entry 11", null, 0);
+        expect(plugin.appendSyroTimelineAdd).toHaveBeenCalledWith(
+            path,
+            expect.objectContaining({ id: "timeline-11" }),
+        );
+    });
+
+    it("combines active extracts and timeline commits by creation time", () => {
+        const path = "notes/Mixed.md";
+        const item = {
+            id: "note-1",
+            path,
+            title: "Mixed",
+            noteFile: createTFile(path),
+        };
+        const { root, view, plugin } = createView({
+            activeMarkdownPath: path,
+            availableFiles: [path],
+        });
+        jest.mocked(reviewDecksToSidebarState).mockReturnValue({
+            sections: [
+                {
+                    id: "new",
+                    title: "New",
+                    count: 1,
+                    color: "#4f46e5",
+                    items: [item as never],
+                },
+            ],
+            totalCount: 1,
+        });
+        const commitStore = {
+            getCommits: jest.fn(() => [
+                { id: "manual", message: "manual", timestamp: 20, entryType: "manual" },
+                {
+                    id: "formal",
+                    message: "formal memo",
+                    timestamp: 30,
+                    entryType: "extract",
+                    extract: {
+                        originUuid: "ir_formal",
+                        quoteText: "formal quote",
+                        memoText: "formal memo",
+                        sourcePath: path,
+                        sourceAnchor: { start: 0, end: 5, ordinal: 0 },
+                        sourceMode: "manual-ir",
+                        extractCreatedAt: 30,
+                    },
+                },
+            ]),
+        };
+        plugin.extractStore.getActiveByPath.mockReturnValue([
+            {
+                uuid: "manual-active",
+                sourcePath: path,
+                sourceMode: "manual-ir",
+                rawMarkdown: "manual preview",
+                memo: "",
+                sourceAnchor: { start: 1, end: 15, ordinal: 0, sourceLength: 10 },
+                createdAt: 40,
+                stage: "active",
+            },
+            {
+                uuid: "auto-empty",
+                sourcePath: path,
+                sourceMode: "auto-slice",
+                rawMarkdown: "# Hidden\nbody",
+                memo: "",
+                sourceAnchor: { start: 2, end: 20, ordinal: 1, sourceLength: 10 },
+                createdAt: 50,
+                stage: "active",
+            },
+            {
+                uuid: "auto-memo",
+                sourcePath: path,
+                sourceMode: "auto-slice",
+                rawMarkdown: "## Auto title\nbody",
+                memo: "auto memo",
+                sourceAnchor: { start: 3, end: 22, ordinal: 2, sourceLength: 10 },
+                createdAt: 10,
+                timelineCreatedAt: 35,
+                memoEditedAt: 45,
+                stage: "active",
+            },
+        ]);
+        (view as any).commitStore = commitStore;
+
+        (view as any).setSelectedTimelineItem(item);
+        view.redraw();
+
+        const logs = getLastSidebarProps(root).commitLogs as Array<{
+            id: string;
+            scrollPercentage?: number;
+            extract?: { quoteText?: string; memoText?: string; sourceMode?: string };
+        }>;
+        expect(logs.map((log) => log.id)).toEqual([
+            "extract-preview:manual-active",
+            "extract-preview:auto-memo",
+            "formal",
+            "manual",
+        ]);
+        expect(
+            logs.find((log) => log.id === "extract-preview:manual-active")?.extract,
+        ).toMatchObject({
+            quoteText: "manual preview",
+            memoText: "",
+        });
+        expect(logs.find((log) => log.id === "extract-preview:manual-active")?.scrollPercentage).toBe(
+            0.1,
+        );
+        expect(logs.find((log) => log.id === "extract-preview:auto-memo")?.extract).toMatchObject({
+            quoteText: "## Auto title",
+            sourceMode: "auto-slice",
+            extractCreatedAt: 35,
+            memoEditedAt: 45,
+        });
+        expect(logs.find((log) => log.id === "extract-preview:auto-memo")?.scrollPercentage).toBe(
+            0.3,
+        );
+    });
+
+    it("filters timeline logs from the timeline preference context menu", () => {
+        const path = "notes/Timeline Prefs.md";
+        const item = {
+            id: "note-1",
+            path,
+            title: "Timeline Prefs",
+            noteFile: createTFile(path),
+        };
+        const { root, view, plugin } = createView({
+            activeMarkdownPath: path,
+            availableFiles: [path],
+        });
+        jest.mocked(reviewDecksToSidebarState).mockReturnValue({
+            sections: [
+                {
+                    id: "new",
+                    title: "New",
+                    count: 1,
+                    color: "#4f46e5",
+                    items: [item as never],
+                },
+            ],
+            totalCount: 1,
+        });
+        const commitStore = {
+            getCommits: jest.fn(() => [
+                {
+                    id: "graduated",
+                    message: "graduated memo",
+                    timestamp: 30,
+                    entryType: "extract",
+                    extract: {
+                        originUuid: "ir_done",
+                        quoteText: "done quote",
+                        memoText: "graduated memo",
+                        sourcePath: path,
+                        sourceAnchor: { start: 0, end: 5, ordinal: 0 },
+                        sourceMode: "manual-ir",
+                        extractCreatedAt: 30,
+                    },
+                },
+                {
+                    id: "message",
+                    message: "message",
+                    timestamp: 20,
+                    entryType: "manual",
+                },
+            ]),
+        };
+        plugin.extractStore.getActiveByPath.mockReturnValue([
+            {
+                uuid: "manual-active",
+                sourcePath: path,
+                sourceMode: "manual-ir",
+                rawMarkdown: "manual preview",
+                memo: "",
+                sourceAnchor: { start: 1, end: 15, ordinal: 0, sourceLength: 10 },
+                createdAt: 40,
+                stage: "active",
+            },
+            {
+                uuid: "auto-active",
+                sourcePath: path,
+                sourceMode: "auto-slice",
+                rawMarkdown: "# Auto\nbody",
+                memo: "auto memo",
+                sourceAnchor: { start: 2, end: 20, ordinal: 1, sourceLength: 10 },
+                createdAt: 50,
+                stage: "active",
+            },
+        ]);
+        (view as any).commitStore = commitStore;
+        (view as any).setSelectedTimelineItem(item);
+        view.redraw();
+
+        expect((getLastSidebarProps(root).commitLogs as Array<{ id: string }>).map((log) => log.id)).toEqual([
+            "extract-preview:auto-active",
+            "extract-preview:manual-active",
+            "graduated",
+            "message",
+        ]);
+
+        (view as any).handleCommitContextMenu(
+            { nativeEvent: new MouseEvent("contextmenu") } as React.MouseEvent,
+            "message",
+        );
+
+        const preferenceItem = (Menu as unknown as { lastItems: Array<{ title?: string; icon?: string; submenu?: unknown }> })
+            .lastItems.find((menuItem) => menuItem.title === "TIMELINE_PREFERENCES");
+        expect(preferenceItem).toMatchObject({ icon: "funnel" });
+
+        const submenuItems = (
+            (preferenceItem?.submenu as { items: unknown[] }).items as Array<{
+                title?: string;
+                icon?: string;
+                checked?: boolean;
+                onClick?: () => void;
+            }>
+        ).filter((menuItem) => menuItem.title?.startsWith("TIMELINE_PREFERENCE_SHOW_")) as Array<{
+            title?: string;
+            icon?: string;
+            checked?: boolean;
+            onClick?: () => void;
+        }>;
+        expect(submenuItems.map((menuItem) => [menuItem.title, menuItem.icon, menuItem.checked])).toEqual([
+            ["TIMELINE_PREFERENCE_SHOW_EXTRACTS", "library-big", true],
+            ["TIMELINE_PREFERENCE_SHOW_AUTO_EXTRACTS", "library-big", true],
+            ["TIMELINE_PREFERENCE_SHOW_GRADUATED_EXTRACTS", "graduation-cap", true],
+            ["TIMELINE_PREFERENCE_SHOW_COMMIT_MESSAGES", "message-square-text", true],
+        ]);
+
+        submenuItems[1].onClick?.();
+
+        expect(plugin.savePluginData).toHaveBeenCalled();
+        expect((plugin.data.settings as any).timelineDisplayPreferences).toMatchObject({
+            autoExtracts: false,
+        });
+        expect((getLastSidebarProps(root).commitLogs as Array<{ id: string }>).map((log) => log.id)).toEqual([
+            "extract-preview:manual-active",
+            "graduated",
+            "message",
+        ]);
+    });
+
+    it("opens only the timeline preference menu from timeline blank space", () => {
+        const path = "notes/Timeline Blank.md";
+        const item = {
+            id: "note-1",
+            path,
+            title: "Timeline Blank",
+            noteFile: createTFile(path),
+        };
+        const { root, view } = createView({
+            activeMarkdownPath: path,
+            availableFiles: [path],
+        });
+        jest.mocked(reviewDecksToSidebarState).mockReturnValue({
+            sections: [
+                {
+                    id: "new",
+                    title: "New",
+                    count: 1,
+                    color: "#4f46e5",
+                    items: [item as never],
+                },
+            ],
+            totalCount: 1,
+        });
+        (view as any).commitStore = {
+            getCommits: jest.fn(() => []),
+        };
+        (view as any).setSelectedTimelineItem(item);
+        view.redraw();
+
+        const props = getLastSidebarProps(root) as {
+            onTimelineContextMenu?: (event: React.MouseEvent) => void;
+        };
+        props.onTimelineContextMenu?.({
+            nativeEvent: new MouseEvent("contextmenu"),
+            preventDefault: jest.fn(),
+            stopPropagation: jest.fn(),
+        } as unknown as React.MouseEvent);
+
+        const menuItems = (
+            Menu as unknown as { lastItems: Array<{ title?: string; icon?: string; submenu?: unknown }> }
+        ).lastItems;
+        expect(menuItems.map((menuItem) => menuItem.title)).toEqual(["TIMELINE_PREFERENCES"]);
+        expect(menuItems[0]).toMatchObject({ icon: "funnel" });
+    });
+
+    it("uses the highest timeline percentage for tracked sidebar progress only", () => {
+        const trackedPath = "notes/Tracked.md";
+        const standalonePath = "notes/Standalone.md";
+        const trackedFile = createTFile(trackedPath);
+        const standaloneFile = createTFile(standalonePath);
+        const { root, view, plugin } = createView({
+            activeMarkdownPath: trackedPath,
+            timelineAllowUntrackedNotes: true,
+            availableFiles: [trackedPath, standalonePath],
+        });
+        const trackedItem = {
+            id: "note-1",
+            path: trackedPath,
+            title: "Tracked",
+            priority: 5,
+            noteFile: trackedFile,
+        };
+        jest.mocked(reviewDecksToSidebarState).mockReturnValue({
+            sections: [
+                {
+                    id: "new",
+                    title: "New",
+                    count: 1,
+                    color: "#4f46e5",
+                    items: [trackedItem as never],
+                },
+            ],
+            totalCount: 1,
+        });
+        const commitStore = {
+            getCommits: jest.fn(() => []),
+            getLatestScrollPercentage: jest.fn((path: string) =>
+                path === trackedPath ? 0.44 : 0.6,
+            ),
+        };
+        (view as any).commitStore = commitStore;
+        (
+            plugin.extractStore.getActiveByPath as unknown as jest.MockedFunction<
+                (path: string) => unknown[]
+            >
+        ).mockImplementation((path: string) =>
+            path === trackedPath
+                ? [
+                      {
+                          uuid: "active-75",
+                          sourcePath: trackedPath,
+                          sourceMode: "manual-ir",
+                          rawMarkdown: "preview at 75",
+                          memo: "",
+                          sourceAnchor: {
+                              start: 75,
+                              end: 90,
+                              ordinal: 0,
+                              sourceLength: 100,
+                          },
+                          createdAt: 1,
+                          stage: "active",
+                      },
+                  ]
+                : [],
+        );
+        plugin.noteReviewStore.getItem.mockImplementation((path?: string) =>
+            path === trackedPath ? { priority: 5, isNew: true } : null,
+        );
+        view.redraw();
+
+        const sidebarItem = (
+            getLastSidebarProps(root).data as { sections: Array<{ items: Array<{ path: string; lastScrollPercentage?: number }> }> }
+        ).sections[0].items[0];
+        expect(sidebarItem.lastScrollPercentage).toBe(0.75);
+
+        const standaloneItem = (view as any).buildStandaloneTimelineItem(
+            standalonePath,
+        ) as { lastScrollPercentage?: number } | null;
+        expect(standaloneItem).toMatchObject({
+            path: standalonePath,
+            noteFile: standaloneFile,
+        });
+        expect(standaloneItem?.lastScrollPercentage).toBeUndefined();
+    });
+
     test.each([["ignored-tag"], ["ignored-folder"]])(
         "keeps duration-prefix timeline commits as logs only when note review is blocked by %s",
         async (reason) => {
@@ -868,6 +1327,37 @@ describe("ReactNoteReviewView", () => {
         expect(plugin.syncEvents.emit).toHaveBeenCalledWith("note-review-updated");
     });
 
+    it("clamps sidebar priority before saving note review data", async () => {
+        const path = "notes/Priority.md";
+        const { plugin, view } = createView({
+            activeMarkdownPath: path,
+            availableFiles: [path],
+        });
+        const storedItem = {
+            priority: 5,
+        };
+        plugin.noteReviewStore.getItem.mockReturnValue(storedItem);
+        plugin.noteReviewStore.getEntrySnapshot = jest.fn(() => ({
+            path,
+            source: "manual",
+            deckName: DEFAULT_DECKNAME,
+            item: {
+                uuid: "note-1",
+            },
+        }));
+
+        await (view as any).handlePriorityChange(
+            {
+                path,
+                noteFile: { path },
+            },
+            11,
+        );
+
+        expect(storedItem.priority).toBe(10);
+        expect(plugin.noteReviewStore.save).toHaveBeenCalled();
+    });
+
     it("emits a timeline edit session after editing a commit", async () => {
         const path = "notes/Edit Commit.md";
         const { plugin, view } = createView({
@@ -897,6 +1387,129 @@ describe("ReactNoteReviewView", () => {
                 message: "updated",
             }),
         );
+    });
+
+    it("edits active extract previews through the extract memo path", async () => {
+        const path = "notes/Extract.md";
+        const { plugin, view } = createView({
+            activeMarkdownPath: path,
+            availableFiles: [path],
+        });
+        (view as any).selectedItem = { path };
+        (view as any).commitStore = {
+            getCommits: jest.fn(() => []),
+        };
+        plugin.extractStore.getActiveByPath.mockReturnValue([
+            {
+                uuid: "ir_1",
+                sourcePath: path,
+                sourceMode: "manual-ir",
+                rawMarkdown: "quote",
+                memo: "old memo",
+                sourceAnchor: { start: 0, end: 5, ordinal: 0 },
+                createdAt: 1,
+                stage: "active",
+            },
+        ]);
+        (view as any).commitLogs = (view as any).buildTimelineLogs(path);
+
+        await (view as any).handleEditCommit("extract-preview:ir_1", {
+            message: "new memo",
+            entryType: "extract",
+            extract: {
+                originUuid: "ir_1",
+                quoteText: "ignored quote edit",
+                memoText: "new memo",
+                sourcePath: path,
+                sourceAnchor: { start: 0, end: 5, ordinal: 0 },
+                sourceMode: "manual-ir",
+                extractCreatedAt: 1,
+            },
+        });
+
+        expect(plugin.updateExtractMemo).toHaveBeenCalledWith("ir_1", "new memo");
+    });
+
+    it("updates formal extract timeline entries without touching extract memo", async () => {
+        const path = "notes/Formal Extract.md";
+        const { plugin, view } = createView({
+            activeMarkdownPath: path,
+            availableFiles: [path],
+        });
+        (view as any).selectedItem = { path };
+        (view as any).commitStore = {
+            editCommit: jest.fn(async () => ({
+                id: "extract:ir_1",
+                message: "new memo",
+                timestamp: 1,
+                entryType: "extract",
+            })),
+            getCommits: jest.fn(() => []),
+        };
+
+        await (view as any).handleEditCommit("extract:ir_1", {
+            message: "new memo",
+            entryType: "extract",
+            extract: {
+                originUuid: "ir_1",
+                quoteText: "new quote",
+                memoText: "new memo",
+                sourcePath: path,
+                sourceAnchor: { start: 0, end: 5, ordinal: 0 },
+                sourceMode: "manual-ir",
+                extractCreatedAt: 1,
+            },
+        });
+
+        expect(plugin.updateExtractMemo).not.toHaveBeenCalled();
+        expect((view as any).commitStore.editCommit).toHaveBeenCalledWith(
+            path,
+            "extract:ir_1",
+            expect.objectContaining({ entryType: "extract" }),
+        );
+        expect(plugin.appendSyroTimelineEdit).toHaveBeenCalledWith(
+            path,
+            expect.objectContaining({ id: "extract:ir_1" }),
+        );
+    });
+
+    it("uses active extract context menu deletion for previews", async () => {
+        const path = "notes/Extract Context.md";
+        const { plugin, view } = createView({
+            activeMarkdownPath: path,
+            availableFiles: [path],
+        });
+        (view as any).selectedItem = { path };
+        (view as any).commitStore = {
+            getCommits: jest.fn(() => []),
+        };
+        plugin.extractStore.getActiveByPath.mockReturnValue([
+            {
+                uuid: "ir_1",
+                sourcePath: path,
+                sourceMode: "auto-slice",
+                rawMarkdown: "# A\nbody",
+                memo: "memo",
+                sourceAnchor: { start: 0, end: 8, ordinal: 0 },
+                createdAt: 1,
+                stage: "active",
+            },
+        ]);
+        (view as any).commitLogs = (view as any).buildTimelineLogs(path);
+
+        (view as any).handleCommitContextMenu(
+            { nativeEvent: new MouseEvent("contextmenu") } as React.MouseEvent,
+            "extract-preview:ir_1",
+        );
+        const deleteItem = (
+            Menu as unknown as { lastItems: Array<{ title?: string; onClick?: () => void }> }
+        ).lastItems.find((item) => item.title === "TIMELINE_CLEAR_EXTRACT_MEMO");
+        deleteItem.onClick?.();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(plugin.removeExtractFromTimelinePreview).toHaveBeenCalledWith("ir_1");
+        expect(plugin.appendSyroTimelineDelete).not.toHaveBeenCalled();
     });
 
     it("follows the current review card note into a standalone timeline item when enabled", () => {

@@ -24,16 +24,46 @@ export interface ReviewCommitLog {
         offset: number;
     };
     scrollPercentage?: number;
-    entryType?: "manual" | "review-response";
+    entryType?: ReviewCommitEntryType;
     reviewResponse?: TimelineReviewResponse;
     displayDuration?: TimelineDisplayDuration;
+    extract?: ReviewTimelineExtractSnapshot;
+    isExtractPreview?: boolean;
+}
+
+export type ReviewCommitEntryType = "manual" | "review-response" | "extract";
+
+export interface ReviewTimelineExtractAnchor {
+    start: number;
+    end: number;
+    innerStart?: number;
+    innerEnd?: number;
+    startLine?: number;
+    endLine?: number;
+    prefix?: string;
+    suffix?: string;
+    contentHash?: number | string;
+    ordinal?: number;
+    sourceLength?: number;
+}
+
+export interface ReviewTimelineExtractSnapshot {
+    originUuid: string;
+    quoteText: string;
+    memoText: string;
+    memoEditedAt?: number;
+    sourcePath: string;
+    sourceAnchor: ReviewTimelineExtractAnchor;
+    sourceMode: "manual-ir" | "auto-slice";
+    extractCreatedAt: number;
 }
 
 export interface ReviewCommitEditPayload {
     message: string;
-    entryType: "manual" | "review-response";
+    entryType: ReviewCommitEntryType;
     reviewResponse?: TimelineReviewResponse;
     displayDuration?: TimelineDisplayDuration;
+    extract?: ReviewTimelineExtractSnapshot;
 }
 
 export interface ReviewCommitData {
@@ -66,6 +96,34 @@ function cloneCommitLog<T extends ReviewCommitLog | ReviewCommitLog[] | undefine
     }
 
     return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function cloneExtractSnapshot(
+    extract: ReviewTimelineExtractSnapshot | undefined,
+): ReviewTimelineExtractSnapshot | undefined {
+    return extract ? (JSON.parse(JSON.stringify(extract)) as ReviewTimelineExtractSnapshot) : undefined;
+}
+
+function renameExtractSourcePath(
+    commits: ReviewCommitLog[],
+    oldPath: string,
+    newPath: string,
+    exactOnly: boolean,
+): void {
+    for (const commit of commits) {
+        if (!commit.extract) {
+            continue;
+        }
+
+        const nextPath = exactOnly
+            ? commit.extract.sourcePath === oldPath
+                ? newPath
+                : commit.extract.sourcePath
+            : renamePathPrefix(commit.extract.sourcePath, oldPath, newPath);
+        if (nextPath !== commit.extract.sourcePath) {
+            commit.extract.sourcePath = nextPath;
+        }
+    }
 }
 
 export class ReviewCommitStore {
@@ -188,6 +246,7 @@ export class ReviewCommitStore {
 
     getLatestScrollPercentage(filePath: string): number | undefined {
         const commits = this.getCommits(filePath);
+        let highest: number | undefined;
         for (const commit of commits) {
             if (
                 typeof commit.scrollPercentage !== "number" ||
@@ -196,10 +255,11 @@ export class ReviewCommitStore {
                 continue;
             }
 
-            return Math.min(1, Math.max(0, commit.scrollPercentage));
+            const clamped = Math.min(1, Math.max(0, commit.scrollPercentage));
+            highest = highest === undefined ? clamped : Math.max(highest, clamped);
         }
 
-        return undefined;
+        return highest;
     }
 
     async addCommit(
@@ -208,27 +268,59 @@ export class ReviewCommitStore {
         contextAnchor?: { textSnippet: string; offset: number },
         scrollPercentage?: number,
         metadata?: {
-            entryType?: "manual" | "review-response";
+            entryType?: ReviewCommitEntryType;
             reviewResponse?: TimelineReviewResponse;
             displayDuration?: TimelineDisplayDuration;
+            extract?: ReviewTimelineExtractSnapshot;
         },
     ): Promise<ReviewCommitLog> {
         const now = Date.now();
+        const entryType = metadata?.entryType ?? "manual";
+        const extract = cloneExtractSnapshot(metadata?.extract);
         const log: ReviewCommitLog = {
             id: now.toString(),
-            message: message.trim(),
+            message: entryType === "extract" ? (extract?.memoText ?? message).trim() : message.trim(),
             timestamp: now,
             contextAnchor,
             scrollPercentage,
-            entryType: metadata?.entryType ?? "manual",
-            reviewResponse: metadata?.reviewResponse,
-            displayDuration: metadata?.displayDuration,
+            entryType,
+            reviewResponse: entryType === "extract" ? undefined : metadata?.reviewResponse,
+            displayDuration: entryType === "extract" ? undefined : metadata?.displayDuration,
+            extract,
         };
 
         if (!this.data[filePath]) {
             this.data[filePath] = [];
         }
         this.data[filePath].unshift(log);
+
+        await this.save();
+        return cloneCommitLog(log);
+    }
+
+    async addExtractCommit(
+        filePath: string,
+        extract: ReviewTimelineExtractSnapshot,
+        scrollPercentage?: number,
+    ): Promise<ReviewCommitLog> {
+        const clonedExtract = cloneExtractSnapshot(extract);
+        const log: ReviewCommitLog = {
+            id: `extract:${clonedExtract.originUuid}`,
+            message: clonedExtract.memoText.trim(),
+            timestamp: clonedExtract.extractCreatedAt,
+            scrollPercentage,
+            entryType: "extract",
+            extract: clonedExtract,
+        };
+
+        if (!this.data[filePath]) {
+            this.data[filePath] = [];
+        }
+
+        this.removeCommitById(log.id, filePath);
+        this.data[filePath] = [log, ...(this.data[filePath] ?? [])].sort(
+            (left, right) => (right.timestamp ?? 0) - (left.timestamp ?? 0),
+        );
 
         await this.save();
         return cloneCommitLog(log);
@@ -244,6 +336,7 @@ export class ReviewCommitStore {
         }
 
         this.data[newPath] = this.data[oldPath];
+        renameExtractSourcePath(this.data[newPath], oldPath, newPath, true);
         delete this.data[oldPath];
 
         return {
@@ -281,6 +374,7 @@ export class ReviewCommitStore {
 
         for (const [filePath, commits] of Object.entries(this.data)) {
             const nextPath = renamePathPrefix(filePath, oldPath, newPath);
+            renameExtractSourcePath(commits, oldPath, newPath, false);
             nextData[nextPath] = commits;
             if (nextPath === filePath) {
                 continue;
@@ -291,7 +385,7 @@ export class ReviewCommitStore {
                 path: nextPath,
                 oldPath: filePath,
                 newPath: nextPath,
-                commits: cloneCommitLog(commits) ?? [],
+            commits: cloneCommitLog(commits) ?? [],
             });
         }
 
@@ -322,6 +416,9 @@ export class ReviewCommitStore {
 
     upsertCommitSnapshot(filePath: string, commit: ReviewCommitLog): void {
         const clonedCommit = cloneCommitLog(commit);
+        if (clonedCommit.entryType === "extract" && clonedCommit.extract) {
+            clonedCommit.extract.sourcePath = filePath;
+        }
         const existingPath = this.findCommitPath(commit.id);
         if (existingPath) {
             this.data[existingPath] = this.getCommits(existingPath).filter(
@@ -371,10 +468,24 @@ export class ReviewCommitStore {
         if (!this.data[filePath]) return null;
         const log = this.data[filePath].find((l) => l.id === commitId);
         if (log) {
-            log.message = payload.message.trim();
             log.entryType = payload.entryType;
-            log.reviewResponse = payload.reviewResponse;
-            log.displayDuration = payload.displayDuration;
+            if (payload.entryType === "extract") {
+                const nextExtract = payload.extract ?? log.extract;
+                const previousMemoText = log.extract?.memoText ?? "";
+                const nextMemoText = nextExtract?.memoText ?? "";
+                log.extract = cloneExtractSnapshot(nextExtract);
+                if (log.extract && nextMemoText.trim() !== previousMemoText.trim()) {
+                    log.extract.memoEditedAt = Date.now();
+                }
+                log.message = (log.extract?.memoText ?? payload.message).trim();
+                log.reviewResponse = undefined;
+                log.displayDuration = undefined;
+            } else {
+                log.message = payload.message.trim();
+                log.extract = undefined;
+                log.reviewResponse = payload.reviewResponse;
+                log.displayDuration = payload.displayDuration;
+            }
             log.lastEdited = Date.now();
             await this.save();
             return cloneCommitLog(log);

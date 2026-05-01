@@ -269,6 +269,10 @@ function createPlugin(
             const updated = extractStore.setMemo(uuid, memo);
             return Promise.resolve(updated);
         }),
+        updateExtractPriority: jest.fn((uuid: string, priority: number) => {
+            const updated = extractStore.setPriority(uuid, priority);
+            return Promise.resolve(updated);
+        }),
         syncEvents,
         flushReviewPersistence: jest.fn(() => Promise.resolve()),
         loadDailyDeckStats: jest.fn(),
@@ -342,6 +346,20 @@ function findButton(container: HTMLElement, label: string): HTMLButtonElement {
         throw new Error(`Expected button with label ${label}`);
     }
     return button;
+}
+
+function findMemoTextarea(container: HTMLElement): HTMLTextAreaElement {
+    const textarea = container.querySelector<HTMLTextAreaElement>(".corner-pill-wrapper textarea");
+    if (!textarea) {
+        throw new Error("Expected extract memo textarea");
+    }
+    return textarea;
+}
+
+function replaceMemoEditorText(container: HTMLElement, value: string): void {
+    const textarea = findMemoTextarea(container);
+    textarea.value = value;
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 function pressUndo() {
@@ -422,17 +440,12 @@ test("extract review displays and saves the active extract memo", async () => {
         await flushEffects();
 
         const preview = container.querySelector<HTMLElement>(".text-preview");
-        const textarea = container.querySelector<HTMLTextAreaElement>(
-            ".corner-pill-wrapper textarea",
-        );
+        const textarea = findMemoTextarea(container);
         expect(preview?.textContent).toBe("已有摘录备注");
-        expect(textarea?.value).toBe("已有摘录备注");
+        expect(textarea.value).toBe("已有摘录备注");
 
         act(() => {
-            if (textarea) {
-                textarea.value = "复习时更新的备注";
-                textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
-            }
+            replaceMemoEditorText(container, "复习时更新的备注");
         });
 
         expect(plugin.updateExtractMemo).not.toHaveBeenCalled();
@@ -443,6 +456,94 @@ test("extract review displays and saves the active extract memo", async () => {
         await flushEffects();
 
         expect(plugin.updateExtractMemo).toHaveBeenCalledWith(item.uuid, "复习时更新的备注");
+    } finally {
+        act(() => root.unmount());
+        jest.useRealTimers();
+    }
+});
+
+test("extract review displays and saves the active extract priority from the dial", async () => {
+    jest.useFakeTimers();
+    const item = createExtractItem({ priority: 7 });
+    const markdown = "before {{ir::target}} after";
+    const context = createManualExtractContext(markdown, 7, 21);
+    const plugin = createPlugin(
+        item,
+        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+    );
+    const { container, root } = renderExtractReviewSession(plugin);
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        const memoPill = container.querySelector<HTMLElement>(".corner-pill-wrapper");
+        const dial = container.querySelector<HTMLElement>(".importance-widget");
+        const value = container.querySelector<HTMLElement>(".importance-value");
+        expect(value?.textContent).toBe("7");
+
+        act(() => {
+            memoPill?.click();
+            dial?.dispatchEvent(
+                new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }),
+            );
+        });
+        expect(value?.textContent).toBe("8");
+        expect(plugin.updateExtractPriority).not.toHaveBeenCalled();
+
+        act(() => {
+            jest.advanceTimersByTime(280);
+        });
+        await flushEffects();
+
+        expect(plugin.updateExtractPriority).toHaveBeenCalledWith(item.uuid, 8);
+    } finally {
+        act(() => root.unmount());
+        jest.useRealTimers();
+    }
+});
+
+test("extract review recalculates button intervals after changing extract priority", async () => {
+    jest.useFakeTimers();
+    const item = createExtractItem({ priority: 5 });
+    const markdown = "before {{ir::target}} after";
+    const context = createManualExtractContext(markdown, 7, 21);
+    const plugin = createPlugin(
+        item,
+        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+    );
+    plugin.getExtractReviewIntervals = jest.fn((uuid: string) => {
+        const priority = plugin.extractStore?.get(uuid)?.priority ?? 5;
+        return ["again", "hard", `good-${priority}`, "easy"];
+    });
+    const { container, root } = renderExtractReviewSession(plugin);
+
+    try {
+        await flushEffects();
+        await flushEffects();
+
+        const goodButton = findButton(container, "Good");
+        expect(goodButton.textContent).toContain("good-5");
+
+        const memoPill = container.querySelector<HTMLElement>(".corner-pill-wrapper");
+        const dial = container.querySelector<HTMLElement>(".importance-widget");
+
+        act(() => {
+            memoPill?.click();
+            dial?.dispatchEvent(
+                new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }),
+            );
+        });
+        expect(plugin.updateExtractPriority).not.toHaveBeenCalled();
+        expect(findButton(container, "Good").textContent).toContain("good-5");
+
+        act(() => {
+            jest.advanceTimersByTime(280);
+        });
+        await flushEffects();
+
+        expect(plugin.updateExtractPriority).toHaveBeenCalledWith(item.uuid, 6);
+        expect(findButton(container, "Good").textContent).toContain("good-6");
     } finally {
         act(() => root.unmount());
         jest.useRealTimers();
@@ -466,14 +567,8 @@ test("extract review flushes pending memo before answering", async () => {
         await flushEffects();
         await flushEffects();
 
-        const textarea = container.querySelector<HTMLTextAreaElement>(
-            ".corner-pill-wrapper textarea",
-        );
         act(() => {
-            if (textarea) {
-                textarea.value = "离开前保存";
-                textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
-            }
+            replaceMemoEditorText(container, "离开前保存");
         });
 
         act(() => {
@@ -515,14 +610,8 @@ test("extract review keeps pending memo dirty after a failed autosave", async ()
         await flushEffects();
         await flushEffects();
 
-        const textarea = container.querySelector<HTMLTextAreaElement>(
-            ".corner-pill-wrapper textarea",
-        );
         act(() => {
-            if (textarea) {
-                textarea.value = "失败后仍待保存";
-                textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
-            }
+            replaceMemoEditorText(container, "失败后仍待保存");
         });
 
         act(() => {
@@ -535,7 +624,7 @@ test("extract review keeps pending memo dirty after a failed autosave", async ()
             "[SR-Extract] Failed to save extract memo",
             expect.any(Error),
         );
-        expect(textarea?.value).toBe("失败后仍待保存");
+        expect(findMemoTextarea(container).value).toBe("失败后仍待保存");
 
         act(() => {
             findButton(container, "Again").click();

@@ -115,6 +115,8 @@ interface LinearCardProps {
     onUpdateExtractMemo?: (memo: string) => void;
     onSetExtractDate?: () => void;
     extractDebugStatus?: ExtractDebugStatus | null;
+    extractPriority?: number;
+    onUpdateExtractPriority?: (priority: number) => void;
     extractActionLabels?: {
         again: string;
         good: string;
@@ -384,6 +386,8 @@ export const LinearCard: FC<LinearCardProps> = ({
     onUpdateExtractContext,
     extractMemo = "",
     onUpdateExtractMemo,
+    extractPriority = 5,
+    onUpdateExtractPriority,
     onSetExtractDate,
     extractDebugStatus,
     extractActionLabels,
@@ -1765,7 +1769,9 @@ export const LinearCard: FC<LinearCardProps> = ({
                             {isExtractReview && (
                                 <ExtractMemoPill
                                     memo={extractMemo}
+                                    priority={extractPriority}
                                     onUpdateMemo={onUpdateExtractMemo}
+                                    onUpdatePriority={onUpdateExtractPriority}
                                 />
                             )}
                         </div>
@@ -2652,18 +2658,52 @@ const getExtractMemoAnimationMs = (widget: HTMLElement): number => {
     return settingDuration ?? EXTRACT_MEMO_DEFAULT_ANIMATION_MS;
 };
 
+const setElementCssProps = (element: HTMLElement, props: Record<string, string>): void => {
+    for (const [key, value] of Object.entries(props)) {
+        element.style.setProperty(key, value);
+    }
+};
+
 interface ExtractMemoPillProps {
     memo: string;
+    priority: number;
     onUpdateMemo?: (memo: string) => void;
+    onUpdatePriority?: (priority: number) => void;
 }
 
-const ExtractMemoPill: FC<ExtractMemoPillProps> = ({ memo, onUpdateMemo }) => {
+const clampPriority = (value: number): number => Math.max(1, Math.min(10, Math.round(value)));
+
+const ExtractMemoPill: FC<ExtractMemoPillProps> = ({
+    memo,
+    priority,
+    onUpdateMemo,
+    onUpdatePriority,
+}) => {
     const widgetRef = useRef<HTMLDivElement>(null);
     const previewRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const importanceWidgetRef = useRef<HTMLDivElement>(null);
     const animationTimerRef = useRef<number | null>(null);
+    const tickTimerRef = useRef<number | null>(null);
+    const wheelCommitTimerRef = useRef<number | null>(null);
     const isAnimatingRef = useRef(false);
+    const isDraggingRef = useRef(false);
+    const dragStartYRef = useRef(0);
+    const dragStartPriorityRef = useRef(clampPriority(priority));
+    const priorityRef = useRef(clampPriority(priority));
     const [draft, setDraft] = useState(memo);
+    const [currentPriority, setCurrentPriority] = useState(() => clampPriority(priority));
+    const onUpdatePriorityRef = useRef(onUpdatePriority);
+
+    useEffect(() => {
+        onUpdatePriorityRef.current = onUpdatePriority;
+    }, [onUpdatePriority]);
+
+    useEffect(() => {
+        const nextPriority = clampPriority(priority);
+        priorityRef.current = nextPriority;
+        setCurrentPriority(nextPriority);
+    }, [priority]);
 
     const clearAnimationTimer = useCallback(() => {
         if (animationTimerRef.current !== null) {
@@ -2672,14 +2712,60 @@ const ExtractMemoPill: FC<ExtractMemoPillProps> = ({ memo, onUpdateMemo }) => {
         }
     }, []);
 
+    const clearTickTimer = useCallback(() => {
+        if (tickTimerRef.current !== null) {
+            window.clearTimeout(tickTimerRef.current);
+            tickTimerRef.current = null;
+        }
+    }, []);
+
+    const clearWheelCommitTimer = useCallback(() => {
+        if (wheelCommitTimerRef.current !== null) {
+            window.clearTimeout(wheelCommitTimerRef.current);
+            wheelCommitTimerRef.current = null;
+        }
+    }, []);
+
+    const commitPriority = useCallback(() => {
+        clearWheelCommitTimer();
+        onUpdatePriorityRef.current?.(priorityRef.current);
+    }, [clearWheelCommitTimer]);
+
+    const setPriorityWithFeedback = useCallback(
+        (nextValue: number, direction: "up" | "down") => {
+            const nextPriority = clampPriority(nextValue);
+            if (nextPriority === priorityRef.current) {
+                return;
+            }
+            priorityRef.current = nextPriority;
+            setCurrentPriority(nextPriority);
+
+            const importanceWidget = importanceWidgetRef.current;
+            if (!importanceWidget) {
+                return;
+            }
+            clearTickTimer();
+            importanceWidget.classList.remove("tick-up", "tick-down");
+            void importanceWidget.offsetWidth;
+            importanceWidget.classList.add(direction === "up" ? "tick-up" : "tick-down");
+            tickTimerRef.current = window.setTimeout(() => {
+                importanceWidget.classList.remove("tick-up", "tick-down");
+                tickTimerRef.current = null;
+            }, 100);
+        },
+        [clearTickTimer],
+    );
+
     const resizeTextarea = useCallback(() => {
         const textarea = textareaRef.current;
         const widget = widgetRef.current;
         if (!textarea || !widget?.classList.contains("is-active")) {
             return;
         }
-        textarea.setCssProps({ "--sr-extract-memo-textarea-height": "auto" });
-        textarea.setCssProps({ "--sr-extract-memo-textarea-height": `${textarea.scrollHeight}px` });
+        setElementCssProps(textarea, { "--sr-extract-memo-textarea-height": "auto" });
+        setElementCssProps(textarea, {
+            "--sr-extract-memo-textarea-height": `${textarea.scrollHeight}px`,
+        });
     }, []);
 
     const toggleWidget = useCallback(
@@ -2706,16 +2792,13 @@ const ExtractMemoPill: FC<ExtractMemoPillProps> = ({ memo, onUpdateMemo }) => {
 
             if (!expand) {
                 preview.textContent = textarea.value;
-                textarea.setCssProps({ "--sr-extract-memo-textarea-height": "" });
+                setElementCssProps(textarea, { "--sr-extract-memo-textarea-height": "" });
             }
 
             widget.classList.toggle("is-active", expand);
 
             if (expand) {
-                textarea.setCssProps({ "--sr-extract-memo-textarea-height": "auto" });
-                textarea.setCssProps({
-                    "--sr-extract-memo-textarea-height": `${textarea.scrollHeight}px`,
-                });
+                resizeTextarea();
             }
 
             const targetW = widget.offsetWidth;
@@ -2723,33 +2806,41 @@ const ExtractMemoPill: FC<ExtractMemoPillProps> = ({ memo, onUpdateMemo }) => {
             const targetInnerW = expand ? textarea.offsetWidth : preview.offsetWidth;
 
             widget.classList.remove("animate");
-            widget.setCssProps({
+            setElementCssProps(widget, {
                 "--sr-extract-memo-width": `${startW}px`,
                 "--sr-extract-memo-height": `${startH}px`,
             });
             if (expand) {
-                preview.setCssProps({ "--sr-extract-memo-preview-width": `${currentInnerW}px` });
-                textarea.setCssProps({ "--sr-extract-memo-textarea-width": `${targetInnerW}px` });
+                setElementCssProps(preview, {
+                    "--sr-extract-memo-preview-width": `${currentInnerW}px`,
+                });
+                setElementCssProps(textarea, {
+                    "--sr-extract-memo-textarea-width": `${targetInnerW}px`,
+                });
             } else {
-                textarea.setCssProps({ "--sr-extract-memo-textarea-width": `${currentInnerW}px` });
-                preview.setCssProps({ "--sr-extract-memo-preview-width": `${targetInnerW}px` });
+                setElementCssProps(textarea, {
+                    "--sr-extract-memo-textarea-width": `${currentInnerW}px`,
+                });
+                setElementCssProps(preview, {
+                    "--sr-extract-memo-preview-width": `${targetInnerW}px`,
+                });
             }
 
             void widget.offsetHeight;
 
             widget.classList.add("animate");
-            widget.setCssProps({
+            setElementCssProps(widget, {
                 "--sr-extract-memo-width": `${targetW}px`,
                 "--sr-extract-memo-height": `${targetH}px`,
             });
 
             animationTimerRef.current = window.setTimeout(() => {
-                widget.setCssProps({
+                setElementCssProps(widget, {
                     "--sr-extract-memo-width": "",
                     "--sr-extract-memo-height": "",
                 });
-                preview.setCssProps({ "--sr-extract-memo-preview-width": "" });
-                textarea.setCssProps({ "--sr-extract-memo-textarea-width": "" });
+                setElementCssProps(preview, { "--sr-extract-memo-preview-width": "" });
+                setElementCssProps(textarea, { "--sr-extract-memo-textarea-width": "" });
                 widget.classList.remove("animate");
                 isAnimatingRef.current = false;
                 animationTimerRef.current = null;
@@ -2759,7 +2850,7 @@ const ExtractMemoPill: FC<ExtractMemoPillProps> = ({ memo, onUpdateMemo }) => {
                 }
             }, animationMs);
         },
-        [clearAnimationTimer],
+        [clearAnimationTimer, resizeTextarea],
     );
 
     useEffect(() => {
@@ -2783,8 +2874,74 @@ const ExtractMemoPill: FC<ExtractMemoPillProps> = ({ memo, onUpdateMemo }) => {
         return () => {
             document.removeEventListener("click", handleDocumentClick);
             clearAnimationTimer();
+            clearTickTimer();
+            clearWheelCommitTimer();
         };
-    }, [clearAnimationTimer, toggleWidget]);
+    }, [clearAnimationTimer, clearTickTimer, clearWheelCommitTimer, toggleWidget]);
+
+    useEffect(() => {
+        const importanceWidget = importanceWidgetRef.current;
+        if (!importanceWidget) {
+            return undefined;
+        }
+        const handleImportanceWheel = (event: WheelEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.deltaY < 0) {
+                setPriorityWithFeedback(priorityRef.current + 1, "up");
+            } else if (event.deltaY > 0) {
+                setPriorityWithFeedback(priorityRef.current - 1, "down");
+            }
+            clearWheelCommitTimer();
+            wheelCommitTimerRef.current = window.setTimeout(() => {
+                commitPriority();
+            }, 280);
+        };
+        importanceWidget.addEventListener("wheel", handleImportanceWheel, { passive: false });
+        return () => {
+            importanceWidget.removeEventListener("wheel", handleImportanceWheel);
+        };
+    }, [clearWheelCommitTimer, commitPriority, setPriorityWithFeedback]);
+
+    const handleImportancePointerDown = useCallback(
+        (event: React.PointerEvent<HTMLDivElement>) => {
+            clearWheelCommitTimer();
+            isDraggingRef.current = true;
+            dragStartYRef.current = event.clientY;
+            dragStartPriorityRef.current = priorityRef.current;
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+            event.preventDefault();
+            event.stopPropagation();
+        },
+        [clearWheelCommitTimer],
+    );
+
+    const handleImportancePointerMove = useCallback(
+        (event: React.PointerEvent<HTMLDivElement>) => {
+            if (!isDraggingRef.current) {
+                return;
+            }
+            const deltaY = dragStartYRef.current - event.clientY;
+            const steps = Math.floor(deltaY / 15);
+            const nextPriority = clampPriority(dragStartPriorityRef.current + steps);
+            if (nextPriority !== priorityRef.current) {
+                setPriorityWithFeedback(
+                    nextPriority,
+                    nextPriority > priorityRef.current ? "up" : "down",
+                );
+            }
+        },
+        [setPriorityWithFeedback],
+    );
+
+    const handleImportancePointerEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        const wasDragging = isDraggingRef.current;
+        isDraggingRef.current = false;
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
+        if (wasDragging) {
+            commitPriority();
+        }
+    }, [commitPriority]);
 
     const handleInput = useCallback(
         (event: React.SyntheticEvent<HTMLTextAreaElement>) => {
@@ -2827,6 +2984,31 @@ const ExtractMemoPill: FC<ExtractMemoPillProps> = ({ memo, onUpdateMemo }) => {
                     onInput={handleInput}
                     onClick={(event) => event.stopPropagation()}
                 />
+            </div>
+            <div
+                className="importance-widget"
+                ref={importanceWidgetRef}
+                onClick={(event) => event.stopPropagation()}
+                onPointerDown={handleImportancePointerDown}
+                onPointerMove={handleImportancePointerMove}
+                onPointerUp={handleImportancePointerEnd}
+                onPointerCancel={handleImportancePointerEnd}
+            >
+                <svg
+                    className="scroll-hint-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="M8 9l4-4 4 4" />
+                    <path d="M16 15l-4 4-4-4" />
+                </svg>
+                <span>W:</span>
+                <span className="importance-value">{currentPriority}</span>
             </div>
         </div>
     );

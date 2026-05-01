@@ -27,20 +27,72 @@ import { NoteReviewItem } from "src/ui/types/noteReview";
 import {
     ReviewCommitStore,
     ReviewCommitLog,
+    type ReviewTimelineExtractSnapshot,
     type ReviewCommitEditPayload,
 } from "src/dataStore/reviewCommitStore";
+import type { ExtractItem } from "src/dataStore/extractStore";
 import { t } from "src/lang/helpers";
 import { Tags } from "src/tags";
 import { ContextAnchorService } from "src/util/ContextAnchor";
-import { LicenseManager } from "src/services/LicenseManager";
 import { captureTimelineContext } from "src/ui/timeline/timelineContext";
 import { parseTimelineMessage } from "src/ui/timeline/timelineMessage";
+import type { TimelineDisplayPreferences } from "src/settings";
 
 // Stable view type id used when registering the sidebar view.
 export const REACT_REVIEW_QUEUE_VIEW_TYPE = "react-review-queue-list-view";
 
 interface OpenNoteTargetOptions {
     newTab?: boolean;
+}
+
+type TimelineDisplayPreferenceKey = keyof TimelineDisplayPreferences;
+
+type SubmenuCapableMenuItem = {
+    setSubmenu?: () => Menu;
+    setChecked?: (checked: boolean) => unknown;
+};
+
+const TIMELINE_DISPLAY_PREFERENCE_ITEMS: Array<{
+    key: TimelineDisplayPreferenceKey;
+    titleKey: string;
+    icon: string;
+}> = [
+    {
+        key: "extracts",
+        titleKey: "TIMELINE_PREFERENCE_SHOW_EXTRACTS",
+        icon: "library-big",
+    },
+    {
+        key: "autoExtracts",
+        titleKey: "TIMELINE_PREFERENCE_SHOW_AUTO_EXTRACTS",
+        icon: "library-big",
+    },
+    {
+        key: "graduatedExtracts",
+        titleKey: "TIMELINE_PREFERENCE_SHOW_GRADUATED_EXTRACTS",
+        icon: "graduation-cap",
+    },
+    {
+        key: "commitMessages",
+        titleKey: "TIMELINE_PREFERENCE_SHOW_COMMIT_MESSAGES",
+        icon: "message-square-text",
+    },
+];
+
+const DEFAULT_TIMELINE_DISPLAY_PREFERENCES: TimelineDisplayPreferences = {
+    extracts: true,
+    autoExtracts: true,
+    graduatedExtracts: true,
+    commitMessages: true,
+};
+
+function normalizeTimelineDisplayPreferences(
+    preferences: Partial<TimelineDisplayPreferences> | undefined,
+): TimelineDisplayPreferences {
+    return {
+        ...DEFAULT_TIMELINE_DISPLAY_PREFERENCES,
+        ...(preferences ?? {}),
+    };
 }
 
 function isPhoneMobileLayout(): boolean {
@@ -56,6 +108,85 @@ function isPhoneMobileLayout(): boolean {
         document.documentElement.classList.contains("is-tablet");
 
     return hasMobileClass && !hasTabletClass;
+}
+
+function getAutoExtractTimelineTitle(rawMarkdown: string): string {
+    const lines = String(rawMarkdown ?? "").split(/\r?\n/g);
+    const headingLine = lines.find((line) => /^#{1,6}\s+/.test(line.trim()));
+    if (headingLine) {
+        return headingLine.trim();
+    }
+
+    return lines.find((line) => line.trim().length > 0)?.trim() ?? "";
+}
+
+function getExtractScrollPercentage(item: ExtractItem): number | undefined {
+    const start = item.sourceAnchor?.start;
+    if (typeof start !== "number" || !Number.isFinite(start) || start < 0) {
+        return undefined;
+    }
+
+    const totalChars =
+        typeof item.sourceAnchor?.sourceLength === "number" &&
+        Number.isFinite(item.sourceAnchor.sourceLength)
+            ? item.sourceAnchor.sourceLength
+            : 0;
+    if (totalChars <= 0) {
+        return undefined;
+    }
+
+    return Math.min(1, Math.max(0, start / totalChars));
+}
+
+function buildActiveExtractTimelineLog(item: ExtractItem): ReviewCommitLog | null {
+    const memoText = item.memo.trim();
+    if (item.sourceMode === "auto-slice" && !memoText) {
+        return null;
+    }
+    const extractCreatedAt =
+        item.sourceMode === "auto-slice" ? item.timelineCreatedAt ?? item.createdAt : item.createdAt;
+
+    const quoteText =
+        item.sourceMode === "auto-slice"
+            ? getAutoExtractTimelineTitle(item.rawMarkdown)
+            : item.rawMarkdown;
+    const extract: ReviewTimelineExtractSnapshot = {
+        originUuid: item.uuid,
+        quoteText,
+        memoText,
+        memoEditedAt: item.memoEditedAt,
+        sourcePath: item.sourcePath,
+        sourceAnchor: { ...item.sourceAnchor },
+        sourceMode: item.sourceMode,
+        extractCreatedAt,
+    };
+
+    return {
+        id: `extract-preview:${item.uuid}`,
+        message: memoText,
+        timestamp: extractCreatedAt,
+        scrollPercentage: getExtractScrollPercentage(item),
+        entryType: "extract",
+        extract,
+        isExtractPreview: true,
+    };
+}
+
+function shouldShowTimelineLog(
+    log: ReviewCommitLog,
+    preferences: TimelineDisplayPreferences,
+): boolean {
+    if (log.entryType === "extract") {
+        if (log.isExtractPreview === true) {
+            return log.extract?.sourceMode === "auto-slice"
+                ? preferences.autoExtracts
+                : preferences.extracts;
+        }
+
+        return preferences.graduatedExtracts;
+    }
+
+    return preferences.commitMessages;
 }
 
 /**
@@ -154,6 +285,17 @@ export class ReactNoteReviewView extends ItemView {
         if (changed) {
             this.runAsync(this.plugin.savePluginData(), "save timeline ui state");
         }
+    }
+
+    private getTimelineDisplayPreferences(): TimelineDisplayPreferences {
+        return normalizeTimelineDisplayPreferences(
+            this.plugin.data.settings.timelineDisplayPreferences,
+        );
+    }
+
+    private persistTimelineDisplayPreferences(preferences: TimelineDisplayPreferences): void {
+        this.plugin.data.settings.timelineDisplayPreferences = preferences;
+        this.runAsync(this.plugin.savePluginData(), "save timeline display preferences");
     }
 
     private getLeafContainer(): HTMLElement | null {
@@ -369,7 +511,20 @@ export class ReactNoteReviewView extends ItemView {
 
     private setSelectedTimelineItem(item: NoteReviewItem | null): void {
         this.selectedItem = item;
-        this.commitLogs = item && this.commitStore ? this.commitStore.getCommits(item.path) : [];
+        this.commitLogs = item ? this.buildTimelineLogs(item.path) : [];
+    }
+
+    private buildTimelineLogs(path: string): ReviewCommitLog[] {
+        const commits = this.commitStore?.getCommits(path) ?? [];
+        const activeExtractLogs =
+            this.plugin.extractStore
+                ?.getActiveByPath(path)
+                .map((item) => buildActiveExtractTimelineLog(item))
+                .filter((log): log is ReviewCommitLog => log !== null) ?? [];
+
+        return [...activeExtractLogs, ...commits].sort(
+            (left, right) => (right.timestamp ?? 0) - (left.timestamp ?? 0),
+        ).filter((log) => shouldShowTimelineLog(log, this.getTimelineDisplayPreferences()));
     }
 
     private canUseStandaloneTimelineItems(): boolean {
@@ -400,7 +555,9 @@ export class ReactNoteReviewView extends ItemView {
             noteFile: abstractFile,
             dueUnix: item?.nextReview,
             isNew: item?.isNew ?? true,
-            lastScrollPercentage: this.commitStore?.getLatestScrollPercentage(path),
+            lastScrollPercentage: item
+                ? this.commitStore?.getLatestScrollPercentage(path)
+                : undefined,
             tags: this.extractStandaloneTimelineTags(abstractFile),
         };
     }
@@ -424,6 +581,47 @@ export class ReactNoteReviewView extends ItemView {
         }
 
         return null;
+    }
+
+    private getHighestActiveExtractScrollPercentage(path: string): number | undefined {
+        let highest: number | undefined;
+        for (const extract of this.plugin.extractStore.getActiveByPath(path)) {
+            const percentage = getExtractScrollPercentage(extract);
+            if (percentage === undefined) {
+                continue;
+            }
+            highest = highest === undefined ? percentage : Math.max(highest, percentage);
+        }
+
+        return highest;
+    }
+
+    private getHighestTrackedTimelineProgress(path: string): number | undefined {
+        const commitPercentage = this.commitStore?.getLatestScrollPercentage?.(path);
+        const extractPercentage = this.getHighestActiveExtractScrollPercentage(path);
+        if (commitPercentage === undefined) {
+            return extractPercentage;
+        }
+        if (extractPercentage === undefined) {
+            return commitPercentage;
+        }
+
+        return Math.max(commitPercentage, extractPercentage);
+    }
+
+    private applyTrackedTimelineProgress(
+        data: ReturnType<typeof reviewDecksToSidebarState>,
+    ): ReturnType<typeof reviewDecksToSidebarState> {
+        return {
+            ...data,
+            sections: data.sections.map((section) => ({
+                ...section,
+                items: section.items.map((item) => ({
+                    ...item,
+                    lastScrollPercentage: this.getHighestTrackedTimelineProgress(item.path),
+                })),
+            })),
+        };
     }
 
     private restorePersistedTimelineSelection(
@@ -496,7 +694,7 @@ export class ReactNoteReviewView extends ItemView {
             return;
         }
 
-        const data = reviewDecksToSidebarState(this.plugin);
+        const data = this.applyTrackedTimelineProgress(reviewDecksToSidebarState(this.plugin));
         const didSync = this.syncTimelineToPath(data, reviewCardPath, {
             requestReveal: false,
             source: `review-card:${reviewCardPath}`,
@@ -687,7 +885,7 @@ export class ReactNoteReviewView extends ItemView {
         const isPhoneMobileDrawerView = isMobileDrawerView && isPhoneMobileLayout();
         const isForegroundDrawerView = this.isForegroundDrawerView();
         const timelineHeight = this.getTimelineHeightForRender(isPhoneMobileDrawerView);
-        const data = reviewDecksToSidebarState(this.plugin);
+        const data = this.applyTrackedTimelineProgress(reviewDecksToSidebarState(this.plugin));
         this.restorePersistedTimelineSelection(data);
         const activeFilePath = this.resolvePrimaryMarkdownPath();
         this.lastPrimaryMarkdownPath = activeFilePath;
@@ -741,6 +939,7 @@ export class ReactNoteReviewView extends ItemView {
                     this.runAsync(this.handleNoteClick(item), "open note on double click");
                 },
                 onCommitContextMenu: (e, commitId) => this.handleCommitContextMenu(e, commitId),
+                onTimelineContextMenu: (e) => this.handleTimelineContextMenu(e),
                 editingId: this.editingId,
                 onEditCommit: (commitId, payload) => {
                     this.runAsync(this.handleEditCommit(commitId, payload), "edit timeline commit");
@@ -1185,7 +1384,7 @@ export class ReactNoteReviewView extends ItemView {
             const noteItem = this.plugin.noteReviewStore.getItem(file.path);
 
             if (noteItem) {
-                noteItem.priority = newPriority;
+                noteItem.priority = Math.max(1, Math.min(10, Math.round(newPriority)));
                 await this.plugin.noteReviewStore.save();
                 await this.plugin.appendSyroNoteUpsert(
                     this.plugin.noteReviewStore.getEntrySnapshot(file.path),
@@ -1279,15 +1478,6 @@ export class ReactNoteReviewView extends ItemView {
     private async handleCommit(path: string, message: string): Promise<void> {
         if (!this.commitStore) return;
 
-        // Free users are limited to ten timeline entries per note.
-        const existingCommits = this.commitStore.getCommits(path);
-        if (existingCommits.length >= 10) {
-            const hasAccess = await LicenseManager.getInstance(this.plugin).checkFeatureAccess(
-                "Timeline",
-            );
-            if (!hasAccess) return;
-        }
-
         const context = captureTimelineContext(this.app, path);
         const commit = await this.commitStore.addCommit(
             path,
@@ -1297,7 +1487,7 @@ export class ReactNoteReviewView extends ItemView {
         );
         await this.plugin.appendSyroTimelineAdd(path, commit);
         await this.applyManualTimelineDurationSchedule(path, message);
-        this.commitLogs = this.commitStore.getCommits(path);
+        this.commitLogs = this.buildTimelineLogs(path);
         this.redraw();
     }
 
@@ -1321,11 +1511,51 @@ export class ReactNoteReviewView extends ItemView {
         this.persistTimelineUiState({ height });
     }
 
+    private addTimelinePreferenceMenu(menu: Menu): void {
+        const preferences = this.getTimelineDisplayPreferences();
+
+        menu.addItem((item) => {
+            item.setTitle(t("TIMELINE_PREFERENCES")).setIcon("funnel");
+            const submenu = (item as unknown as SubmenuCapableMenuItem).setSubmenu?.();
+            if (!submenu) {
+                return;
+            }
+
+            for (const preferenceItem of TIMELINE_DISPLAY_PREFERENCE_ITEMS) {
+                submenu.addItem((submenuItem) => {
+                    const isChecked = preferences[preferenceItem.key] !== false;
+                    submenuItem.setTitle(t(preferenceItem.titleKey)).setIcon(preferenceItem.icon);
+                    (submenuItem as unknown as SubmenuCapableMenuItem).setChecked?.(isChecked);
+                    submenuItem.onClick(() => {
+                        this.persistTimelineDisplayPreferences({
+                            ...preferences,
+                            [preferenceItem.key]: !isChecked,
+                        });
+                        if (this.selectedItem) {
+                            this.commitLogs = this.buildTimelineLogs(this.selectedItem.path);
+                        }
+                        this.redraw();
+                    });
+                });
+            }
+        });
+    }
+
+    private handleTimelineContextMenu(e: React.MouseEvent): void {
+        const menu = new Menu();
+        this.addTimelinePreferenceMenu(menu);
+        menu.showAtMouseEvent(e.nativeEvent);
+    }
+
     /**
      * Open the context menu for a timeline entry.
      */
     private handleCommitContextMenu(e: React.MouseEvent, commitId: string): void {
         const menu = new Menu();
+        const log = this.commitLogs.find((entry) => entry.id === commitId) ?? null;
+        const isExtractPreview = log?.entryType === "extract" && log.isExtractPreview === true;
+
+        this.addTimelinePreferenceMenu(menu);
 
         menu.addItem((item) => {
             item.setTitle(t("SIDEBAR_EDIT_COMMIT"))
@@ -1336,9 +1566,31 @@ export class ReactNoteReviewView extends ItemView {
         });
 
         menu.addItem((item) => {
-            item.setTitle(t("SIDEBAR_DELETE_COMMIT"))
+            const deleteTitle = isExtractPreview
+                ? log?.extract?.sourceMode === "auto-slice"
+                    ? t("TIMELINE_CLEAR_EXTRACT_MEMO")
+                    : t("TIMELINE_REMOVE_EXTRACT_MARK")
+                : t("SIDEBAR_DELETE_COMMIT");
+            item.setTitle(deleteTitle)
                 .setIcon("trash-2")
                 .onClick(() => {
+                    if (isExtractPreview && log?.extract?.originUuid) {
+                        this.runAsync(
+                            (async () => {
+                                await this.plugin.removeExtractFromTimelinePreview(
+                                    log.extract.originUuid,
+                                );
+                                if (this.selectedItem) {
+                                    this.commitLogs = this.buildTimelineLogs(
+                                        this.selectedItem.path,
+                                    );
+                                }
+                                this.redraw();
+                            })(),
+                            "remove extract timeline preview",
+                        );
+                        return;
+                    }
                     if (!this.commitStore || !this.selectedItem) return;
                     const selectedPath = this.selectedItem.path;
                     const removedCommit = this.commitStore.getCommitSnapshot(selectedPath, commitId);
@@ -1346,7 +1598,7 @@ export class ReactNoteReviewView extends ItemView {
                         (async () => {
                             await this.commitStore.deleteCommit(selectedPath, commitId);
                             await this.plugin.appendSyroTimelineDelete(selectedPath, removedCommit);
-                            this.commitLogs = this.commitStore.getCommits(selectedPath);
+                            this.commitLogs = this.buildTimelineLogs(selectedPath);
                             this.redraw();
                             new Notice(t("SIDEBAR_COMMIT_DELETED"));
                         })(),
@@ -1378,9 +1630,12 @@ export class ReactNoteReviewView extends ItemView {
      * Jump back to the saved context for a timeline entry.
      */
     private async handleCommitSelect(log: ReviewCommitLog): Promise<void> {
-        if (!log || !this.selectedItem) return;
+        if (!log) return;
 
-        const file = this.app.vault.getAbstractFileByPath(this.selectedItem.path);
+        const targetPath = log.entryType === "extract" ? log.extract?.sourcePath : this.selectedItem?.path;
+        if (!targetPath) return;
+
+        const file = this.app.vault.getAbstractFileByPath(targetPath);
         if (!(file instanceof TFile)) return;
 
         // 1. Open the file if needed.
@@ -1391,6 +1646,30 @@ export class ReactNoteReviewView extends ItemView {
         if (view instanceof MarkdownView) {
             const editor = view.editor;
             const text = editor.getValue();
+
+            if (log.entryType === "extract" && log.extract) {
+                const quoteText = log.extract.quoteText.trim();
+                const quoteOffset = quoteText ? text.indexOf(quoteText) : -1;
+                const fallbackOffset =
+                    typeof log.extract.sourceAnchor.start === "number"
+                        ? log.extract.sourceAnchor.start
+                        : -1;
+                const targetOffset = quoteOffset >= 0 ? quoteOffset : fallbackOffset;
+                const editorWithOffset = editor as typeof editor & {
+                    offsetToPos?: (offset: number) => { line: number; ch: number };
+                };
+                const targetPos =
+                    targetOffset >= 0 && editorWithOffset.offsetToPos
+                        ? editorWithOffset.offsetToPos(targetOffset)
+                        : typeof log.extract.sourceAnchor.startLine === "number"
+                          ? { line: log.extract.sourceAnchor.startLine, ch: 0 }
+                          : null;
+                if (targetPos) {
+                    editor.setCursor(targetPos);
+                    editor.scrollIntoView({ from: targetPos, to: targetPos }, true);
+                    return;
+                }
+            }
 
             // 2. Prefer context-anchor navigation for precise restoration.
             if (log.contextAnchor) {
@@ -1440,13 +1719,26 @@ export class ReactNoteReviewView extends ItemView {
         commitId: string,
         payload: ReviewCommitEditPayload,
     ): Promise<void> {
-        if (!this.commitStore || !this.selectedItem) return;
+        if (!this.selectedItem) return;
+        const existingLog = this.commitLogs.find((log) => log.id === commitId) ?? null;
+        if (existingLog?.entryType === "extract" && existingLog.isExtractPreview === true) {
+            await this.plugin.updateExtractMemo(
+                existingLog.extract?.originUuid ?? commitId.replace(/^extract-preview:/, ""),
+                payload.extract?.memoText ?? payload.message,
+            );
+            this.commitLogs = this.buildTimelineLogs(this.selectedItem.path);
+            this.editingId = null;
+            this.redraw();
+            return;
+        }
+
+        if (!this.commitStore) return;
         const updatedCommit = await this.commitStore.editCommit(this.selectedItem.path, commitId, payload);
         await this.plugin.appendSyroTimelineEdit(this.selectedItem.path, updatedCommit);
         if (payload.entryType === "manual") {
             await this.applyManualTimelineDurationSchedule(this.selectedItem.path, payload.message);
         }
-        this.commitLogs = this.commitStore.getCommits(this.selectedItem.path);
+        this.commitLogs = this.buildTimelineLogs(this.selectedItem.path);
         this.editingId = null;
         this.redraw();
     }
@@ -1509,7 +1801,7 @@ export class ReactNoteReviewView extends ItemView {
      * Auto-select and expand the timeline when a reviewed file opens.
      */
     private handleFileOpen(file?: TFile | null): void {
-        const data = reviewDecksToSidebarState(this.plugin);
+        const data = this.applyTrackedTimelineProgress(reviewDecksToSidebarState(this.plugin));
         this.syncSidebarToPrimaryMarkdownNote(data, {
             requestReveal: true,
             source: `file-open:${file?.path ?? "unknown"}`,
