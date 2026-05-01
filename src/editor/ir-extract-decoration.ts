@@ -38,6 +38,16 @@ export interface RenderExtract {
     showSource: boolean;
 }
 
+export interface IrExtractTooltipNote {
+    uuid: string;
+    memo: string;
+    priority: number;
+}
+
+export interface IrExtractTooltipNoteState extends IrExtractTooltipNote {
+    sourceStart: number;
+}
+
 export interface IrExtractDecorationOptions {
     canRevealSource?: (view: EditorView) => boolean;
     isLivePreviewHost?: (view: EditorView) => boolean;
@@ -45,9 +55,14 @@ export interface IrExtractDecorationOptions {
     resolveExtractTooltipNote?: (
         view: EditorView,
         sourceStart: number,
-    ) => Promise<{ uuid: string; memo: string; priority: number } | null>;
+    ) => Promise<IrExtractTooltipNote | null>;
+    resolveExtractTooltipNotes?: (
+        view: EditorView,
+        sourceStarts: readonly number[],
+    ) => Promise<IrExtractTooltipNoteState[]>;
     saveExtractTooltipNote?: (uuid: string, memo: string) => Promise<void>;
     onExtractTooltipNoteSaveError?: (error: unknown) => void;
+    logExtractTooltipNoteDebug?: (event: string, details?: Record<string, unknown>) => void;
 }
 
 export interface MeasuredExtractBlock {
@@ -1619,11 +1634,16 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             private hoveredTooltipStart: number | null = null;
             private cursorBlockStart: number | null = null;
             private visibleTooltipAction: HTMLElement | null = null;
+            private tooltipDisplayStart: number | null = null;
             private tooltipDraftStart: number | null = null;
             private tooltipDraftUuid: string | null = null;
             private tooltipResolveRequestId = 0;
+            private tooltipResolveStart: number | null = null;
+            private tooltipResolvePromise: Promise<IrExtractTooltipNote | null> | null = null;
             private readonly noteDraftsByStart = new Map<number, string>();
             private readonly noteUuidsByStart = new Map<number, string>();
+            private hydratedNoteStartsKey = "";
+            private hydrateNotesRequestId = 0;
             private readonly handleScrollMouseMove = (event: MouseEvent): void => {
                 const point = getMousePointInScrollCoordinates(this.scrollDOM, event);
                 const hoveredStart = findHoveredIrExtractBlockStart(
@@ -1854,8 +1874,12 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.hoveredTooltipStart = null;
                 this.cursorBlockStart = null;
                 this.visibleTooltipAction = null;
+                this.tooltipDisplayStart = null;
                 this.tooltipDraftStart = null;
                 this.tooltipDraftUuid = null;
+                this.tooltipResolveStart = null;
+                this.tooltipResolvePromise = null;
+                this.hydratedNoteStartsKey = "";
                 this.blockMeasurements.clear();
                 this.blockDomCache.clear();
                 this.overlay.replaceChildren();
@@ -1870,8 +1894,11 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     this.pinnedTooltipStart === blockStart ? null : blockStart;
                 if (this.pinnedTooltipStart === null) {
                     void this.saveVisibleTooltipDraft();
+                    this.tooltipDisplayStart = null;
                     this.tooltipDraftStart = null;
                     this.tooltipDraftUuid = null;
+                    this.tooltipResolveStart = null;
+                    this.tooltipResolvePromise = null;
                 }
                 this.updateInteractiveBlockStates();
 
@@ -1881,12 +1908,11 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 }
 
                 const focusTextarea = () => {
+                    this.prepareTooltipNoteForStart(blockStart, true);
                     this.tooltipDraftStart = blockStart;
                     this.tooltipDraftUuid = this.noteUuidsByStart.get(blockStart) ?? null;
-                    textarea.value = this.noteDraftsByStart.get(blockStart) ?? "";
-                    resizeIrExtractTextarea(textarea);
                     textarea.focus();
-                    this.resolveTooltipNote(blockStart);
+                    void this.resolveTooltipNote(blockStart);
                 };
 
                 if (typeof window.requestAnimationFrame === "function") {
@@ -1898,6 +1924,10 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
 
             private showTooltipFromIcon(blockStart: number): void {
                 this.hoveredTooltipStart = blockStart;
+                if (this.pinnedTooltipStart === null) {
+                    this.prepareTooltipNoteForStart(blockStart, false);
+                    void this.resolveTooltipNote(blockStart);
+                }
                 this.updateInteractiveBlockStates();
             }
 
@@ -1906,6 +1936,10 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     return;
                 }
                 this.hoveredTooltipStart = null;
+                if (this.pinnedTooltipStart === null && this.tooltipDisplayStart === blockStart) {
+                    this.tooltipDisplayStart = null;
+                    options.logExtractTooltipNoteDebug?.("display-clear", { blockStart });
+                }
                 this.updateInteractiveBlockStates();
             }
 
@@ -1915,9 +1949,33 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 }
                 void this.saveVisibleTooltipDraft();
                 this.pinnedTooltipStart = null;
+                this.tooltipDisplayStart = null;
                 this.tooltipDraftStart = null;
                 this.tooltipDraftUuid = null;
+                this.tooltipResolveStart = null;
+                this.tooltipResolvePromise = null;
                 this.updateInteractiveBlockStates();
+            }
+
+            private prepareTooltipNoteForStart(blockStart: number, editable: boolean): void {
+                const textarea = this.noteTooltip.querySelector<HTMLTextAreaElement>("textarea");
+                if (!textarea) {
+                    return;
+                }
+                this.tooltipDisplayStart = blockStart;
+                if (!editable) {
+                    this.tooltipDraftStart = null;
+                    this.tooltipDraftUuid = null;
+                }
+                const cachedMemo = this.noteDraftsByStart.get(blockStart) ?? "";
+                textarea.value = cachedMemo;
+                resizeIrExtractTextarea(textarea);
+                options.logExtractTooltipNoteDebug?.("display-start", {
+                    blockStart,
+                    editable,
+                    cachedMemoLength: cachedMemo.length,
+                    cachedUuid: this.noteUuidsByStart.get(blockStart) ?? null,
+                });
             }
 
             private updateInteractiveBlockStates(): void {
@@ -1993,6 +2051,72 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.updateNoteTooltipPosition(visibleTooltipAction, visibleTooltip);
             }
 
+            private hydrateVisibleNoteStates(): void {
+                if (!options.resolveExtractTooltipNotes || this.blockMeasurements.size === 0) {
+                    return;
+                }
+                const starts = [...this.blockMeasurements.keys()].sort((left, right) => left - right);
+                const startsKey = starts.join(",");
+                if (startsKey === this.hydratedNoteStartsKey) {
+                    return;
+                }
+                this.hydratedNoteStartsKey = startsKey;
+                const requestId = ++this.hydrateNotesRequestId;
+                options.logExtractTooltipNoteDebug?.("hydrate-start", {
+                    sourceStartCount: starts.length,
+                });
+                void options
+                    .resolveExtractTooltipNotes(this.view, starts)
+                    .then((notes) => {
+                        if (requestId !== this.hydrateNotesRequestId) {
+                            options.logExtractTooltipNoteDebug?.("hydrate-stale", {
+                                requestId,
+                                activeRequestId: this.hydrateNotesRequestId,
+                            });
+                            return;
+                        }
+                        const visibleStarts = new Set(starts);
+                        let memoCount = 0;
+                        for (const start of starts) {
+                            const note = notes.find((candidate) => candidate.sourceStart === start);
+                            if (!note) {
+                                this.noteUuidsByStart.delete(start);
+                                this.noteDraftsByStart.delete(start);
+                                continue;
+                            }
+                            this.noteUuidsByStart.set(start, note.uuid);
+                            this.noteDraftsByStart.set(start, note.memo);
+                            if (note.memo.trim().length > 0) {
+                                memoCount += 1;
+                            }
+                        }
+                        for (const start of [...this.noteDraftsByStart.keys()]) {
+                            if (!visibleStarts.has(start)) {
+                                this.noteDraftsByStart.delete(start);
+                                this.noteUuidsByStart.delete(start);
+                            }
+                        }
+                        this.updateInteractiveBlockStates();
+                        options.logExtractTooltipNoteDebug?.("hydrate-hit", {
+                            sourceStartCount: starts.length,
+                            resolvedCount: notes.length,
+                            memoCount,
+                        });
+                    })
+                    .catch((error: unknown) => {
+                        options.onExtractTooltipNoteSaveError?.(error);
+                        options.logExtractTooltipNoteDebug?.("hydrate-error", {
+                            sourceStartCount: starts.length,
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : typeof error === "string"
+                                      ? error
+                                      : JSON.stringify(error),
+                        });
+                    });
+            }
+
             private updateNoteTooltipPosition(
                 infoAction: HTMLElement | null,
                 visible: boolean,
@@ -2038,40 +2162,94 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.updateNoteTooltipPosition(this.visibleTooltipAction, true);
             }
 
-            private resolveTooltipNote(blockStart: number): void {
+            private resolveTooltipNote(blockStart: number): Promise<IrExtractTooltipNote | null> {
                 if (!options.resolveExtractTooltipNote) {
-                    return;
+                    options.logExtractTooltipNoteDebug?.("resolve-skip:no-resolver", { blockStart });
+                    return Promise.resolve(null);
                 }
                 const requestId = ++this.tooltipResolveRequestId;
+                this.tooltipResolveStart = blockStart;
                 const textarea = this.noteTooltip.querySelector<HTMLTextAreaElement>("textarea");
                 const draftAtRequest = textarea?.value ?? "";
-                void options
+                const promise: Promise<IrExtractTooltipNote | null> = options
                     .resolveExtractTooltipNote(this.view, blockStart)
-                    .then((note) => {
-                        if (
-                            requestId !== this.tooltipResolveRequestId ||
-                            this.tooltipDraftStart !== blockStart ||
-                            !textarea ||
-                            textarea.value !== draftAtRequest
-                        ) {
-                            return;
+                    .then((note: IrExtractTooltipNote | null): IrExtractTooltipNote | null => {
+                        if (requestId !== this.tooltipResolveRequestId) {
+                            options.logExtractTooltipNoteDebug?.("resolve-stale", {
+                                blockStart,
+                                requestId,
+                                activeRequestId: this.tooltipResolveRequestId,
+                            });
+                            return note;
                         }
                         if (!note) {
                             this.tooltipDraftUuid = null;
                             this.noteUuidsByStart.delete(blockStart);
-                            return;
+                            options.logExtractTooltipNoteDebug?.("resolve-miss", { blockStart });
+                            return null;
                         }
                         this.tooltipDraftUuid = note.uuid;
                         this.noteUuidsByStart.set(blockStart, note.uuid);
+                        const activeTooltipStart =
+                            this.tooltipDraftStart ?? this.tooltipDisplayStart;
+                        if (
+                            activeTooltipStart !== blockStart ||
+                            !textarea ||
+                            textarea.value !== draftAtRequest
+                        ) {
+                            options.logExtractTooltipNoteDebug?.("resolve-uuid-only", {
+                                blockStart,
+                                uuid: note.uuid,
+                                draftChanged: textarea ? textarea.value !== draftAtRequest : null,
+                                draftStart: this.tooltipDraftStart,
+                                displayStart: this.tooltipDisplayStart,
+                            });
+                            return note;
+                        }
                         this.noteDraftsByStart.set(blockStart, note.memo);
                         textarea.value = note.memo;
                         resizeIrExtractTextarea(textarea);
                         this.updateInteractiveBlockStates();
                         this.repositionVisibleNoteTooltip();
+                        options.logExtractTooltipNoteDebug?.("resolve-hit", {
+                            blockStart,
+                            uuid: note.uuid,
+                            memoLength: note.memo.length,
+                        });
+                        return note;
                     })
-                    .catch((error) => {
+                    .catch((error: unknown): null => {
                         options.onExtractTooltipNoteSaveError?.(error);
+                        options.logExtractTooltipNoteDebug?.("resolve-error", {
+                            blockStart,
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : typeof error === "string"
+                                      ? error
+                                      : JSON.stringify(error),
+                        });
+                        return null;
                     });
+                this.tooltipResolvePromise = promise;
+                return promise;
+            }
+
+            private async resolveTooltipDraftUuid(draftStart: number): Promise<string | null> {
+                const cachedUuid =
+                    this.tooltipDraftUuid ?? this.noteUuidsByStart.get(draftStart) ?? null;
+                if (cachedUuid) {
+                    return cachedUuid;
+                }
+                if (
+                    this.tooltipResolveStart === draftStart &&
+                    this.tooltipResolvePromise !== null
+                ) {
+                    const note = await this.tooltipResolvePromise;
+                    return note?.uuid ?? this.noteUuidsByStart.get(draftStart) ?? null;
+                }
+                const note = await this.resolveTooltipNote(draftStart);
+                return note?.uuid ?? this.noteUuidsByStart.get(draftStart) ?? null;
             }
 
             private async saveVisibleTooltipDraft(persist = true): Promise<void> {
@@ -2081,10 +2259,18 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 }
                 const draftStart = this.tooltipDraftStart;
                 const memo = textarea.value;
-                const uuid = this.tooltipDraftUuid ?? this.noteUuidsByStart.get(draftStart) ?? null;
                 this.noteDraftsByStart.set(draftStart, memo);
                 this.updateInteractiveBlockStates();
-                if (!persist || !uuid || !options.saveExtractTooltipNote) {
+                if (!persist || !options.saveExtractTooltipNote) {
+                    return;
+                }
+                const uuid = await this.resolveTooltipDraftUuid(draftStart);
+                if (!uuid) {
+                    options.logExtractTooltipNoteDebug?.("save-skip:no-uuid", {
+                        draftStart,
+                        memoLength: memo.length,
+                        hasResolver: !!options.resolveExtractTooltipNote,
+                    });
                     return;
                 }
                 try {
@@ -2092,8 +2278,23 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     this.noteDraftsByStart.set(draftStart, memo);
                     this.noteUuidsByStart.set(draftStart, uuid);
                     this.updateInteractiveBlockStates();
+                    options.logExtractTooltipNoteDebug?.("save-hit", {
+                        draftStart,
+                        uuid,
+                        memoLength: memo.length,
+                    });
                 } catch (error) {
                     options.onExtractTooltipNoteSaveError?.(error);
+                    options.logExtractTooltipNoteDebug?.("save-error", {
+                        draftStart,
+                        uuid,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : typeof error === "string"
+                                  ? error
+                                  : JSON.stringify(error),
+                    });
                 }
             }
 
@@ -2139,6 +2340,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         this.overlay.style.height = `${view.scrollDOM.scrollHeight}px`;
                         this.cursorBlockStart = result.cursorBlockStart;
                         this.renderBlocks(result.overlayBlocks);
+                        this.hydrateVisibleNoteStates();
 
                         const nextPointSourceStarts = new Set(result.pointSourceStarts);
                         if (!areNumberSetsEqual(this.pointSourceStarts, nextPointSourceStarts)) {

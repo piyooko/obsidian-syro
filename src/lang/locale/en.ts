@@ -201,7 +201,6 @@ export default normalizeSentenceCaseLocale({
     EXTRACT_REVIEW_SET_DATE: "Set",
     EXTRACT_REVIEW_SET_DATE_INTERVAL_HINT: "${interval}d",
     EXTRACT_REVIEW_GRADUATE: "Graduate",
-    EXTRACT_REVIEW_PENDING_GRADUATE: "Marked for graduation. Ctrl+Z to undo",
     EXTRACT_RENDER_DEBUG_TITLE: "Extract render is still waiting",
     EXTRACT_RENDER_DEBUG_STEP: "Step: ${stage}",
     EXTRACT_RENDER_DEBUG_DETAIL: "Detail: ${detail}",

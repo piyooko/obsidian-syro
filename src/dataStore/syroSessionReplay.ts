@@ -589,6 +589,16 @@ function logDailyStateDebug(
     }
 }
 
+function logExtractReplayDebug(
+    deps: ReplayDependencies,
+    event: string,
+    payload: Record<string, unknown>,
+): void {
+    if (deps.shouldLogDebug?.()) {
+        deps.logDebug?.(`[SR-ExtractTooltipNote] ${event}`, payload);
+    }
+}
+
 function buildNegativeCacheKey(record: SyroSessionRecord): string {
     return `${record.deviceId}|${record.domain}|${record.entityType}|${record.targetUuid}`;
 }
@@ -1781,7 +1791,29 @@ export async function replaySyroSessionRecords(
         }
 
         const targetUuid = workingSnapshot.item.uuid || record.targetUuid;
+        const currentBeforeApply = extractStore.get(targetUuid);
+        logExtractReplayDebug(deps, "replay-extract-before-apply", {
+            opType: record.opType,
+            deviceId: record.deviceId,
+            targetUuid,
+            recordUpdatedAt: record.updatedAt,
+            sourcePath: workingSnapshot.item.sourcePath,
+            sourceStart: workingSnapshot.item.sourceAnchor?.start ?? null,
+            incomingMemoLength: workingSnapshot.item.memo?.length ?? 0,
+            currentMemoLength: currentBeforeApply?.memo.length ?? null,
+            currentUpdatedAt: currentBeforeApply
+                ? new Date(currentBeforeApply.updatedAt).toISOString()
+                : null,
+        });
         if (!extractStore.shouldApplySyncEntity(targetUuid, record.updatedAt)) {
+            logExtractReplayDebug(deps, "replay-extract-skipped-watermark", {
+                opType: record.opType,
+                deviceId: record.deviceId,
+                targetUuid,
+                recordUpdatedAt: record.updatedAt,
+                incomingMemoLength: workingSnapshot.item.memo?.length ?? 0,
+                currentMemoLength: currentBeforeApply?.memo.length ?? null,
+            });
             return "skipped";
         }
 
@@ -1794,6 +1826,7 @@ export async function replaySyroSessionRecords(
         } else {
             extractStore.upsertSnapshot(workingSnapshot);
         }
+        const currentAfterApply = extractStore.get(targetUuid);
         extractStore.markSyncEntity({
             targetUuid,
             updatedAt: record.updatedAt,
@@ -1813,6 +1846,15 @@ export async function replaySyroSessionRecords(
             targetUuid,
             matchedBy: resolution?.matchedBy ?? "snapshot-reconcile",
             pathHint: workingSnapshot.item.sourcePath,
+        });
+        logExtractReplayDebug(deps, "replay-extract-applied", {
+            opType: record.opType,
+            deviceId: record.deviceId,
+            targetUuid,
+            recordUpdatedAt: record.updatedAt,
+            incomingMemoLength: workingSnapshot.item.memo?.length ?? 0,
+            afterMemoLength: currentAfterApply?.memo.length ?? null,
+            isDelete,
         });
         return "applied";
     };

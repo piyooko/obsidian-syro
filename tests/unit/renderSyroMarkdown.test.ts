@@ -32,4 +32,21 @@ describe("renderSyroMarkdownToElement", () => {
 
         expect(target.textContent).toBe("front [...]");
     });
+
+    test("finalizes IR extract markers on the rendered target", async () => {
+        const target = document.createElement("div");
+        const renderMarkdown = jest.fn((content: string, el: HTMLElement) => {
+            el.textContent = content;
+        });
+
+        await renderSyroMarkdownToElement({
+            markdown: "before {{ir::text}} after",
+            renderMarkdown,
+            target,
+        });
+
+        expect(target.textContent).toBe("before text after");
+        expect(target.textContent).not.toContain("{{ir::");
+        expect(target.classList.contains("sr-ir-reading-root")).toBe(true);
+    });
 });

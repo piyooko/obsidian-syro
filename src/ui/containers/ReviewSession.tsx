@@ -576,9 +576,6 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     const pendingExtractGraduationsRef = useRef(new Map<string, PendingExtractGraduation>());
     const pendingExtractGraduationOrderRef = useRef<string[]>([]);
     const [pendingExtractGraduationVersion, setPendingExtractGraduationVersion] = useState(0);
-    const [extractReviewOverlayMessage, setExtractReviewOverlayMessage] = useState<string | null>(
-        null,
-    );
     const [, setPreparedExtractVersion] = useState(0);
 
     useEffect(() => {
@@ -902,7 +899,6 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             pendingExtractGraduationsRef.current.clear();
             pendingExtractGraduationOrderRef.current = [];
             setPendingExtractGraduationVersion((value) => value + 1);
-            setExtractReviewOverlayMessage(null);
             const nextReviewItem = resolveNextReviewItem(fullPath);
             if (!nextReviewItem) {
                 new Notice(t("REVIEW_NO_CARDS"));
@@ -967,7 +963,6 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         pendingExtractGraduationsRef.current.clear();
         pendingExtractGraduationOrderRef.current = [];
         setPendingExtractGraduationVersion((value) => value + 1);
-        setExtractReviewOverlayMessage(null);
         const nextReviewItem = resolveNextReviewItem(initialTargetDeckPath ?? null);
         if (!nextReviewItem) {
             new Notice(t("REVIEW_NO_CARDS"));
@@ -1287,7 +1282,6 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         pendingExtractGraduationsRef.current.clear();
         pendingExtractGraduationOrderRef.current = [];
         setPendingExtractGraduationVersion((value) => value + 1);
-        setExtractReviewOverlayMessage(null);
 
         for (const action of pendingGraduations) {
             const current = plugin.extractStore?.get(action.uuid) ?? null;
@@ -1318,7 +1312,6 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 reason: "flushReviewPersistence-already-covers-plugin-data",
             });
             reviewUndoStackRef.current = [];
-            setExtractReviewOverlayMessage(null);
             clearReviewMobileChromeCover();
             plugin.setSRViewInFocus(false);
             setDirection(-1);
@@ -1450,7 +1443,6 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                     (uuid) => uuid !== undoEntry.action.uuid,
                 );
             setPendingExtractGraduationVersion((value) => value + 1);
-            setExtractReviewOverlayMessage(null);
             invalidatePreparedExtract(undoEntry.action.uuid, undoEntry.action.sourcePath);
             try {
                 await prepareExtractReview(undoEntry.action.uuid);
@@ -1505,7 +1497,6 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                     kind: "extract-pending-graduate",
                     action: pending,
                 });
-                setExtractReviewOverlayMessage(t("EXTRACT_REVIEW_PENDING_GRADUATE"));
             }
             invalidatePreparedExtract(activeReviewItem.uuid, deletedExtract?.sourcePath ?? null);
             const nextReviewItem = resolveNextReviewItem(activeDeckPathRef.current);
@@ -1713,26 +1704,6 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                                     shouldHandleReviewHotkeys={shouldHandleReviewHotkeys}
                                     overlayMobileNavbar={shouldOverlayMobileNavbarForReview}
                                 />
-                            )}
-                            {extractReviewOverlayMessage && (
-                                <div
-                                    className="sr-extract-review-overlay"
-                                    style={{
-                                        position: "absolute",
-                                        top: 72,
-                                        left: "50%",
-                                        transform: "translateX(-50%)",
-                                        padding: "8px 12px",
-                                        borderRadius: 8,
-                                        background: "var(--background-secondary)",
-                                        color: "var(--text-normal)",
-                                        border: "1px solid var(--background-modifier-border)",
-                                        pointerEvents: "none",
-                                        zIndex: 5,
-                                    }}
-                                >
-                                    {extractReviewOverlayMessage}
-                                </div>
                             )}
                         </motion.div>
                     )}

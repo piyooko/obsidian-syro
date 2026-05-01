@@ -1,5 +1,9 @@
 import type { App, Component } from "obsidian";
 import { MarkdownRenderer } from "obsidian";
+import {
+    finalizeIrExtractsInRenderedMarkdown,
+    SR_IR_POSTPROCESS_SKIP_ATTR,
+} from "src/editor/ir-extract-postprocessor";
 import { transformLatex } from "src/utils/latexTransformer";
 import { createSanitizedHtmlFragment } from "src/util/safeHtml";
 import {
@@ -18,6 +22,7 @@ export interface RenderSyroMarkdownOptions {
     target: HTMLElement;
     owner?: Component;
     renderMarkdown?: SyroMarkdownRenderer;
+    renderIrExtracts?: boolean;
     showAnswer?: boolean;
     sourcePath?: string;
 }
@@ -249,6 +254,7 @@ export async function renderSyroMarkdownToElement({
     markdown,
     owner,
     renderMarkdown,
+    renderIrExtracts = true,
     showAnswer = false,
     sourcePath,
     target,
@@ -284,6 +290,9 @@ export async function renderSyroMarkdownToElement({
 
     if (!renderMarkdown && (!app || !owner)) {
         target.replaceChildren(document.createTextNode(fallbackText));
+        if (renderIrExtracts) {
+            finalizeIrExtractsInRenderedMarkdown(target);
+        }
         return;
     }
 
@@ -299,6 +308,7 @@ export async function renderSyroMarkdownToElement({
             }));
 
     const buffer = document.createElement("div");
+    buffer.setAttribute(SR_IR_POSTPROCESS_SKIP_ATTR, "true");
 
     try {
         await renderer(tokenizedContent.content, buffer);
@@ -311,12 +321,21 @@ export async function renderSyroMarkdownToElement({
         const renderedNodes = Array.from(buffer.childNodes);
         if (renderedNodes.length > 0 || buffer.textContent?.trim()) {
             target.replaceChildren(...renderedNodes);
+            if (renderIrExtracts) {
+                finalizeIrExtractsInRenderedMarkdown(target);
+            }
             return;
         }
 
         target.replaceChildren(document.createTextNode(fallbackText));
+        if (renderIrExtracts) {
+            finalizeIrExtractsInRenderedMarkdown(target);
+        }
     } catch (error) {
         console.error("[SyroMarkdown] Failed to render markdown", error);
         target.replaceChildren(document.createTextNode(fallbackText));
+        if (renderIrExtracts) {
+            finalizeIrExtractsInRenderedMarkdown(target);
+        }
     }
 }

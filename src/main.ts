@@ -254,7 +254,10 @@ import {
 import { SyroDeleteInvalidDeviceModal } from "src/ui/modals/SyroDeleteInvalidDeviceModal";
 import { SyroDeleteValidDeviceModal } from "src/ui/modals/SyroDeleteValidDeviceModal";
 import { clozeDecorationPlugin, initializeClozeDecoration } from "./editor/cloze-decoration";
-import { createIrExtractDecorationExtensions } from "./editor/ir-extract-decoration";
+import {
+    createIrExtractDecorationExtensions,
+    type IrExtractTooltipNoteState,
+} from "./editor/ir-extract-decoration";
 import { latexPopoverExtension, initializeLatexPopover } from "./editor/latex-popover-manager";
 import { latexClozePreprocessorPlugin } from "./editor/latex-cloze-preprocessor";
 import { clozePostProcessor } from "./editor/cloze-postprocessor";
@@ -1687,7 +1690,22 @@ export default class SRPlugin extends Plugin {
 
         initializeClozeDecoration(this.app);
         this.registerEditorExtension(clozeDecorationPlugin);
-        this.registerEditorExtension(createIrExtractDecorationExtensions(this));
+        const irExtractDecorationOptions = Object.assign(
+            Object.create(this) as typeof this,
+            {
+                resolveExtractTooltipNote: (view: EditorView, sourceStart: number) =>
+                    this.resolveExtractTooltipNote(view, sourceStart),
+                resolveExtractTooltipNotes: (view: EditorView, sourceStarts: readonly number[]) =>
+                    this.resolveExtractTooltipNotes(view, sourceStarts),
+                saveExtractTooltipNote: (uuid: string, memo: string) =>
+                    this.updateExtractMemo(uuid, memo),
+                onExtractTooltipNoteSaveError: (error: unknown) =>
+                    this.handleExtractTooltipNoteSaveError(error),
+                logExtractTooltipNoteDebug: (event: string, details?: Record<string, unknown>) =>
+                    this.logExtractTooltipNoteDebug(event, details),
+            },
+        );
+        this.registerEditorExtension(createIrExtractDecorationExtensions(irExtractDecorationOptions));
 
         initializeLatexPopover(this.app, {
             isEnabled: () => this.data.settings.enableLatexPopover === true,
@@ -2227,39 +2245,169 @@ export default class SRPlugin extends Plugin {
         return resolvedFile;
     }
 
+    public logExtractTooltipNoteDebug(event: string, details: Record<string, unknown> = {}): void {
+        this.logRuntimeDebug("[SR-ExtractTooltipNote]", { event, ...details });
+    }
+
+    private async logExtractTooltipNoteDiskState(
+        event: string,
+        uuid: string,
+        details: Record<string, unknown> = {},
+    ): Promise<void> {
+        if (!this.shouldLogRuntimeDebug()) {
+            return;
+        }
+        const extractsPath = this.syroLayout?.extractsPath;
+        if (!extractsPath) {
+            this.logExtractTooltipNoteDebug(event, {
+                uuid,
+                ...details,
+                diskState: "missing-layout",
+            });
+            return;
+        }
+        try {
+            const raw = await Iadapter.instance.adapter.read(extractsPath);
+            const parsed = parseJsonUnknown(raw);
+            const item =
+                isRecord(parsed) && isRecord(parsed.items)
+                    ? parsed.items[uuid]
+                    : undefined;
+            const diskMemoValue = isRecord(item) ? item.memo : null;
+            const diskMemo =
+                typeof diskMemoValue === "string"
+                    ? diskMemoValue
+                    : typeof diskMemoValue === "number" || typeof diskMemoValue === "boolean"
+                      ? String(diskMemoValue)
+                      : diskMemoValue == null
+                        ? ""
+                        : null;
+            this.logExtractTooltipNoteDebug(event, {
+                uuid,
+                ...details,
+                extractsPath,
+                diskState: isRecord(item) ? "found" : "missing-item",
+                diskMemoLength: diskMemo?.length ?? null,
+                diskMemoPreview: diskMemo ? diskMemo.slice(0, 40) : "",
+            });
+        } catch (error) {
+            this.logExtractTooltipNoteDebug(event, {
+                uuid,
+                ...details,
+                extractsPath,
+                diskState: "read-failed",
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : typeof error === "string"
+                          ? error
+                          : JSON.stringify(error),
+            });
+        }
+    }
+
     public async resolveExtractTooltipNote(
         view: EditorView,
         sourceStart: number,
     ): Promise<{ uuid: string; memo: string; priority: number } | null> {
-        if (!this.extractStore || this.data.settings.enableExtracts === false) {
+        const notes = await this.resolveExtractTooltipNotes(view, [sourceStart]);
+        const note = notes.find((candidate) => candidate.sourceStart === sourceStart) ?? null;
+        if (!note) {
             return null;
+        }
+        this.logExtractTooltipNoteDebug("resolve-hit", {
+            sourceStart,
+            uuid: note.uuid,
+            memoLength: note.memo.length,
+            priority: note.priority,
+        });
+        return { uuid: note.uuid, memo: note.memo, priority: note.priority };
+    }
+
+    public async resolveExtractTooltipNotes(
+        view: EditorView,
+        sourceStarts: readonly number[],
+    ): Promise<IrExtractTooltipNoteState[]> {
+        if (!this.extractStore || this.data.settings.enableExtracts === false) {
+            this.logExtractTooltipNoteDebug("hydrate-skip:disabled", {
+                hasExtractStore: !!this.extractStore,
+                enableExtracts: this.data.settings.enableExtracts,
+                sourceStartCount: sourceStarts.length,
+            });
+            return [];
         }
         const file = this.resolveMarkdownFileForEditorView(view);
         if (!file) {
-            return null;
+            this.logExtractTooltipNoteDebug("hydrate-skip:no-file", {
+                sourceStartCount: sourceStarts.length,
+                editorRootClass: view.dom.className,
+                editorParentClass: view.dom.parentElement?.className ?? null,
+            });
+            return [];
         }
         const text = view.state.doc.toString();
+        this.logExtractTooltipNoteDebug("hydrate-resolve-start", {
+            sourcePath: file.path,
+            sourceStartCount: sourceStarts.length,
+            textLength: text.length,
+        });
         const syncResult = this.syncExtractTextForFile(file, text, { auto: false });
-        if (
+        const changed =
             syncResult.added.length > 0 ||
             syncResult.updated.length > 0 ||
             syncResult.graduated.length > 0 ||
-            (syncResult.removed?.length ?? 0) > 0
-        ) {
+            (syncResult.removed?.length ?? 0) > 0;
+        this.logExtractTooltipNoteDebug("hydrate-sync-result", {
+            sourcePath: file.path,
+            sourceStartCount: sourceStarts.length,
+            addedCount: syncResult.added.length,
+            updatedCount: syncResult.updated.length,
+            graduatedCount: syncResult.graduated.length,
+            removedCount: syncResult.removed?.length ?? 0,
+        });
+        if (changed) {
             await this.appendExtractSyncResult(syncResult);
             await this.extractStore.save();
             this.syncEvents.emit("extracts-updated");
         }
 
-        const item =
-            this.extractStore
-                .getActiveByPath(file.path)
-                .find(
-                    (candidate) =>
-                        candidate.sourceMode === "manual-ir" &&
-                        candidate.sourceAnchor.start === sourceStart,
-                ) ?? null;
-        return item ? { uuid: item.uuid, memo: item.memo, priority: item.priority } : null;
+        const sourceStartSet = new Set(sourceStarts);
+        const activeItems = this.extractStore.getActiveByPath(file.path);
+        const notes = activeItems
+            .filter(
+                (candidate) =>
+                    candidate.sourceMode === "manual-ir" &&
+                    sourceStartSet.has(candidate.sourceAnchor.start),
+            )
+            .map((item) => ({
+                sourceStart: item.sourceAnchor.start,
+                uuid: item.uuid,
+                memo: item.memo,
+                priority: item.priority,
+            }));
+        const hitStarts = new Set(notes.map((note) => note.sourceStart));
+        const missingStarts = sourceStarts.filter((sourceStart) => !hitStarts.has(sourceStart));
+        if (missingStarts.length > 0) {
+            this.logExtractTooltipNoteDebug("hydrate-miss:some-active-starts", {
+                sourcePath: file.path,
+                missingStarts,
+                activeManualStarts: activeItems
+                    .filter((candidate) => candidate.sourceMode === "manual-ir")
+                    .map((candidate) => ({
+                        uuid: candidate.uuid,
+                        start: candidate.sourceAnchor.start,
+                        end: candidate.sourceAnchor.end,
+                        memoLength: candidate.memo.length,
+                    })),
+            });
+        }
+        this.logExtractTooltipNoteDebug("hydrate-resolve-hit", {
+            sourcePath: file.path,
+            sourceStartCount: sourceStarts.length,
+            resolvedCount: notes.length,
+            memoCount: notes.filter((note) => note.memo.trim().length > 0).length,
+        });
+        return notes;
     }
 
     public handleExtractTooltipNoteSaveError(error: unknown): void {
@@ -3254,15 +3402,34 @@ export default class SRPlugin extends Plugin {
 
     public async updateExtractMemo(uuid: string, memo: string): Promise<ExtractItem | null> {
         if (!this.extractStore) {
+            this.logExtractTooltipNoteDebug("save-skip:no-store", { uuid, memoLength: memo.length });
             return null;
         }
+        this.logExtractTooltipNoteDebug("save-start", { uuid, memoLength: memo.length });
         const updated = this.extractStore.setMemo(uuid, memo);
         if (!updated) {
+            this.logExtractTooltipNoteDebug("save-skip:not-found", {
+                uuid,
+                memoLength: memo.length,
+            });
             return null;
         }
         await this.extractStore.save();
+        await this.logExtractTooltipNoteDiskState("disk-after-store-save", uuid, {
+            expectedMemoLength: updated.memo.length,
+        });
         await this.appendSyroExtractUpsert({ item: updated }, "memo");
+        await this.logExtractTooltipNoteDiskState("disk-after-session-append", uuid, {
+            expectedMemoLength: updated.memo.length,
+        });
         this.syncEvents.emit("extracts-updated");
+        this.logExtractTooltipNoteDebug("save-hit", {
+            uuid,
+            sourcePath: updated.sourcePath,
+            sourceStart: updated.sourceAnchor.start,
+            memoLength: updated.memo.length,
+            priority: updated.priority,
+        });
         return updated;
     }
 

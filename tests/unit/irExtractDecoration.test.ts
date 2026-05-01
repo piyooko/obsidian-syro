@@ -1287,6 +1287,74 @@ describe("irExtractDecoration helpers", () => {
         }
     });
 
+    test("resolves the tooltip note during submit when the user types before backend resolve finishes", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        let resolvePendingNote:
+            | ((note: { uuid: string; memo: string; priority: number }) => void)
+            | null = null;
+        const pendingNote = new Promise<{ uuid: string; memo: string; priority: number }>(
+            (resolve) => {
+                resolvePendingNote = resolve;
+            },
+        );
+        const resolveExtractTooltipNote = jest.fn(() => pendingNote);
+        const saveExtractTooltipNote = jest.fn(() => Promise.resolve());
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: "{{ir::one}}",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNote,
+                        saveExtractTooltipNote,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            document
+                .querySelector<HTMLElement>(".sr-ir-info-action")
+                ?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+            await waitForIrExtractMeasure();
+
+            const textarea = document.querySelector<HTMLTextAreaElement>(
+                ".sr-ir-note-tooltip-input",
+            );
+            if (!textarea) {
+                throw new Error("Expected tooltip textarea");
+            }
+            textarea.value = "立刻输入的备注";
+            textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            textarea.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                    key: "Enter",
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            );
+
+            resolvePendingNote?.({ uuid: "extract-uuid-1", memo: "", priority: 5 });
+            await waitForIrExtractMeasure();
+
+            expect(resolveExtractTooltipNote).toHaveBeenCalledWith(view, 0);
+            expect(saveExtractTooltipNote).toHaveBeenCalledTimes(1);
+            expect(saveExtractTooltipNote).toHaveBeenCalledWith(
+                "extract-uuid-1",
+                "立刻输入的备注",
+            );
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
     test("saves an empty persisted tooltip note as no note", async () => {
         const restoreMeasureMocks = installIrExtractMeasureMocks();
         const parent = document.createElement("div");
@@ -1394,6 +1462,170 @@ describe("irExtractDecoration helpers", () => {
             expect(onExtractTooltipNoteSaveError).toHaveBeenCalledWith(saveError);
             expect(textarea.value).toBe("失败时保留");
             expect(action?.classList.contains("has-note")).toBe(true);
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("loads hover tooltip notes per extract instead of reusing the previous textarea value", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const doc = "{{ir::one}} {{ir::two}}";
+        const firstStart = doc.indexOf("{{ir::one}}");
+        const secondStart = doc.indexOf("{{ir::two}}");
+        const resolveExtractTooltipNote = jest.fn(
+            (_view: EditorView, sourceStart: number) =>
+                Promise.resolve(
+                    sourceStart === firstStart
+                        ? { uuid: "extract-uuid-1", memo: "第一条备注", priority: 5 }
+                        : { uuid: "extract-uuid-2", memo: "", priority: 5 },
+                ),
+        );
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc,
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNote,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            const actions = Array.from(
+                document.querySelectorAll<HTMLElement>(".sr-ir-info-action"),
+            );
+            expect(actions).toHaveLength(2);
+
+            actions[0]?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+            await waitForIrExtractMeasure();
+
+            const textarea = document.querySelector<HTMLTextAreaElement>(
+                ".sr-ir-note-tooltip-input",
+            );
+            expect(textarea?.value).toBe("第一条备注");
+            expect(actions[0]?.classList.contains("has-note")).toBe(true);
+
+            actions[0]?.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
+            actions[1]?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+            await waitForIrExtractMeasure();
+
+            expect(textarea?.value).toBe("");
+            expect(actions[1]?.classList.contains("has-note")).toBe(false);
+            expect(resolveExtractTooltipNote).toHaveBeenCalledWith(view, firstStart);
+            expect(resolveExtractTooltipNote).toHaveBeenCalledWith(view, secondStart);
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("hydrates a hovered tooltip note after the editor is recreated", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const doc = "{{ir::one}}";
+        const resolveExtractTooltipNote = jest.fn(() =>
+            Promise.resolve({ uuid: "extract-uuid-1", memo: "重开后备注", priority: 5 }),
+        );
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc,
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNote,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            document
+                .querySelector<HTMLElement>(".sr-ir-info-action")
+                ?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+            await waitForIrExtractMeasure();
+
+            const textarea = document.querySelector<HTMLTextAreaElement>(
+                ".sr-ir-note-tooltip-input",
+            );
+            expect(textarea?.value).toBe("重开后备注");
+            expect(
+                document.querySelector<HTMLElement>(".sr-ir-info-action")?.classList.contains(
+                    "has-note",
+                ),
+            ).toBe(true);
+            expect(resolveExtractTooltipNote).toHaveBeenCalledWith(view, 0);
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("hydrates noted info action state on initial render", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        const doc = "{{ir::one}} {{ir::two}}";
+        const firstStart = doc.indexOf("{{ir::one}}");
+        const secondStart = doc.indexOf("{{ir::two}}");
+        const resolveExtractTooltipNotes = jest.fn(
+            (_view: EditorView, sourceStarts: readonly number[]) =>
+                Promise.resolve(
+                    sourceStarts.map((sourceStart) =>
+                        sourceStart === firstStart
+                            ? {
+                                  sourceStart,
+                                  uuid: "extract-uuid-1",
+                                  memo: "首屏已有备注",
+                                  priority: 5,
+                              }
+                            : {
+                                  sourceStart,
+                                  uuid: "extract-uuid-2",
+                                  memo: "",
+                                  priority: 5,
+                              },
+                    ),
+                ),
+        );
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc,
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNotes,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            const actions = Array.from(
+                document.querySelectorAll<HTMLElement>(".sr-ir-info-action"),
+            );
+            expect(actions).toHaveLength(2);
+            expect(actions[0]?.classList.contains("has-note")).toBe(true);
+            expect(actions[1]?.classList.contains("has-note")).toBe(false);
+            expect(resolveExtractTooltipNotes).toHaveBeenCalledTimes(1);
+            expect(resolveExtractTooltipNotes).toHaveBeenCalledWith(view, [firstStart, secondStart]);
         } finally {
             view.destroy();
             restoreMeasureMocks();

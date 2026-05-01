@@ -552,7 +552,8 @@ test("extract graduate is pending until review exits", async () => {
 
         expect(plugin.graduateExtract).not.toHaveBeenCalled();
         expect(plugin.extractStore?.get(first.uuid)?.stage).toBe("active");
-        expect(container.textContent).toContain("Marked for graduation");
+        expect(container.textContent).not.toContain("Marked for graduation");
+        expect(container.querySelector(".sr-extract-review-overlay")).toBeNull();
         expect(container.textContent).toContain("second");
 
         act(() => {
