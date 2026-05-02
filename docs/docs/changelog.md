@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.0] - 2026-05-03
+
+### New Features
+
+-   **Incremental Reading Extracts**: Introduced a new extract module. Combine it with [Epub Importer](https://github.com/aoout/obsidian-epub-importer) or [MinerU](https://mineru.net/OpenSourceTools/Extractor) to set up a SuperMemo-like incremental reading flow in Obsidian.
+-   **"Create Extract" Command**: Select text in the editor and use a custom shortcut to quickly wrap it as an extract.
+-   **Smart Full-Text Slicing**: Auto-generate an extract queue for an entire note based on headings via the file menu or title. This does not change your original Markdown text.
+-   **Memos & Hover Tooltips**: Add notes and thoughts to your extracts directly in the editor or during reviews.
+-   **Priority Weighting**: Added a `W: 1-10` weight control on review cards. Quickly adjust how soon an extract shows up in your review queue.
+-   **New Deck Review Modes**: Added daily limits for new and reviewed extracts in deck settings. Now supports extract-first, flashcard-first, and mixed review modes.
+-   **Review Edit Shortcut**: Press `Alt+E` to edit extracts directly during a review. This makes it easy to create cards or highlight text while reading.
+-   **Expanded Timeline Support**: The timeline now shows standard, auto-generated, and graduated extracts. You can also edit or clear memos right from the sidebar.
+-   **Timeline Limit Removed**: The previous 10-item limit is gone. You can now save unlimited reading progress, extracts, and thoughts for a single file.
+-   **Experimental Multi-Device Sync**: Added basic sync for extracts. If you have sync problems, try copying data from your most updated device to the outdated one. Please also submit an Issue with steps to reproduce the bug.
+
+### Improvements
+
+-   **Unified Deck Entry**: The file header entry now uses the same logic as the Deck Tree. This makes deck card counts consistent everywhere.
+-   **Due Date UI Improvements**: Improved the custom due date menu in the review screen. Default days, button text, and clicks are now clearer and easier to use.
+
 ## [0.0.11] - 2026-04-09
 
 ### New Features
