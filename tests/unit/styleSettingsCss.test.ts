@@ -8,8 +8,11 @@ const extractSettingBlock = (css: string, settingId: string): string => {
     const blockStart = css.indexOf(`id: ${settingId}`);
     expect(blockStart).toBeGreaterThanOrEqual(0);
 
-    const nextSettingStart = css.indexOf("\n  -\n", blockStart + settingId.length);
-    expect(nextSettingStart).toBeGreaterThan(blockStart);
+    const rest = css.slice(blockStart + settingId.length);
+    const nextSettingMatch = /\r?\n  -\r?\n/.exec(rest);
+    expect(nextSettingMatch).not.toBeNull();
+    const nextSettingStart =
+        blockStart + settingId.length + (nextSettingMatch?.index ?? 0);
 
     return css.slice(blockStart, nextSettingStart);
 };
