@@ -1,4 +1,5 @@
 import { DeckOptionsStore } from "src/dataStore/deckOptionsStore";
+import { ExtractStore } from "src/dataStore/extractStore";
 import { Iadapter } from "src/dataStore/adapter";
 import { DataStore } from "src/dataStore/data";
 import { SyroFileIdentityStore } from "src/dataStore/syroFileIdentityStore";
@@ -117,6 +118,9 @@ function createReplayDependencies(
     const reviewCommitStore = new ReviewCommitStore(settings, {
         timelinePath: "syro/devices/Desktop--d84f/timeline.json",
     });
+    const extractStore = new ExtractStore(settings, {
+        extractsPath: "syro/devices/Desktop--d84f/extracts.json",
+    });
     const deckOptionsStore = new DeckOptionsStore({
         deckOptionsPath: "syro/devices/Desktop--d84f/deck-options.json",
     });
@@ -145,6 +149,7 @@ function createReplayDependencies(
         store: currentStore,
         fileIdentityStore,
         noteReviewStore,
+        extractStore,
         reviewCommitStore,
         deckOptionsStore,
         sharedSettingsStore,
@@ -655,6 +660,172 @@ describe("replaySyroSessionRecords", () => {
                 message: "hello",
             }),
         );
+    });
+
+    test("replays extract item records into the extract formal store", async () => {
+        const { adapter, files } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+
+        const summary = await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-extract-upsert",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "extracts",
+                    entityType: "extract-item",
+                    opType: "memo",
+                    targetUuid: "extract-1",
+                    createdAt: "2026-04-13T12:05:00.000Z",
+                    updatedAt: "2026-04-13T12:05:00.000Z",
+                    payload: {
+                        item: {
+                            id: 1,
+                            uuid: "extract-1",
+                            aliases: [],
+                            sourcePath: "notes/Extract.md",
+                            sourceAnchor: {
+                                start: 10,
+                                end: 24,
+                                contentHash: 1234,
+                                ordinal: 0,
+                                sourceLength: 100,
+                            },
+                            rawMarkdown: "Important quote",
+                            memo: "Remember this",
+                            memoEditedAt: 1770000000000,
+                            deckName: "Extracts",
+                            sourceMode: "manual-ir",
+                            sliceRule: "manual-ir",
+                            priority: 7,
+                            nextReview: 0,
+                            timesReviewed: 0,
+                            timesCorrect: 0,
+                            errorStreak: 0,
+                            stage: "active",
+                            createdAt: 1770000000000,
+                            updatedAt: 1770000000000,
+                            data: {
+                                currentInterval: 1,
+                            },
+                        },
+                    },
+                    pathHint: "notes/Extract.md",
+                },
+            ],
+            deps,
+        );
+
+        expect(summary).toEqual({
+            cardsRuntimeChanged: false,
+            noteReviewChanged: false,
+            timelineChanged: false,
+            extractReviewChanged: false,
+            dailyStateChanged: false,
+            requiresGlobalSync: true,
+        });
+        expect((deps as any).extractStore.get("extract-1")).toMatchObject({
+            uuid: "extract-1",
+            sourcePath: "notes/Extract.md",
+            memo: "Remember this",
+            priority: 7,
+        });
+        expect(files.get("syro/devices/Desktop--d84f/extracts.json")).toContain('"extract-1"');
+        expect(files.get("syro/devices/Desktop--d84f/extracts.json")).toContain('"syncEntities"');
+    });
+
+    test("preloads extract alias batches before extract replay and keeps one canonical item", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+
+        await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-extract-alias",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "extracts",
+                    entityType: "uuid-alias-batch",
+                    opType: "merge-aliases",
+                    targetUuid: "uuid-alias-batch:extracts:1",
+                    createdAt: "2026-04-13T12:04:00.000Z",
+                    updatedAt: "2026-04-13T12:04:00.000Z",
+                    payload: {
+                        groups: [
+                            {
+                                entityType: "extract-item",
+                                equivalentUuids: ["extract-local", "extract-remote"],
+                                pathHint: "notes/Extract.md",
+                                emitterPrimaryUuid: "extract-remote",
+                                evidence: {
+                                    sourceDeviceId: "91ac",
+                                    sourcePath: "notes/Extract.md",
+                                    matchedBy: "extract-anchor",
+                                },
+                            },
+                        ],
+                    },
+                    pathHint: "notes/Extract.md",
+                },
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-extract-remote",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "extracts",
+                    entityType: "extract-item",
+                    opType: "sync",
+                    targetUuid: "extract-remote",
+                    createdAt: "2026-04-13T12:05:00.000Z",
+                    updatedAt: "2026-04-13T12:05:00.000Z",
+                    payload: {
+                        item: {
+                            id: 2,
+                            uuid: "extract-remote",
+                            aliases: [],
+                            sourcePath: "notes/Extract.md",
+                            sourceAnchor: {
+                                start: 10,
+                                end: 24,
+                                contentHash: 1234,
+                                ordinal: 0,
+                                sourceLength: 100,
+                            },
+                            rawMarkdown: "Important quote",
+                            memo: "Remote memo",
+                            deckName: "Extracts",
+                            sourceMode: "manual-ir",
+                            sliceRule: "manual-ir",
+                            priority: 5,
+                            nextReview: 0,
+                            timesReviewed: 0,
+                            timesCorrect: 0,
+                            errorStreak: 0,
+                            stage: "active",
+                            createdAt: 1770000000000,
+                            updatedAt: 1770000000000,
+                            data: {
+                                currentInterval: 1,
+                            },
+                        },
+                    },
+                    pathHint: "notes/Extract.md",
+                },
+            ],
+            deps,
+        );
+
+        const extractStore = (deps as any).extractStore;
+        expect(extractStore.list()).toHaveLength(1);
+        expect(extractStore.get("extract-remote")?.aliases).toContain("extract-local");
+        expect(extractStore.get("extract-local")?.uuid).toBe("extract-remote");
     });
 
     test("replays timeline rename-file records against canonical file uuids without leaving old paths behind", async () => {

@@ -8,8 +8,6 @@ export interface IrExtractAnchor {
     innerEnd: number;
     startLine: number;
     endLine: number;
-    prefix: string;
-    suffix: string;
     contentHash: string;
 }
 
@@ -39,7 +37,6 @@ type OpenBraceSegment = OpenIrExtract | OpenOtherBrace;
 
 const IR_OPEN = "{{ir::";
 const IR_CLOSE = "}}";
-const CONTEXT_RADIUS = 80;
 const MARKDOWN_BLOCK_PREFIX =
     /^([ \t]*(?:(?:#{1,6}[ \t]+)|(?:[-+*][ \t]+\[[ xX]\][ \t]+)|(?:[-+*][ \t]+)|(?:\d{1,9}[.)][ \t]+)|(?:>[ \t]*)))/;
 
@@ -61,8 +58,6 @@ function createAnchor(text: string, start: number, end: number, innerStart: numb
         innerEnd,
         startLine: countLinesBefore(text, start),
         endLine: countLinesBefore(text, end),
-        prefix: text.slice(Math.max(0, start - CONTEXT_RADIUS), start),
-        suffix: text.slice(end, Math.min(text.length, end + CONTEXT_RADIUS)),
         contentHash: cyrb53(text.slice(innerStart, innerEnd)),
     };
 }

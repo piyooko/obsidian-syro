@@ -1706,6 +1706,14 @@ export default class SRPlugin extends Plugin {
                     this.updateExtractMemo(uuid, memo),
                 saveExtractTooltipNotePriority: (uuid: string, priority: number) =>
                     this.updateExtractPriority(uuid, priority),
+                showExtractMemoTooltip: () =>
+                    this.data?.settings?.showExtractMemoTooltip !== false,
+                extractMemoTooltipDelayMs: () => {
+                    const delayMs = this.data?.settings?.extractMemoTooltipDelayMs;
+                    return typeof delayMs === "number" && Number.isFinite(delayMs)
+                        ? Math.max(0, Math.round(delayMs))
+                        : 300;
+                },
                 onExtractTooltipNoteSaveError: (error: unknown) =>
                     this.handleExtractTooltipNoteSaveError(error),
                 logExtractTooltipNoteDebug: (event: string, details?: Record<string, unknown>) =>
@@ -2178,6 +2186,10 @@ export default class SRPlugin extends Plugin {
     }
 
     public getAutoExtractRuleForPath(path: string): AutoExtractRule | null {
+        if (this.data.settings.enableAutoExtracts === false) {
+            return null;
+        }
+
         const normalizedPath = this.normalizeAutoExtractPath(path);
         const rule = this.data.settings.autoExtractRules?.[normalizedPath];
         if (!rule?.enabled) {
@@ -3135,12 +3147,6 @@ export default class SRPlugin extends Plugin {
                     match.end === item.sourceAnchor.end &&
                     match.anchor.contentHash === item.sourceAnchor.contentHash,
             ) ??
-            matches.find(
-                (match) =>
-                    match.rawMarkdown === item.rawMarkdown &&
-                    match.anchor.prefix === item.sourceAnchor.prefix &&
-                    match.anchor.suffix === item.sourceAnchor.suffix,
-            ) ??
             (ordinalMatch?.rawMarkdown === item.rawMarkdown ? ordinalMatch : null) ??
             null
         );
@@ -3169,8 +3175,8 @@ export default class SRPlugin extends Plugin {
             slices.find(
                 (slice) => slice.sourceAnchor.contentHash === item.sourceAnchor.contentHash,
             ) ??
-            (slices.filter((slice) => slice.rawMarkdown === item.rawMarkdown).length === 1
-                ? slices.find((slice) => slice.rawMarkdown === item.rawMarkdown) ?? null
+            (slices.filter((slice) => slice.titleMarkdown === item.rawMarkdown).length === 1
+                ? slices.find((slice) => slice.titleMarkdown === item.rawMarkdown) ?? null
                 : null)
         );
     }

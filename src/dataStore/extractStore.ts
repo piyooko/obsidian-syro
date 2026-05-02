@@ -110,6 +110,34 @@ export const EXTRACT_ITEM_ENTITY_TYPE = "extract-item";
 const EXTRACT_STORE_VERSION = 1;
 const DEFAULT_EXTRACT_PRIORITY = 5;
 
+function compactAutoExtractMarkdown(rawMarkdown: string): string {
+    const headingLine = String(rawMarkdown ?? "")
+        .split(/\r?\n/g)
+        .find((line) => /^#{1,6}\s+/.test(line.trim()));
+    if (headingLine) {
+        return headingLine.trim();
+    }
+
+    return (
+        String(rawMarkdown ?? "")
+            .split(/\r?\n/g)
+            .find((line) => line.trim().length > 0)
+            ?.trim() ?? ""
+    );
+}
+
+function compactSourceAnchor<T extends Partial<ExtractSourceAnchor> | IrExtractAnchor>(
+    anchor: T,
+): Omit<T, "prefix" | "suffix"> {
+    const { prefix: _prefix, suffix: _suffix, ...compactAnchor } = anchor as T & {
+        prefix?: unknown;
+        suffix?: unknown;
+    };
+    void _prefix;
+    void _suffix;
+    return compactAnchor;
+}
+
 function createUuid(): string {
     return `ir_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -193,14 +221,17 @@ function normalizeExtractItem(value: unknown): ExtractItem | null {
         aliases: normalizeUuidAliases(raw.uuid, raw.aliases),
         sourcePath: normalizePath(raw.sourcePath),
         sourceAnchor: {
-            ...rawSourceAnchor,
+            ...compactSourceAnchor(rawSourceAnchor),
             ordinal: typeof rawSourceAnchor.ordinal === "number" ? rawSourceAnchor.ordinal : 0,
             sourceLength:
                 typeof rawSourceAnchor.sourceLength === "number"
                     ? rawSourceAnchor.sourceLength
                     : undefined,
         },
-        rawMarkdown: String(raw.rawMarkdown ?? ""),
+        rawMarkdown:
+            raw.sourceMode === "auto-slice"
+                ? compactAutoExtractMarkdown(String(raw.rawMarkdown ?? ""))
+                : String(raw.rawMarkdown ?? ""),
         memo: String(raw.memo ?? ""),
         memoEditedAt: typeof raw.memoEditedAt === "number" ? raw.memoEditedAt : undefined,
         deckName: raw.deckName || DEFAULT_DECKNAME,
@@ -495,12 +526,6 @@ export class ExtractStore {
                     item.sourceAnchor.end === match.end &&
                     item.sourceAnchor.contentHash === match.anchor.contentHash,
             ) ??
-            candidates.find(
-                (item) =>
-                    item.rawMarkdown === match.rawMarkdown &&
-                    item.sourceAnchor.prefix === match.anchor.prefix &&
-                    item.sourceAnchor.suffix === match.anchor.suffix,
-            ) ??
             (candidates.filter((item) => item.rawMarkdown === match.rawMarkdown).length === 1
                 ? candidates.find((item) => item.rawMarkdown === match.rawMarkdown) ?? null
                 : null)
@@ -530,11 +555,11 @@ export class ExtractStore {
                     item.sourceAnchor.contentHash === slice.sourceAnchor.contentHash,
             ) ??
             (candidates.filter(
-                (item) => item.sliceRule === slice.rule && item.rawMarkdown === slice.rawMarkdown,
+                (item) => item.sliceRule === slice.rule && item.rawMarkdown === slice.titleMarkdown,
             ).length === 1
                 ? candidates.find(
                       (item) =>
-                          item.sliceRule === slice.rule && item.rawMarkdown === slice.rawMarkdown,
+                          item.sliceRule === slice.rule && item.rawMarkdown === slice.titleMarkdown,
                   ) ?? null
                 : null)
         );
@@ -585,7 +610,7 @@ export class ExtractStore {
                 currentLocators.get(match.start),
             );
             const sourceAnchor: ExtractSourceAnchor = {
-                ...match.anchor,
+                ...compactSourceAnchor(match.anchor),
                 ordinal,
                 sourceLength: text.length,
             };
@@ -690,21 +715,22 @@ export class ExtractStore {
         slices.forEach((slice, ordinal) => {
             const existing = this.matchAutoExtract(sourcePath, slice, usedUuids);
             const sourceAnchor: ExtractSourceAnchor = {
-                ...slice.sourceAnchor,
+                ...compactSourceAnchor(slice.sourceAnchor),
                 ordinal,
                 sourceLength: text.length,
             };
+            const titleMarkdown = slice.titleMarkdown;
 
             if (existing) {
                 const nextDeckName = deckName || existing.deckName || DEFAULT_DECKNAME;
                 const changed =
                     JSON.stringify(existing.sourceAnchor) !== JSON.stringify(sourceAnchor) ||
-                    existing.rawMarkdown !== slice.rawMarkdown ||
+                    existing.rawMarkdown !== titleMarkdown ||
                     existing.deckName !== nextDeckName ||
                     existing.sliceRule !== slice.rule ||
                     existing.autoSliceKey !== slice.key;
                 existing.sourceAnchor = sourceAnchor;
-                existing.rawMarkdown = slice.rawMarkdown;
+                existing.rawMarkdown = titleMarkdown;
                 existing.deckName = nextDeckName;
                 existing.sourceMode = "auto-slice";
                 existing.sliceRule = slice.rule;
@@ -727,7 +753,7 @@ export class ExtractStore {
                 aliases: [],
                 sourcePath,
                 sourceAnchor,
-                rawMarkdown: slice.rawMarkdown,
+                rawMarkdown: titleMarkdown,
                 memo: "",
                 memoEditedAt: undefined,
                 deckName: deckName || DEFAULT_DECKNAME,

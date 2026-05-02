@@ -92,6 +92,12 @@ function expectDiagnosticsMatch(
     expect(comparableTrackedFiles(diagnostics.trackedFilesByClient[leftClient])).toEqual(
         comparableTrackedFiles(diagnostics.trackedFilesByClient[rightClient]),
     );
+    expect(diagnostics.extractsByClient[leftClient]).toEqual(
+        diagnostics.extractsByClient[rightClient],
+    );
+    expect(diagnostics.timelineByClient[leftClient]).toEqual(
+        diagnostics.timelineByClient[rightClient],
+    );
     expect(comparableDeckOptions(diagnostics.deckOptionsByClient[leftClient])).toEqual(
         comparableDeckOptions(diagnostics.deckOptionsByClient[rightClient]),
     );

@@ -80,6 +80,36 @@ export interface HarnessDeckOptionsStateSnapshot {
     assignments: Array<[string, string]>;
 }
 
+export interface HarnessExtractStateEntry {
+    uuid: string;
+    aliases: string[];
+    sourcePath: string;
+    sourceAnchor: unknown;
+    rawMarkdown: string;
+    memo: string;
+    deckName: string;
+    sourceMode: string;
+    sliceRule: string;
+    priority: number;
+    nextReview: number;
+    timesReviewed: number;
+    timesCorrect: number;
+    errorStreak: number;
+    stage: string;
+    syncDeleted: boolean;
+}
+
+export interface HarnessTimelineStateEntry {
+    path: string;
+    id: string;
+    message: string;
+    timestamp: number;
+    entryType: string;
+    extractOriginUuid: string | null;
+    extractSourcePath: string | null;
+    syncDeleted: boolean;
+}
+
 export interface HarnessDeviceFolderEntry {
     folderName: string;
     files: string[];
@@ -112,6 +142,8 @@ export interface HarnessCursorSnapshotDigest {
 export interface HarnessStateDiagnostics {
     cardsByClient: Record<string, HarnessCardsStateEntry[]>;
     trackedFilesByClient: Record<string, HarnessTrackedFileStateEntry[]>;
+    extractsByClient: Record<string, HarnessExtractStateEntry[]>;
+    timelineByClient: Record<string, HarnessTimelineStateEntry[]>;
     deckOptionsByClient: Record<string, HarnessDeckOptionsStateSnapshot | null>;
     dailyByClient: Record<string, HarnessDailyStateSnapshot | null>;
     pendingOverlayByClient: Record<string, PendingOverlayFile | null>;
@@ -137,6 +169,8 @@ export interface MultiDeviceHarness {
     sync(clientKey: string, mode?: "incremental" | "full"): Promise<void>;
     readCardsFormalState(clientKey: string): HarnessCardsStateEntry[];
     readTrackedFilesFormalState(clientKey: string): HarnessTrackedFileStateEntry[];
+    readExtractsFormalState(clientKey: string): HarnessExtractStateEntry[];
+    readTimelineFormalState(clientKey: string): HarnessTimelineStateEntry[];
     readDeckOptionsFormalState(clientKey: string): HarnessDeckOptionsStateSnapshot | null;
     readDailyStateFormal(clientKey: string): HarnessDailyStateSnapshot | null;
     readPendingOverlay(clientKey: string): PendingOverlayFile | null;
@@ -727,6 +761,95 @@ function normalizeDeckOptionsState(
     }
 }
 
+function normalizeExtractsState(raw: string | null | undefined): HarnessExtractStateEntry[] {
+    if (!raw) {
+        return [];
+    }
+    try {
+        const parsed = JSON.parse(raw) as Record<string, any>;
+        const syncEntities = parsed.syncEntities ?? {};
+        const items = parsed.items && typeof parsed.items === "object" ? parsed.items : {};
+        return Object.values(items)
+            .filter((item): item is Record<string, any> => !!item && typeof item === "object")
+            .map((item) => {
+                const uuid = String(item.uuid ?? "");
+                return {
+                    uuid,
+                    aliases: [...(Array.isArray(item.aliases) ? item.aliases : [])]
+                        .map(String)
+                        .sort((left, right) => left.localeCompare(right)),
+                    sourcePath: String(item.sourcePath ?? ""),
+                    sourceAnchor: JSON.parse(JSON.stringify(item.sourceAnchor ?? null)),
+                    rawMarkdown: String(item.rawMarkdown ?? ""),
+                    memo: String(item.memo ?? ""),
+                    deckName: String(item.deckName ?? ""),
+                    sourceMode: String(item.sourceMode ?? ""),
+                    sliceRule: String(item.sliceRule ?? ""),
+                    priority: Number(item.priority ?? 0),
+                    nextReview: Number(item.nextReview ?? 0),
+                    timesReviewed: Number(item.timesReviewed ?? 0),
+                    timesCorrect: Number(item.timesCorrect ?? 0),
+                    errorStreak: Number(item.errorStreak ?? 0),
+                    stage: String(item.stage ?? ""),
+                    syncDeleted: !!syncEntities[uuid]?.deleted,
+                };
+            })
+            .sort((left, right) =>
+                [left.sourcePath, left.uuid].join("::").localeCompare(
+                    [right.sourcePath, right.uuid].join("::"),
+                ),
+            );
+    } catch {
+        return [];
+    }
+}
+
+function normalizeTimelineState(raw: string | null | undefined): HarnessTimelineStateEntry[] {
+    if (!raw) {
+        return [];
+    }
+    try {
+        const parsed = JSON.parse(raw) as Record<string, any>;
+        const files =
+            parsed.files && typeof parsed.files === "object"
+                ? parsed.files
+                : parsed && typeof parsed === "object"
+                  ? parsed
+                  : {};
+        const syncEntities = parsed.syncEntities ?? {};
+        const entries: HarnessTimelineStateEntry[] = [];
+        for (const [path, commits] of Object.entries(files)) {
+            if (!Array.isArray(commits)) {
+                continue;
+            }
+            for (const commit of commits) {
+                if (!commit || typeof commit !== "object") {
+                    continue;
+                }
+                const id = String((commit as Record<string, any>).id ?? "");
+                const extract = (commit as Record<string, any>).extract as
+                    | Record<string, any>
+                    | undefined;
+                entries.push({
+                    path,
+                    id,
+                    message: String((commit as Record<string, any>).message ?? ""),
+                    timestamp: Number((commit as Record<string, any>).timestamp ?? 0),
+                    entryType: String((commit as Record<string, any>).entryType ?? "manual"),
+                    extractOriginUuid: extract ? String(extract.originUuid ?? "") : null,
+                    extractSourcePath: extract ? String(extract.sourcePath ?? "") : null,
+                    syncDeleted: !!syncEntities[`timeline-entry:${id}`]?.deleted,
+                });
+            }
+        }
+        return entries.sort((left, right) =>
+            [left.path, left.id].join("::").localeCompare([right.path, right.id].join("::")),
+        );
+    } catch {
+        return [];
+    }
+}
+
 function parsePendingOverlay(raw: string | null | undefined): PendingOverlayFile | null {
     if (!raw) {
         return null;
@@ -1082,6 +1205,24 @@ export function createSyroMultiDeviceHarness(): MultiDeviceHarness {
         return normalizeTrackedFilesState(shared.files.get(normalizePath(layout.cardsPath)));
     };
 
+    const readExtractsFormalState = (clientKey: string): HarnessExtractStateEntry[] => {
+        const client = clients.get(clientKey);
+        if (!client) {
+            throw new Error(`Unknown client: ${clientKey}`);
+        }
+        const layout = getLayout(client.plugin);
+        return normalizeExtractsState(shared.files.get(normalizePath(layout.extractsPath)));
+    };
+
+    const readTimelineFormalState = (clientKey: string): HarnessTimelineStateEntry[] => {
+        const client = clients.get(clientKey);
+        if (!client) {
+            throw new Error(`Unknown client: ${clientKey}`);
+        }
+        const layout = getLayout(client.plugin);
+        return normalizeTimelineState(shared.files.get(normalizePath(layout.timelinePath)));
+    };
+
     const readDeckOptionsFormalState = (
         clientKey: string,
     ): HarnessDeckOptionsStateSnapshot | null => {
@@ -1159,6 +1300,12 @@ export function createSyroMultiDeviceHarness(): MultiDeviceHarness {
         trackedFilesByClient: Object.fromEntries(
             clientKeys.map((clientKey) => [clientKey, readTrackedFilesFormalState(clientKey)]),
         ),
+        extractsByClient: Object.fromEntries(
+            clientKeys.map((clientKey) => [clientKey, readExtractsFormalState(clientKey)]),
+        ),
+        timelineByClient: Object.fromEntries(
+            clientKeys.map((clientKey) => [clientKey, readTimelineFormalState(clientKey)]),
+        ),
         deckOptionsByClient: Object.fromEntries(
             clientKeys.map((clientKey) => [clientKey, readDeckOptionsFormalState(clientKey)]),
         ),
@@ -1227,6 +1374,10 @@ export function createSyroMultiDeviceHarness(): MultiDeviceHarness {
         readCardsFormalState,
 
         readTrackedFilesFormalState,
+
+        readExtractsFormalState,
+
+        readTimelineFormalState,
 
         readDeckOptionsFormalState,
 

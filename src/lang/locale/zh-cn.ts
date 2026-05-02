@@ -527,7 +527,8 @@ export default {
     DEBUG_REVIEWED: "已复习",
     DEBUG_CORRECT: "正确",
     DEBUG_STREAK: "错误连续",
-    DEBUG_NEXT_REVIEW: "下次复习",
+    DEBUG_NEXT_REVIEW: "Syro nextReview",
+    DEBUG_FSRS_DUE: "FSRS due",
     DEBUG_STABILITY: "稳定性",
     DEBUG_DIFFICULTY: "难度",
     DEBUG_REPS: "重复次数",
@@ -819,6 +820,15 @@ export default {
     SETTINGS_SECTION_EXTRACTS: "摘录",
     SETTINGS_ENABLE_EXTRACTS: "启用摘录",
     SETTINGS_ENABLE_EXTRACTS_DESC: "允许使用 {{ir::...}} 渐进阅读摘录，并将摘录加入卡片复习流。",
+    SETTINGS_ENABLE_AUTO_EXTRACTS: "启用自动摘录",
+    SETTINGS_ENABLE_AUTO_EXTRACTS_DESC:
+        "开启后，允许通过文件菜单选择以标题对文件自动进行切片摘录，此操作不会生成任何摘录符号。",
+    SETTINGS_SHOW_EXTRACT_MEMO_TOOLTIP: "悬浮显示摘录备注",
+    SETTINGS_SHOW_EXTRACT_MEMO_TOOLTIP_DESC:
+        "鼠标悬停在摘录内容上时，以 Tooltip 气泡的形式显示该摘录附加的备注或上下文。",
+    SETTINGS_EXTRACT_MEMO_TOOLTIP_DELAY: "备注弹窗显示延迟（ms）",
+    SETTINGS_EXTRACT_MEMO_TOOLTIP_DELAY_DESC:
+        "鼠标悬停多久后显示摘录备注弹窗。设为 0 则立即显示。",
     SETTINGS_MAX_NEW_EXTRACTS: "每日新摘录上限",
     SETTINGS_MAX_NEW_EXTRACTS_DESC: "每天最多引入多少条新创建的摘录。",
     SETTINGS_MAX_EXTRACT_REVIEWS: "每日摘录复习上限",

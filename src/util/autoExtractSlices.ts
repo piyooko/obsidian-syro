@@ -6,6 +6,7 @@ export interface AutoExtractSlice {
     key: string;
     rule: "heading";
     rawMarkdown: string;
+    titleMarkdown: string;
     sourceAnchor: IrExtractAnchor;
     headingPath?: string[];
 }
@@ -17,7 +18,6 @@ interface HeadingToken {
     end: number;
 }
 
-const CONTEXT_RADIUS = 80;
 const HEADING_RE = /^(#+)[ \t]+(.+?)[ \t#]*$/;
 
 function countLinesBefore(text: string, offset: number): number {
@@ -38,8 +38,6 @@ function createAutoAnchor(text: string, start: number, end: number): IrExtractAn
         innerEnd: end,
         startLine: countLinesBefore(text, start),
         endLine: countLinesBefore(text, end),
-        prefix: text.slice(Math.max(0, start - CONTEXT_RADIUS), start),
-        suffix: text.slice(end, Math.min(text.length, end + CONTEXT_RADIUS)),
         contentHash: cyrb53(text.slice(start, end).trim()),
     };
 }
@@ -131,6 +129,7 @@ function buildHeadingSlices(text: string, activeLevels: Set<number> | null): Aut
             key: `${duplicateBase}:${duplicateIndex}`,
             rule: "heading",
             rawMarkdown,
+            titleMarkdown: text.slice(heading.start, heading.end).trim(),
             sourceAnchor: createAutoAnchor(text, heading.start, end),
             headingPath: path,
         });

@@ -1567,6 +1567,28 @@ describe("SRPlugin extract deck paths", () => {
         expect(plugin.syncAutoExtractsFromFile).toHaveBeenCalledWith(file, rule);
     });
 
+    test("ignores existing automatic extract rules when auto extracts are disabled", () => {
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: {
+                settings: {
+                    enableAutoExtracts: false,
+                    autoExtractRules: {
+                        "摘录测试.md": {
+                            sourcePath: "摘录测试.md",
+                            rule: "heading",
+                            headingLevels: [2],
+                            enabled: true,
+                            createdAt: 1,
+                            updatedAt: 1,
+                        },
+                    },
+                },
+            },
+        });
+
+        expect(SRPlugin.prototype.getAutoExtractRuleForPath.call(plugin, "摘录测试.md")).toBeNull();
+    });
+
     test("turning off one level from all headings preserves the other H1-H6 levels", async () => {
         const file = createTFile("摘录测试.md");
         const plugin = Object.assign(Object.create(SRPlugin.prototype), {
@@ -1645,5 +1667,67 @@ describe("SRPlugin extract deck paths", () => {
         expect(plugin.appendSyroExtractGraduate).toHaveBeenCalledWith({ item: graduated });
         expect(emit).toHaveBeenCalledWith("extracts-updated");
         expect(updateStatusBar).toHaveBeenCalled();
+    });
+
+    test("graduating an automatic extract with memo stores only the heading in the timeline", async () => {
+        const file = createTFile("摘录测试.md");
+        const sourceText = "# A\none\n## B\nchild";
+        const graduated = {
+            uuid: "auto_1",
+            sourceMode: "auto-slice",
+            sliceRule: "heading",
+            autoSliceKey: "heading:1:A:0",
+            stage: "graduated",
+            memo: "memo body",
+            sourcePath: "摘录测试.md",
+            rawMarkdown: "# A",
+            sourceAnchor: { start: 0, end: sourceText.length, startLine: 0, endLine: 3, ordinal: 0 },
+            createdAt: 1234,
+            timelineCreatedAt: 2345,
+        };
+        const formalCommit = {
+            id: "extract:auto_1",
+            message: "memo body",
+            timestamp: 2345,
+            entryType: "extract",
+        };
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            app: {
+                vault: {
+                    getAbstractFileByPath: jest.fn(() => file),
+                    read: jest.fn(() => Promise.resolve(sourceText)),
+                    modify: jest.fn(),
+                },
+            },
+            extractStore: {
+                get: jest.fn(() => ({
+                    ...graduated,
+                    stage: "active",
+                })),
+                graduateWithReviewCount: jest.fn(() => graduated),
+                save: jest.fn(() => Promise.resolve()),
+            },
+            appendSyroExtractGraduate: jest.fn(() => Promise.resolve()),
+            reviewCommitStore: {
+                addExtractCommit: jest.fn(() => Promise.resolve(formalCommit)),
+            },
+            appendSyroTimelineAdd: jest.fn(() => Promise.resolve()),
+            syncEvents: { emit: jest.fn() },
+            updateStatusBar: jest.fn(),
+        });
+
+        await SRPlugin.prototype.graduateExtract.call(plugin, "auto_1", "deck");
+
+        expect(plugin.reviewCommitStore.addExtractCommit).toHaveBeenCalledWith(
+            "摘录测试.md",
+            expect.objectContaining({
+                originUuid: "auto_1",
+                quoteText: "# A",
+                memoText: "memo body",
+                sourceMode: "auto-slice",
+                extractCreatedAt: 2345,
+            }),
+            0,
+        );
     });
 });

@@ -65,6 +65,9 @@ export interface UISettingsState {
     timelineAutoCommitReviewSelection: boolean; // Auto-write note review selections to timeline
     timelineEnableDurationPrefixSyntax: boolean; // Enable Nd:: prefix parsing and rendering
     enableExtracts: boolean; // Enable incremental reading extracts
+    enableAutoExtracts: boolean; // Enable heading-based automatic extract slicing
+    showExtractMemoTooltip: boolean; // Show extract memo tooltip on hover
+    extractMemoTooltipDelayMs: number; // Hover delay before showing extract memo tooltip
 
     // Weighted Multiplier Algorithm Settings
     fsrsEnableFuzz: boolean;

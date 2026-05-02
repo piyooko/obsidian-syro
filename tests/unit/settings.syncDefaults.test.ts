@@ -332,6 +332,41 @@ describe("sync progress display defaults", () => {
         expect(DEFAULT_SETTINGS.sidebarFilePathTooltipDelayMs).toBe(1000);
     });
 
+    test("new installs enable extract automation and memo hover tooltips by default", () => {
+        expect(DEFAULT_SETTINGS.enableAutoExtracts).toBe(true);
+        expect(DEFAULT_SETTINGS.showExtractMemoTooltip).toBe(true);
+        expect(DEFAULT_SETTINGS.extractMemoTooltipDelayMs).toBe(300);
+    });
+
+    test("upgradeSettings backfills extract automation and memo tooltip defaults", () => {
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            enableAutoExtracts: undefined,
+            showExtractMemoTooltip: undefined,
+            extractMemoTooltipDelayMs: undefined,
+        } as unknown as SRSettings;
+
+        upgradeSettings(settings);
+
+        expect(settings.enableAutoExtracts).toBe(true);
+        expect(settings.showExtractMemoTooltip).toBe(true);
+        expect(settings.extractMemoTooltipDelayMs).toBe(300);
+    });
+
+    test("settings UI normalizes extract memo tooltip delay to a non-negative integer", () => {
+        const merged = mergeUIStateToSettings(DEFAULT_SETTINGS, {
+            extractMemoTooltipDelayMs: -12.6,
+        });
+
+        expect(merged.extractMemoTooltipDelayMs).toBe(0);
+
+        const uiState = settingsToUIState({
+            ...DEFAULT_SETTINGS,
+            extractMemoTooltipDelayMs: 999.8,
+        });
+        expect(uiState.extractMemoTooltipDelayMs).toBe(1000);
+    });
+
     test("new installs keep auto-following the current note in the sidebar enabled by default", () => {
         expect(DEFAULT_SETTINGS.autoExpandTimeline).toBe(true);
         expect(settingsToUIState(DEFAULT_SETTINGS).autoExpandTimeline).toBe(true);

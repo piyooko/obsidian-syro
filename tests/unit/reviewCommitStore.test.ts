@@ -120,6 +120,51 @@ describe("reviewCommitStore", () => {
         expect(updated?.message).toBe("updated memo");
     });
 
+    it("compacts legacy automatic extract timeline snapshots to heading quote text", async () => {
+        files.set(
+            ".obsidian/plugins/syro/review_commits.json",
+            JSON.stringify({
+                version: 1,
+                files: {
+                    "notes/source.md": [
+                        {
+                            id: "extract:auto_1",
+                            message: "memo body",
+                            timestamp: 1234,
+                            entryType: "extract",
+                            extract: {
+                                originUuid: "auto_1",
+                                quoteText: "# A\nbody\n## B\nchild",
+                                memoText: "memo body",
+                                sourcePath: "notes/source.md",
+                                sourceMode: "auto-slice",
+                                sourceAnchor: {
+                                    start: 0,
+                                    end: 18,
+                                    prefix: "legacy prefix",
+                                    suffix: "legacy suffix",
+                                },
+                                extractCreatedAt: 1234,
+                            },
+                        },
+                    ],
+                },
+            }),
+        );
+        const store = new ReviewCommitStore(DEFAULT_SETTINGS, ".obsidian/plugins/syro");
+
+        await store.load();
+        await store.save();
+
+        const [commit] = store.getCommits("notes/source.md");
+        expect(commit.extract?.quoteText).toBe("# A");
+        expect(commit.extract?.sourceAnchor).not.toHaveProperty("prefix");
+        expect(commit.extract?.sourceAnchor).not.toHaveProperty("suffix");
+        expect(files.get(".obsidian/plugins/syro/review_commits.json")).not.toContain(
+            "legacy prefix",
+        );
+    });
+
     it("returns the highest saved scroll percentage and preserves zero", async () => {
         const store = new ReviewCommitStore(DEFAULT_SETTINGS, ".obsidian/plugins/syro");
         await store.load();

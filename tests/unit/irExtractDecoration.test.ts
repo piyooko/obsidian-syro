@@ -722,7 +722,7 @@ describe("irExtractDecoration helpers", () => {
             widget?.dispatchEvent(event);
             await waitForIrExtractMeasure();
 
-            expect(event.defaultPrevented).toBe(true);
+            expect(event.defaultPrevented).toBe(false);
             expect(value?.textContent).toBe("6");
             expect(widget?.classList.contains("tick-up")).toBe(true);
             expect(saveExtractTooltipNotePriority).toHaveBeenCalledWith("extract-uuid-1", 6);
@@ -754,6 +754,35 @@ describe("irExtractDecoration helpers", () => {
         widget?.dispatchEvent(pointerCancel);
 
         expect(widget?.classList.contains("is-touch-active")).toBe(false);
+    });
+
+    test("handles tooltip priority wheel with a passive listener", () => {
+        const addEventListenerSpy = jest.spyOn(HTMLElement.prototype, "addEventListener");
+        const onPriorityChange = jest.fn();
+        const tooltip = createIrExtractNoteTooltipElement({ onPriorityChange });
+
+        try {
+            const widget = tooltip.querySelector<HTMLElement>(".sr-ir-importance-widget");
+            const value = tooltip.querySelector<HTMLElement>(".sr-ir-importance-value");
+            const event = new WheelEvent("wheel", {
+                deltaY: -1,
+                bubbles: true,
+                cancelable: true,
+            });
+
+            widget?.dispatchEvent(event);
+
+            expect(addEventListenerSpy).toHaveBeenCalledWith(
+                "wheel",
+                expect.any(Function),
+                { passive: true },
+            );
+            expect(event.defaultPrevented).toBe(false);
+            expect(value?.textContent).toBe("6");
+            expect(onPriorityChange).toHaveBeenCalledWith(6);
+        } finally {
+            addEventListenerSpy.mockRestore();
+        }
     });
 
     test("shows the note tooltip only from icon hover or pinned click state", () => {
@@ -854,6 +883,15 @@ describe("irExtractDecoration helpers", () => {
             /\.sr-ir-note-tooltip\s+\.sr-ir-importance-widget:hover,\s*\.sr-ir-note-tooltip\s+\.sr-ir-importance-widget\.is-touch-active\s*\{[^}]*color:\s*var\(--text-normal\);[^}]*background:\s*rgba\(128,\s*128,\s*128,\s*0\.15\)/s,
         );
         expect(css).not.toMatch(/(^|\n)\.sr-ir-importance-widget\s*\{/);
+    });
+
+    test("scales both extract and automatic heading memo icons while editing", () => {
+        const css = readFileSync(join(process.cwd(), "src/ui/styles/editor.css"), "utf8");
+
+        expect(css).not.toContain("srIrInfoClick");
+        expect(css).toMatch(
+            /\.sr-ir-info-action\.is-editing,\s*\.sr-ir-heading-note-action\.is-editing\s*\{[^}]*transform:\s*scale\(1\.35\)/s,
+        );
     });
 
     test("does not highlight the extract block only because its tooltip is pinned", () => {
@@ -2268,7 +2306,7 @@ describe("irExtractDecoration helpers", () => {
     });
 
     test("does not restart initial layout tracking for small edits in the same document", async () => {
-        let rangeTop = 10;
+        const rangeTop = 10;
         const restoreMeasureMocks = installIrExtractMeasureMocksWithDynamicRangeTop(() => rangeTop);
         const parent = document.createElement("div");
         parent.className = "is-live-preview";

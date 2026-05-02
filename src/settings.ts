@@ -1049,6 +1049,9 @@ export interface SRSettings {
     disableFileMenuReviewOptions: boolean;
     maxNDaysNotesReviewQueue: number;
     enableExtracts: boolean;
+    enableAutoExtracts: boolean;
+    showExtractMemoTooltip: boolean;
+    extractMemoTooltipDelayMs: number;
     maxNewExtractsPerDay: number;
     maxExtractReviewsPerDay: number;
     autoExtractRules: Record<string, AutoExtractRule>;
@@ -1210,6 +1213,9 @@ export const DEFAULT_SETTINGS: SRSettings = {
     disableFileMenuReviewOptions: false,
     maxNDaysNotesReviewQueue: 365,
     enableExtracts: true,
+    enableAutoExtracts: true,
+    showExtractMemoTooltip: true,
+    extractMemoTooltipDelayMs: 300,
     maxNewExtractsPerDay: DEFAULT_MAX_NEW_EXTRACTS,
     maxExtractReviewsPerDay: DEFAULT_MAX_EXTRACT_REVIEWS,
     autoExtractRules: {},
@@ -1436,6 +1442,23 @@ export function upgradeSettings(settings: SRSettings) {
 
     if (settings.enableExtracts === undefined) {
         settings.enableExtracts = true;
+    }
+    if (settings.enableAutoExtracts === undefined) {
+        settings.enableAutoExtracts = true;
+    }
+    if (settings.showExtractMemoTooltip === undefined) {
+        settings.showExtractMemoTooltip = true;
+    }
+    if (
+        typeof settings.extractMemoTooltipDelayMs !== "number" ||
+        !Number.isFinite(settings.extractMemoTooltipDelayMs)
+    ) {
+        settings.extractMemoTooltipDelayMs = 300;
+    } else {
+        settings.extractMemoTooltipDelayMs = Math.max(
+            0,
+            Math.round(settings.extractMemoTooltipDelayMs),
+        );
     }
     settings.autoExtractRules = normalizeAutoExtractRules(settings.autoExtractRules);
     if (

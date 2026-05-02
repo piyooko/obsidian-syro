@@ -278,6 +278,17 @@
         background-color 0.15s ease;
 }
 
+.sr-ir-info-action,
+.sr-ir-heading-note-action {
+    transform-origin: center;
+    transition: transform 120ms ease-out;
+}
+
+.sr-ir-info-action.is-editing,
+.sr-ir-heading-note-action.is-editing {
+    transform: scale(1.35);
+}
+
 /* ==========================================
    Incremental Reading Extract Note Tooltip
    Body-level floating tooltip for editor info icons.

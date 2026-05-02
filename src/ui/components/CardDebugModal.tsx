@@ -234,7 +234,22 @@ export const CardDebugModal: FC<CardDebugModalProps> = ({ isOpen, onClose, data 
                                                 <input
                                                     type="text"
                                                     className="sr-debug-input"
-                                                    defaultValue={valueToDisplay(algorithmData.due)}
+                                                    defaultValue={valueToDisplay(
+                                                        data.basic?.nextReview,
+                                                    )}
+                                                    readOnly
+                                                />
+                                            </div>
+                                            <div className="sr-debug-field-full">
+                                                <label className="sr-debug-label">
+                                                    {t("DEBUG_FSRS_DUE")}
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    className="sr-debug-input"
+                                                    defaultValue={valueToDisplay(
+                                                        algorithmData.due,
+                                                    )}
                                                     readOnly
                                                 />
                                             </div>

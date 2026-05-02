@@ -1900,16 +1900,32 @@ const NotesTab: React.FC<TabProps> = ({ settings, onChange }) => {
     const [tooltipDelayDraft, setTooltipDelayDraft] = useState(
         String(settings.sidebarFilePathTooltipDelayMs),
     );
+    const [extractMemoTooltipDelayDraft, setExtractMemoTooltipDelayDraft] = useState(
+        String(settings.extractMemoTooltipDelayMs),
+    );
 
     useEffect(() => {
         setTooltipDelayDraft(String(settings.sidebarFilePathTooltipDelayMs));
     }, [settings.sidebarFilePathTooltipDelayMs]);
+
+    useEffect(() => {
+        setExtractMemoTooltipDelayDraft(String(settings.extractMemoTooltipDelayMs));
+    }, [settings.extractMemoTooltipDelayMs]);
 
     const commitTooltipDelay = useCallback(() => {
         const normalizedValue = normalizeSidebarFilePathTooltipDelayDraft(tooltipDelayDraft, 1000);
         setTooltipDelayDraft(String(normalizedValue));
         onChange("sidebarFilePathTooltipDelayMs", normalizedValue);
     }, [onChange, tooltipDelayDraft]);
+
+    const commitExtractMemoTooltipDelay = useCallback(() => {
+        const normalizedValue = normalizeSidebarFilePathTooltipDelayDraft(
+            extractMemoTooltipDelayDraft,
+            300,
+        );
+        setExtractMemoTooltipDelayDraft(String(normalizedValue));
+        onChange("extractMemoTooltipDelayMs", normalizedValue);
+    }, [extractMemoTooltipDelayDraft, onChange]);
 
     return (
         <div className="sr-settings-sections">
@@ -1935,6 +1951,36 @@ const NotesTab: React.FC<TabProps> = ({ settings, onChange }) => {
                         )
                     }
                 />
+            </Section>
+            <Section title={<LabelWithLab label={t("SETTINGS_SECTION_EXTRACTS")} />}>
+                <ToggleRow
+                    label={t("SETTINGS_ENABLE_EXTRACTS")}
+                    desc={t("SETTINGS_ENABLE_EXTRACTS_DESC")}
+                    value={settings.enableExtracts}
+                    onChange={(v) => onChange("enableExtracts", v)}
+                />
+                <ToggleRow
+                    label={t("SETTINGS_ENABLE_AUTO_EXTRACTS")}
+                    desc={t("SETTINGS_ENABLE_AUTO_EXTRACTS_DESC")}
+                    value={settings.enableAutoExtracts}
+                    onChange={(v) => onChange("enableAutoExtracts", v)}
+                />
+                <ToggleRow
+                    label={t("SETTINGS_SHOW_EXTRACT_MEMO_TOOLTIP")}
+                    desc={t("SETTINGS_SHOW_EXTRACT_MEMO_TOOLTIP_DESC")}
+                    value={settings.showExtractMemoTooltip}
+                    onChange={(v) => onChange("showExtractMemoTooltip", v)}
+                />
+                {settings.showExtractMemoTooltip && (
+                    <InputRow
+                        label={t("SETTINGS_EXTRACT_MEMO_TOOLTIP_DELAY")}
+                        desc={t("SETTINGS_EXTRACT_MEMO_TOOLTIP_DELAY_DESC")}
+                        type="number"
+                        value={extractMemoTooltipDelayDraft}
+                        onChange={(v) => setExtractMemoTooltipDelayDraft(v)}
+                        onBlur={() => commitExtractMemoTooltipDelay()}
+                    />
+                )}
             </Section>
             <Section title={t("SETTINGS_SECTION_SIDEBAR")}>
                 <ToggleRow
@@ -2058,14 +2104,6 @@ const NotesTab: React.FC<TabProps> = ({ settings, onChange }) => {
                     desc={t("SETTINGS_TIMELINE_ENABLE_DURATION_PREFIX_DESC")}
                     value={settings.timelineEnableDurationPrefixSyntax}
                     onChange={(v) => onChange("timelineEnableDurationPrefixSyntax", v)}
-                />
-            </Section>
-            <Section title={t("SETTINGS_SECTION_EXTRACTS")}>
-                <ToggleRow
-                    label={t("SETTINGS_ENABLE_EXTRACTS")}
-                    desc={t("SETTINGS_ENABLE_EXTRACTS_DESC")}
-                    value={settings.enableExtracts}
-                    onChange={(v) => onChange("enableExtracts", v)}
                 />
             </Section>
         </div>

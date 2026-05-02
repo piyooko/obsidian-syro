@@ -713,7 +713,8 @@ export default normalizeSentenceCaseLocale({
     DEBUG_REVIEWED: "Reviewed",
     DEBUG_CORRECT: "Correct",
     DEBUG_STREAK: "Error Streak",
-    DEBUG_NEXT_REVIEW: "Next Review",
+    DEBUG_NEXT_REVIEW: "Syro nextReview",
+    DEBUG_FSRS_DUE: "FSRS due",
     DEBUG_STABILITY: "Stability",
     DEBUG_DIFFICULTY: "Difficulty",
     DEBUG_REPS: "Reps",
@@ -1032,6 +1033,15 @@ export default normalizeSentenceCaseLocale({
     SETTINGS_ENABLE_EXTRACTS: "Enable Extracts",
     SETTINGS_ENABLE_EXTRACTS_DESC:
         "Allow {{ir::...}} incremental reading extracts and include them in card review sessions.",
+    SETTINGS_ENABLE_AUTO_EXTRACTS: "Enable Auto Extracts",
+    SETTINGS_ENABLE_AUTO_EXTRACTS_DESC:
+        "Allow the file menu to automatically slice files into heading-based extracts without inserting extract syntax.",
+    SETTINGS_SHOW_EXTRACT_MEMO_TOOLTIP: "Show Extract Memo Tooltip",
+    SETTINGS_SHOW_EXTRACT_MEMO_TOOLTIP_DESC:
+        "When hovering over extract content, show its memo or context in a Tooltip bubble.",
+    SETTINGS_EXTRACT_MEMO_TOOLTIP_DELAY: "Extract Memo Tooltip Delay (ms)",
+    SETTINGS_EXTRACT_MEMO_TOOLTIP_DELAY_DESC:
+        "How long to hover before showing the extract memo tooltip. 0 shows it immediately.",
     SETTINGS_MAX_NEW_EXTRACTS: "New Extracts/Day",
     SETTINGS_MAX_NEW_EXTRACTS_DESC:
         "Maximum number of newly created extracts to introduce per day.",

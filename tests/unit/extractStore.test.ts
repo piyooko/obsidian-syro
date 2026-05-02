@@ -370,10 +370,26 @@ describe("ExtractStore", () => {
                 sourceMode: "auto-slice",
                 sliceRule: "heading",
                 autoSliceKey: "heading:1:A:0",
-                rawMarkdown: "# A\none\n## A\nchild",
+                rawMarkdown: "# A",
             }),
         );
+        expect(result.added[0].sourceAnchor).not.toHaveProperty("prefix");
+        expect(result.added[0].sourceAnchor).not.toHaveProperty("suffix");
         expect(store.get(manual.uuid)?.stage).toBe("active");
+    });
+
+    test("manual extract anchors omit prefix and suffix context", () => {
+        const store = createStore();
+        const [created] = store.syncFileExtracts(
+            "notes/source.md",
+            "before {{ir::one}} after",
+            "deck",
+        ).added;
+
+        expect(created.sourceAnchor).not.toHaveProperty("prefix");
+        expect(created.sourceAnchor).not.toHaveProperty("suffix");
+        expect(store.get(created.uuid)?.sourceAnchor).not.toHaveProperty("prefix");
+        expect(store.get(created.uuid)?.sourceAnchor).not.toHaveProperty("suffix");
     });
 
     test("manual IR sync does not graduate active auto slices from the same file", () => {
@@ -432,7 +448,7 @@ describe("ExtractStore", () => {
         expect(result.added).toHaveLength(0);
         expect(result.updated.map((item) => item.uuid)).toEqual([first.uuid]);
         expect(store.get(first.uuid)?.stage).toBe("active");
-        expect(store.get(first.uuid)?.rawMarkdown).toBe("# A\nalpha edited");
+        expect(store.get(first.uuid)?.rawMarkdown).toBe("# A");
     });
 
     test("sets auto heading timeline creation time when memo first makes it visible", () => {

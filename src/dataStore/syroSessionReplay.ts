@@ -1827,6 +1827,18 @@ export async function replaySyroSessionRecords(
             extractStore.upsertSnapshot(workingSnapshot);
         }
         const currentAfterApply = extractStore.get(targetUuid);
+        if (currentAfterApply) {
+            mergeExtractAliases(
+                currentAfterApply.uuid,
+                [workingSnapshot.item.uuid, ...(workingSnapshot.item.aliases ?? [])],
+                buildEvidence(
+                    record,
+                    resolution?.matchedBy ?? "snapshot-reconcile",
+                    workingSnapshot.item.sourcePath,
+                ),
+                workingSnapshot.item.sourcePath,
+            );
+        }
         extractStore.markSyncEntity({
             targetUuid,
             updatedAt: record.updatedAt,

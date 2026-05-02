@@ -101,7 +101,63 @@ function cloneCommitLog<T extends ReviewCommitLog | ReviewCommitLog[] | undefine
 function cloneExtractSnapshot(
     extract: ReviewTimelineExtractSnapshot | undefined,
 ): ReviewTimelineExtractSnapshot | undefined {
-    return extract ? (JSON.parse(JSON.stringify(extract)) as ReviewTimelineExtractSnapshot) : undefined;
+    return extract ? compactExtractSnapshot(JSON.parse(JSON.stringify(extract)) as ReviewTimelineExtractSnapshot) : undefined;
+}
+
+function compactExtractQuoteText(extract: ReviewTimelineExtractSnapshot): string {
+    if (extract.sourceMode !== "auto-slice") {
+        return extract.quoteText;
+    }
+
+    const headingLine = String(extract.quoteText ?? "")
+        .split(/\r?\n/g)
+        .find((line) => /^#{1,6}\s+/.test(line.trim()));
+    if (headingLine) {
+        return headingLine.trim();
+    }
+
+    return (
+        String(extract.quoteText ?? "")
+            .split(/\r?\n/g)
+            .find((line) => line.trim().length > 0)
+            ?.trim() ?? ""
+    );
+}
+
+function compactExtractAnchor(
+    anchor: ReviewTimelineExtractAnchor,
+): ReviewTimelineExtractAnchor {
+    const { prefix: _prefix, suffix: _suffix, ...compactAnchor } = anchor as ReviewTimelineExtractAnchor & {
+        prefix?: unknown;
+        suffix?: unknown;
+    };
+    void _prefix;
+    void _suffix;
+    return compactAnchor;
+}
+
+function compactExtractSnapshot(
+    extract: ReviewTimelineExtractSnapshot,
+): ReviewTimelineExtractSnapshot {
+    return {
+        ...extract,
+        quoteText: compactExtractQuoteText(extract),
+        sourceAnchor: compactExtractAnchor(extract.sourceAnchor),
+    };
+}
+
+function compactTimelineData(data: ReviewCommitData): ReviewCommitData {
+    for (const commits of Object.values(data)) {
+        for (const commit of commits) {
+            if (commit.extract) {
+                commit.extract = compactExtractSnapshot(commit.extract);
+                if (commit.entryType === "extract") {
+                    commit.message = commit.extract.memoText.trim();
+                }
+            }
+        }
+    }
+    return data;
 }
 
 function renameExtractSourcePath(
@@ -159,16 +215,18 @@ export class ReviewCommitStore {
                         typeof (parsed as ReviewCommitStoreFile).files === "object"
                     ) {
                         const parsedFile = parsed as ReviewCommitStoreFile;
-                        this.data =
+                        this.data = compactTimelineData(
                             typeof parsedFile.files === "object" && parsedFile.files !== null
                                 ? parsedFile.files
-                                : {};
+                                : {},
+                        );
                         this.syncEntities = parseSyncEntities(parsedFile.syncEntities);
                     } else {
-                        this.data =
+                        this.data = compactTimelineData(
                             typeof parsed === "object" && parsed !== null
                                 ? (parsed as ReviewCommitData)
-                                : {};
+                                : {},
+                        );
                         this.syncEntities = {};
                     }
                 } else {

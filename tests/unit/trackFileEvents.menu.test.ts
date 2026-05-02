@@ -87,7 +87,7 @@ describe("trackFileEvents auto extract menu", () => {
             t("AUTO_EXTRACT_MENU_TITLE"),
             t("MENU_TRACK_NOTE"),
         ]);
-        expect(menuItems.map((item) => item.icon)).toEqual(["list-tree", "SpacedRepIcon"]);
+        expect(menuItems.map((item) => item.icon)).toEqual(["library-big", "SpacedRepIcon"]);
         expect(menuItems[0].submenuCreated).toBe(true);
 
         const submenuItems = menuItems[0].submenu.items.filter(
@@ -186,5 +186,29 @@ describe("trackFileEvents auto extract menu", () => {
         await h2Item.callback?.();
 
         expect(plugin.setAutoExtractHeadingLevel).toHaveBeenCalledWith(file, 2, true);
+    });
+
+    test("hides smart slice submenu when auto extracts are disabled", () => {
+        const file = createMarkdownFile();
+        const plugin = {
+            isSyroDataReady: jest.fn(() => true),
+            data: { settings: { enableAutoExtracts: false } },
+            noteReviewStore: { isTracked: jest.fn(() => false) },
+            getAutoExtractRuleForPath: jest.fn(() => null),
+            hasAutoExtractRuleForFile: jest.fn(() => false),
+            setAutoExtractAllHeadings: jest.fn(() => Promise.resolve()),
+            setAutoExtractHeadingLevel: jest.fn(() => Promise.resolve()),
+            disableAutoExtractRule: jest.fn(() => Promise.resolve(true)),
+            trackNoteFromMenu: jest.fn(() => Promise.resolve()),
+        };
+        const menu = new FakeMenu();
+
+        addFileMenuEvt(plugin as any, menu as any, file);
+
+        expect(
+            menu.items.some(
+                (item) => item instanceof FakeMenuItem && item.title === t("AUTO_EXTRACT_MENU_TITLE"),
+            ),
+        ).toBe(false);
     });
 });

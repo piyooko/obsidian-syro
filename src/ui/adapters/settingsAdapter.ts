@@ -79,6 +79,14 @@ function normalizeSidebarFilePathTooltipDelayMs(
     return Math.max(0, Math.round(delayMs));
 }
 
+function normalizeTooltipDelayMs(delayMs: number | undefined): number {
+    if (typeof delayMs !== "number" || !Number.isFinite(delayMs)) {
+        return 300;
+    }
+
+    return Math.max(0, Math.round(delayMs));
+}
+
 /**
  * Extract the subset of settings needed by the UI.
  */
@@ -143,6 +151,9 @@ export function settingsToUIState(settings: SRSettings): UISettingsState {
         timelineAutoCommitReviewSelection: settings.timelineAutoCommitReviewSelection ?? true,
         timelineEnableDurationPrefixSyntax: settings.timelineEnableDurationPrefixSyntax ?? true,
         enableExtracts: settings.enableExtracts ?? true,
+        enableAutoExtracts: settings.enableAutoExtracts ?? true,
+        showExtractMemoTooltip: settings.showExtractMemoTooltip ?? true,
+        extractMemoTooltipDelayMs: normalizeTooltipDelayMs(settings.extractMemoTooltipDelayMs),
 
         // Weighted Multiplier Algorithm defaults (convert number to string for UI)
         fsrsEnableFuzz: fsrsSettings.enable_fuzz,
@@ -287,6 +298,14 @@ export function mergeUIStateToSettings(
         merged.timelineEnableDurationPrefixSyntax = uiChanges.timelineEnableDurationPrefixSyntax;
     if (uiChanges.enableExtracts !== undefined)
         merged.enableExtracts = uiChanges.enableExtracts;
+    if (uiChanges.enableAutoExtracts !== undefined)
+        merged.enableAutoExtracts = uiChanges.enableAutoExtracts;
+    if (uiChanges.showExtractMemoTooltip !== undefined)
+        merged.showExtractMemoTooltip = uiChanges.showExtractMemoTooltip;
+    if (uiChanges.extractMemoTooltipDelayMs !== undefined)
+        merged.extractMemoTooltipDelayMs = normalizeTooltipDelayMs(
+            uiChanges.extractMemoTooltipDelayMs,
+        );
 
     // Update WeightedMultiplier settings if changed
     if (uiChanges.fsrsEnableFuzz !== undefined) {

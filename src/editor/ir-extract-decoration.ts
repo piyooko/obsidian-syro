@@ -68,6 +68,8 @@ export interface IrExtractDecorationOptions {
     ) => Promise<IrExtractTooltipNoteState[]>;
     saveExtractTooltipNote?: (uuid: string, memo: string) => Promise<void>;
     saveExtractTooltipNotePriority?: (uuid: string, priority: number) => Promise<void>;
+    showExtractMemoTooltip?: (view: EditorView) => boolean;
+    extractMemoTooltipDelayMs?: (view: EditorView) => number;
     onExtractTooltipNoteSaveError?: (error: unknown) => void;
     logExtractTooltipNoteDebug?: (event: string, details?: Record<string, unknown>) => void;
     trackInitialLayout?: (view: EditorView) => boolean;
@@ -1410,7 +1412,6 @@ export function createIrExtractNoteTooltipElement(
     });
 
     importanceWidget.addEventListener("wheel", (event) => {
-        event.preventDefault();
         event.stopPropagation();
         const current = clampIrExtractNotePriority(Number(tooltip.dataset.srIrPriority ?? 5));
         if (event.deltaY < 0) {
@@ -1418,7 +1419,7 @@ export function createIrExtractNoteTooltipElement(
         } else if (event.deltaY > 0) {
             setPriority(current - 1, "down");
         }
-    });
+    }, { passive: true });
     importanceWidget.addEventListener("pointerdown", (event) => {
         isDragging = true;
         startY = event.clientY;
@@ -1921,6 +1922,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             private tooltipResolveRequestId = 0;
             private tooltipResolveStart: number | null = null;
             private tooltipResolvePromise: Promise<IrExtractTooltipNote | null> | null = null;
+            private tooltipHoverTimer: number | null = null;
             private readonly noteDraftsByStart = new Map<number, string>();
             private readonly noteUuidsByStart = new Map<number, string>();
             private readonly notePrioritiesByStart = new Map<number, number>();
@@ -2164,6 +2166,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             }
 
             destroy(): void {
+                this.clearTooltipHoverTimer();
                 this.scrollDOM.removeEventListener("mousemove", this.handleScrollMouseMove);
                 this.scrollDOM.removeEventListener("mouseleave", this.handleScrollMouseLeave);
                 this.scrollDOM.removeEventListener(
@@ -2182,6 +2185,28 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 this.clearOverlayBlocks();
                 this.overlay.remove();
                 this.noteTooltip.remove();
+            }
+
+            private isExtractMemoTooltipEnabled(): boolean {
+                return options.showExtractMemoTooltip?.(this.view) !== false;
+            }
+
+            private getExtractMemoTooltipDelayMs(): number {
+                const delayMs = options.extractMemoTooltipDelayMs?.(this.view) ?? 300;
+                if (!Number.isFinite(delayMs)) {
+                    return 300;
+                }
+
+                return Math.max(0, Math.round(delayMs));
+            }
+
+            private clearTooltipHoverTimer(): void {
+                if (this.tooltipHoverTimer === null) {
+                    return;
+                }
+
+                window.clearTimeout(this.tooltipHoverTimer);
+                this.tooltipHoverTimer = null;
             }
 
             private renderBlocks(blocks: MeasuredExtractBlock[]): void {
@@ -2232,6 +2257,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             }
 
             private clearOverlayBlocks(): void {
+                this.clearTooltipHoverTimer();
                 this.pinnedTooltipStart = null;
                 this.hoveredBlockStart = null;
                 this.hoveredTooltipStart = null;
@@ -2252,6 +2278,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             }
 
             public pinTooltip(blockStart: number): void {
+                this.clearTooltipHoverTimer();
                 if (this.pinnedTooltipStart !== null && this.pinnedTooltipStart !== blockStart) {
                     void this.saveVisibleTooltipDraft();
                 }
@@ -2288,15 +2315,36 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             }
 
             public showTooltipFromIcon(blockStart: number): void {
-                this.hoveredTooltipStart = blockStart;
-                if (this.pinnedTooltipStart === null) {
-                    this.prepareTooltipNoteForStart(blockStart, false);
-                    void this.resolveTooltipNote(blockStart);
+                this.clearTooltipHoverTimer();
+                if (!this.isExtractMemoTooltipEnabled()) {
+                    this.hoveredTooltipStart = null;
+                    this.updateInteractiveBlockStates();
+                    return;
                 }
-                this.updateInteractiveBlockStates();
+
+                const showTooltip = () => {
+                    this.tooltipHoverTimer = null;
+                    if (!this.isExtractMemoTooltipEnabled()) {
+                        return;
+                    }
+                    this.hoveredTooltipStart = blockStart;
+                    if (this.pinnedTooltipStart === null) {
+                        this.prepareTooltipNoteForStart(blockStart, false);
+                        void this.resolveTooltipNote(blockStart);
+                    }
+                    this.updateInteractiveBlockStates();
+                };
+                const delayMs = this.getExtractMemoTooltipDelayMs();
+                if (delayMs > 0) {
+                    this.tooltipHoverTimer = window.setTimeout(showTooltip, delayMs);
+                    return;
+                }
+
+                showTooltip();
             }
 
             public hideTooltipFromIcon(blockStart: number): void {
+                this.clearTooltipHoverTimer();
                 if (this.hoveredTooltipStart !== blockStart) {
                     return;
                 }
@@ -3014,7 +3062,8 @@ const irExtractDecorationTheme = EditorView.baseTheme({
         opacity: "0",
         pointerEvents: "auto",
         zIndex: "10",
-        transition: "opacity 0.15s ease, color 0.15s ease",
+        transformOrigin: "center",
+        transition: "opacity 0.15s ease, color 0.15s ease, transform 120ms ease-out",
     },
     ".sr-ir-info-action svg": {
         width: "14px",
@@ -3040,7 +3089,8 @@ const irExtractDecorationTheme = EditorView.baseTheme({
         overflow: "hidden",
         padding: "0",
         pointerEvents: "none",
-        transition: "opacity 0.15s ease, color 0.15s ease",
+        transformOrigin: "center",
+        transition: "opacity 0.15s ease, color 0.15s ease, transform 120ms ease-out",
         verticalAlign: "-0.08em",
         width: "0",
     },
@@ -3062,6 +3112,7 @@ const irExtractDecorationTheme = EditorView.baseTheme({
     },
     ".sr-ir-heading-note-action.is-editing": {
         color: "var(--interactive-accent)",
+        transform: "scale(1.35)",
     },
     ".sr-ir-info-action.has-note": {
         color: IR_EXTRACT_INFO_NOTE_COLOR,
@@ -3069,6 +3120,7 @@ const irExtractDecorationTheme = EditorView.baseTheme({
     },
     ".sr-ir-info-action.is-editing": {
         color: "var(--interactive-accent)",
+        transform: "scale(1.35)",
     },
     ".sr-ir-note-tooltip": {
         opacity: "0",

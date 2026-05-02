@@ -19,6 +19,10 @@ type SubmenuCapableMenuItem = {
 };
 
 function addAutoExtractMenuItem(plugin: SRPlugin, menu: Menu, fileish: TFile): void {
+    if (plugin.data?.settings?.enableAutoExtracts === false) {
+        return;
+    }
+
     menu.addItem((item) => {
         item.setIcon("library-big");
         item.setTitle(t("AUTO_EXTRACT_MENU_TITLE"));

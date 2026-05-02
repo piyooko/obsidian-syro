@@ -861,7 +861,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                 }
                 const prepared: PreparedExtractReview = {
                     uuid,
-                    rawMarkdown: latestItem?.rawMarkdown ?? "",
+                    rawMarkdown: context.markdown,
                     context,
                     draft: { markdown: context.markdown, ranges: context },
                     sourcePath: latestItem?.sourcePath ?? null,
@@ -2940,6 +2940,8 @@ const CardReviewView: React.FC<CardReviewViewProps> = ({
                 timesCorrect: item.timesCorrect || 0,
                 errorStreak: item.errorStreak || 0,
                 priority: item.priority || 0,
+                queue: item.queue ?? "",
+                nextReview: item.nextReview ?? 0,
             },
             data: item.data || {},
         };

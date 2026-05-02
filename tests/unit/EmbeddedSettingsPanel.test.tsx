@@ -76,6 +76,9 @@ function createSettings(overrides: Partial<UISettingsState> = {}): UISettingsSta
         timelineAutoCommitReviewSelection: true,
         timelineEnableDurationPrefixSyntax: true,
         enableExtracts: true,
+        enableAutoExtracts: true,
+        showExtractMemoTooltip: true,
+        extractMemoTooltipDelayMs: 300,
         fsrsEnableFuzz: true,
         wmsImpMin: "1",
         wmsImpMax: "2.5",
@@ -412,6 +415,56 @@ describe("EmbeddedSettingsPanel", () => {
             expect(findSettingItemByName(view.container, ["Enable Extracts"])).not.toBeNull();
             expect(findSettingItemByName(view.container, ["New Extracts/Day"])).toBeNull();
             expect(findSettingItemByName(view.container, ["Extract Reviews/Day"])).toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("shows extract settings after ignored tags and hides memo delay when hover tooltips are disabled", () => {
+        const view = renderPanel(
+            createSettings({
+                showExtractMemoTooltip: false,
+            }),
+        );
+
+        try {
+            openTab(view.container, "Incremental");
+
+            const currentPane = view.container.querySelector<HTMLElement>(
+                '.sr-style-setting-content-pane[data-pane-role="current"]',
+            );
+            const sectionHeadings = Array.from(
+                currentPane?.querySelectorAll<HTMLElement>(".setting-item-heading") ?? [],
+            ).map((heading) => heading.textContent ?? "");
+            const ignoredTagsIndex = sectionHeadings.findIndex((text) =>
+                text.includes("Ignored tags"),
+            );
+            const extractsIndex = sectionHeadings.findIndex((text) => text.includes("Extracts"));
+
+            expect(ignoredTagsIndex).toBeGreaterThanOrEqual(0);
+            expect(extractsIndex).toBe(ignoredTagsIndex + 1);
+            expect(sectionHeadings[extractsIndex]).toContain("LAB");
+            expect(findSettingItemByName(view.container, ["Enable Extracts"])).not.toBeNull();
+            expect(findSettingItemByName(view.container, ["Enable Auto Extracts"])).not.toBeNull();
+            expect(findSettingItemByName(view.container, ["Show Extract Memo Tooltip"])).not.toBeNull();
+            expect(findSettingItemByName(view.container, ["Extract Memo Tooltip Delay"])).toBeNull();
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("shows extract memo tooltip delay when hover tooltips are enabled", () => {
+        const view = renderPanel(createSettings({ showExtractMemoTooltip: true }));
+
+        try {
+            openTab(view.container, "Incremental");
+
+            const delayItem = findSettingItemByName(view.container, [
+                "Extract Memo Tooltip Delay",
+            ]);
+            expect(delayItem).not.toBeNull();
+            expect(delayItem?.querySelector(".setting-item-description")?.textContent ?? "")
+                .toContain("How long to hover before showing the extract memo tooltip");
         } finally {
             view.cleanup();
         }
