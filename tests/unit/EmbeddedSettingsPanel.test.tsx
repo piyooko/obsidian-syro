@@ -280,6 +280,7 @@ function dispatchTouchEvent(
     type: "touchstart" | "touchmove" | "touchend",
     x: number,
     y: number,
+    options: { failOnPreventDefault?: boolean } = {},
 ) {
     const event = new Event(type, { bubbles: true, cancelable: true });
     const touch = { clientX: x, clientY: y, target };
@@ -290,6 +291,11 @@ function dispatchTouchEvent(
     Object.defineProperty(event, "changedTouches", {
         value: [touch],
     });
+    if (options.failOnPreventDefault) {
+        event.preventDefault = jest.fn(() => {
+            throw new Error("passive touch listener cannot call preventDefault");
+        });
+    }
 
     act(() => {
         target.dispatchEvent(event);
@@ -1024,6 +1030,41 @@ describe("EmbeddedSettingsPanel", () => {
                 jest.advanceTimersByTime(240);
             });
             expect(getActiveTabText(view.container)).toContain("Flashcards");
+            expect(
+                view.container
+                    .querySelector<HTMLElement>(".sr-style-setting-content-track")
+                    ?.style.getPropertyValue("--sr-swipe-offset"),
+            ).toBe("0px");
+        } finally {
+            jest.useRealTimers();
+            view.cleanup();
+        }
+    });
+
+    it("keeps mobile content swipes compatible with passive React touch listeners", () => {
+        jest.useFakeTimers();
+        const view = renderPanel(createSettings(), { mobile: true });
+
+        try {
+            const content = view.container.querySelector(
+                ".sr-style-setting-content",
+            ) as HTMLElement | null;
+            expect(content).not.toBeNull();
+
+            dispatchTouchEvent(content as HTMLElement, "touchstart", 240, 180, {
+                failOnPreventDefault: true,
+            });
+            dispatchTouchEvent(content as HTMLElement, "touchmove", 160, 188, {
+                failOnPreventDefault: true,
+            });
+            dispatchTouchEvent(content as HTMLElement, "touchend", 110, 188, {
+                failOnPreventDefault: true,
+            });
+
+            expect(getActiveTabText(view.container)).toContain("Incremental");
+            act(() => {
+                jest.advanceTimersByTime(240);
+            });
             expect(
                 view.container
                     .querySelector<HTMLElement>(".sr-style-setting-content-track")

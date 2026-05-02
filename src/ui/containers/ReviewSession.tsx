@@ -1902,14 +1902,16 @@ const DeckListView: React.FC<DeckListViewProps> = ({
     const handleTreeResizeStart = useCallback(
         (event: React.MouseEvent | React.TouchEvent, direction: "w" | "e") => {
             if (isPhoneLayout) return;
-            event.preventDefault();
+            const isTouchEvent = "touches" in event;
+            if (!isTouchEvent) {
+                event.preventDefault();
+            }
             event.stopPropagation();
 
             const host = treeHostRef.current;
             const shell = treeShellRef.current;
             if (!host || !shell) return;
 
-            const isTouchEvent = "touches" in event;
             const startX = isTouchEvent ? event.touches[0].clientX : event.clientX;
             const startWidth = Number(shell.offsetWidth || treeWidth);
             const minWidth = 320;

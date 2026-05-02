@@ -703,13 +703,15 @@ export const LinearCard: FC<LinearCardProps> = ({
         direction: ResizeDirection,
     ) => {
         if (!allowResize) return;
-        e.preventDefault();
+        const isTouchEvent = "touches" in e;
+        if (!isTouchEvent) {
+            e.preventDefault();
+        }
         e.stopPropagation();
 
         const host = wrapperRef.current;
         if (!host) return;
 
-        const isTouchEvent = "touches" in e;
         const startX = isTouchEvent ? e.touches[0].clientX : e.clientX;
         const startY = isTouchEvent ? e.touches[0].clientY : e.clientY;
         const startWidth = sizeRef.current.width;

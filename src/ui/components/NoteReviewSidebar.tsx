@@ -757,7 +757,6 @@ const ResizableDivider: React.FC<{
                 return;
             }
 
-            e.preventDefault();
             let lastY = startTouch.clientY;
 
             const handleTouchMove = (moveEvent: TouchEvent) => {
@@ -2939,7 +2938,6 @@ export const NoteReviewSidebar: React.FC<NoteReviewSidebarProps> = ({
                 return;
             }
 
-            event.preventDefault();
             event.stopPropagation();
             startTimelineResizeSession({
                 startY: event.clientY,

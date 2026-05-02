@@ -1087,7 +1087,6 @@ const TabHeader: React.FC<TabHeaderProps> = ({ tabs, activeTab, onTabSelect }) =
         }
 
         scrollContainer.current.scrollLeft = dragStateRef.current.scrollLeft - deltaX;
-        e.preventDefault();
     };
 
     const finishTouchDrag = () => {
@@ -2946,8 +2945,6 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
             } else {
                 setContentTrackOffset(deltaX * CONTENT_SWIPE_EDGE_RESISTANCE);
             }
-
-            e.preventDefault();
         },
         [getContentWidth, nextTabId, previousTabId, setContentTrackOffset],
     );
@@ -2980,7 +2977,6 @@ export const EmbeddedSettingsPanel: React.FC<EmbeddedSettingsPanelProps> = ({
                 animateSwipeTrack(finalOffset, () => {
                     setActiveTab(targetTabId);
                 });
-                e.preventDefault();
             } else if (swipeState.isSwiping) {
                 animateSwipeTrack(0, resetSwipePresentation);
             } else {
