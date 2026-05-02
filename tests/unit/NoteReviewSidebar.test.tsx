@@ -1,6 +1,9 @@
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import { NoteReviewSidebar } from "src/ui/components/NoteReviewSidebar";
+import {
+    calculateExtractQuoteTooltipPosition,
+    NoteReviewSidebar,
+} from "src/ui/components/NoteReviewSidebar";
 import type { NoteReviewItem, NoteReviewSidebarState } from "src/ui/types/noteReview";
 import type { SidebarProgressIndicatorMode, SidebarProgressRingDirection } from "src/settings";
 import type { ReviewCommitLog } from "src/dataStore/reviewCommitStore";
@@ -896,6 +899,33 @@ describe("NoteReviewSidebar", () => {
             document.body.querySelector(".sr-extract-quote-tooltip")?.remove();
             jest.useRealTimers();
         }
+    });
+
+    it("calculates extract quote tooltip placement above the quote without covering it", () => {
+        const anchorRect = {
+            left: 40,
+            right: 360,
+            top: 90,
+            bottom: 138,
+            width: 320,
+            height: 48,
+            x: 40,
+            y: 90,
+            toJSON: () => ({}),
+        } as DOMRect;
+
+        const position = calculateExtractQuoteTooltipPosition({
+            anchorRect,
+            tooltipWidth: 500,
+            tooltipHeight: 180,
+            viewportWidth: 1024,
+            viewportHeight: 768,
+        });
+
+        expect(position.placement).toBe("above");
+        expect(position.top).toBe(12);
+        expect(position.maxHeight).toBe(68);
+        expect(position.top + (position.maxHeight ?? 180)).toBeLessThanOrEqual(80);
     });
 
     it("passes extract ids through timeline context menu and click handlers", () => {

@@ -958,8 +958,67 @@ interface ExtractQuoteTooltipPosition {
     top: number;
     left: number;
     maxWidth: number;
+    maxHeight: number | null;
     arrowLeft: number;
     placement: "above" | "below";
+}
+
+interface ExtractQuoteTooltipPositionInput {
+    anchorRect: DOMRect;
+    tooltipWidth: number;
+    tooltipHeight: number;
+    viewportWidth: number;
+    viewportHeight: number;
+}
+
+export function calculateExtractQuoteTooltipPosition({
+    anchorRect,
+    tooltipWidth,
+    tooltipHeight,
+    viewportWidth,
+    viewportHeight,
+}: ExtractQuoteTooltipPositionInput): ExtractQuoteTooltipPosition {
+    const viewportPadding = 12;
+    const gap = 10;
+    const maxWidth = Math.max(240, Math.min(520, viewportWidth - viewportPadding * 2));
+    const boundedTooltipWidth = Math.min(tooltipWidth || maxWidth, maxWidth);
+    const anchorCenterX = anchorRect.left + anchorRect.width / 2;
+    const left = Math.min(
+        Math.max(anchorCenterX - boundedTooltipWidth / 2, viewportPadding),
+        viewportWidth - viewportPadding - boundedTooltipWidth,
+    );
+    const minArrowLeft = EXTRACT_QUOTE_TOOLTIP_ARROW_PADDING;
+    const maxArrowLeft = Math.max(
+        minArrowLeft,
+        boundedTooltipWidth -
+            EXTRACT_QUOTE_TOOLTIP_ARROW_PADDING -
+            EXTRACT_QUOTE_TOOLTIP_ARROW_SIZE,
+    );
+    const arrowLeft = Math.min(
+        Math.max(anchorCenterX - left - EXTRACT_QUOTE_TOOLTIP_ARROW_SIZE / 2, minArrowLeft),
+        maxArrowLeft,
+    );
+    const availableAbove = Math.max(0, anchorRect.top - viewportPadding - gap);
+    const availableBelow = Math.max(0, viewportHeight - viewportPadding - anchorRect.bottom - gap);
+    const placeAbove = availableAbove > 0 || availableAbove >= availableBelow;
+    const visibleHeight = placeAbove
+        ? Math.min(tooltipHeight, availableAbove)
+        : Math.min(tooltipHeight, availableBelow);
+    const maxHeight = visibleHeight < tooltipHeight ? visibleHeight : null;
+    const aboveTop = anchorRect.top - visibleHeight - gap;
+    const belowTop = anchorRect.bottom + gap;
+    const top = placeAbove
+        ? Math.max(viewportPadding, aboveTop)
+        : Math.min(viewportHeight - viewportPadding - visibleHeight, belowTop);
+
+    return {
+        top,
+        left,
+        maxWidth,
+        maxHeight,
+        arrowLeft,
+        placement: placeAbove ? "above" : "below",
+    };
 }
 
 const ExtractQuoteTooltip: React.FC<{
@@ -977,45 +1036,30 @@ const ExtractQuoteTooltip: React.FC<{
 
         const rect = anchorEl.getBoundingClientRect();
         const tooltipEl = tooltipRef.current;
-        const viewportPadding = 12;
-        const gap = 10;
-        const maxWidth = Math.max(240, Math.min(520, window.innerWidth - viewportPadding * 2));
         const tooltipHeight = tooltipEl.offsetHeight;
-        const tooltipWidth = Math.min(tooltipEl.offsetWidth || maxWidth, maxWidth);
-        const anchorCenterX = rect.left + rect.width / 2;
-        const left = Math.min(
-            Math.max(anchorCenterX - tooltipWidth / 2, viewportPadding),
-            window.innerWidth - viewportPadding - tooltipWidth,
-        );
-        const minArrowLeft = EXTRACT_QUOTE_TOOLTIP_ARROW_PADDING;
-        const maxArrowLeft = Math.max(
-            minArrowLeft,
-            tooltipWidth - EXTRACT_QUOTE_TOOLTIP_ARROW_PADDING - EXTRACT_QUOTE_TOOLTIP_ARROW_SIZE,
-        );
-        const arrowLeft = Math.min(
-            Math.max(
-                anchorCenterX - left - EXTRACT_QUOTE_TOOLTIP_ARROW_SIZE / 2,
-                minArrowLeft,
-            ),
-            maxArrowLeft,
-        );
-        const aboveTop = rect.top - tooltipHeight - gap;
-        const belowTop = rect.bottom + gap;
-        const placeAbove =
-            aboveTop >= viewportPadding ||
-            belowTop + tooltipHeight > window.innerHeight - viewportPadding;
-        const top = placeAbove
-            ? Math.max(viewportPadding, aboveTop)
-            : Math.min(window.innerHeight - viewportPadding - tooltipHeight, belowTop);
+        const tooltipWidth = tooltipEl.offsetWidth;
 
-        setPosition({
-            top,
-            left,
-            maxWidth,
-            arrowLeft,
-            placement: placeAbove ? "above" : "below",
-        });
+        setPosition(
+            calculateExtractQuoteTooltipPosition({
+                anchorRect: rect,
+                tooltipWidth,
+                tooltipHeight,
+                viewportWidth: window.innerWidth,
+                viewportHeight: window.innerHeight,
+            }),
+        );
     }, [anchorEl]);
+
+    const setTooltipNode = useCallback(
+        (node: HTMLDivElement | null) => {
+            tooltipRef.current = node;
+
+            if (node && visible && anchorEl) {
+                window.requestAnimationFrame(updatePosition);
+            }
+        },
+        [anchorEl, updatePosition, visible],
+    );
 
     useLayoutEffect(() => {
         if (!visible || !anchorEl) {
@@ -1043,13 +1087,23 @@ const ExtractQuoteTooltip: React.FC<{
 
     return createPortal(
         <div
-            ref={tooltipRef}
+            ref={setTooltipNode}
             className={`sr-extract-quote-tooltip ${position?.placement === "below" ? "is-below" : "is-above"}`}
             role="tooltip"
             style={{
                 top: position ? `${position.top}px` : "0px",
                 left: position ? `${position.left}px` : "0px",
-                maxWidth: position ? `${position.maxWidth}px` : undefined,
+                maxWidth: position
+                    ? `${position.maxWidth}px`
+                    : `${Math.max(240, Math.min(520, window.innerWidth - 24))}px`,
+                maxHeight:
+                    position?.maxHeight !== null && position?.maxHeight !== undefined
+                        ? `${position.maxHeight}px`
+                        : undefined,
+                overflowY:
+                    position?.maxHeight !== null && position?.maxHeight !== undefined
+                        ? "hidden"
+                        : undefined,
                 opacity: position ? 1 : 0,
                 ["--sr-extract-quote-tooltip-arrow-left" as string]: position
                     ? `${position.arrowLeft}px`
