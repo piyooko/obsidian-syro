@@ -1,5 +1,5 @@
 import { MarkdownView, moment, Notice, TFile } from "obsidian";
-import { EditorState } from "@codemirror/state";
+import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { Deck, DeckTreeFilter } from "src/Deck";
 import { ExtractStore } from "src/dataStore/extractStore";
@@ -16,6 +16,20 @@ function createTFile(path: string): TFile {
         basename,
         extension: "md",
     });
+}
+
+const refreshProbeCounts = new WeakMap<EditorView, number>();
+
+function createRefreshProbeExtension(): Extension {
+    return EditorView.updateListener.of((update) => {
+        if (update.transactions.some((transaction) => transaction.effects.length > 0)) {
+            refreshProbeCounts.set(update.view, (refreshProbeCounts.get(update.view) ?? 0) + 1);
+        }
+    });
+}
+
+function readRefreshProbeCount(view: EditorView): number {
+    return refreshProbeCounts.get(view) ?? 0;
 }
 
 describe("SRPlugin extract deck paths", () => {
@@ -130,8 +144,9 @@ describe("SRPlugin extract deck paths", () => {
             },
             extractStore: {
                 list: jest.fn(() => [missingExtract]),
-                getReviewCandidates: jest.fn((_deckPath, _limits, _resolveDeckName, canReviewExtract) =>
-                    canReviewExtract?.(missingExtract) ? [missingExtract] : [],
+                getReviewCandidates: jest.fn(
+                    (_deckPath, _limits, _resolveDeckName, canReviewExtract) =>
+                        canReviewExtract?.(missingExtract) ? [missingExtract] : [],
                 ),
                 getStats: jest.fn((_deckPath, _limits, _resolveDeckName, canReviewExtract) =>
                     canReviewExtract?.(missingExtract)
@@ -143,9 +158,9 @@ describe("SRPlugin extract deck paths", () => {
 
         expect(SRPlugin.prototype.getActiveExtractDeckPaths.call(plugin)).toEqual([]);
         expect(SRPlugin.prototype.getReviewableExtractDeckPaths.call(plugin, true)).toEqual([]);
-        expect(SRPlugin.prototype.getExtractReviewCandidates.call(plugin, "Untitled", true)).toEqual(
-            [],
-        );
+        expect(
+            SRPlugin.prototype.getExtractReviewCandidates.call(plugin, "Untitled", true),
+        ).toEqual([]);
         expect(SRPlugin.prototype.getExtractReviewStats.call(plugin, "Untitled", true)).toEqual({
             newCount: 0,
             dueCount: 0,
@@ -514,8 +529,7 @@ describe("SRPlugin extract deck paths", () => {
                     currentOpenTokenFrom: "before edited\n\ncontext ".length,
                     currentOpenTokenTo: "before edited\n\ncontext {{ir::".length,
                     currentCloseTokenFrom: "before edited\n\ncontext {{ir::target edited".length,
-                    currentCloseTokenTo:
-                        "before edited\n\ncontext {{ir::target edited}}".length,
+                    currentCloseTokenTo: "before edited\n\ncontext {{ir::target edited}}".length,
                 },
             },
         );
@@ -617,8 +631,7 @@ describe("SRPlugin extract deck paths", () => {
                     currentOpenTokenFrom: "before\n\ncontext ".length,
                     currentOpenTokenTo: "before\n\ncontext {{ir::".length,
                     currentCloseTokenFrom: "before\n\ncontext {{ir::target ==new card==".length,
-                    currentCloseTokenTo:
-                        "before\n\ncontext {{ir::target ==new card==}}".length,
+                    currentCloseTokenTo: "before\n\ncontext {{ir::target ==new card==}}".length,
                 },
             },
         );
@@ -871,8 +884,11 @@ describe("SRPlugin extract deck paths", () => {
         const emit = jest.fn();
         const extractStore = new ExtractStore(DEFAULT_SETTINGS, { extractsPath: "extracts.json" });
         extractStore.save = jest.fn(() => Promise.resolve());
-        const [created] = extractStore.syncFileExtracts("摘录测试.md", "{{ir::target}}", "deck")
-            .added;
+        const [created] = extractStore.syncFileExtracts(
+            "摘录测试.md",
+            "{{ir::target}}",
+            "deck",
+        ).added;
         const appendSyroExtractUpsert = jest.fn(() => Promise.resolve());
         const plugin = Object.assign(Object.create(SRPlugin.prototype), {
             extractStore,
@@ -999,7 +1015,7 @@ describe("SRPlugin extract deck paths", () => {
 
         const plugin = Object.assign(Object.create(SRPlugin.prototype), {
             extractStore: {
-                upsertSnapshot: jest.fn(),
+                restoreSnapshot: jest.fn(),
                 undoReviewedQuota: jest.fn(),
                 get: jest.fn(() => snapshot.item),
                 syncFileExtracts: jest.fn(() => ({ added: [], updated: [], graduated: [] })),
@@ -1018,7 +1034,7 @@ describe("SRPlugin extract deck paths", () => {
         });
 
         expect(result).toBe(snapshot.item);
-        expect(plugin.extractStore.upsertSnapshot).toHaveBeenCalledWith(snapshot);
+        expect(plugin.extractStore.restoreSnapshot).toHaveBeenCalledWith(snapshot);
         expect(plugin.extractStore.undoReviewedQuota).toHaveBeenCalledWith(snapshot.item, "deck");
         expect(plugin.extractStore.save).toHaveBeenCalled();
         expect(plugin.appendSyroExtractUpsert).toHaveBeenCalledWith(snapshot, "undo");
@@ -1053,7 +1069,7 @@ describe("SRPlugin extract deck paths", () => {
                 },
             },
             extractStore: {
-                upsertSnapshot: jest.fn(),
+                restoreSnapshot: jest.fn(),
                 undoReviewedQuota: jest.fn(),
                 get: jest.fn(() => snapshot.item),
                 syncFileExtracts: jest.fn(() => ({ added: [], updated: [], graduated: [] })),
@@ -1075,10 +1091,7 @@ describe("SRPlugin extract deck paths", () => {
         });
 
         expect(sourceText).toBe("before {{ir::target}} after");
-        expect(plugin.app.vault.modify).toHaveBeenCalledWith(
-            file,
-            "before {{ir::target}} after",
-        );
+        expect(plugin.app.vault.modify).toHaveBeenCalledWith(file, "before {{ir::target}} after");
         expect(emit).toHaveBeenCalledWith("note-review-updated");
     });
 
@@ -1105,7 +1118,7 @@ describe("SRPlugin extract deck paths", () => {
                 },
             },
             extractStore: {
-                upsertSnapshot: jest.fn(),
+                restoreSnapshot: jest.fn(),
                 undoReviewedQuota: jest.fn(),
                 get: jest.fn(() => snapshot.item),
                 save: jest.fn(() => Promise.resolve()),
@@ -1125,7 +1138,7 @@ describe("SRPlugin extract deck paths", () => {
 
         expect(result).toBe(snapshot.item);
         expect(plugin.app.vault.modify).not.toHaveBeenCalled();
-        expect(plugin.extractStore.upsertSnapshot).toHaveBeenCalledWith(snapshot);
+        expect(plugin.extractStore.restoreSnapshot).toHaveBeenCalledWith(snapshot);
         expect(plugin.extractStore.save).toHaveBeenCalled();
         expect(emit).toHaveBeenCalledWith("extracts-updated");
     });
@@ -1136,8 +1149,11 @@ describe("SRPlugin extract deck paths", () => {
         let sourceText = "before target after";
         const extractStore = new ExtractStore(DEFAULT_SETTINGS, { extractsPath: "extracts.json" });
         extractStore.save = jest.fn(() => Promise.resolve());
-        const [original] = extractStore.syncFileExtracts(file.path, sourceTextBefore, "摘录测试")
-            .added;
+        const [original] = extractStore.syncFileExtracts(
+            file.path,
+            sourceTextBefore,
+            "摘录测试",
+        ).added;
         if (!original) throw new Error("Expected original extract");
         extractStore.graduateWithReviewCount(original.uuid, "deck");
         const syncDuringModify = jest.fn((nextText: string) =>
@@ -1543,6 +1559,45 @@ describe("SRPlugin extract deck paths", () => {
         expect(emit).toHaveBeenCalledWith("note-review-updated");
     });
 
+    test("refreshes open editor extract icons after enabling an automatic extract rule", async () => {
+        const file = createTFile("摘录测试.md");
+        const editorView = new EditorView({
+            parent: document.body,
+            state: EditorState.create({
+                doc: "# 自动摘录标题\n正文",
+                extensions: [createRefreshProbeExtension()],
+            }),
+        });
+        const markdownView = Object.assign(new MarkdownView({} as never), {
+            file,
+            containerEl: editorView.dom,
+        });
+        const plugin = Object.assign(Object.create(SRPlugin.prototype), {
+            data: { settings: { autoExtractRules: {} } },
+            app: {
+                workspace: {
+                    iterateAllLeaves: jest.fn((callback) => {
+                        callback({ view: markdownView });
+                    }),
+                },
+            },
+            savePluginData: jest.fn(() => Promise.resolve()),
+            syncAutoExtractsFromFile: jest.fn(() => Promise.resolve()),
+            syncEvents: { emit: jest.fn() },
+        });
+
+        try {
+            await SRPlugin.prototype.enableAutoExtractRule.call(plugin, file, {
+                rule: "heading",
+                headingLevel: 1,
+            });
+
+            expect(readRefreshProbeCount(editorView)).toBe(1);
+        } finally {
+            editorView.destroy();
+        }
+    });
+
     test("enables all heading levels for automatic extracts", async () => {
         const file = createTFile("摘录测试.md");
         const plugin = Object.assign(Object.create(SRPlugin.prototype), {
@@ -1612,7 +1667,12 @@ describe("SRPlugin extract deck paths", () => {
             syncEvents: { emit: jest.fn() },
         });
 
-        const rule = await SRPlugin.prototype.setAutoExtractHeadingLevel.call(plugin, file, 3, false);
+        const rule = await SRPlugin.prototype.setAutoExtractHeadingLevel.call(
+            plugin,
+            file,
+            3,
+            false,
+        );
 
         expect(rule).toEqual(
             expect.objectContaining({
@@ -1681,7 +1741,13 @@ describe("SRPlugin extract deck paths", () => {
             memo: "memo body",
             sourcePath: "摘录测试.md",
             rawMarkdown: "# A",
-            sourceAnchor: { start: 0, end: sourceText.length, startLine: 0, endLine: 3, ordinal: 0 },
+            sourceAnchor: {
+                start: 0,
+                end: sourceText.length,
+                startLine: 0,
+                endLine: 3,
+                ordinal: 0,
+            },
             createdAt: 1234,
             timelineCreatedAt: 2345,
         };

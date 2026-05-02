@@ -69,8 +69,8 @@ describe("syro sync file lifecycle diagnostic probe", () => {
                             entityType: "extract-item",
                             opType: "sync",
                             payload: (payload) =>
-                                (payload as { item?: { sourcePath?: string } }).item
-                                    ?.sourcePath === RENAMED_PATH,
+                                (payload as { item?: { sourcePath?: string } }).item?.sourcePath ===
+                                RENAMED_PATH,
                         });
                         ctx.expectSessionRecord({
                             client: "desktop",

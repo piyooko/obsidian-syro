@@ -195,8 +195,7 @@ function parseDailyStateSection(value: unknown): PendingDailyStateSection | null
             new Set(
                 getArrayProp(value, "committedTargetUuids")
                     ?.filter(
-                        (entry): entry is string =>
-                            typeof entry === "string" && entry.length > 0,
+                        (entry): entry is string => typeof entry === "string" && entry.length > 0,
                     )
                     .map((entry) => entry.trim())
                     .filter((entry) => entry.length > 0) ?? [],
@@ -271,7 +270,10 @@ export class PendingOverlayStore {
     private flushPromise: Promise<"success" | "stale" | "failed"> | null = null;
     private retryTimer: ReturnType<typeof setTimeout> | null = null;
     private writeFailureNotified = false;
-    private pendingPreloadOverrides = new Map<PendingOverlaySectionName, PendingOverlaySectionValue>();
+    private pendingPreloadOverrides = new Map<
+        PendingOverlaySectionName,
+        PendingOverlaySectionValue
+    >();
     private shouldLogDebug: () => boolean;
     private logDebugImpl: (...args: unknown[]) => void;
     private logWarnImpl: (...args: unknown[]) => void;

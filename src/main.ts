@@ -95,7 +95,7 @@ import {
     type TrackedCardSnapshot,
     type TrackedCardsFileSnapshot,
 } from "./dataStore/data";
-import type { EditorView } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 import {
     buildDeckOptionsAssignmentTargetUuid,
     buildDeckOptionsPresetTargetUuid,
@@ -257,6 +257,7 @@ import { SyroDeleteValidDeviceModal } from "src/ui/modals/SyroDeleteValidDeviceM
 import { clozeDecorationPlugin, initializeClozeDecoration } from "./editor/cloze-decoration";
 import {
     createIrExtractDecorationExtensions,
+    refreshIrExtractTooltipNotes,
     type IrExtractTooltipNoteState,
 } from "./editor/ir-extract-decoration";
 import { latexPopoverExtension, initializeLatexPopover } from "./editor/latex-popover-manager";
@@ -1695,33 +1696,31 @@ export default class SRPlugin extends Plugin {
 
         initializeClozeDecoration(this.app);
         this.registerEditorExtension(clozeDecorationPlugin);
-        const irExtractDecorationOptions = Object.assign(
-            Object.create(this) as typeof this,
-            {
-                resolveExtractTooltipNote: (view: EditorView, sourceStart: number) =>
-                    this.resolveExtractTooltipNote(view, sourceStart),
-                resolveExtractTooltipNotes: (view: EditorView, sourceStarts: readonly number[]) =>
-                    this.resolveExtractTooltipNotes(view, sourceStarts),
-                saveExtractTooltipNote: (uuid: string, memo: string) =>
-                    this.updateExtractMemo(uuid, memo),
-                saveExtractTooltipNotePriority: (uuid: string, priority: number) =>
-                    this.updateExtractPriority(uuid, priority),
-                showExtractMemoTooltip: () =>
-                    this.data?.settings?.showExtractMemoTooltip !== false,
-                extractMemoTooltipDelayMs: () => {
-                    const delayMs = this.data?.settings?.extractMemoTooltipDelayMs;
-                    return typeof delayMs === "number" && Number.isFinite(delayMs)
-                        ? Math.max(0, Math.round(delayMs))
-                        : 300;
-                },
-                onExtractTooltipNoteSaveError: (error: unknown) =>
-                    this.handleExtractTooltipNoteSaveError(error),
-                logExtractTooltipNoteDebug: (event: string, details?: Record<string, unknown>) =>
-                    this.logExtractTooltipNoteDebug(event, details),
-                trackInitialLayout: () => true,
+        const irExtractDecorationOptions = Object.assign(Object.create(this) as typeof this, {
+            resolveExtractTooltipNote: (view: EditorView, sourceStart: number) =>
+                this.resolveExtractTooltipNote(view, sourceStart),
+            resolveExtractTooltipNotes: (view: EditorView, sourceStarts: readonly number[]) =>
+                this.resolveExtractTooltipNotes(view, sourceStarts),
+            saveExtractTooltipNote: (uuid: string, memo: string) =>
+                this.updateExtractMemo(uuid, memo),
+            saveExtractTooltipNotePriority: (uuid: string, priority: number) =>
+                this.updateExtractPriority(uuid, priority),
+            showExtractMemoTooltip: () => this.data?.settings?.showExtractMemoTooltip !== false,
+            extractMemoTooltipDelayMs: () => {
+                const delayMs = this.data?.settings?.extractMemoTooltipDelayMs;
+                return typeof delayMs === "number" && Number.isFinite(delayMs)
+                    ? Math.max(0, Math.round(delayMs))
+                    : 300;
             },
+            onExtractTooltipNoteSaveError: (error: unknown) =>
+                this.handleExtractTooltipNoteSaveError(error),
+            logExtractTooltipNoteDebug: (event: string, details?: Record<string, unknown>) =>
+                this.logExtractTooltipNoteDebug(event, details),
+            trackInitialLayout: () => true,
+        });
+        this.registerEditorExtension(
+            createIrExtractDecorationExtensions(irExtractDecorationOptions),
         );
-        this.registerEditorExtension(createIrExtractDecorationExtensions(irExtractDecorationOptions));
 
         initializeLatexPopover(this.app, {
             isEnabled: () => this.data.settings.enableLatexPopover === true,
@@ -2225,9 +2224,7 @@ export default class SRPlugin extends Plugin {
         return fallbackDeckName;
     }
 
-    private hasReviewableExtractSource(
-        extract: Pick<ExtractItem, "sourcePath">,
-    ): boolean {
+    private hasReviewableExtractSource(extract: Pick<ExtractItem, "sourcePath">): boolean {
         return this.resolveExtractSourceFile(extract) !== null;
     }
 
@@ -2235,9 +2232,7 @@ export default class SRPlugin extends Plugin {
         return { added: [], updated: [], graduated: [], removed: [] };
     }
 
-    private mergeExtractSyncResults(
-        ...results: ExtractSyncResult[]
-    ): ExtractSyncResult {
+    private mergeExtractSyncResults(...results: ExtractSyncResult[]): ExtractSyncResult {
         return {
             added: results.flatMap((result) => result.added),
             updated: results.flatMap((result) => result.updated),
@@ -2257,8 +2252,7 @@ export default class SRPlugin extends Plugin {
             if (!(file instanceof TFile) || file.extension !== "md") {
                 return;
             }
-            const containerEl = (leaf as WorkspaceLeaf & { containerEl?: HTMLElement })
-                .containerEl;
+            const containerEl = (leaf as WorkspaceLeaf & { containerEl?: HTMLElement }).containerEl;
             const viewContainerEl = (leaf.view as MarkdownView & { containerEl?: HTMLElement })
                 .containerEl;
             if (containerEl?.contains(view.dom) || viewContainerEl?.contains(view.dom)) {
@@ -2266,6 +2260,30 @@ export default class SRPlugin extends Plugin {
             }
         });
         return resolvedFile;
+    }
+
+    private refreshIrExtractTooltipNotesForFile(file: TFile): void {
+        const workspace = this.app?.workspace;
+        if (typeof workspace?.iterateAllLeaves !== "function") {
+            return;
+        }
+
+        workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
+            if (
+                !(leaf.view instanceof MarkdownView) ||
+                !(leaf.view.file instanceof TFile) ||
+                leaf.view.file.path !== file.path
+            ) {
+                return;
+            }
+
+            const viewContainerEl = (leaf.view as MarkdownView & { containerEl?: HTMLElement })
+                .containerEl;
+            const editorView = viewContainerEl ? EditorView.findFromDOM(viewContainerEl) : null;
+            if (editorView) {
+                refreshIrExtractTooltipNotes(editorView);
+            }
+        });
     }
 
     public logExtractTooltipNoteDebug(event: string, details: Record<string, unknown> = {}): void {
@@ -2293,9 +2311,7 @@ export default class SRPlugin extends Plugin {
             const raw = await Iadapter.instance.adapter.read(extractsPath);
             const parsed = parseJsonUnknown(raw);
             const item =
-                isRecord(parsed) && isRecord(parsed.items)
-                    ? parsed.items[uuid]
-                    : undefined;
+                isRecord(parsed) && isRecord(parsed.items) ? parsed.items[uuid] : undefined;
             const diskMemoValue = isRecord(item) ? item.memo : null;
             const diskMemo =
                 typeof diskMemoValue === "string"
@@ -2462,9 +2478,16 @@ export default class SRPlugin extends Plugin {
         }));
     }
 
-    private matchesExtractDeckPathForDebug(deckPath: string | null, resolvedDeckName: string): boolean {
+    private matchesExtractDeckPathForDebug(
+        deckPath: string | null,
+        resolvedDeckName: string,
+    ): boolean {
         const targetDeck = deckPath && deckPath !== "root" ? deckPath : null;
-        return !targetDeck || resolvedDeckName === targetDeck || resolvedDeckName.startsWith(`${targetDeck}/`);
+        return (
+            !targetDeck ||
+            resolvedDeckName === targetDeck ||
+            resolvedDeckName.startsWith(`${targetDeck}/`)
+        );
     }
 
     private getExtractCandidateVisibilityReasonForDebug(input: {
@@ -2513,7 +2536,9 @@ export default class SRPlugin extends Plugin {
         const sourcePath = file.path;
         const deckOptionsPreset = resolveDeckOptionsPreset(this.data.settings, deckName);
         const extractReviewLimits = this.getExtractReviewLimits(deckName);
-        const sourceItems = this.extractStore.list().filter((item) => item.sourcePath === sourcePath);
+        const sourceItems = this.extractStore
+            .list()
+            .filter((item) => item.sourcePath === sourcePath);
         const activeSourceItems = sourceItems.filter((item) => item.stage === "active");
         const graduatedSourceItems = sourceItems.filter((item) => item.stage === "graduated");
         const limitedDeckCandidates = this.getExtractReviewCandidates(deckName, true);
@@ -2558,7 +2583,9 @@ export default class SRPlugin extends Plugin {
             ).length,
             focusItems: focusItems.map((item) => {
                 const backendItem = this.extractStore?.get(item.uuid) ?? null;
-                const resolvedDeckName = backendItem ? this.getExtractDeckNameForItem(backendItem) : null;
+                const resolvedDeckName = backendItem
+                    ? this.getExtractDeckNameForItem(backendItem)
+                    : null;
                 const inUnlimitedDeckCandidates = unlimitedCandidateUuids.has(item.uuid);
                 const inLimitedDeckCandidates = limitedCandidateUuids.has(item.uuid);
                 return {
@@ -2569,7 +2596,8 @@ export default class SRPlugin extends Plugin {
                     backendSourcePath: backendItem?.sourcePath ?? null,
                     backendDeckName: backendItem?.deckName ?? null,
                     resolvedDeckName,
-                    sourceAnchorOrdinal: backendItem?.sourceAnchor.ordinal ?? item.sourceAnchor.ordinal,
+                    sourceAnchorOrdinal:
+                        backendItem?.sourceAnchor.ordinal ?? item.sourceAnchor.ordinal,
                     sourceAnchorStart: backendItem?.sourceAnchor.start ?? item.sourceAnchor.start,
                     sourceAnchorEnd: backendItem?.sourceAnchor.end ?? item.sourceAnchor.end,
                     sourcePathMatches: backendItem?.sourcePath === sourcePath,
@@ -2587,7 +2615,9 @@ export default class SRPlugin extends Plugin {
                         inLimitedDeckCandidates,
                     }),
                     rawMarkdownLength: (backendItem ?? item).rawMarkdown.length,
-                    rawMarkdownPreview: formatIrExtractDebugPreview((backendItem ?? item).rawMarkdown),
+                    rawMarkdownPreview: formatIrExtractDebugPreview(
+                        (backendItem ?? item).rawMarkdown,
+                    ),
                 };
             }),
             ...details,
@@ -2703,9 +2733,10 @@ export default class SRPlugin extends Plugin {
             fileMtime: file.stat?.mtime ?? 0,
             fileSize: file.stat?.size,
             manualIr: manualResult.manualIrCache,
-            autoHeadings: autoRule?.rule === "heading"
-                ? buildAutoHeadingLocators(text, autoRule) ?? undefined
-                : undefined,
+            autoHeadings:
+                autoRule?.rule === "heading"
+                    ? (buildAutoHeadingLocators(text, autoRule) ?? undefined)
+                    : undefined,
         });
         return result;
     }
@@ -2844,6 +2875,7 @@ export default class SRPlugin extends Plugin {
         };
         await this.savePluginData({ domains: ["shared-settings"] });
         await this.syncAutoExtractsFromFile(file, nextRule);
+        this.refreshIrExtractTooltipNotesForFile(file);
         this.syncEvents.emit("note-review-updated");
         return nextRule;
     }
@@ -2878,6 +2910,7 @@ export default class SRPlugin extends Plugin {
         this.data.settings.autoExtractRules = nextRules;
         await this.savePluginData({ domains: ["shared-settings"] });
         await this.syncAutoExtractsFromFile(file, syncRule);
+        this.refreshIrExtractTooltipNotesForFile(file);
         this.syncEvents.emit("note-review-updated");
         return nextRule;
     }
@@ -3014,6 +3047,7 @@ export default class SRPlugin extends Plugin {
             enabled: false,
             updatedAt: Date.now(),
         });
+        this.refreshIrExtractTooltipNotesForFile(file);
         this.syncEvents.emit("note-review-updated");
         return true;
     }
@@ -3097,7 +3131,9 @@ export default class SRPlugin extends Plugin {
 
     private findCurrentExtractMatch(item: ExtractItem, sourceText: string): IrExtractMatch | null {
         const matches = parseIrExtracts(sourceText);
-        const cachedLocator = this.getNoteExtractCache().get(item.sourcePath)?.manualIr?.locators[item.uuid];
+        const cachedLocator = this.getNoteExtractCache().get(item.sourcePath)?.manualIr?.locators[
+            item.uuid
+        ];
         const uuidByStart = new Map<number, string>(
             matches.map((match) => [match.start, `match:${match.start}`]),
         );
@@ -3113,8 +3149,7 @@ export default class SRPlugin extends Plugin {
         return (
             matches.find(
                 (match) =>
-                    match.start === item.sourceAnchor.start &&
-                    match.end === item.sourceAnchor.end,
+                    match.start === item.sourceAnchor.start && match.end === item.sourceAnchor.end,
             ) ??
             matches.find(
                 (match) =>
@@ -3176,7 +3211,7 @@ export default class SRPlugin extends Plugin {
                 (slice) => slice.sourceAnchor.contentHash === item.sourceAnchor.contentHash,
             ) ??
             (slices.filter((slice) => slice.titleMarkdown === item.rawMarkdown).length === 1
-                ? slices.find((slice) => slice.titleMarkdown === item.rawMarkdown) ?? null
+                ? (slices.find((slice) => slice.titleMarkdown === item.rawMarkdown) ?? null)
                 : null)
         );
     }
@@ -3310,10 +3345,14 @@ export default class SRPlugin extends Plugin {
                 autoSliceKey: item.autoSliceKey ?? null,
                 rawMarkdownLength: slice.rawMarkdown.length,
             });
-            return buildAutoExtractReviewContext(sourceText, {
-                ...slice.sourceAnchor,
-                ordinal: item.sourceAnchor.ordinal,
-            }, item.sliceRule);
+            return buildAutoExtractReviewContext(
+                sourceText,
+                {
+                    ...slice.sourceAnchor,
+                    ordinal: item.sourceAnchor.ordinal,
+                },
+                item.sliceRule,
+            );
         }
         const match = this.findCurrentExtractMatch(item, sourceText);
         if (!match) {
@@ -3379,13 +3418,15 @@ export default class SRPlugin extends Plugin {
         return updated;
     }
 
-    public async undoExtractReviewAction(action: ExtractReviewUndoAction): Promise<ExtractItem | null> {
+    public async undoExtractReviewAction(
+        action: ExtractReviewUndoAction,
+    ): Promise<ExtractItem | null> {
         if (!this.extractStore || !action.snapshot?.item) {
             return null;
         }
 
         const item = action.snapshot.item;
-        this.extractStore.upsertSnapshot(action.snapshot);
+        this.extractStore.restoreSnapshot(action.snapshot);
 
         if (
             item.sourceMode === "manual-ir" &&
@@ -3421,7 +3462,10 @@ export default class SRPlugin extends Plugin {
 
     public async updateExtractMemo(uuid: string, memo: string): Promise<ExtractItem | null> {
         if (!this.extractStore) {
-            this.logExtractTooltipNoteDebug("save-skip:no-store", { uuid, memoLength: memo.length });
+            this.logExtractTooltipNoteDebug("save-skip:no-store", {
+                uuid,
+                memoLength: memo.length,
+            });
             return null;
         }
         this.logExtractTooltipNoteDebug("save-start", { uuid, memoLength: memo.length });
@@ -3658,11 +3702,14 @@ export default class SRPlugin extends Plugin {
         if (item.sourceMode === "auto-slice") {
             const slice = this.findCurrentAutoExtractSlice(item, sourceText);
             if (!slice) {
-                this.logRuntimeDebug("[SR-ExtractSave] updateExtractContextMarkdown:auto-slice-miss", {
-                    uuid,
-                    sourcePath: sourceFile.path,
-                    autoSliceKey: item.autoSliceKey ?? null,
-                });
+                this.logRuntimeDebug(
+                    "[SR-ExtractSave] updateExtractContextMarkdown:auto-slice-miss",
+                    {
+                        uuid,
+                        sourcePath: sourceFile.path,
+                        autoSliceKey: item.autoSliceKey ?? null,
+                    },
+                );
                 await this.syncAutoExtractsFromFile(sourceFile);
                 new Notice(t("EXTRACT_CONTEXT_SAVE_FAILED"));
                 return null;
@@ -3672,7 +3719,11 @@ export default class SRPlugin extends Plugin {
                 { ...slice.sourceAnchor, ordinal: item.sourceAnchor.ordinal },
                 item.sliceRule,
             );
-            const nextText = replaceExtractReviewContext(sourceText, currentContext, update.markdown);
+            const nextText = replaceExtractReviewContext(
+                sourceText,
+                currentContext,
+                update.markdown,
+            );
             await this.app.vault.modify(sourceFile, nextText);
             const result = this.syncExtractTextForFile(sourceFile, nextText);
             await this.appendExtractSyncResult(result);
@@ -3691,12 +3742,15 @@ export default class SRPlugin extends Plugin {
         }
         const match = this.findCurrentExtractMatch(item, sourceText);
         if (!match) {
-            this.logRuntimeDebug("[SR-ExtractSave] updateExtractContextMarkdown:manual-match-miss", {
-                uuid,
-                sourcePath: sourceFile.path,
-                sourceAnchorStart: item.sourceAnchor.start,
-                sourceAnchorEnd: item.sourceAnchor.end,
-            });
+            this.logRuntimeDebug(
+                "[SR-ExtractSave] updateExtractContextMarkdown:manual-match-miss",
+                {
+                    uuid,
+                    sourcePath: sourceFile.path,
+                    sourceAnchorStart: item.sourceAnchor.start,
+                    sourceAnchorEnd: item.sourceAnchor.end,
+                },
+            );
             const result = this.syncExtractTextForFile(sourceFile, sourceText, { auto: false });
             await this.appendExtractSyncResult(result);
             await this.extractStore.save();
@@ -3740,7 +3794,9 @@ export default class SRPlugin extends Plugin {
 
     private buildTimelineExtractSnapshot(item: ExtractItem): ReviewTimelineExtractSnapshot {
         const extractCreatedAt =
-            item.sourceMode === "auto-slice" ? item.timelineCreatedAt ?? item.createdAt : item.createdAt;
+            item.sourceMode === "auto-slice"
+                ? (item.timelineCreatedAt ?? item.createdAt)
+                : item.createdAt;
         return {
             originUuid: item.uuid,
             quoteText: item.rawMarkdown,
@@ -8262,7 +8318,9 @@ export default class SRPlugin extends Plugin {
                 if (persisted.signature === currentSignature) {
                     for (const item of persisted.items) {
                         if (item?.path) {
-                            const extractCache = normalizePersistedExtractNoteCache(item.extractCache);
+                            const extractCache = normalizePersistedExtractNoteCache(
+                                item.extractCache,
+                            );
                             if (extractCache) {
                                 this.getNoteExtractCache().set(item.path, extractCache);
                             }
@@ -8330,7 +8388,7 @@ export default class SRPlugin extends Plugin {
             if (typeof this.syncExtractsFromVaultFiles === "function") {
                 await this.syncExtractsFromVaultFiles(allMarkdownNotes);
             }
-            let notes: TFile[] = allMarkdownNotes.filter((noteFile) => {
+            const notes: TFile[] = allMarkdownNotes.filter((noteFile) => {
                 const fileCachedData = this.app.metadataCache.getFileCache(noteFile) || {};
                 const tags = getAllTags(fileCachedData) || [];
                 return (
@@ -8512,7 +8570,10 @@ export default class SRPlugin extends Plugin {
                 statsService.calculateDeckStats(dName, dItems, learnAheadMillis);
             }
             if (this.data.settings.showSchedulingDebugMessages) {
-                console.debug("SR sync: DeckStatsService cache populated. Total decks:", deckItemsMap.size);
+                console.debug(
+                    "SR sync: DeckStatsService cache populated. Total decks:",
+                    deckItemsMap.size,
+                );
                 this.showSyncInfo();
             }
 
@@ -8635,7 +8696,9 @@ export default class SRPlugin extends Plugin {
     private getReviewDeckInlineTitleStats(deckPath: string): InlineTitleCardStats {
         const targetDeck = this.findDeckByPath(this.remainingDeckTree, deckPath);
         const learnAheadMillis = Math.max(0, this.data.settings.learnAheadMinutes ?? 0) * 60 * 1000;
-        const limitedDeck = targetDeck ? DeckTreeFilter.filterByDailyLimits(targetDeck, this) : null;
+        const limitedDeck = targetDeck
+            ? DeckTreeFilter.filterByDailyLimits(targetDeck, this)
+            : null;
         const cardReviewableCount = limitedDeck
             ? limitedDeck.getCardCount(CardListType.NewCard, true) +
               limitedDeck.getCardCount(CardListType.DueCard, true) +

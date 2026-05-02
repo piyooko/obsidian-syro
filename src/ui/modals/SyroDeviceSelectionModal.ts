@@ -17,9 +17,7 @@ export type SyroDeviceSelectionModalResult =
       };
 
 export class SyroDeviceSelectionModal extends Modal {
-    private resolvePromise:
-        | ((value: SyroDeviceSelectionModalResult | null) => void)
-        | null = null;
+    private resolvePromise: ((value: SyroDeviceSelectionModalResult | null) => void) | null = null;
     private submitted = false;
     private isSubmitting = false;
     private cancelButton: ButtonComponent | null = null;
@@ -82,13 +80,15 @@ export class SyroDeviceSelectionModal extends Modal {
         }
 
         const buttonRow = contentEl.createDiv("srs-flex-row sr-confirm-modal-actions");
-        this.cancelButton = new ButtonComponent(buttonRow).setButtonText(t("CANCEL")).onClick(() => {
-            if (this.isSubmitting) {
-                return;
-            }
+        this.cancelButton = new ButtonComponent(buttonRow)
+            .setButtonText(t("CANCEL"))
+            .onClick(() => {
+                if (this.isSubmitting) {
+                    return;
+                }
 
-            this.close();
-        });
+                this.close();
+            });
         this.createNewButton = new ButtonComponent(buttonRow)
             .setButtonText(t("SYRO_SELECT_CURRENT_DEVICE_CREATE_NEW"))
             .onClick(() => {

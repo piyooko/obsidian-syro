@@ -207,7 +207,8 @@ describe("trackFileEvents auto extract menu", () => {
 
         expect(
             menu.items.some(
-                (item) => item instanceof FakeMenuItem && item.title === t("AUTO_EXTRACT_MENU_TITLE"),
+                (item) =>
+                    item instanceof FakeMenuItem && item.title === t("AUTO_EXTRACT_MENU_TITLE"),
             ),
         ).toBe(false);
     });

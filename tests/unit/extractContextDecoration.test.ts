@@ -25,7 +25,11 @@ function createRanges(overrides: Partial<ExtractContextRanges> = {}): ExtractCon
     };
 }
 
-function createManualRanges(markdown: string, outerFrom: number, outerTo: number): ExtractContextRanges {
+function createManualRanges(
+    markdown: string,
+    outerFrom: number,
+    outerTo: number,
+): ExtractContextRanges {
     const openToken = "{{ir::";
     void markdown;
     return {
@@ -165,9 +169,9 @@ describe("extractContextRangesField", () => {
             currentCloseTokenFrom: ranges.currentCloseTokenFrom + 1,
             currentCloseTokenTo: ranges.currentCloseTokenTo + 1,
         });
-        expect(insideRanges && hasCurrentExtractWrapper(insideState.doc.toString(), insideRanges)).toBe(
-            true,
-        );
+        expect(
+            insideRanges && hasCurrentExtractWrapper(insideState.doc.toString(), insideRanges),
+        ).toBe(true);
     });
 });
 
@@ -229,9 +233,11 @@ describe("extract context boundary guard", () => {
         (Notice as jest.Mock).mockClear();
     });
 
-    function createGuardedEditor(
-        editable = true,
-    ): { parent: HTMLElement; ranges: ExtractContextRanges; view: EditorView } {
+    function createGuardedEditor(editable = true): {
+        parent: HTMLElement;
+        ranges: ExtractContextRanges;
+        view: EditorView;
+    } {
         const markdown = "before {{ir::target}} after";
         const ranges = createManualRanges(markdown, 7, 21);
         const parent = document.createElement("div");

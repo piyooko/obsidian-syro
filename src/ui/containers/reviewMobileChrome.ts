@@ -3,8 +3,7 @@ import { Platform, type WorkspaceLeaf } from "obsidian";
 export const REVIEW_MOBILE_NAVBAR_COVER_CLASS = "syro-review-mobile-navbar-covered";
 export const REVIEW_MOBILE_NAVBAR_OWNER_ATTR = "data-syro-review-mobile-navbar-owner";
 export const REVIEW_MOBILE_HEADER_COVER_CLASS = "syro-review-mobile-header-covered";
-export const REVIEW_MOBILE_HEADER_COVER_OWNER_ATTR =
-    "data-syro-review-mobile-header-cover-owner";
+export const REVIEW_MOBILE_HEADER_COVER_OWNER_ATTR = "data-syro-review-mobile-header-cover-owner";
 
 type LeafWithContainerEl = WorkspaceLeaf & {
     containerEl?: HTMLElement | null;
@@ -84,20 +83,14 @@ export function clearReviewMobileNavbarCover(hostLeafId: string): void {
     }
 }
 
-export function applyReviewMobileHeaderCover(
-    hostLeafId: string,
-    hostLeaf: WorkspaceLeaf,
-): void {
+export function applyReviewMobileHeaderCover(hostLeafId: string, hostLeaf: WorkspaceLeaf): void {
     for (const target of getReviewMobileHeaderCoverTargets(hostLeaf)) {
         target.classList.add(REVIEW_MOBILE_HEADER_COVER_CLASS);
         target.setAttribute(REVIEW_MOBILE_HEADER_COVER_OWNER_ATTR, hostLeafId);
     }
 }
 
-export function clearReviewMobileHeaderCover(
-    hostLeafId: string,
-    hostLeaf: WorkspaceLeaf,
-): void {
+export function clearReviewMobileHeaderCover(hostLeafId: string, hostLeaf: WorkspaceLeaf): void {
     for (const target of getReviewMobileHeaderCoverTargets(hostLeaf)) {
         const currentOwner = target.getAttribute(REVIEW_MOBILE_HEADER_COVER_OWNER_ATTR);
         if (currentOwner && currentOwner !== hostLeafId) {

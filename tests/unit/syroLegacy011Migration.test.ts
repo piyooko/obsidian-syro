@@ -130,9 +130,15 @@ describe("syroLegacy011Migration source discovery", () => {
         const layout = createLayout();
         files.set(".obsidian/plugins/syro/data.json", '{"settings":{"openRandomNote":true}}');
         files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[]}');
-        files.set(".obsidian/plugins/syro/review_notes.json", '{"version":1,"nextItemId":1,"items":{}}');
+        files.set(
+            ".obsidian/plugins/syro/review_notes.json",
+            '{"version":1,"nextItemId":1,"items":{}}',
+        );
         files.set(".obsidian/plugins/syro/review_commits.json", '{"note.md":[{"id":"1"}]}');
-        files.set(".obsidian/plugins/syro/tracked_files.review_overlay.json", '{"items":[{"id":1}]}');
+        files.set(
+            ".obsidian/plugins/syro/tracked_files.review_overlay.json",
+            '{"items":[{"id":1}]}',
+        );
         files.set(".obsidian/plugins/syro/note_cache.json", '{"version":3,"items":[]}');
         files.set(".obsidian/plugins/syro/ob_revlog.csv", "date,grade\n");
         files.set(
@@ -164,9 +170,9 @@ describe("syroLegacy011Migration source discovery", () => {
                 "local-state/cards.review_overlay.json",
             ]),
         );
-        expect(result.legacyEntries.find((entry) => entry.name === "data.json")?.isLegacyPluginData).toBe(
-            true,
-        );
+        expect(
+            result.legacyEntries.find((entry) => entry.name === "data.json")?.isLegacyPluginData,
+        ).toBe(true);
     });
 
     test("does not treat a migrated 0.0.12 shell as a legacy input", async () => {
@@ -210,7 +216,10 @@ describe("syroLegacy011Migration source discovery", () => {
 
     test("returns only partial legacy inputs when other files are missing", async () => {
         const { adapter, files } = createMockAdapter();
-        files.set(".obsidian/plugins/syro/review_notes.json", '{"version":1,"nextItemId":1,"items":{}}');
+        files.set(
+            ".obsidian/plugins/syro/review_notes.json",
+            '{"version":1,"nextItemId":1,"items":{}}',
+        );
 
         const result = await listLegacy011SourceFiles({
             adapter,
@@ -228,7 +237,10 @@ describe("syroLegacy011Migration workspace migration", () => {
         const layout = createLayout();
         files.set(".obsidian/plugins/syro/data.json", '{"settings":{"openRandomNote":true}}');
         files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[]}');
-        files.set(".obsidian/plugins/syro/review_notes.json", '{"version":1,"nextItemId":1,"items":{}}');
+        files.set(
+            ".obsidian/plugins/syro/review_notes.json",
+            '{"version":1,"nextItemId":1,"items":{}}',
+        );
         files.set(
             ".obsidian/plugins/syro/review_commits.json",
             '{"version":1,"files":{"note.md":[{"id":"1"}]},"syncEntities":{}}',
@@ -269,7 +281,10 @@ describe("syroLegacy011Migration archived cleanup", () => {
             }),
         );
         files.set(".obsidian/plugins/syro/tracked_files.json", '{"items":[]}');
-        files.set(".obsidian/plugins/syro/review_notes.json", '{"version":1,"nextItemId":1,"items":{}}');
+        files.set(
+            ".obsidian/plugins/syro/review_notes.json",
+            '{"version":1,"nextItemId":1,"items":{}}',
+        );
         files.set(".obsidian/plugins/syro/review_commits.json", '{"note.md":[{"id":"1"}]}');
         files.set(".obsidian/plugins/syro/note_cache.json", '{"version":3,"items":[]}');
         files.set(".obsidian/plugins/syro/ob_revlog.csv", "date,grade\n");

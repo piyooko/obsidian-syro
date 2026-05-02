@@ -27,7 +27,7 @@ function appendSanitizedNode(parent: Node, node: ChildNode, options: SanitizedHt
         return;
     }
 
-    const sanitizedEl = document.createElement(tagName);
+    const sanitizedEl = createEl(tagName as keyof HTMLElementTagNameMap);
     const allowedAttributes = options.allowedAttributes?.[tagName] ?? [];
     allowedAttributes.forEach((attrName) => {
         const attrValue = node.getAttribute(attrName);
@@ -54,7 +54,7 @@ export function createSanitizedHtmlFragment(
 ): DocumentFragment {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, "text/html");
-    const fragment = document.createDocumentFragment();
+    const fragment = createFragment();
 
     Array.from(doc.body.childNodes).forEach((childNode) =>
         appendSanitizedNode(fragment, childNode, {

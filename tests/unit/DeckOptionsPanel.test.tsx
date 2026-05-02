@@ -88,10 +88,7 @@ function findButtonByText(container: HTMLElement, label: string): HTMLButtonElem
 }
 
 function changeInputValue(input: HTMLInputElement, value: string) {
-    const valueSetter = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value",
-    )?.set;
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
 
     if (!valueSetter) {
         throw new Error("Unable to resolve HTMLInputElement.value setter");
@@ -104,10 +101,7 @@ function changeInputValue(input: HTMLInputElement, value: string) {
 }
 
 function changeSelectValue(select: HTMLSelectElement, value: string) {
-    const valueSetter = Object.getOwnPropertyDescriptor(
-        HTMLSelectElement.prototype,
-        "value",
-    )?.set;
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
 
     if (!valueSetter) {
         throw new Error("Unable to resolve HTMLSelectElement.value setter");
@@ -228,10 +222,7 @@ describe("DeckOptionsPanel", () => {
                 "2m",
                 "20m",
             ]);
-            expect(view.plugin.data.settings.fsrsSettings.learning_steps).toEqual([
-                "2m",
-                "20m",
-            ]);
+            expect(view.plugin.data.settings.fsrsSettings.learning_steps).toEqual(["2m", "20m"]);
         } finally {
             view.cleanup();
         }
@@ -374,10 +365,7 @@ describe("DeckOptionsPanel", () => {
 
         try {
             await clickButton(findButtonByText(view.container, "+"));
-            const presetNameInput = findInputByLabel(
-                view.container,
-                t("DECK_OPTIONS_PRESET_NAME"),
-            );
+            const presetNameInput = findInputByLabel(view.container, t("DECK_OPTIONS_PRESET_NAME"));
             changeInputValue(presetNameInput, "Focused");
 
             await clickButton(findButtonByText(view.container, t("DECK_OPTIONS_BTN_SAVE")));

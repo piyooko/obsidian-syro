@@ -58,8 +58,7 @@ function createEmptyDeckForPath(fullPath: string): Deck | null {
 
 function hasReviewableCards(deck: Deck, plugin: SRPlugin, applyDailyLimits: boolean): boolean {
     const reviewDeck = applyDailyLimits ? DeckTreeFilter.filterByDailyLimits(deck, plugin) : deck;
-    const learnAheadMillis =
-        Math.max(0, plugin.data?.settings?.learnAheadMinutes ?? 0) * 60 * 1000;
+    const learnAheadMillis = Math.max(0, plugin.data?.settings?.learnAheadMinutes ?? 0) * 60 * 1000;
     return (
         reviewDeck.getCardCount(CardListType.NewCard, true) > 0 ||
         reviewDeck.getCardCount(CardListType.DueCard, true) > 0 ||
@@ -79,7 +78,8 @@ export function activateDeckReviewSession({
     const existingTargetDeck = findDeckByPath(sourceDeckTree, fullPath);
     const extractStats = plugin.getExtractReviewStats(fullPath, applyDailyLimits);
     if (
-        (!existingTargetDeck || !hasReviewableCards(existingTargetDeck, plugin, applyDailyLimits)) &&
+        (!existingTargetDeck ||
+            !hasReviewableCards(existingTargetDeck, plugin, applyDailyLimits)) &&
         extractStats.totalCount === 0
     ) {
         return null;

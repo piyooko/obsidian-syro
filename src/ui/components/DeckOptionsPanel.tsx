@@ -1,11 +1,5 @@
 /** @jsxImportSource react */
-import React, {
-    useCallback,
-    useEffect,
-    useId,
-    useMemo,
-    useState,
-} from "react";
+import React, { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { Notice } from "obsidian";
 import { X } from "lucide-react";
 import type SRPlugin from "src/main";
@@ -26,7 +20,13 @@ import {
     syncFsrsSettingsCompatibilityMirror,
     type DeckCardOrder,
 } from "src/settings";
-import { BaseComponent, InputRow, Section, SelectRow, ToggleRow } from "./common/SettingsComponents";
+import {
+    BaseComponent,
+    InputRow,
+    Section,
+    SelectRow,
+    ToggleRow,
+} from "./common/SettingsComponents";
 import { useMobileNavbarOffset } from "./useMobileNavbarOffset";
 
 interface DeckOptionsPanelProps {
@@ -260,7 +260,9 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
 
             const presets = prev.presets.filter((preset) => preset.uuid !== prev.currentPresetUuid);
             const assignment = Object.fromEntries(
-                Object.entries(prev.assignment).filter(([, presetUuid]) => presetUuid !== prev.currentPresetUuid),
+                Object.entries(prev.assignment).filter(
+                    ([, presetUuid]) => presetUuid !== prev.currentPresetUuid,
+                ),
             );
 
             return {
@@ -355,9 +357,7 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                             <div className="sr-deck-options-select-control">
                                 <select
                                     value={draft.currentPresetUuid}
-                                    onChange={(event) =>
-                                        handlePresetUuidChange(event.target.value)
-                                    }
+                                    onChange={(event) => handlePresetUuidChange(event.target.value)}
                                     className="dropdown"
                                 >
                                     {draft.presets.map((preset, index) => {
@@ -502,9 +502,8 @@ export const DeckOptionsPanel: React.FC<DeckOptionsPanelProps> = ({
                                     if (Number.isNaN(num)) return;
                                     updateCurrentPreset((preset) => ({
                                         ...preset,
-                                        interleaveFlashcardCount: normalizeInterleaveFlashcardCount(
-                                            num,
-                                        ),
+                                        interleaveFlashcardCount:
+                                            normalizeInterleaveFlashcardCount(num),
                                     }));
                                 }}
                             />

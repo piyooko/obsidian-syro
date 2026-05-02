@@ -50,7 +50,13 @@ function countLinesBefore(text: string, offset: number): number {
     return line;
 }
 
-function createAnchor(text: string, start: number, end: number, innerStart: number, innerEnd: number): IrExtractAnchor {
+function createAnchor(
+    text: string,
+    start: number,
+    end: number,
+    innerStart: number,
+    innerEnd: number,
+): IrExtractAnchor {
     return {
         start,
         end,
@@ -132,11 +138,21 @@ export function stripIrExtractSyntax(text: string): string {
     return result.replaceAll(IR_OPEN, "");
 }
 
-function overlaps(leftStart: number, leftEnd: number, rightStart: number, rightEnd: number): boolean {
+function overlaps(
+    leftStart: number,
+    leftEnd: number,
+    rightStart: number,
+    rightEnd: number,
+): boolean {
     return leftStart < rightEnd && leftEnd > rightStart;
 }
 
-function contains(outerStart: number, outerEnd: number, innerStart: number, innerEnd: number): boolean {
+function contains(
+    outerStart: number,
+    outerEnd: number,
+    innerStart: number,
+    innerEnd: number,
+): boolean {
     return outerStart <= innerStart && outerEnd >= innerEnd;
 }
 
@@ -213,7 +229,10 @@ function partiallyOverlaps(
     innerStart: number,
     innerEnd: number,
 ): boolean {
-    return overlaps(outerStart, outerEnd, innerStart, innerEnd) && !contains(outerStart, outerEnd, innerStart, innerEnd);
+    return (
+        overlaps(outerStart, outerEnd, innerStart, innerEnd) &&
+        !contains(outerStart, outerEnd, innerStart, innerEnd)
+    );
 }
 
 export function selectionContainsIrExtractBoundarySyntax(
@@ -289,7 +308,11 @@ function findOpenIrParentStart(stack: OpenBraceSegment[]): number | undefined {
     return undefined;
 }
 
-function getPreservedBlockPrefixForExtractWrap(text: string, from: number, selected: string): string {
+function getPreservedBlockPrefixForExtractWrap(
+    text: string,
+    from: number,
+    selected: string,
+): string {
     const lineStart = text.lastIndexOf("\n", Math.max(0, from - 1)) + 1;
     const beforeSelection = text.slice(lineStart, from);
     if (!/^[ \t]{0,3}$/.test(beforeSelection)) {
@@ -310,11 +333,17 @@ export function removeExtractWrapperKeepInnerContent(
     text: string,
     match: Pick<IrExtractMatch, "start" | "end" | "innerStart" | "innerEnd">,
 ): string {
-    return text.slice(0, match.start) + text.slice(match.innerStart, match.innerEnd) + text.slice(match.end);
+    return (
+        text.slice(0, match.start) +
+        text.slice(match.innerStart, match.innerEnd) +
+        text.slice(match.end)
+    );
 }
 
 export function findIrExtractAtOffset(text: string, offset: number): IrExtractMatch | null {
-    const matches = parseIrExtracts(text).filter((match) => match.start <= offset && match.end >= offset);
+    const matches = parseIrExtracts(text).filter(
+        (match) => match.start <= offset && match.end >= offset,
+    );
     if (matches.length === 0) {
         return null;
     }

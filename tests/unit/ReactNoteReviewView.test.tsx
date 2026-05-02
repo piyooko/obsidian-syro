@@ -986,9 +986,9 @@ describe("ReactNoteReviewView", () => {
             quoteText: "manual preview",
             memoText: "",
         });
-        expect(logs.find((log) => log.id === "extract-preview:manual-active")?.scrollPercentage).toBe(
-            0.1,
-        );
+        expect(
+            logs.find((log) => log.id === "extract-preview:manual-active")?.scrollPercentage,
+        ).toBe(0.1);
         expect(logs.find((log) => log.id === "extract-preview:auto-memo")?.extract).toMatchObject({
             quoteText: "## Auto title",
             sourceMode: "auto-slice",
@@ -1075,7 +1075,9 @@ describe("ReactNoteReviewView", () => {
         (view as any).setSelectedTimelineItem(item);
         view.redraw();
 
-        expect((getLastSidebarProps(root).commitLogs as Array<{ id: string }>).map((log) => log.id)).toEqual([
+        expect(
+            (getLastSidebarProps(root).commitLogs as Array<{ id: string }>).map((log) => log.id),
+        ).toEqual([
             "extract-preview:auto-active",
             "extract-preview:manual-active",
             "graduated",
@@ -1087,8 +1089,11 @@ describe("ReactNoteReviewView", () => {
             "message",
         );
 
-        const preferenceItem = (Menu as unknown as { lastItems: Array<{ title?: string; icon?: string; submenu?: unknown }> })
-            .lastItems.find((menuItem) => menuItem.title === "TIMELINE_PREFERENCES");
+        const preferenceItem = (
+            Menu as unknown as {
+                lastItems: Array<{ title?: string; icon?: string; submenu?: unknown }>;
+            }
+        ).lastItems.find((menuItem) => menuItem.title === "TIMELINE_PREFERENCES");
         expect(preferenceItem).toMatchObject({ icon: "funnel" });
 
         const submenuItems = (
@@ -1104,7 +1109,9 @@ describe("ReactNoteReviewView", () => {
             checked?: boolean;
             onClick?: () => void;
         }>;
-        expect(submenuItems.map((menuItem) => [menuItem.title, menuItem.icon, menuItem.checked])).toEqual([
+        expect(
+            submenuItems.map((menuItem) => [menuItem.title, menuItem.icon, menuItem.checked]),
+        ).toEqual([
             ["TIMELINE_PREFERENCE_SHOW_EXTRACTS", "library-big", true],
             ["TIMELINE_PREFERENCE_SHOW_AUTO_EXTRACTS", "library-big", true],
             ["TIMELINE_PREFERENCE_SHOW_GRADUATED_EXTRACTS", "graduation-cap", true],
@@ -1117,11 +1124,9 @@ describe("ReactNoteReviewView", () => {
         expect((plugin.data.settings as any).timelineDisplayPreferences).toMatchObject({
             autoExtracts: false,
         });
-        expect((getLastSidebarProps(root).commitLogs as Array<{ id: string }>).map((log) => log.id)).toEqual([
-            "extract-preview:manual-active",
-            "graduated",
-            "message",
-        ]);
+        expect(
+            (getLastSidebarProps(root).commitLogs as Array<{ id: string }>).map((log) => log.id),
+        ).toEqual(["extract-preview:manual-active", "graduated", "message"]);
     });
 
     it("opens only the timeline preference menu from timeline blank space", () => {
@@ -1164,7 +1169,9 @@ describe("ReactNoteReviewView", () => {
         } as unknown as React.MouseEvent);
 
         const menuItems = (
-            Menu as unknown as { lastItems: Array<{ title?: string; icon?: string; submenu?: unknown }> }
+            Menu as unknown as {
+                lastItems: Array<{ title?: string; icon?: string; submenu?: unknown }>;
+            }
         ).lastItems;
         expect(menuItems.map((menuItem) => menuItem.title)).toEqual(["TIMELINE_PREFERENCES"]);
         expect(menuItems[0]).toMatchObject({ icon: "funnel" });
@@ -1237,13 +1244,15 @@ describe("ReactNoteReviewView", () => {
         view.redraw();
 
         const sidebarItem = (
-            getLastSidebarProps(root).data as { sections: Array<{ items: Array<{ path: string; lastScrollPercentage?: number }> }> }
+            getLastSidebarProps(root).data as {
+                sections: Array<{ items: Array<{ path: string; lastScrollPercentage?: number }> }>;
+            }
         ).sections[0].items[0];
         expect(sidebarItem.lastScrollPercentage).toBe(0.75);
 
-        const standaloneItem = (view as any).buildStandaloneTimelineItem(
-            standalonePath,
-        ) as { lastScrollPercentage?: number } | null;
+        const standaloneItem = (view as any).buildStandaloneTimelineItem(standalonePath) as {
+            lastScrollPercentage?: number;
+        } | null;
         expect(standaloneItem).toMatchObject({
             path: standalonePath,
             noteFile: standaloneFile,

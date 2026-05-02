@@ -156,7 +156,7 @@ export function postProcessCodeBlock(
 
         const lines = codeContent.split("\n");
 
-        const wrapper = document.createElement("div");
+        const wrapper = createDiv();
         wrapper.className = "sr-code-block-card";
 
         let currentRealLine = startLine;
@@ -170,12 +170,12 @@ export function postProcessCodeBlock(
             }
 
             if (trimmedLine.startsWith("// ...")) {
-                const lineDiv = document.createElement("div");
+                const lineDiv = createDiv();
                 lineDiv.className = "sr-code-context-line sr-code-ellipsis";
-                const lineNumSpan = document.createElement("span");
+                const lineNumSpan = createSpan();
                 lineNumSpan.className = "sr-code-line-number";
 
-                const lineContentSpan = document.createElement("span");
+                const lineContentSpan = createSpan();
                 lineContentSpan.className = "sr-code-line-content sr-code-line-content-ellipsis";
                 setCodeLineContent(lineContentSpan, lineContent);
 
@@ -187,16 +187,16 @@ export function postProcessCodeBlock(
 
             const isCloze = clozeLineIndices.has(index);
 
-            const lineDiv = document.createElement("div");
+            const lineDiv = createDiv();
             lineDiv.className = isCloze ? "sr-code-cloze-line" : "sr-code-context-line";
             lineDiv.dataset.line = String(currentRealLine);
 
-            const lineNumSpan = document.createElement("span");
+            const lineNumSpan = createSpan();
             lineNumSpan.className = "sr-code-line-number";
             lineNumSpan.textContent = String(currentRealLine);
             maxLineNumberDigits = Math.max(maxLineNumberDigits, lineNumSpan.textContent.length);
 
-            const lineContentSpan = document.createElement("span");
+            const lineContentSpan = createSpan();
             lineContentSpan.className = "sr-code-line-content";
             setCodeLineContent(lineContentSpan, lineContent);
 
@@ -307,7 +307,7 @@ export async function renderSyroMarkdownToElement({
                 target: el,
             }));
 
-    const buffer = document.createElement("div");
+    const buffer = createDiv();
     buffer.setAttribute(SR_IR_POSTPROCESS_SKIP_ATTR, "true");
 
     try {

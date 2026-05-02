@@ -455,8 +455,6 @@ describe("collectHybridInlineTokens", () => {
             }),
         ]);
         expect(tokens.filter((token) => token.className.includes("cm-highlight"))).toHaveLength(1);
-        expect(
-            tokens.filter((token) => token.className === "sr-cloze-highlight"),
-        ).toHaveLength(1);
+        expect(tokens.filter((token) => token.className === "sr-cloze-highlight")).toHaveLength(1);
     });
 });

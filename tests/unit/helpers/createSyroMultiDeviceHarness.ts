@@ -191,7 +191,10 @@ export interface MultiDeviceHarness {
     modifyVaultFile(clientKey: string, path: string, nextText: string): Promise<void>;
     deleteVaultFile(clientKey: string, path: string): Promise<void>;
     renameVaultFile(clientKey: string, oldPath: string, newPath: string): Promise<void>;
-    readRawDeviceJson(clientKey: string, domain: SyroSessionDomain | "pending-overlay"): unknown | null;
+    readRawDeviceJson(
+        clientKey: string,
+        domain: SyroSessionDomain | "pending-overlay",
+    ): unknown | null;
     readSyncEntity(
         clientKey: string,
         domain: SyroSessionDomain | "pending-overlay",
@@ -852,9 +855,9 @@ function normalizeExtractsState(raw: string | null | undefined): HarnessExtractS
                 };
             })
             .sort((left, right) =>
-                [left.sourcePath, left.uuid].join("::").localeCompare(
-                    [right.sourcePath, right.uuid].join("::"),
-                ),
+                [left.sourcePath, left.uuid]
+                    .join("::")
+                    .localeCompare([right.sourcePath, right.uuid].join("::")),
             );
     } catch {
         return [];

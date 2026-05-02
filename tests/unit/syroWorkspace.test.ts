@@ -323,9 +323,7 @@ describe("SyroWorkspace", () => {
 
     beforeEach(() => {
         window.localStorage.clear();
-        jest.spyOn(Date, "now").mockReturnValue(
-            Date.parse("2026-04-18T00:00:00.000Z"),
-        );
+        jest.spyOn(Date, "now").mockReturnValue(Date.parse("2026-04-18T00:00:00.000Z"));
         Object.defineProperty(globalThis, "crypto", {
             configurable: true,
             value: {
@@ -604,9 +602,9 @@ describe("SyroWorkspace", () => {
         const startup = await createWorkspace(adapter).initialize();
 
         expect(startup.startupDecision).toBe("ready");
-        expect(
-            Array.from(files.keys()).some((path) => path.includes("/migration-backups/")),
-        ).toBe(false);
+        expect(Array.from(files.keys()).some((path) => path.includes("/migration-backups/"))).toBe(
+            false,
+        );
     });
 
     it("skips backing up the 0.0.12 data shell even when other legacy files still need migration", async () => {
@@ -691,11 +689,13 @@ describe("SyroWorkspace", () => {
         });
         expect(files.has(layout.currentDeviceSessionFilePath)).toBe(false);
         expect(
-            files.has(".obsidian/plugins/syro/sessions/closed/2026-04-12T15-30-12__d84f__0001.jsonl"),
+            files.has(
+                ".obsidian/plugins/syro/sessions/closed/2026-04-12T15-30-12__d84f__0001.jsonl",
+            ),
         ).toBe(false);
-        expect(files.has(".obsidian/plugins/syro/sessions/archive/d84f__2026-04.sessionpack.gz")).toBe(
-            false,
-        );
+        expect(
+            files.has(".obsidian/plugins/syro/sessions/archive/d84f__2026-04.sessionpack.gz"),
+        ).toBe(false);
     });
 
     it("preserves wrapped timeline payloads during legacy migration", async () => {
@@ -1208,7 +1208,9 @@ describe("SyroWorkspace", () => {
         expect(renamed.currentDeviceSessionsRoot).toBe(
             ".obsidian/plugins/syro/sessions/Primary-Desktop--d84f",
         );
-        expect(files.get(normalizePath(renamed.currentDeviceSessionFilePath))).toBe('{"version":1}\n');
+        expect(files.get(normalizePath(renamed.currentDeviceSessionFilePath))).toBe(
+            '{"version":1}\n',
+        );
         expect(files.has(normalizePath(initial.layout.currentDeviceSessionFilePath))).toBe(false);
         expect(
             JSON.parse(files.get(normalizePath(renamed.deviceMetaPath)) ?? "{}").deviceName,
@@ -1236,7 +1238,9 @@ describe("SyroWorkspace", () => {
             startup.layout,
             "91ac1111-2222-3333-4444-555555555555",
         );
-        const overwrittenMeta = JSON.parse(files.get(normalizePath(overwritten.deviceMetaPath)) ?? "{}");
+        const overwrittenMeta = JSON.parse(
+            files.get(normalizePath(overwritten.deviceMetaPath)) ?? "{}",
+        );
 
         expect(overwritten.device.deviceId).toBe(startup.layout.device.deviceId);
         expect(overwritten.device.deviceName).toBe(startup.layout.device.deviceName);
@@ -1245,16 +1249,16 @@ describe("SyroWorkspace", () => {
             "91ac1111-2222-3333-4444-555555555555",
         );
         expect(overwritten.device.baselineBuiltAt).toBeTruthy();
-        expect(files.get(normalizePath(overwritten.cardsPath))).toBe('{"items":[{"uuid":"card-1"}]}');
-        expect(JSON.parse(files.get(normalizePath(overwritten.fileIdentitiesPath)) ?? "{}")).toEqual(
-            JSON.parse(createValidFileIdentitiesPayload()),
+        expect(files.get(normalizePath(overwritten.cardsPath))).toBe(
+            '{"items":[{"uuid":"card-1"}]}',
         );
+        expect(
+            JSON.parse(files.get(normalizePath(overwritten.fileIdentitiesPath)) ?? "{}"),
+        ).toEqual(JSON.parse(createValidFileIdentitiesPayload()));
         expect(files.get(normalizePath(overwritten.timelinePath))).toBe('{"note.md":[{"id":"1"}]}');
         expect(files.get(normalizePath(overwritten.noteCachePath))).toContain('"path":"note.md"');
         expect(overwrittenMeta.deviceId).toBe(startup.layout.device.deviceId);
-        expect(overwrittenMeta.baselineFromDeviceId).toBe(
-            "91ac1111-2222-3333-4444-555555555555",
-        );
+        expect(overwrittenMeta.baselineFromDeviceId).toBe("91ac1111-2222-3333-4444-555555555555");
     });
 
     it("deletes a non-current valid device together with its session directory", async () => {

@@ -264,7 +264,9 @@ describe("obsidianHotkeyBridge", () => {
         };
 
         const registry = resolveHybridEditorHotkeyRegistry(app, logger);
-        const bold = registry.supported.find((command) => command.commandId === "editor:toggle-bold");
+        const bold = registry.supported.find(
+            (command) => command.commandId === "editor:toggle-bold",
+        );
 
         expect(bold?.hotkeys).toEqual([]);
         expect(registry.invalidHotkeys).toEqual([

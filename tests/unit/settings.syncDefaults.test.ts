@@ -185,7 +185,10 @@ describe("sync progress display defaults", () => {
     });
 
     test("upgradeSettings migrates legacy global extract limits into missing deck preset limits", () => {
-        const legacyPreset = { ...DEFAULT_SETTINGS.deckOptionsPresets[0] } as Record<string, unknown>;
+        const legacyPreset = { ...DEFAULT_SETTINGS.deckOptionsPresets[0] } as Record<
+            string,
+            unknown
+        >;
         delete legacyPreset.maxNewExtracts;
         delete legacyPreset.maxExtractReviews;
         const settings = {
@@ -202,7 +205,10 @@ describe("sync progress display defaults", () => {
     });
 
     test("upgradeSettings migrates legacy global card order into the default deck preset", () => {
-        const legacyPreset = { ...DEFAULT_SETTINGS.deckOptionsPresets[0] } as Record<string, unknown>;
+        const legacyPreset = { ...DEFAULT_SETTINGS.deckOptionsPresets[0] } as Record<
+            string,
+            unknown
+        >;
         delete legacyPreset.cardOrder;
         const settings = {
             ...DEFAULT_SETTINGS,
@@ -438,10 +444,7 @@ describe("sync progress display defaults", () => {
             deckPresetAssignment: {
                 alpha: alphaPreset.uuid,
             },
-            deckOptionsPresets: [
-                DEFAULT_SETTINGS.deckOptionsPresets[0],
-                alphaPreset,
-            ],
+            deckOptionsPresets: [DEFAULT_SETTINGS.deckOptionsPresets[0], alphaPreset],
         } as SRSettings;
 
         const preset = resolveDeckOptionsPreset(settings, "alpha");

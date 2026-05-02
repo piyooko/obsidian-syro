@@ -105,7 +105,7 @@ export class DeckOptionsModal extends Modal {
         const modalWidth = Math.min(MODAL_WIDTH, viewportWidth * 0.92);
         const modalHeight = Math.min(MODAL_HEIGHT, viewportHeight * 0.82);
         const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
+        const centerY = viewportHeight / 2;
         const left = clamp(
             centerX,
             VIEWPORT_PADDING + modalWidth / 2,
@@ -133,7 +133,7 @@ export class DeckOptionsModal extends Modal {
     private applyAnchorBackdrop(rect: DeckOptionsModalAnchorRect): void {
         this.anchorBackdropEl?.remove();
 
-        const backdropEl = document.createElement("div");
+        const backdropEl = createDiv();
         backdropEl.classList.add("sr-deck-options-anchor-backdrop");
         backdropEl.style.setProperty("--sr-deck-options-anchor-left", `${Math.round(rect.left)}px`);
         backdropEl.style.setProperty("--sr-deck-options-anchor-top", `${Math.round(rect.top)}px`);

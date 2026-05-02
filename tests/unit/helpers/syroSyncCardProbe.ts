@@ -20,8 +20,7 @@ export function createSyroSyncCardProbe(notePath: string) {
             .filter(
                 (entry) =>
                     entry.path === notePath &&
-                    (entry.fingerprint === fingerprint ||
-                        entry.fingerprint.includes(fingerprint)),
+                    (entry.fingerprint === fingerprint || entry.fingerprint.includes(fingerprint)),
             );
         if (entries.length === 0) {
             throw new Error(`Missing card ${fingerprint} for ${client}:${notePath}`);

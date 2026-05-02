@@ -82,10 +82,10 @@ class TimelinePillWidget extends WidgetType {
     }
 
     toDOM(): HTMLElement {
-        const wrap = document.createElement("span");
+        const wrap = createSpan();
         wrap.className = "sr-timeline-live-duration-widget";
 
-        const pill = document.createElement("span");
+        const pill = createSpan();
         pill.className = "sr-timeline-duration-pill";
         if (this.title) {
             pill.title = this.title;
@@ -107,7 +107,7 @@ class TimelineInlineTextWidget extends WidgetType {
     }
 
     toDOM(): HTMLElement {
-        const el = document.createElement(this.tagName);
+        const el = createEl(this.tagName);
         el.className = this.className;
         el.textContent = this.text;
         return el;
@@ -123,7 +123,7 @@ class TimelineMathWidget extends WidgetType {
     }
 
     toDOM(): HTMLElement {
-        const container = document.createElement("span");
+        const container = createSpan();
         container.className = "sr-timeline-live-math";
 
         const renderComponent = new Component();

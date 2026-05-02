@@ -24,10 +24,7 @@ import { LinearCard, CardState } from "../components/LinearCard";
 import { buildDeckTreeUIState, saveCollapseState } from "../adapters/deckAdapter";
 import { DeckState } from "../types/deckTypes";
 import { activateDeckReviewSession } from "../reviewDeckSession";
-import {
-    DeckOptionsModal,
-    getDeckOptionsModalAnchorRect,
-} from "../modals/DeckOptionsModal";
+import { DeckOptionsModal, getDeckOptionsModalAnchorRect } from "../modals/DeckOptionsModal";
 import type SRPlugin from "src/main";
 import type { ExtractReviewUndoAction } from "src/main";
 import { FlashcardReviewMode, IFlashcardReviewSequencer } from "src/FlashcardReviewSequencer";
@@ -165,9 +162,7 @@ function isReviewHostLeafActive(plugin: SRPlugin, hostLeaf: WorkspaceLeaf): bool
     ).workspace;
     const activeLeaf =
         workspace?.activeLeaf ??
-        (typeof workspace?.getMostRecentLeaf === "function"
-            ? workspace.getMostRecentLeaf()
-            : null);
+        (typeof workspace?.getMostRecentLeaf === "function" ? workspace.getMostRecentLeaf() : null);
     if (!activeLeaf) {
         return true;
     }
@@ -746,7 +741,10 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
     const getReviewableExtractCandidates = useCallback(
         (deckPath: string | null | undefined): ExtractItem[] => {
             const candidates = plugin
-                .getExtractReviewCandidates(deckPath ?? null, reviewMode !== FlashcardReviewMode.Cram)
+                .getExtractReviewCandidates(
+                    deckPath ?? null,
+                    reviewMode !== FlashcardReviewMode.Cram,
+                )
                 .filter((item) => item.stage === "active");
             const candidateUuids = new Set(candidates.map((item) => item.uuid));
             movedExtractsToEndRef.current = movedExtractsToEndRef.current.filter((uuid) =>
@@ -828,10 +826,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
 
             const promise = (async () => {
                 const latestItem = plugin.extractStore?.get(uuid) ?? null;
-                if (
-                    !latestItem ||
-                    latestItem.stage !== "active"
-                ) {
+                if (!latestItem || latestItem.stage !== "active") {
                     preparedExtractsRef.current.delete(uuid);
                     if (latestItem?.sourcePath) {
                         sourceTextCacheRef.current.delete(latestItem.sourcePath);
@@ -901,7 +896,9 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             const hasCard = sequencer.hasCurrentCard;
             const candidates = getReviewableExtractCandidates(deckPath);
             const extract =
-                hasCard && candidates[0] && movedExtractsToEndRef.current.includes(candidates[0].uuid)
+                hasCard &&
+                candidates[0] &&
+                movedExtractsToEndRef.current.includes(candidates[0].uuid)
                     ? undefined
                     : candidates[0];
             const preset = resolveDeckOptionsPreset(plugin.data.settings, deckPath);
@@ -1162,9 +1159,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         };
 
         const requestIdle =
-            typeof window.requestIdleCallback === "function"
-                ? window.requestIdleCallback
-                : null;
+            typeof window.requestIdleCallback === "function" ? window.requestIdleCallback : null;
         if (requestIdle) {
             const idleId = requestIdle(preload, { timeout: 800 });
             return () => window.cancelIdleCallback?.(idleId);
@@ -1358,8 +1353,8 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
             const extractResponseMap = [ReviewResponse.Reset, ReviewResponse.Good];
             const response =
                 activeReviewItem?.kind === "extract"
-                    ? extractResponseMap[rating] ?? ReviewResponse.Good
-                    : responseMap[rating] ?? ReviewResponse.Good;
+                    ? (extractResponseMap[rating] ?? ReviewResponse.Good)
+                    : (responseMap[rating] ?? ReviewResponse.Good);
 
             if (activeReviewItem?.kind === "extract") {
                 interleavedFlashcardRunRef.current = 0;
@@ -1383,7 +1378,10 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                         },
                     });
                 }
-                invalidatePreparedExtract(activeReviewItem.uuid, reviewedExtract?.sourcePath ?? null);
+                invalidatePreparedExtract(
+                    activeReviewItem.uuid,
+                    reviewedExtract?.sourcePath ?? null,
+                );
 
                 const nextReviewItem = resolveNextReviewItem(activeDeckPathRef.current);
                 if (nextReviewItem) {
@@ -1497,13 +1495,7 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         setActiveReviewItem({ kind: "extract", uuid: restoredItem.uuid });
         setReviewUiResetToken((value) => value + 1);
         forceUpdate();
-    }, [
-        forceUpdate,
-        invalidatePreparedExtract,
-        plugin,
-        prepareExtractReview,
-        sequencer,
-    ]);
+    }, [forceUpdate, invalidatePreparedExtract, plugin, prepareExtractReview, sequencer]);
 
     const handleMoveExtractToEnd = useCallback(() => {
         if (activeReviewItem?.kind !== "extract") {
@@ -1540,7 +1532,10 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         if (activeReviewItem?.kind === "extract") {
             const deletedExtract = plugin.extractStore?.get(activeReviewItem.uuid) ?? null;
             if (!deletedExtract || deletedExtract.stage !== "active") {
-                invalidatePreparedExtract(activeReviewItem.uuid, deletedExtract?.sourcePath ?? null);
+                invalidatePreparedExtract(
+                    activeReviewItem.uuid,
+                    deletedExtract?.sourcePath ?? null,
+                );
                 const nextReviewItem = resolveNextReviewItem(activeDeckPathRef.current);
                 if (nextReviewItem) {
                     setActiveReviewItem(nextReviewItem);
@@ -1587,7 +1582,9 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
         }
         await sequencer.untrackCurrentCard();
         if (sequencer.hasCurrentCard) {
-            setActiveReviewItem(resolveNextReviewItem(activeDeckPathRef.current) ?? { kind: "card" });
+            setActiveReviewItem(
+                resolveNextReviewItem(activeDeckPathRef.current) ?? { kind: "card" },
+            );
             setReviewUiResetToken((value) => value + 1);
             forceUpdate();
         } else {
@@ -1734,7 +1731,9 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                                     invalidatePreparedExtract={invalidatePreparedExtract}
                                     preparedRefreshToken={activeExtractRefreshToken}
                                     deckPath={activeDeckPathRef.current}
-                                    applyExtractDailyLimits={reviewMode !== FlashcardReviewMode.Cram}
+                                    applyExtractDailyLimits={
+                                        reviewMode !== FlashcardReviewMode.Cram
+                                    }
                                     markdownOwner={markdownOwner}
                                     clearReviewMobileChromeCover={clearReviewMobileChromeCover}
                                     onAnswer={(rating) => {
@@ -1764,7 +1763,9 @@ export const ReviewSession: React.FC<ReviewSessionProps> = ({
                                     plugin={plugin}
                                     clearReviewMobileChromeCover={clearReviewMobileChromeCover}
                                     markdownOwner={markdownOwner}
-                                    applyExtractDailyLimits={reviewMode !== FlashcardReviewMode.Cram}
+                                    applyExtractDailyLimits={
+                                        reviewMode !== FlashcardReviewMode.Cram
+                                    }
                                     onAnswer={(rating) => {
                                         void handleAnswer(rating);
                                     }}
@@ -2106,7 +2107,8 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
         return abstractFile instanceof TFile ? abstractFile : null;
     }, [plugin.app.vault, sourcePath]);
     const anchorLine = Math.max(0, extract?.sourceAnchor.startLine ?? 0);
-    const filename = sourceFile?.basename ?? basenameFromPath(sourcePath, t("EXTRACT_SOURCE_MISSING"));
+    const filename =
+        sourceFile?.basename ?? basenameFromPath(sourcePath, t("EXTRACT_SOURCE_MISSING"));
 
     const reviewIntervals = useMemo(
         () => plugin.getExtractReviewIntervals(extractUuid),
@@ -2125,9 +2127,11 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
         if (!sourceFile) {
             return [];
         }
-        return new SrTFile(plugin.app.vault, plugin.app.metadataCache, sourceFile).getQuestionContext(
-            anchorLine,
-        );
+        return new SrTFile(
+            plugin.app.vault,
+            plugin.app.metadataCache,
+            sourceFile,
+        ).getQuestionContext(anchorLine);
     }, [anchorLine, plugin.app.metadataCache, plugin.app.vault, sourceFile]);
 
     useEffect(() => {
@@ -2150,9 +2154,7 @@ const ExtractLinearCardReview: React.FC<ExtractLinearCardReviewProps> = ({
         const nextBody = nextPrepared?.rawMarkdown ?? nextExtract?.rawMarkdown ?? "";
         const draftAtLoadStart = contextDraftRef.current;
         const canKeepExistingContext =
-            !identityChanged &&
-            contextRef.current !== null &&
-            contextDraftRef.current !== null;
+            !identityChanged && contextRef.current !== null && contextDraftRef.current !== null;
         const applyBody = (value: string) => {
             setBody(value);
             bodyValueRef.current = value;

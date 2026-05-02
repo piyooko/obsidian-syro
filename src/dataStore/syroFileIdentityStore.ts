@@ -221,8 +221,7 @@ export class SyroFileIdentityStore {
             this.entries = cloneEntries(parsed.entries);
             this.syncEntities = cloneSyncEntities(parsed.syncEntities);
         } catch (error) {
-            this.lastLoadError =
-                `[SR-FileIdentity] Failed to load file identities: ${String(error)}`;
+            this.lastLoadError = `[SR-FileIdentity] Failed to load file identities: ${String(error)}`;
             this.entries = {};
             this.syncEntities = {};
         }
@@ -289,9 +288,10 @@ export class SyroFileIdentityStore {
         const nextIdentity: SyroFileIdentity = existing
             ? {
                   uuid: existing.uuid,
-                  createdAt: compareIsoTime(existing.createdAt, normalized.createdAt) <= 0
-                      ? existing.createdAt
-                      : normalized.createdAt,
+                  createdAt:
+                      compareIsoTime(existing.createdAt, normalized.createdAt) <= 0
+                          ? existing.createdAt
+                          : normalized.createdAt,
                   updatedAt:
                       compareIsoTime(existing.updatedAt, normalized.updatedAt) >= 0
                           ? existing.updatedAt

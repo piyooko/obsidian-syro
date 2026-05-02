@@ -175,6 +175,11 @@ const WRAPPED_BLOCK_PREFIX =
     /^(#{1,6}[ \t]+|[-+*][ \t]+\[[ xX]\][ \t]+|[-+*][ \t]+|\d{1,9}[.)][ \t]+|>[ \t]*)/;
 const NESTED_BLOCK_GAP = 1;
 const irExtractPointSourceStartsEffect = StateEffect.define<number[]>();
+const refreshIrExtractTooltipNotesEffect = StateEffect.define<null>();
+
+export function refreshIrExtractTooltipNotes(view: EditorView): void {
+    view.dispatch({ effects: refreshIrExtractTooltipNotesEffect.of(null) });
+}
 
 function isLivePreview(view: EditorView, options: IrExtractDecorationOptions = {}): boolean {
     return !!view.dom.closest(".is-live-preview") || options.isLivePreviewHost?.(view) === true;
@@ -695,7 +700,8 @@ function getSelectionPointInScrollCoordinates(
         return null;
     }
 
-    const position = selection.from === selection.to ? selection.from : (selection.head ?? selection.to);
+    const position =
+        selection.from === selection.to ? selection.from : (selection.head ?? selection.to);
     const coords = view.coordsAtPos(position);
     if (!coords) {
         return null;
@@ -746,7 +752,7 @@ export interface IrExtractHeadingNoteActionHandlers {
 }
 
 function createLibraryBigIconSvg(): SVGSVGElement {
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const svg = createSvg("svg");
     svg.setAttribute("viewBox", "0 0 24 24");
     svg.setAttribute("fill", "none");
     svg.setAttribute("stroke", "currentColor");
@@ -756,17 +762,17 @@ function createLibraryBigIconSvg(): SVGSVGElement {
     svg.setAttribute("aria-hidden", "true");
     svg.classList.add("svg-icon", "lucide", "lucide-library-big");
 
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    const rect = createSvg("rect");
     rect.setAttribute("width", "8");
     rect.setAttribute("height", "18");
     rect.setAttribute("x", "3");
     rect.setAttribute("y", "3");
     rect.setAttribute("rx", "1");
 
-    const spine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const spine = createSvg("path");
     spine.setAttribute("d", "M7 3v18");
 
-    const book = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const book = createSvg("path");
     book.setAttribute(
         "d",
         "M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z",
@@ -780,7 +786,7 @@ export function createIrExtractHeadingNoteActionElement(
     sourceStart: number,
     handlers: IrExtractHeadingNoteActionHandlers,
 ): HTMLElement {
-    const action = document.createElement("span");
+    const action = createSpan();
     action.className = "sr-ir-heading-note-action";
     action.dataset.srIrExtractStart = String(sourceStart);
     action.setAttribute("role", "button");
@@ -1103,8 +1109,7 @@ function getEditorLineHeight(view: EditorView): number {
 
 export function shouldUseIrExtractTextColumnFrame(root: Element): boolean {
     return (
-        !!root.closest(".sr-extract-context-editor") ||
-        !!root.closest(".sr-hybrid-markdown-source")
+        !!root.closest(".sr-extract-context-editor") || !!root.closest(".sr-hybrid-markdown-source")
     );
 }
 
@@ -1251,7 +1256,7 @@ function clampIrExtractNotePriority(value: number): number {
 }
 
 function createInfoIconSvg(): SVGSVGElement {
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const svg = createSvg("svg");
     svg.setAttribute("viewBox", "0 0 24 24");
     svg.setAttribute("fill", "none");
     svg.setAttribute("stroke", "currentColor");
@@ -1260,16 +1265,16 @@ function createInfoIconSvg(): SVGSVGElement {
     svg.setAttribute("stroke-linejoin", "round");
     svg.setAttribute("aria-hidden", "true");
 
-    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    const circle = createSvg("circle");
     circle.setAttribute("cx", "12");
     circle.setAttribute("cy", "12");
     circle.setAttribute("r", "10");
     circle.setAttribute("fill", "var(--background-primary)");
 
-    const verticalPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const verticalPath = createSvg("path");
     verticalPath.setAttribute("d", "M12 16v-4");
 
-    const dotPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const dotPath = createSvg("path");
     dotPath.setAttribute("d", "M12 8h.01");
 
     svg.append(circle, verticalPath, dotPath);
@@ -1280,11 +1285,11 @@ export function createIrExtractBlockElement(
     blockStart: number,
     handlers: IrExtractInfoTooltipHandlers,
 ): HTMLElement {
-    const element = document.createElement("div");
+    const element = createDiv();
     element.className = "sr-ir-extract-block";
     element.dataset.srIrExtractStart = String(blockStart);
 
-    const action = document.createElement("div");
+    const action = createDiv();
     action.className = "sr-ir-info-action";
     action.setAttribute("role", "button");
     action.setAttribute("tabindex", "0");
@@ -1324,21 +1329,21 @@ export function createIrExtractBlockElement(
 export function createIrExtractNoteTooltipElement(
     options: IrExtractNoteTooltipOptions = {},
 ): HTMLElement {
-    const tooltip = document.createElement("div");
+    const tooltip = createDiv();
     tooltip.className = "sr-note-path-tooltip sr-ir-note-tooltip is-below";
     tooltip.setAttribute("role", "tooltip");
     tooltip.dataset.srIrPriority = "5";
 
-    const textarea = document.createElement("textarea");
+    const textarea = createEl("textarea");
     textarea.className = "sr-ir-note-tooltip-input";
     textarea.rows = 1;
     textarea.placeholder = "输入备注...";
     textarea.title = "";
 
-    const importanceWidget = document.createElement("div");
+    const importanceWidget = createDiv();
     importanceWidget.className = "sr-ir-importance-widget";
 
-    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const icon = createSvg("svg");
     icon.classList.add("sr-scroll-hint-icon");
     icon.setAttribute("viewBox", "0 0 24 24");
     icon.setAttribute("fill", "none");
@@ -1347,15 +1352,15 @@ export function createIrExtractNoteTooltipElement(
     icon.setAttribute("stroke-linecap", "round");
     icon.setAttribute("stroke-linejoin", "round");
     icon.setAttribute("aria-hidden", "true");
-    const upPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const upPath = createSvg("path");
     upPath.setAttribute("d", "M8 9l4-4 4 4");
-    const downPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const downPath = createSvg("path");
     downPath.setAttribute("d", "M16 15l-4 4-4-4");
     icon.append(upPath, downPath);
 
-    const label = document.createElement("span");
+    const label = createSpan();
     label.textContent = "W:";
-    const value = document.createElement("span");
+    const value = createSpan();
     value.className = "sr-ir-importance-value";
     value.textContent = "5";
     importanceWidget.append(icon, label, value);
@@ -1411,15 +1416,19 @@ export function createIrExtractNoteTooltipElement(
         options.onSubmit?.();
     });
 
-    importanceWidget.addEventListener("wheel", (event) => {
-        event.stopPropagation();
-        const current = clampIrExtractNotePriority(Number(tooltip.dataset.srIrPriority ?? 5));
-        if (event.deltaY < 0) {
-            setPriority(current + 1, "up");
-        } else if (event.deltaY > 0) {
-            setPriority(current - 1, "down");
-        }
-    }, { passive: true });
+    importanceWidget.addEventListener(
+        "wheel",
+        (event) => {
+            event.stopPropagation();
+            const current = clampIrExtractNotePriority(Number(tooltip.dataset.srIrPriority ?? 5));
+            if (event.deltaY < 0) {
+                setPriority(current + 1, "up");
+            } else if (event.deltaY > 0) {
+                setPriority(current - 1, "down");
+            }
+        },
+        { passive: true },
+    );
     importanceWidget.addEventListener("pointerdown", (event) => {
         isDragging = true;
         startY = event.clientY;
@@ -1591,7 +1600,10 @@ export function findIrExtractInfoActionStartAtClientPoint(
 ): number | null {
     for (const [blockStart, element] of blockDomCache) {
         const action = element.querySelector<HTMLElement>(".sr-ir-info-action");
-        if (!action?.classList.contains("is-visible") && !action?.classList.contains("is-editing")) {
+        if (
+            !action?.classList.contains("is-visible") &&
+            !action?.classList.contains("is-editing")
+        ) {
             continue;
         }
         const rect = action.getBoundingClientRect();
@@ -1752,7 +1764,10 @@ function shouldStackIrExtractInfoActions(
 
     const earlier = leftLine < rightLine ? left : right;
     const later = earlier === left ? right : left;
-    return later.anchor.startLine === earlier.anchor.startLine + 1 && isIrExtractOpenOnlyLine(text, earlier);
+    return (
+        later.anchor.startLine === earlier.anchor.startLine + 1 &&
+        isIrExtractOpenOnlyLine(text, earlier)
+    );
 }
 
 function areIrExtractInfoBlocksOnSameVisualRow(
@@ -1851,7 +1866,9 @@ export function getIrExtractInfoOffsetIndexes(
             continue;
         }
 
-        const orderedGroup = group.sort((left, right) => getDepth(right) - getDepth(left) || right - left);
+        const orderedGroup = group.sort(
+            (left, right) => getDepth(right) - getDepth(left) || right - left,
+        );
         const tops = orderedGroup.flatMap((groupStart) => {
             const block = blocks.get(groupStart);
             return block ? [block.top + INFO_ICON_TOP] : [];
@@ -2048,7 +2065,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         renderExtract.match,
                     ]),
                 );
-                this.overlay = document.createElement("div");
+                this.overlay = createDiv();
                 this.overlay.className = "sr-ir-extract-overlay";
                 this.noteTooltip = createIrExtractNoteTooltipElement({
                     onSubmit: () => this.closePinnedTooltip(),
@@ -2073,6 +2090,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             update(update: ViewUpdate): void {
                 let receivedPointSourceStarts = false;
                 let receivedExtractContextRanges = false;
+                let receivedTooltipNotesRefresh = false;
                 for (const transaction of update.transactions) {
                     for (const effect of transaction.effects) {
                         if (effect.is(irExtractPointSourceStartsEffect)) {
@@ -2081,6 +2099,9 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                         }
                         if (effect.is(setExtractContextRangesEffect)) {
                             receivedExtractContextRanges = true;
+                        }
+                        if (effect.is(refreshIrExtractTooltipNotesEffect)) {
+                            receivedTooltipNotesRefresh = true;
                         }
                     }
                 }
@@ -2094,6 +2115,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     update.focusChanged ||
                     receivedPointSourceStarts ||
                     receivedExtractContextRanges ||
+                    receivedTooltipNotesRefresh ||
                     sourceRevealChanged;
 
                 if (shouldRebuild) {
@@ -2153,7 +2175,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                             renderExtract.match,
                         ]),
                     );
-                    if (update.docChanged) {
+                    if (update.docChanged || receivedTooltipNotesRefresh) {
                         this.hydratedNoteStartsKey = "";
                     }
                     this.scheduleMeasure(update.view);
@@ -2240,10 +2262,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                 ) {
                     this.hoveredBlockStart = null;
                 }
-                if (
-                    this.cursorBlockStart !== null &&
-                    !hasInteractiveStart(this.cursorBlockStart)
-                ) {
+                if (this.cursorBlockStart !== null && !hasInteractiveStart(this.cursorBlockStart)) {
                     this.cursorBlockStart = null;
                 }
                 if (
@@ -2373,7 +2392,8 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
             private updateTooltipPriority(priority: number): void {
                 const nextPriority = clampIrExtractNotePriority(priority);
                 this.noteTooltip.dataset.srIrPriority = String(nextPriority);
-                const value = this.noteTooltip.querySelector<HTMLElement>(".sr-ir-importance-value");
+                const value =
+                    this.noteTooltip.querySelector<HTMLElement>(".sr-ir-importance-value");
                 if (value) {
                     value.textContent = String(nextPriority);
                 }
@@ -2454,10 +2474,7 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
                     } else {
                         infoAction?.style.removeProperty("color");
                     }
-                    infoAction?.setAttribute(
-                        "aria-expanded",
-                        isTooltipVisible ? "true" : "false",
-                    );
+                    infoAction?.setAttribute("aria-expanded", isTooltipVisible ? "true" : "false");
                     if (isTooltipVisible && infoAction) {
                         visibleTooltipAction = infoAction;
                         visibleTooltip = true;
@@ -2655,7 +2672,9 @@ function createIrExtractDecorationPlugin(options: IrExtractDecorationOptions = {
 
             private resolveTooltipNote(blockStart: number): Promise<IrExtractTooltipNote | null> {
                 if (!options.resolveExtractTooltipNote) {
-                    options.logExtractTooltipNoteDebug?.("resolve-skip:no-resolver", { blockStart });
+                    options.logExtractTooltipNoteDebug?.("resolve-skip:no-resolver", {
+                        blockStart,
+                    });
                     return Promise.resolve(null);
                 }
                 const requestId = ++this.tooltipResolveRequestId;
@@ -3069,9 +3088,10 @@ const irExtractDecorationTheme = EditorView.baseTheme({
         width: "14px",
         height: "14px",
     },
-    ".sr-ir-extract-block.is-hovered .sr-ir-info-action, .sr-ir-info-action.is-visible, .sr-ir-info-action.is-editing": {
-        opacity: "1",
-    },
+    ".sr-ir-extract-block.is-hovered .sr-ir-info-action, .sr-ir-info-action.is-visible, .sr-ir-info-action.is-editing":
+        {
+            opacity: "1",
+        },
     ".sr-ir-info-action:hover": {
         color: "var(--text-normal)",
     },
@@ -3094,12 +3114,13 @@ const irExtractDecorationTheme = EditorView.baseTheme({
         verticalAlign: "-0.08em",
         width: "0",
     },
-    ".sr-ir-heading-note-action.is-visible, .sr-ir-heading-note-action.is-editing, .sr-ir-heading-note-action.has-note": {
-        marginRight: "0.28em",
-        opacity: "1",
-        pointerEvents: "auto",
-        width: "1em",
-    },
+    ".sr-ir-heading-note-action.is-visible, .sr-ir-heading-note-action.is-editing, .sr-ir-heading-note-action.has-note":
+        {
+            marginRight: "0.28em",
+            opacity: "1",
+            pointerEvents: "auto",
+            width: "1em",
+        },
     ".sr-ir-heading-note-action svg": {
         height: "0.82em",
         width: "0.82em",

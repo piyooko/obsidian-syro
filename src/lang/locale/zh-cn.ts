@@ -827,8 +827,7 @@ export default {
     SETTINGS_SHOW_EXTRACT_MEMO_TOOLTIP_DESC:
         "鼠标悬停在摘录内容上时，以 Tooltip 气泡的形式显示该摘录附加的备注或上下文。",
     SETTINGS_EXTRACT_MEMO_TOOLTIP_DELAY: "备注弹窗显示延迟（ms）",
-    SETTINGS_EXTRACT_MEMO_TOOLTIP_DELAY_DESC:
-        "鼠标悬停多久后显示摘录备注弹窗。设为 0 则立即显示。",
+    SETTINGS_EXTRACT_MEMO_TOOLTIP_DELAY_DESC: "鼠标悬停多久后显示摘录备注弹窗。设为 0 则立即显示。",
     SETTINGS_MAX_NEW_EXTRACTS: "每日新摘录上限",
     SETTINGS_MAX_NEW_EXTRACTS_DESC: "每天最多引入多少条新创建的摘录。",
     SETTINGS_MAX_EXTRACT_REVIEWS: "每日摘录复习上限",

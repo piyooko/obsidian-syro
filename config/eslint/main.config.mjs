@@ -1,4 +1,5 @@
 import js from "@eslint/js";
+import obsidianmd from "eslint-plugin-obsidianmd";
 import tseslint from "typescript-eslint";
 
 const sharedGlobals = {
@@ -6,8 +7,11 @@ const sharedGlobals = {
     cancelAnimationFrame: "readonly",
     clearTimeout: "readonly",
     console: "readonly",
+    createDiv: "readonly",
     createEl: "readonly",
     createFragment: "readonly",
+    createSpan: "readonly",
+    createSvg: "readonly",
     crypto: "readonly",
     document: "readonly",
     DOMParser: "readonly",
@@ -54,7 +58,14 @@ const sharedRules = {
 
 export default tseslint.config(
     {
-        ignores: ["build/**", "coverage/**", "docs/**", "node_modules/**", "plugin_test/**", "site/**"],
+        ignores: [
+            "build/**",
+            "coverage/**",
+            "docs/**",
+            "node_modules/**",
+            "plugin_test/**",
+            "site/**",
+        ],
     },
     js.configs.recommended,
     ...tseslint.configs.recommended,
@@ -65,8 +76,12 @@ export default tseslint.config(
             sourceType: "module",
             globals: sharedGlobals,
         },
+        plugins: {
+            obsidianmd,
+        },
         rules: {
             ...sharedRules,
+            "obsidianmd/commands/no-default-hotkeys": "error",
             "@typescript-eslint/no-unused-vars": [
                 "warn",
                 { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
@@ -100,6 +115,8 @@ export default tseslint.config(
         },
         rules: {
             ...sharedRules,
+            "@typescript-eslint/no-require-imports": "off",
+            "@typescript-eslint/no-unused-vars": "off",
         },
     },
     {

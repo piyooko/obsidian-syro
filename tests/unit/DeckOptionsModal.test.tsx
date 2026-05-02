@@ -4,10 +4,7 @@ import { join } from "path";
 import React, { act } from "react";
 import type SRPlugin from "src/main";
 import { cloneFsrsSettings, DEFAULT_SETTINGS } from "src/settings";
-import {
-    DeckOptionsModal,
-    getDeckOptionsModalAnchorRect,
-} from "src/ui/modals/DeckOptionsModal";
+import { DeckOptionsModal, getDeckOptionsModalAnchorRect } from "src/ui/modals/DeckOptionsModal";
 import { t } from "src/lang/helpers";
 
 jest.mock("obsidian");
@@ -95,7 +92,7 @@ describe("DeckOptionsModal", () => {
         expect(modal.modalEl.classList.contains("sr-deck-options-modal-shell")).toBe(false);
     });
 
-    it("positions the modal around the deck tree anchor when an anchor rect is provided", () => {
+    it("uses the deck tree anchor width for horizontal positioning and centers vertically in the viewport", () => {
         Object.defineProperty(window, "innerWidth", {
             configurable: true,
             value: 1600,
@@ -120,15 +117,40 @@ describe("DeckOptionsModal", () => {
 
         act(() => modal.open());
 
-        expect(
-            modal.modalEl.classList.contains("sr-deck-options-modal-shell--anchored"),
-        ).toBe(true);
-        expect(modal.modalEl.style.getPropertyValue("--sr-deck-options-modal-left")).toBe(
-            "670px",
+        expect(modal.modalEl.classList.contains("sr-deck-options-modal-shell--anchored")).toBe(
+            true,
         );
-        expect(modal.modalEl.style.getPropertyValue("--sr-deck-options-modal-top")).toBe(
-            "470px",
-        );
+        expect(modal.modalEl.style.getPropertyValue("--sr-deck-options-modal-left")).toBe("670px");
+        expect(modal.modalEl.style.getPropertyValue("--sr-deck-options-modal-top")).toBe("500px");
+    });
+
+    it("does not move the modal toward the top when the deck tree anchor is short", () => {
+        Object.defineProperty(window, "innerWidth", {
+            configurable: true,
+            value: 1600,
+        });
+        Object.defineProperty(window, "innerHeight", {
+            configurable: true,
+            value: 1000,
+        });
+
+        const plugin = createPlugin();
+        const modal = new DeckOptionsModal(plugin.app, {
+            plugin,
+            deckName: "Spanish",
+            deckPath: "Spanish",
+            anchorRect: {
+                left: 320,
+                top: 120,
+                width: 700,
+                height: 110,
+            },
+        });
+
+        act(() => modal.open());
+
+        expect(modal.modalEl.style.getPropertyValue("--sr-deck-options-modal-left")).toBe("670px");
+        expect(modal.modalEl.style.getPropertyValue("--sr-deck-options-modal-top")).toBe("500px");
     });
 
     it("adds and removes a deck tree backdrop when anchored", () => {
@@ -147,22 +169,12 @@ describe("DeckOptionsModal", () => {
 
         act(() => modal.open());
 
-        const backdrop = document.querySelector<HTMLElement>(
-            ".sr-deck-options-anchor-backdrop",
-        );
+        const backdrop = document.querySelector<HTMLElement>(".sr-deck-options-anchor-backdrop");
         expect(backdrop).not.toBeNull();
-        expect(backdrop?.style.getPropertyValue("--sr-deck-options-anchor-left")).toBe(
-            "320px",
-        );
-        expect(backdrop?.style.getPropertyValue("--sr-deck-options-anchor-top")).toBe(
-            "120px",
-        );
-        expect(backdrop?.style.getPropertyValue("--sr-deck-options-anchor-width")).toBe(
-            "700px",
-        );
-        expect(backdrop?.style.getPropertyValue("--sr-deck-options-anchor-height")).toBe(
-            "700px",
-        );
+        expect(backdrop?.style.getPropertyValue("--sr-deck-options-anchor-left")).toBe("320px");
+        expect(backdrop?.style.getPropertyValue("--sr-deck-options-anchor-top")).toBe("120px");
+        expect(backdrop?.style.getPropertyValue("--sr-deck-options-anchor-width")).toBe("700px");
+        expect(backdrop?.style.getPropertyValue("--sr-deck-options-anchor-height")).toBe("700px");
 
         act(() => modal.close());
 
@@ -170,10 +182,7 @@ describe("DeckOptionsModal", () => {
     });
 
     it("keeps the deck tree backdrop below the anchored deck options modal", () => {
-        const css = readFileSync(
-            join(process.cwd(), "src/ui/styles/settings-panel.css"),
-            "utf8",
-        );
+        const css = readFileSync(join(process.cwd(), "src/ui/styles/settings-panel.css"), "utf8");
 
         expect(css).toMatch(
             /\.modal\.sr-deck-options-modal-shell\.sr-deck-options-modal-shell--anchored[\s\S]*z-index:\s*calc\(var\(--layer-modal,\s*50\)\s*\+\s*2\)/,
@@ -228,10 +237,7 @@ describe("DeckOptionsModal", () => {
     });
 
     it("connects deck options modal and buttons to the deck tree square-corner style setting", () => {
-        const css = readFileSync(
-            join(process.cwd(), "src/ui/styles/settings-panel.css"),
-            "utf8",
-        );
+        const css = readFileSync(join(process.cwd(), "src/ui/styles/settings-panel.css"), "utf8");
 
         expect(css).toContain(
             "body.syro-desktop-deck-tree-square-corners .modal.sr-deck-options-modal-shell",

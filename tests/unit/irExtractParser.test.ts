@@ -41,11 +41,7 @@ describe("irExtractParser", () => {
     });
 
     test("does not close an outer extract at a cloze close marker", () => {
-        const text = [
-            "{{ir::outer {{ir::inner}}",
-            "with {{c1::cloze}} text",
-            "}}",
-        ].join("\n");
+        const text = ["{{ir::outer {{ir::inner}}", "with {{c1::cloze}} text", "}}"].join("\n");
         const matches = parseIrExtracts(text);
 
         expect(matches.map((match) => match.rawMarkdown)).toEqual([
@@ -81,28 +77,38 @@ describe("irExtractParser", () => {
     test("allows selections that contain complete existing IR wrappers", () => {
         const text = "before {{ir::one}} after";
 
-        expect(selectionContainsIrExtractBoundarySyntax(text, text.indexOf("{{ir::"), text.indexOf(" after"))).toBe(
-            false,
-        );
+        expect(
+            selectionContainsIrExtractBoundarySyntax(
+                text,
+                text.indexOf("{{ir::"),
+                text.indexOf(" after"),
+            ),
+        ).toBe(false);
     });
 
     test("blocks selections that contain only a partial IR boundary", () => {
         const text = "before {{ir::one}} after";
 
-        expect(selectionContainsIrExtractBoundarySyntax(text, text.indexOf("one"), text.indexOf(" after"))).toBe(
-            true,
-        );
         expect(
-            selectionContainsIrExtractBoundarySyntax(text, text.indexOf("{{ir::"), text.indexOf("one") + 1),
+            selectionContainsIrExtractBoundarySyntax(
+                text,
+                text.indexOf("one"),
+                text.indexOf(" after"),
+            ),
+        ).toBe(true);
+        expect(
+            selectionContainsIrExtractBoundarySyntax(
+                text,
+                text.indexOf("{{ir::"),
+                text.indexOf("one") + 1,
+            ),
         ).toBe(true);
     });
 
     test("wraps only the selected inner text when selecting inside an existing extract", () => {
-        const text = [
-            "4. {{ir::**Step four**",
-            "    * first item",
-            "    * second item}}",
-        ].join("\n");
+        const text = ["4. {{ir::**Step four**", "    * first item", "    * second item}}"].join(
+            "\n",
+        );
         const from = text.indexOf("first item");
         const to = from + "first item".length;
         const wrapped = wrapSelectionAsExtract(text, from, to);

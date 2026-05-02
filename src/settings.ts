@@ -135,7 +135,11 @@ export function normalizeAutoExtractRule(value: unknown, pathHint = ""): AutoExt
     const legacyHeadingLevel = normalizeAutoExtractHeadingLevel(value.headingLevel);
     const headingLevels =
         normalizedHeadingLevels ??
-        (legacyHeadingLevel !== undefined ? [legacyHeadingLevel] : enabled && !allHeadingLevels ? [1] : []);
+        (legacyHeadingLevel !== undefined
+            ? [legacyHeadingLevel]
+            : enabled && !allHeadingLevels
+              ? [1]
+              : []);
     const normalized: AutoExtractRule = {
         sourcePath,
         rule: ruleKind,
@@ -599,9 +603,7 @@ function sortDeckOptionsPresets(
         .filter((preset) => preset.uuid !== DEFAULT_DECK_OPTIONS_PRESET_UUID)
         .sort((left, right) => {
             const createdAtCompare = left.createdAt.localeCompare(right.createdAt);
-            return createdAtCompare !== 0
-                ? createdAtCompare
-                : left.uuid.localeCompare(right.uuid);
+            return createdAtCompare !== 0 ? createdAtCompare : left.uuid.localeCompare(right.uuid);
         });
 
     return [
@@ -907,7 +909,9 @@ export function resolveDeckOptionsPreset(
     );
     const presetIndex = findDeckOptionsPresetIndexByUuid(presets, presetUuid);
 
-    return cloneDeckOptionsPreset(presets[presetIndex] ?? presets[0] ?? createDefaultDeckOptionsPreset());
+    return cloneDeckOptionsPreset(
+        presets[presetIndex] ?? presets[0] ?? createDefaultDeckOptionsPreset(),
+    );
 }
 
 export function resolveDeckFsrsSettings(

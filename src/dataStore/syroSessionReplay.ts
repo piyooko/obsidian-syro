@@ -103,9 +103,7 @@ type ReplayDependencies = {
         deviceId: string,
     ) => Promise<ParsedTrackedCardsStoreSnapshots | null>;
     loadRemoteNotesSnapshots?: (deviceId: string) => Promise<ParsedNoteReviewStoreSnapshots | null>;
-    loadRemoteExtractsSnapshots?: (
-        deviceId: string,
-    ) => Promise<ParsedExtractStoreSnapshots | null>;
+    loadRemoteExtractsSnapshots?: (deviceId: string) => Promise<ParsedExtractStoreSnapshots | null>;
     collectAliasGroups?: (
         domain: "cards" | "notes" | "extracts",
         groups: SyroUuidAliasGroup[],
@@ -1181,9 +1179,7 @@ export async function replaySyroSessionRecords(
         return changed;
     };
 
-    const resolveExtractSnapshot = (
-        snapshot: ExtractSnapshot,
-    ): ReplayEntityResolution | null => {
+    const resolveExtractSnapshot = (snapshot: ExtractSnapshot): ReplayEntityResolution | null => {
         if (!extractStore) {
             return null;
         }
@@ -1909,10 +1905,7 @@ export async function replaySyroSessionRecords(
         const payload = parseFileIdentityPayload(record.payload);
         const fileUuid = parseFileIdentityUuidFromTarget(record.targetUuid) || payload?.uuid || "";
         const path =
-            payload?.newPath?.trim() ||
-            payload?.path?.trim() ||
-            record.pathHint?.trim() ||
-            "";
+            payload?.newPath?.trim() || payload?.path?.trim() || record.pathHint?.trim() || "";
         if (!fileUuid || !path) {
             continue;
         }

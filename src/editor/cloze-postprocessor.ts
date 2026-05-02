@@ -33,7 +33,7 @@ export const clozePostProcessor = (el: HTMLElement, _ctx: MarkdownPostProcessorC
             const hint = match[3];
 
             // Create span for cloze
-            const span = document.createElement("span");
+            const span = createSpan();
             span.className = "sr-cloze-highlight";
             span.textContent = content;
             if (hint) {

@@ -106,12 +106,17 @@ const LabelWithSupporter = ({ label, isLocked }: { label: string; isLocked: bool
     isLocked ? (
         <LabelWithBadge
             label={label}
-            badgeText={t("SETTINGS_SUPPORTER_BADGE")}
+            badgeText={getSupporterBadgeVisibleText()}
             badgeAriaLabel={t("SETTINGS_SUPPORTER_BADGE")}
         />
     ) : (
         <span>{label}</span>
     );
+
+function getSupporterBadgeVisibleText(): string {
+    const label = t("SETTINGS_SUPPORTER_BADGE");
+    return label === "Supporter feature" ? "Supporter" : label;
+}
 
 const LabelWithLab = ({ label }: { label: string }) => (
     <LabelWithBadge
@@ -371,7 +376,9 @@ function formatRelativeTimestamp(isoTime: string | null): string {
     const absSeconds = Math.abs(diffSeconds);
 
     if (absSeconds < 60) {
-        return normalizeRelativeTimestampSpacing(relativeTimeFormatter.format(diffSeconds, "second"));
+        return normalizeRelativeTimestampSpacing(
+            relativeTimeFormatter.format(diffSeconds, "second"),
+        );
     }
     if (absSeconds < 3600) {
         return normalizeRelativeTimestampSpacing(
@@ -536,14 +543,11 @@ const DeviceActionTooltip: React.FC<{
         const belowTop = rect.bottom + DEVICE_ACTION_TOOLTIP_GAP;
         const placeAbove =
             aboveTop >= DEVICE_ACTION_TOOLTIP_VIEWPORT_PADDING ||
-            belowTop + tooltipHeight >
-                window.innerHeight - DEVICE_ACTION_TOOLTIP_VIEWPORT_PADDING;
+            belowTop + tooltipHeight > window.innerHeight - DEVICE_ACTION_TOOLTIP_VIEWPORT_PADDING;
         const top = placeAbove
             ? Math.max(DEVICE_ACTION_TOOLTIP_VIEWPORT_PADDING, aboveTop)
             : Math.min(
-                  window.innerHeight -
-                      DEVICE_ACTION_TOOLTIP_VIEWPORT_PADDING -
-                      tooltipHeight,
+                  window.innerHeight - DEVICE_ACTION_TOOLTIP_VIEWPORT_PADDING - tooltipHeight,
                   belowTop,
               );
 
@@ -647,10 +651,7 @@ const IconActionButton: React.FC<{
             <button
                 ref={buttonRef}
                 type="button"
-                className={[
-                    "sr-device-action-button",
-                    destructive ? "is-destructive" : "",
-                ]
+                className={["sr-device-action-button", destructive ? "is-destructive" : ""]
                     .filter(Boolean)
                     .join(" ")}
                 onClick={handleClick}
@@ -691,7 +692,11 @@ const InfoTooltipIcon: React.FC<{ label: string }> = ({ label }) => {
     }, []);
 
     const handleFocus = useCallback(() => {
-        if (lastPointerTypeRef.current && lastPointerTypeRef.current !== "mouse" && shouldUseTapTooltips()) {
+        if (
+            lastPointerTypeRef.current &&
+            lastPointerTypeRef.current !== "mouse" &&
+            shouldUseTapTooltips()
+        ) {
             return;
         }
 
@@ -764,7 +769,11 @@ function TooltipBadge({
     }, []);
 
     const handleFocus = useCallback(() => {
-        if (lastPointerTypeRef.current && lastPointerTypeRef.current !== "mouse" && shouldUseTapTooltips()) {
+        if (
+            lastPointerTypeRef.current &&
+            lastPointerTypeRef.current !== "mouse" &&
+            shouldUseTapTooltips()
+        ) {
             return;
         }
 
@@ -806,13 +815,7 @@ function TooltipBadge({
     );
 }
 
-const LabelWithInfoTooltip = ({
-    label,
-    tooltip,
-}: {
-    label: React.ReactNode;
-    tooltip: string;
-}) => (
+const LabelWithInfoTooltip = ({ label, tooltip }: { label: React.ReactNode; tooltip: string }) => (
     <span className="sr-supporter-label-wrap">
         <span className="sr-supporter-label-text">{label}</span>
         <span className="sr-supporter-label-affix">
@@ -2269,7 +2272,7 @@ const SyncTab: React.FC<SyncTabProps> = ({
                                     disabled={actionKey === "open-recovery"}
                                     onClick={() =>
                                         void runDeviceManagementAction("open-recovery", () =>
-                                            onOpenRecovery?.()
+                                            onOpenRecovery?.(),
                                         )
                                     }
                                 >

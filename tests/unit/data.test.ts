@@ -72,7 +72,7 @@ function createStore(adapter: Record<string, unknown> = {}): DataStore {
     const store = new DataStore(DEFAULT_SETTINGS, "./");
     store.resetData();
     store.data.queues = Queue.create(store.data.queues as any);
-        return store;
+    return store;
 }
 
 describe("DataStore algorithm binding", () => {
@@ -163,13 +163,11 @@ describe("DataStore algorithm binding", () => {
             expect(reloadedItem).not.toBeNull();
             expect(reloadedItem?.nextReview).toBe(0);
             expect(reloadedItem?.queue).toBe(CardQueue.New);
-            expect(
-                ((reloadedItem?.data as { due?: Date })?.due ?? new Date(0)).toISOString(),
-            ).toBe(originalDue);
+            expect(((reloadedItem?.data as { due?: Date })?.due ?? new Date(0)).toISOString()).toBe(
+                originalDue,
+            );
 
-            const saved = JSON.parse(
-                files.get(normalizePath(reloadedStore.dataPath)) ?? "{}",
-            ) as {
+            const saved = JSON.parse(files.get(normalizePath(reloadedStore.dataPath)) ?? "{}") as {
                 items?: Array<{ ID: number; data?: { due?: string } }>;
             };
             const savedItem = saved.items?.find((entry) => entry.ID === trackedItem.reviewId);
@@ -282,7 +280,10 @@ describe("DataStore algorithm binding", () => {
                 expect.objectContaining({
                     oldPath: "folder/one.md",
                     newPath: "archive/one.md",
-                    file: expect.objectContaining({ uuid: originalOne.uuid, path: "archive/one.md" }),
+                    file: expect.objectContaining({
+                        uuid: originalOne.uuid,
+                        path: "archive/one.md",
+                    }),
                 }),
                 expect.objectContaining({
                     oldPath: "folder/sub/two.md",

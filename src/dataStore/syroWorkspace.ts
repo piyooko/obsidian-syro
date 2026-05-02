@@ -3,7 +3,10 @@ import { NOTE_CACHE_VERSION } from "src/cache/noteCacheStore";
 import { createDefaultSrsData } from "./data";
 import { createDeckOptionsStoreSnapshot } from "./deckOptionsStore";
 import type { PendingOverlayStore } from "./pendingOverlayStore";
-import { createDefaultFileIdentityStoreFile, parseFileIdentityStoreFile } from "./syroFileIdentityStore";
+import {
+    createDefaultFileIdentityStoreFile,
+    parseFileIdentityStoreFile,
+} from "./syroFileIdentityStore";
 import {
     createDefaultDailyState,
     createDefaultDeviceState,
@@ -13,10 +16,7 @@ import {
     normalizeDeviceReviewCount,
     parseDailyState,
 } from "./syroPluginDataStore";
-import {
-    listLegacy011SourceFiles,
-    migrateLegacy011WorkspaceFiles,
-} from "./syroLegacy011Migration";
+import { listLegacy011SourceFiles, migrateLegacy011WorkspaceFiles } from "./syroLegacy011Migration";
 import type { SRSettings } from "src/settings";
 import {
     getArrayProp,
@@ -1001,7 +1001,9 @@ export class SyroWorkspace {
         }
 
         await this.removeDirectoryRecursive(validEntry.deviceRoot);
-        await this.removeDirectoryRecursive(this.getSessionDirectoryPath(validEntry.deviceFolderName));
+        await this.removeDirectoryRecursive(
+            this.getSessionDirectoryPath(validEntry.deviceFolderName),
+        );
     }
 
     async deleteInvalidDeviceDirectory(deviceFolderName: string): Promise<void> {
@@ -1396,7 +1398,9 @@ export class SyroWorkspace {
         }
 
         try {
-            const parsed = parseDailyState(parseJsonUnknown(await this.adapter.read(dailyStatePath)));
+            const parsed = parseDailyState(
+                parseJsonUnknown(await this.adapter.read(dailyStatePath)),
+            );
             return normalizeDeviceReviewCount(parsed?.deviceReviewCount);
         } catch {
             return 0;
@@ -1766,11 +1770,7 @@ export class SyroWorkspace {
         };
     }
 
-    private async writeJsonIfMissing(
-        path: string,
-        value: unknown,
-        reason: string,
-    ): Promise<void> {
+    private async writeJsonIfMissing(path: string, value: unknown, reason: string): Promise<void> {
         if (await this.adapter.exists(path)) {
             return;
         }

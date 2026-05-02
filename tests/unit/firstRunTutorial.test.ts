@@ -1,7 +1,6 @@
 describe("first run tutorial", () => {
     test("returns English tutorial for English and other non-Chinese locales", () => {
         jest.isolateModules(() => {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const { getFirstRunTutorial } = require("src/firstRunTutorial");
 
             expect(getFirstRunTutorial("en")).toMatchObject({
@@ -18,7 +17,6 @@ describe("first run tutorial", () => {
 
     test("returns Simplified Chinese tutorial for zh aliases", () => {
         jest.isolateModules(() => {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const { getFirstRunTutorial } = require("src/firstRunTutorial");
 
             expect(getFirstRunTutorial("zh-cn")).toMatchObject({
@@ -31,11 +29,9 @@ describe("first run tutorial", () => {
 
     test("default locale resolves through moment.locale()", () => {
         jest.isolateModules(() => {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const { moment } = require("obsidian");
             const mockLocale = moment.locale as jest.MockedFunction<() => string>;
             mockLocale.mockImplementation(() => "zh-hk");
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const { getFirstRunTutorial } = require("src/firstRunTutorial");
 
             expect(getFirstRunTutorial().path).toBe("Syro 侧边栏复习教程.md");

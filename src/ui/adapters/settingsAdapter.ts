@@ -296,8 +296,7 @@ export function mergeUIStateToSettings(
         merged.timelineAutoCommitReviewSelection = uiChanges.timelineAutoCommitReviewSelection;
     if (uiChanges.timelineEnableDurationPrefixSyntax !== undefined)
         merged.timelineEnableDurationPrefixSyntax = uiChanges.timelineEnableDurationPrefixSyntax;
-    if (uiChanges.enableExtracts !== undefined)
-        merged.enableExtracts = uiChanges.enableExtracts;
+    if (uiChanges.enableExtracts !== undefined) merged.enableExtracts = uiChanges.enableExtracts;
     if (uiChanges.enableAutoExtracts !== undefined)
         merged.enableAutoExtracts = uiChanges.enableAutoExtracts;
     if (uiChanges.showExtractMemoTooltip !== undefined)

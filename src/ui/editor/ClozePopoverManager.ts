@@ -64,7 +64,7 @@ export class ClozePopoverManager {
 
     open() {
         // 创建容器
-        this.container = document.createElement("div");
+        this.container = createDiv();
         this.container.className = "sr-cloze-popover-container";
         document.body.appendChild(this.container);
 

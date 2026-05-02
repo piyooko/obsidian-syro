@@ -1420,7 +1420,8 @@ body.sr-timeline-resize-active {
 .sr-quote-block {
     margin: 0;
     padding-left: 6px;
-    border-left: 3px solid var(--background-modifier-border, var(--background-modifier-border-hover));
+    border-left: 3px solid
+        var(--background-modifier-border, var(--background-modifier-border-hover));
     border-radius: 2px;
     font-size: 13px;
     color: var(--text-muted);

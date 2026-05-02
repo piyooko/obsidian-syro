@@ -77,8 +77,7 @@ const priorityCheckRules = [
 
 function runTool(label, args, allowFailure = false) {
     const command = process.platform === "win32" ? "cmd.exe" : "pnpm";
-    const commandArgs =
-        process.platform === "win32" ? ["/d", "/s", "/c", "pnpm", ...args] : args;
+    const commandArgs = process.platform === "win32" ? ["/d", "/s", "/c", "pnpm", ...args] : args;
     const result = spawnSync(command, commandArgs, {
         cwd: rootDir,
         encoding: "utf8",
@@ -108,7 +107,8 @@ function parseJsonOutput(result) {
 
 function parseTscDiagnostics(output) {
     const diagnostics = [];
-    const pattern = /^(?<file>.+)\((?<line>\d+),(?<col>\d+)\): error TS(?<code>\d+): (?<message>.+)$/;
+    const pattern =
+        /^(?<file>.+)\((?<line>\d+),(?<col>\d+)\): error TS(?<code>\d+): (?<message>.+)$/;
 
     for (const line of output.split(/\r?\n/)) {
         const match = line.match(pattern);
@@ -393,17 +393,44 @@ ${priorityChecks.length > 0 ? priorityChecks.join("\n") : "_None_"}
 function main() {
     const prodResult = runTool(
         "knip-production",
-        ["exec", "knip", "--config", "config/knip/knip.prod.json", "--production", "--reporter", "json", "--no-config-hints", "--no-exit-code"],
+        [
+            "exec",
+            "knip",
+            "--config",
+            "config/knip/knip.prod.json",
+            "--production",
+            "--reporter",
+            "json",
+            "--no-config-hints",
+            "--no-exit-code",
+        ],
         true,
     );
     const repoResult = runTool(
         "knip-repo",
-        ["exec", "knip", "--config", "config/knip/knip.repo.json", "--reporter", "json", "--no-config-hints", "--no-exit-code"],
+        [
+            "exec",
+            "knip",
+            "--config",
+            "config/knip/knip.repo.json",
+            "--reporter",
+            "json",
+            "--no-config-hints",
+            "--no-exit-code",
+        ],
         true,
     );
     const tscResult = runTool(
         "tsc-src-unused",
-        ["exec", "tsc", "--project", "config/ts/tsconfig.audit.json", "--pretty", "false", "--noEmit"],
+        [
+            "exec",
+            "tsc",
+            "--project",
+            "config/ts/tsconfig.audit.json",
+            "--pretty",
+            "false",
+            "--noEmit",
+        ],
         true,
     );
 
@@ -414,6 +441,14 @@ function main() {
 
     mkdirSync(path.dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, report, "utf8");
+    runTool("format-deadcode-report", [
+        "exec",
+        "prettier",
+        "--config",
+        "config/prettier/prettier.config.json",
+        "--write",
+        outputPath,
+    ]);
 
     process.stdout.write(`Wrote dead code audit report to ${outputPath}\n`);
     process.stdout.write(

@@ -129,7 +129,11 @@ function compactAutoExtractMarkdown(rawMarkdown: string): string {
 function compactSourceAnchor<T extends Partial<ExtractSourceAnchor> | IrExtractAnchor>(
     anchor: T,
 ): Omit<T, "prefix" | "suffix"> {
-    const { prefix: _prefix, suffix: _suffix, ...compactAnchor } = anchor as T & {
+    const {
+        prefix: _prefix,
+        suffix: _suffix,
+        ...compactAnchor
+    } = anchor as T & {
         prefix?: unknown;
         suffix?: unknown;
     };
@@ -195,8 +199,8 @@ function applyRepetitionItemState(target: ExtractItem, source: RepetitionItem): 
     target.data = {
         currentInterval:
             typeof (source.data as { currentInterval?: unknown })?.currentInterval === "number"
-                ? ((source.data as { currentInterval: number }).currentInterval)
-                : target.data?.currentInterval ?? 1,
+                ? (source.data as { currentInterval: number }).currentInterval
+                : (target.data?.currentInterval ?? 1),
     };
     target.updatedAt = Date.now();
 }
@@ -272,7 +276,8 @@ function mergeExtractItemState(canonical: ExtractItem, incoming: ExtractItem): E
     merged.sliceRule = incoming.sliceRule;
     merged.autoSliceKey = incoming.autoSliceKey ?? canonical.autoSliceKey;
     merged.priority =
-        incoming.priority !== DEFAULT_EXTRACT_PRIORITY || canonical.priority === DEFAULT_EXTRACT_PRIORITY
+        incoming.priority !== DEFAULT_EXTRACT_PRIORITY ||
+        canonical.priority === DEFAULT_EXTRACT_PRIORITY
             ? incoming.priority
             : canonical.priority;
     if (incoming.timesReviewed >= canonical.timesReviewed) {
@@ -292,10 +297,8 @@ function mergeExtractItemState(canonical: ExtractItem, incoming: ExtractItem): E
         canonical.stage === "graduated" || incoming.stage === "graduated" ? "graduated" : "active";
     merged.parentUuid = incoming.parentUuid ?? canonical.parentUuid;
     merged.createdAt = Math.min(canonical.createdAt, incoming.createdAt);
-    merged.timelineCreatedAt = Math.max(
-        canonical.timelineCreatedAt ?? 0,
-        incoming.timelineCreatedAt ?? 0,
-    ) || undefined;
+    merged.timelineCreatedAt =
+        Math.max(canonical.timelineCreatedAt ?? 0, incoming.timelineCreatedAt ?? 0) || undefined;
     merged.updatedAt = Math.max(canonical.updatedAt, incoming.updatedAt);
     merged.graduatedAt =
         Math.max(canonical.graduatedAt ?? 0, incoming.graduatedAt ?? 0) || undefined;
@@ -420,7 +423,11 @@ export class ExtractStore {
             }
 
             const parsed = parseJsonUnknown(raw) as ExtractStoreFile | null;
-            if (!parsed || parsed.version !== EXTRACT_STORE_VERSION || typeof parsed.items !== "object") {
+            if (
+                !parsed ||
+                parsed.version !== EXTRACT_STORE_VERSION ||
+                typeof parsed.items !== "object"
+            ) {
                 this.lastLoadError = "[SR-Extract] Invalid extracts.json schema.";
                 this.items = {};
                 this.nextItemId = 1;
@@ -476,7 +483,7 @@ export class ExtractStore {
     get(uuid: string | null | undefined): ExtractItem | null {
         if (!uuid) return null;
         const canonical = this.findCanonicalUuid(uuid);
-        return canonical ? this.items[canonical] ?? null : null;
+        return canonical ? (this.items[canonical] ?? null) : null;
     }
 
     getSnapshot(uuid: string | null | undefined): ExtractSnapshot | null {
@@ -533,7 +540,11 @@ export class ExtractStore {
         return [...item.aliases];
     }
 
-    assignCanonicalUuid(uuid: string, canonicalUuid: string, extraAliases: readonly string[] = []): boolean {
+    assignCanonicalUuid(
+        uuid: string,
+        canonicalUuid: string,
+        extraAliases: readonly string[] = [],
+    ): boolean {
         const currentUuid = this.findCanonicalUuid(uuid);
         if (!currentUuid || !canonicalUuid.trim()) {
             return false;
@@ -543,7 +554,9 @@ export class ExtractStore {
             item.uuid,
             ...extraAliases,
         ]);
-        const changed = item.uuid !== canonicalUuid || JSON.stringify(item.aliases) !== JSON.stringify(nextAliases);
+        const changed =
+            item.uuid !== canonicalUuid ||
+            JSON.stringify(item.aliases) !== JSON.stringify(nextAliases);
         if (!changed) {
             return false;
         }
@@ -593,8 +606,7 @@ export class ExtractStore {
         return (
             candidates.find(
                 (item) =>
-                    item.sourceAnchor.start === match.start &&
-                    item.sourceAnchor.end === match.end,
+                    item.sourceAnchor.start === match.start && item.sourceAnchor.end === match.end,
             ) ??
             candidates.find((item) => {
                 const cached = cachedLocatorFor(item);
@@ -627,7 +639,7 @@ export class ExtractStore {
                     item.sourceAnchor.contentHash === match.anchor.contentHash,
             ) ??
             (candidates.filter((item) => item.rawMarkdown === match.rawMarkdown).length === 1
-                ? candidates.find((item) => item.rawMarkdown === match.rawMarkdown) ?? null
+                ? (candidates.find((item) => item.rawMarkdown === match.rawMarkdown) ?? null)
                 : null)
         );
     }
@@ -657,10 +669,10 @@ export class ExtractStore {
             (candidates.filter(
                 (item) => item.sliceRule === slice.rule && item.rawMarkdown === slice.titleMarkdown,
             ).length === 1
-                ? candidates.find(
+                ? (candidates.find(
                       (item) =>
                           item.sliceRule === slice.rule && item.rawMarkdown === slice.titleMarkdown,
-                  ) ?? null
+                  ) ?? null)
                 : null)
         );
     }
@@ -803,7 +815,12 @@ export class ExtractStore {
         text: string,
         deckName: string = DEFAULT_DECKNAME,
         rule: AutoExtractRule,
-    ): { added: ExtractItem[]; updated: ExtractItem[]; graduated: ExtractItem[]; removed: ExtractItem[] } {
+    ): {
+        added: ExtractItem[];
+        updated: ExtractItem[];
+        graduated: ExtractItem[];
+        removed: ExtractItem[];
+    } {
         const sourcePath = normalizePath(path);
         const now = Date.now();
         const slices = buildAutoExtractSlices(text, rule);
@@ -1052,12 +1069,17 @@ export class ExtractStore {
         };
         const due = activeItems
             .filter((item) => item.timesReviewed > 0 && item.nextReview <= now)
-            .sort((left, right) => left.priority - right.priority || left.nextReview - right.nextReview)
+            .sort(
+                (left, right) =>
+                    left.priority - right.priority || left.nextReview - right.nextReview,
+            )
             .filter(() => takeWithinDailyLimit("due"))
             .slice(0, Math.max(0, limits?.maxDue ?? Number.POSITIVE_INFINITY));
         const fresh = activeItems
             .filter((item) => item.timesReviewed === 0 || item.nextReview === 0)
-            .sort((left, right) => left.priority - right.priority || left.createdAt - right.createdAt)
+            .sort(
+                (left, right) => left.priority - right.priority || left.createdAt - right.createdAt,
+            )
             .filter(() => takeWithinDailyLimit("new"))
             .slice(0, Math.max(0, limits?.maxNew ?? Number.POSITIVE_INFINITY));
         return [...due, ...fresh]
@@ -1081,7 +1103,9 @@ export class ExtractStore {
             resolveDeckName,
             canReviewExtract,
         );
-        const newCount = candidates.filter((item) => item.timesReviewed === 0 || item.nextReview === 0).length;
+        const newCount = candidates.filter(
+            (item) => item.timesReviewed === 0 || item.nextReview === 0,
+        ).length;
         const dueCount = candidates.length - newCount;
         return {
             newCount,
@@ -1142,7 +1166,9 @@ export class ExtractStore {
         return snapshots;
     }
 
-    repairDuplicateExtractsByPathAliases(pathAliasGroups: readonly (readonly string[])[]): ExtractSnapshot[] {
+    repairDuplicateExtractsByPathAliases(
+        pathAliasGroups: readonly (readonly string[])[],
+    ): ExtractSnapshot[] {
         const snapshots: ExtractSnapshot[] = [];
         for (const rawGroup of pathAliasGroups) {
             const paths = rawGroup
@@ -1209,6 +1235,31 @@ export class ExtractStore {
             delete this.items[incoming.uuid];
             this.items[merged.uuid] = merged;
             this.nextItemId = Math.max(this.nextItemId, merged.id + 1, incoming.id + 1);
+            return;
+        }
+        incoming.aliases = normalizeUuidAliases(incoming.uuid, incoming.aliases);
+        this.items[incoming.uuid] = incoming;
+        this.nextItemId = Math.max(this.nextItemId, incoming.id + 1);
+    }
+
+    restoreSnapshot(snapshot: ExtractSnapshot): void {
+        const incoming = normalizeExtractItem(snapshot.item);
+        if (!incoming) {
+            return;
+        }
+        const canonicalUuid = this.findCanonicalUuid(incoming.uuid);
+        const existing = canonicalUuid ? this.items[canonicalUuid] : null;
+        if (existing) {
+            const restored = cloneItem(incoming);
+            restored.uuid = existing.uuid;
+            restored.aliases = mergeEquivalentUuids(existing.uuid, existing.aliases, [
+                incoming.uuid,
+                ...(incoming.aliases ?? []),
+            ]);
+            delete this.items[existing.uuid];
+            delete this.items[incoming.uuid];
+            this.items[restored.uuid] = restored;
+            this.nextItemId = Math.max(this.nextItemId, restored.id + 1, incoming.id + 1);
             return;
         }
         incoming.aliases = normalizeUuidAliases(incoming.uuid, incoming.aliases);

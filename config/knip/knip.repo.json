@@ -7,13 +7,19 @@
         "config/eslint/review.config.mjs",
         "config/jest/jest.config.js",
         "config/css/postcss.config.js",
-        "config/css/tailwind.config.js"
+        "config/css/tailwind.config.js",
+        "config/knip/retained-repo-exports.ts",
+        "config/knip/retained-repo-scripts.cjs",
+        "scripts/audit-card-due-counts.mjs",
+        "src/knip-retained-prod-exports.ts!",
+        "src/declarations.d.ts!",
+        "src/types/assets.d.ts!"
     ],
     "project": [
         "src/**/*.{ts,tsx}!",
         "tests/**/*.{js,ts,tsx}",
         "scripts/**/*.{js,cjs,mjs}",
-        "config/**/*.{js,cjs,mjs}",
+        "config/**/*.{js,cjs,mjs,ts}",
         "config/**/*.{json}"
     ],
     "ignore": [
@@ -35,8 +41,30 @@
         "src/ui/components/CardDebugModal.tsx",
         "src/ui/components/CardEditorView.tsx",
         "src/ui/components/DeckTree.tsx",
+        "src/ui/components/ExtractContextEditorView.tsx",
         "src/ui/components/LinearCard.tsx",
         "src/ui/components/NoteReviewSidebar.tsx",
-        "src/ui/containers/ReviewSession.tsx"
+        "src/ui/containers/ReviewSession.tsx",
+        "src/constants.ts",
+        "src/dataStore/data.ts",
+        "src/dataStore/dataLocation.ts",
+        "src/dataStore/pendingOverlayStore.ts",
+        "src/dataStore/queue.ts",
+        "src/dataStore/syroPluginDataStore.ts",
+        "src/dataStore/syroUuidAlias.ts",
+        "src/dataStore/syroWorkspace.ts",
+        "src/dataStore/trackedFile.ts",
+        "src/scheduling.ts",
+        "src/settings.ts",
+        "src/ui/components/common/SettingsComponents.tsx",
+        "src/util/cloze-review-context.ts",
+        "src/util/irExtractParser.ts",
+        "src/util/safeHtml.ts",
+        "src/util/typeGuards.ts",
+        "src/util/utils.ts",
+        "src/util/utils_recall.ts",
+        "scripts/check-i18n-core.cjs",
+        "scripts/detect-mojibake-core.cjs",
+        "tests/unit/helpers/DateProviderTestUtils.ts"
     ]
 }

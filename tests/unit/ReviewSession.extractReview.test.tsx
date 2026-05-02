@@ -241,17 +241,21 @@ function createPlugin(
         updateExtractContextMarkdown: jest.fn(() => Promise.resolve(item)),
         getExtractReviewIntervals: jest.fn(() => intervals),
         getExtractReviewStats: jest.fn(() => ({
-            newCount: extractStore.list().filter(
-                (candidate) =>
-                    candidate.stage === "active" &&
-                    (candidate.timesReviewed === 0 || candidate.nextReview === 0),
-            ).length,
-            dueCount: extractStore.list().filter(
-                (candidate) =>
-                    candidate.stage === "active" &&
-                    candidate.timesReviewed > 0 &&
-                    candidate.nextReview !== 0,
-            ).length,
+            newCount: extractStore
+                .list()
+                .filter(
+                    (candidate) =>
+                        candidate.stage === "active" &&
+                        (candidate.timesReviewed === 0 || candidate.nextReview === 0),
+                ).length,
+            dueCount: extractStore
+                .list()
+                .filter(
+                    (candidate) =>
+                        candidate.stage === "active" &&
+                        candidate.timesReviewed > 0 &&
+                        candidate.nextReview !== 0,
+                ).length,
             totalCount: extractStore.list().filter((candidate) => candidate.stage === "active")
                 .length,
         })),
@@ -332,15 +336,18 @@ function renderExtractReviewSession(
 function getLiveHeaderNewCount(container: HTMLElement): number {
     const liveHeader = container.querySelector(".sr-card-header:not(.sr-card-header-measure)");
     const badges = Array.from(liveHeader?.querySelectorAll(".sr-stat-badge") ?? []);
-    const newBadge = badges.find((badge) => badge.querySelector(".sr-stat-label")?.textContent === "NEW");
+    const newBadge = badges.find(
+        (badge) => badge.querySelector(".sr-stat-label")?.textContent === "NEW",
+    );
     const count = newBadge?.querySelector(".sr-stat-count")?.textContent ?? "";
     return Number(count);
 }
 
 function findButton(container: HTMLElement, label: string): HTMLButtonElement {
-    const button = Array.from(container.querySelectorAll("button")).find((candidate) =>
-        candidate.textContent?.includes(label) ||
-        candidate.getAttribute("aria-label")?.includes(label),
+    const button = Array.from(container.querySelectorAll("button")).find(
+        (candidate) =>
+            candidate.textContent?.includes(label) ||
+            candidate.getAttribute("aria-label")?.includes(label),
     );
     if (!(button instanceof HTMLButtonElement)) {
         throw new Error(`Expected button with label ${label}`);
@@ -409,7 +416,9 @@ test("extract review highlights reviewed extracts with nextReview zero as new", 
     const context = createManualExtractContext(markdown, 7, 21);
     const plugin = createPlugin(
         item,
-        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+        jest
+            .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+            .mockResolvedValue(context),
     );
     const { container, root } = renderExtractReviewSession(plugin);
 
@@ -431,7 +440,9 @@ test("extract review displays and saves the active extract memo", async () => {
     const context = createManualExtractContext(markdown, 7, 21);
     const plugin = createPlugin(
         item,
-        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+        jest
+            .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+            .mockResolvedValue(context),
     );
     const { container, root } = renderExtractReviewSession(plugin);
 
@@ -469,7 +480,9 @@ test("extract review displays and saves the active extract priority from the dia
     const context = createManualExtractContext(markdown, 7, 21);
     const plugin = createPlugin(
         item,
-        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+        jest
+            .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+            .mockResolvedValue(context),
     );
     const { container, root } = renderExtractReviewSession(plugin);
 
@@ -510,7 +523,9 @@ test("extract review recalculates button intervals after changing extract priori
     const context = createManualExtractContext(markdown, 7, 21);
     const plugin = createPlugin(
         item,
-        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+        jest
+            .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+            .mockResolvedValue(context),
     );
     plugin.getExtractReviewIntervals = jest.fn((uuid: string) => {
         const priority = plugin.extractStore?.get(uuid)?.priority ?? 5;
@@ -557,7 +572,9 @@ test("extract review flushes pending memo before answering", async () => {
     const context = createManualExtractContext(markdown, 7, 21);
     const plugin = createPlugin(
         item,
-        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+        jest
+            .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+            .mockResolvedValue(context),
     );
     const reviewExtract = jest.fn(() => Promise.resolve(item));
     (plugin as SRPlugin & { reviewExtract: typeof reviewExtract }).reviewExtract = reviewExtract;
@@ -591,7 +608,9 @@ test("extract review keeps pending memo dirty after a failed autosave", async ()
     const context = createManualExtractContext(markdown, 7, 21);
     const plugin = createPlugin(
         item,
-        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+        jest
+            .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+            .mockResolvedValue(context),
     );
     const updateExtractMemo = plugin.updateExtractMemo as jest.MockedFunction<
         (uuid: string, memo: string) => Promise<ExtractItem | null>
@@ -646,7 +665,9 @@ test("sync-complete refreshes active extract review card counters without return
     const context = createManualExtractContext(markdown, 7, 21);
     const plugin = createPlugin(
         item,
-        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+        jest
+            .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+            .mockResolvedValue(context),
     );
     const rootDeck = new Deck("root", null);
     const extractDeck = new Deck("摘录测试", rootDeck);
@@ -699,7 +720,9 @@ test("sync-complete refresh keeps newly added cards out of counters after daily 
     const context = createManualExtractContext(markdown, 7, 21);
     const plugin = createPlugin(
         item,
-        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+        jest
+            .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+            .mockResolvedValue(context),
     );
     const rootDeck = new Deck("root", null);
     const extractDeck = new Deck("摘录测试", rootDeck);
@@ -753,7 +776,9 @@ test("inactive review leaf ignores global numeric review shortcuts", async () =>
     const context = createManualExtractContext(markdown, 7, 21);
     const plugin = createPlugin(
         item,
-        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+        jest
+            .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+            .mockResolvedValue(context),
     );
     const reviewExtract = jest.fn(() => Promise.resolve(item));
     (plugin as SRPlugin & { reviewExtract: typeof reviewExtract }).reviewExtract = reviewExtract;
@@ -761,9 +786,11 @@ test("inactive review leaf ignores global numeric review shortcuts", async () =>
     const hostLeaf = { id: "review-leaf" } as unknown as WorkspaceLeaf;
     const activeLeaf = { id: "note-leaf" } as unknown as WorkspaceLeaf;
     const getLeaf = jest.fn(() => hostLeaf);
-    (plugin.app as unknown as {
-        workspace: { activeLeaf: WorkspaceLeaf; getLeaf: (newLeaf?: false) => WorkspaceLeaf };
-    }).workspace = {
+    (
+        plugin.app as unknown as {
+            workspace: { activeLeaf: WorkspaceLeaf; getLeaf: (newLeaf?: false) => WorkspaceLeaf };
+        }
+    ).workspace = {
         activeLeaf,
         getLeaf,
     };
@@ -788,7 +815,11 @@ test("inactive review leaf ignores global numeric review shortcuts", async () =>
 });
 
 test("extract review does not highlight due when intervals are unavailable", async () => {
-    const item = createExtractItem({ stage: "graduated", timesReviewed: 1, nextReview: Date.now() - 1 });
+    const item = createExtractItem({
+        stage: "graduated",
+        timesReviewed: 1,
+        nextReview: Date.now() - 1,
+    });
     const plugin = createPlugin(
         item,
         jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(null),
@@ -813,7 +844,9 @@ test("extract-first queue mode keeps a reviewable extract ahead of the current f
     const context = createManualExtractContext(markdown, 7, 28);
     const plugin = createPlugin(
         item,
-        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(context),
+        jest
+            .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+            .mockResolvedValue(context),
         ["1d", "1d", "1d", "1d"],
         { reviewQueueMode: "extract-first" },
     );
@@ -838,9 +871,11 @@ test("flashcard-first queue mode keeps the current flashcard ahead of a reviewab
     const item = createExtractItem({ rawMarkdown: "extract second", priority: 1 });
     const plugin = createPlugin(
         item,
-        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(
-            createManualExtractContext("before {{ir::extract second}} after", 7, 29),
-        ),
+        jest
+            .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+            .mockResolvedValue(
+                createManualExtractContext("before {{ir::extract second}} after", 7, 29),
+            ),
         ["1d", "1d", "1d", "1d"],
         { reviewQueueMode: "flashcard-first" },
     );
@@ -865,9 +900,11 @@ test("flashcard-first queue mode does not show a learn-ahead card before a revie
     const item = createExtractItem({ rawMarkdown: "eligible extract", priority: 5 });
     const plugin = createPlugin(
         item,
-        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(
-            createManualExtractContext("before {{ir::eligible extract}} after", 7, 31),
-        ),
+        jest
+            .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+            .mockResolvedValue(
+                createManualExtractContext("before {{ir::eligible extract}} after", 7, 31),
+            ),
         ["1d", "1d", "1d", "1d"],
         { reviewQueueMode: "flashcard-first" },
     );
@@ -898,9 +935,11 @@ test("interleaved queue mode defaults to four flashcards before one extract", as
     const item = createExtractItem({ rawMarkdown: "after four cards" });
     const plugin = createPlugin(
         item,
-        jest.fn<Promise<ExtractReviewContext | null>, [string, string?]>().mockResolvedValue(
-            createManualExtractContext("before {{ir::after four cards}} after", 7, 31),
-        ),
+        jest
+            .fn<Promise<ExtractReviewContext | null>, [string, string?]>()
+            .mockResolvedValue(
+                createManualExtractContext("before {{ir::after four cards}} after", 7, 31),
+            ),
         ["1d", "1d", "1d", "1d"],
         { reviewQueueMode: "interleaved", interleaveFlashcardCount: 4 },
     );
@@ -1027,7 +1066,7 @@ test("extract committed graduate can be undone through store undo", async () => 
         ),
     );
     (plugin.undoExtractReviewAction as jest.Mock).mockImplementation((action) => {
-        plugin.extractStore?.upsertSnapshot(action.snapshot);
+        plugin.extractStore?.restoreSnapshot(action.snapshot);
         return Promise.resolve(action.snapshot.item);
     });
     const { container, root } = renderExtractReviewSession(plugin);

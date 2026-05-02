@@ -99,7 +99,8 @@ describe("TabViewManager", () => {
         });
 
         expect(existingLeaf.view.reloadSession).toHaveBeenCalledTimes(1);
-        const reloadedSession = (existingLeaf.view.reloadSession as jest.Mock).mock.calls[0]?.[0] as
+        const reloadedSession = (existingLeaf.view.reloadSession as jest.Mock).mock
+            .calls[0]?.[0] as
             | {
                   initialTargetDeckPath?: string;
               }

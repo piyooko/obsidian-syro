@@ -238,34 +238,34 @@ export class InlineTitleReviewButtonManager {
             throw new Error("Inline title parent is missing.");
         }
 
-        const wrapperEl = document.createElement("div");
+        const wrapperEl = createDiv();
         wrapperEl.className = ROW_CLASS;
         parentEl.insertBefore(wrapperEl, inlineTitleEl);
         wrapperEl.appendChild(inlineTitleEl);
 
-        const groupEl = document.createElement("div");
+        const groupEl = createDiv();
         groupEl.className = GROUP_CLASS;
 
-        const mainButtonEl = document.createElement("button");
+        const mainButtonEl = createEl("button");
         mainButtonEl.type = "button";
         mainButtonEl.className = MAIN_BUTTON_CLASS;
         mainButtonEl.disabled = true;
 
-        const mainIconEl = document.createElement("span");
+        const mainIconEl = createSpan();
         mainIconEl.className = "syro-inline-title-progress-icon";
         setIcon(mainIconEl, "SpacedRepIcon");
 
-        const countEl = document.createElement("span");
+        const countEl = createSpan();
         countEl.className = COUNT_CLASS;
         countEl.textContent = "0/0";
 
         mainButtonEl.append(mainIconEl, countEl);
 
-        const menuButtonEl = document.createElement("button");
+        const menuButtonEl = createEl("button");
         menuButtonEl.type = "button";
         menuButtonEl.className = MENU_BUTTON_CLASS;
 
-        const menuIconEl = document.createElement("span");
+        const menuIconEl = createSpan();
         menuIconEl.className = "syro-inline-title-progress-icon";
         setIcon(menuIconEl, "chevron-down");
         menuButtonEl.appendChild(menuIconEl);

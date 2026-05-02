@@ -38,13 +38,11 @@ export function buildSyroSessionCardFormalStateDigest(input: {
     path: string;
     trackedFileUuid: string;
     trackedFileAliases?: readonly string[] | null;
-    trackedItem?:
-        | {
-              fingerprint?: string | null;
-              lineNo?: number | null;
-              clozeId?: string | number | null;
-          }
-        | null;
+    trackedItem?: {
+        fingerprint?: string | null;
+        lineNo?: number | null;
+        clozeId?: string | number | null;
+    } | null;
     item: {
         aliases?: readonly string[] | null;
         queue: unknown;
@@ -59,8 +57,8 @@ export function buildSyroSessionCardFormalStateDigest(input: {
     return JSON.stringify({
         path: input.path,
         trackedFileUuid: input.trackedFileUuid,
-        trackedFileAliases: Array.from(new Set(input.trackedFileAliases ?? [])).sort((left, right) =>
-            left.localeCompare(right),
+        trackedFileAliases: Array.from(new Set(input.trackedFileAliases ?? [])).sort(
+            (left, right) => left.localeCompare(right),
         ),
         trackedItem: input.trackedItem
             ? {

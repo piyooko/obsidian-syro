@@ -82,7 +82,11 @@ function arraysEqual(left: readonly string[], right: readonly string[]): boolean
 
 export function parseNoteReviewStoreSnapshots(raw: string): ParsedNoteReviewStoreSnapshots | null {
     const parsed = parseJsonUnknown(raw) as NoteReviewStoreFile | null;
-    if (!parsed || parsed.version !== NOTE_REVIEW_STORE_VERSION || typeof parsed.items !== "object") {
+    if (
+        !parsed ||
+        parsed.version !== NOTE_REVIEW_STORE_VERSION ||
+        typeof parsed.items !== "object"
+    ) {
         return null;
     }
 
@@ -98,11 +102,7 @@ export function parseNoteReviewStoreSnapshots(raw: string): ParsedNoteReviewStor
         notes.push({
             path,
             source:
-                entry.source === "tag"
-                    ? "tag"
-                    : entry.source === "folder"
-                      ? "folder"
-                      : "manual",
+                entry.source === "tag" ? "tag" : entry.source === "folder" ? "folder" : "manual",
             deckName: entry.deckName ?? item.deckName ?? DEFAULT_DECKNAME,
             item,
         });
@@ -320,11 +320,10 @@ export class NoteReviewStore {
             return false;
         }
 
-        const nextAliases = mergeEquivalentUuids(
-            normalizedUuid,
-            entry.item.aliases,
-            [entry.item.uuid, ...extraAliases],
-        );
+        const nextAliases = mergeEquivalentUuids(normalizedUuid, entry.item.aliases, [
+            entry.item.uuid,
+            ...extraAliases,
+        ]);
         const changed =
             entry.item.uuid !== normalizedUuid || !arraysEqual(entry.item.aliases, nextAliases);
         entry.item.uuid = normalizedUuid;

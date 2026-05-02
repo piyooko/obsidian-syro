@@ -47,7 +47,7 @@ export class PriorityInputModal extends Modal {
             );
 
         // 显示当前选择的数值
-        const valueDisplay = contentEl.createEl("div", {
+        const valueDisplay = contentEl.createDiv({
             text: `${t("PRIORITY")}: ${this.priority}`,
             cls: "priority-value-display",
         });

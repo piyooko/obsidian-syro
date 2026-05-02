@@ -88,15 +88,9 @@ function mapExtractContextRanges(
     const safeRanges = normalizeExtractContextRangesForDoc(ranges, startDocLength);
     return normalizeExtractContextRangesForDoc(
         {
-            currentOuterFrom: transaction.changes.mapPos(
-                safeRanges.currentOuterFrom,
-                RIGHT_ASSOC,
-            ),
+            currentOuterFrom: transaction.changes.mapPos(safeRanges.currentOuterFrom, RIGHT_ASSOC),
             currentOuterTo: transaction.changes.mapPos(safeRanges.currentOuterTo, LEFT_ASSOC),
-            currentInnerFrom: transaction.changes.mapPos(
-                safeRanges.currentInnerFrom,
-                LEFT_ASSOC,
-            ),
+            currentInnerFrom: transaction.changes.mapPos(safeRanges.currentInnerFrom, LEFT_ASSOC),
             currentInnerTo: transaction.changes.mapPos(safeRanges.currentInnerTo, RIGHT_ASSOC),
             currentOpenTokenFrom: transaction.changes.mapPos(
                 safeRanges.currentOpenTokenFrom,
@@ -200,9 +194,7 @@ function transactionInsertsInsideCurrentBoundary(
             return;
         }
 
-        insertsInsideBoundary = tokens.some(
-            (token) => fromA > token.from && fromA < token.to,
-        );
+        insertsInsideBoundary = tokens.some((token) => fromA > token.from && fromA < token.to);
     });
 
     return insertsInsideBoundary;
@@ -317,9 +309,7 @@ function buildExtractContextDecorations(view: EditorView): DecorationSet {
         decorations.push({
             from: ranges.currentOpenTokenFrom,
             to: ranges.currentOpenTokenTo,
-            decoration: revealOpenToken
-                ? boundary
-                : Decoration.replace({ inclusive: false }),
+            decoration: revealOpenToken ? boundary : Decoration.replace({ inclusive: false }),
         });
     }
     if (ranges.currentCloseTokenTo > ranges.currentCloseTokenFrom) {
@@ -331,9 +321,7 @@ function buildExtractContextDecorations(view: EditorView): DecorationSet {
         decorations.push({
             from: ranges.currentCloseTokenFrom,
             to: ranges.currentCloseTokenTo,
-            decoration: revealCloseToken
-                ? boundary
-                : Decoration.replace({ inclusive: false }),
+            decoration: revealCloseToken ? boundary : Decoration.replace({ inclusive: false }),
         });
     }
 

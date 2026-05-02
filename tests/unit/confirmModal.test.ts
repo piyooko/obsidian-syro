@@ -79,11 +79,7 @@ jest.mock("obsidian", () => {
         Component,
         MarkdownRenderer: {
             render: jest.fn(
-                async (
-                    _app: unknown,
-                    message: string,
-                    containerEl: HTMLElement,
-                ): Promise<void> => {
+                async (_app: unknown, message: string, containerEl: HTMLElement): Promise<void> => {
                     containerEl.innerHTML = message
                         .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
                         .replace(/`([^`]+)`/g, "<code>$1</code>");

@@ -1,6 +1,11 @@
 {
     "$schema": "https://unpkg.com/knip@5/schema.json",
-    "entry": ["src/main.ts!"],
+    "entry": [
+        "src/main.ts!",
+        "src/declarations.d.ts!",
+        "src/types/assets.d.ts!",
+        "src/knip-retained-prod-exports.ts!"
+    ],
     "project": ["src/**/*.{ts,tsx}!"],
     "ignore": [
         "build/**",
@@ -22,8 +27,32 @@
         "src/ui/components/CardDebugModal.tsx",
         "src/ui/components/CardEditorView.tsx",
         "src/ui/components/DeckTree.tsx",
+        "src/ui/components/ExtractContextEditorView.tsx",
         "src/ui/components/LinearCard.tsx",
         "src/ui/components/NoteReviewSidebar.tsx",
-        "src/ui/containers/ReviewSession.tsx"
+        "src/ui/containers/ReviewSession.tsx",
+        "src/constants.ts",
+        "src/dataStore/data.ts",
+        "src/dataStore/dataLocation.ts",
+        "src/dataStore/deckOptionsStore.ts",
+        "src/dataStore/pendingOverlayStore.ts",
+        "src/dataStore/queue.ts",
+        "src/dataStore/syroPluginDataStore.ts",
+        "src/dataStore/syroUuidAlias.ts",
+        "src/dataStore/syroWorkspace.ts",
+        "src/dataStore/trackedFile.ts",
+        "src/editor/ir-extract-decoration.ts",
+        "src/editor/obsidianHotkeyBridge.ts",
+        "src/scheduling.ts",
+        "src/settings.ts",
+        "src/ui/components/common/SettingsComponents.tsx",
+        "src/ui/timeline/timelineMessage.ts",
+        "src/util/cloze-review-context.ts",
+        "src/util/irExtractParser.ts",
+        "src/util/RandomNumberProvider.ts",
+        "src/util/safeHtml.ts",
+        "src/util/typeGuards.ts",
+        "src/util/utils.ts",
+        "src/util/utils_recall.ts"
     ]
 }

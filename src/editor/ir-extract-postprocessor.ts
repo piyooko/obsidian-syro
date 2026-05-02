@@ -69,7 +69,7 @@ function insertMarkerAtOffset(
     kind: "start" | "end",
 ): HTMLElement | null {
     const { slices, text } = collectTextSlices(root);
-    const marker = document.createElement("span");
+    const marker = createSpan();
     marker.className = "sr-ir-reading-marker";
     marker.dataset.srIrMarker = kind;
 
@@ -270,13 +270,13 @@ function renderReadingOverlay(root: HTMLElement, blocks: ReadingBlock[]): void {
     existing?.remove();
     if (blocks.length === 0) return;
 
-    const overlay = document.createElement("span");
+    const overlay = createSpan();
     overlay.className = "sr-ir-reading-overlay";
-    const fragment = document.createDocumentFragment();
+    const fragment = createFragment();
 
     for (const block of blocks) {
         const progress = block.maxDepth <= 1 ? 0 : (block.depth - 1) / (block.maxDepth - 1);
-        const element = document.createElement("span");
+        const element = createSpan();
         element.className = "sr-ir-reading-block";
         element.style.left = `${block.left}px`;
         element.style.top = `${block.top}px`;

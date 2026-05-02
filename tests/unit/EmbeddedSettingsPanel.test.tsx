@@ -142,9 +142,7 @@ function renderPanel(
         onSyroPullToCurrentDevice?: (deviceId: string) => Promise<boolean | void>;
         onSyroDeleteValidDevice?: (deviceId: string) => Promise<boolean | void>;
         onSyroOpenRecovery?: () => Promise<boolean | void>;
-        onSyroDeleteInvalidDevice?: (
-            deviceFolderName: string,
-        ) => Promise<boolean | void>;
+        onSyroDeleteInvalidDevice?: (deviceFolderName: string) => Promise<boolean | void>;
     } = {},
 ) {
     const container = document.createElement("div");
@@ -347,9 +345,7 @@ describe("EmbeddedSettingsPanel", () => {
             const currentPane = view.container.querySelector<HTMLElement>(
                 '.sr-style-setting-content-pane[data-pane-role="current"]',
             );
-            const parsingSection = currentPane
-                ? findFirstSettingGroup(currentPane)
-                : null;
+            const parsingSection = currentPane ? findFirstSettingGroup(currentPane) : null;
             expect(currentPane?.textContent).toContain("Data updates");
             expect(parsingSection?.textContent).toContain("Data updates");
             expect(
@@ -368,10 +364,12 @@ describe("EmbeddedSettingsPanel", () => {
                     "Automatic incremental parsing",
                 ]),
             ).toBeNull();
-            expect(findSettingItemByName(syncCurrentPane ?? view.container, ["Persist parse cache"]))
-                .toBeNull();
-            expect(findSettingItemByName(syncCurrentPane ?? view.container, ["Update progress tip"]))
-                .toBeNull();
+            expect(
+                findSettingItemByName(syncCurrentPane ?? view.container, ["Persist parse cache"]),
+            ).toBeNull();
+            expect(
+                findSettingItemByName(syncCurrentPane ?? view.container, ["Update progress tip"]),
+            ).toBeNull();
         } finally {
             view.cleanup();
         }
@@ -446,8 +444,12 @@ describe("EmbeddedSettingsPanel", () => {
             expect(sectionHeadings[extractsIndex]).toContain("LAB");
             expect(findSettingItemByName(view.container, ["Enable Extracts"])).not.toBeNull();
             expect(findSettingItemByName(view.container, ["Enable Auto Extracts"])).not.toBeNull();
-            expect(findSettingItemByName(view.container, ["Show Extract Memo Tooltip"])).not.toBeNull();
-            expect(findSettingItemByName(view.container, ["Extract Memo Tooltip Delay"])).toBeNull();
+            expect(
+                findSettingItemByName(view.container, ["Show Extract Memo Tooltip"]),
+            ).not.toBeNull();
+            expect(
+                findSettingItemByName(view.container, ["Extract Memo Tooltip Delay"]),
+            ).toBeNull();
         } finally {
             view.cleanup();
         }
@@ -459,12 +461,11 @@ describe("EmbeddedSettingsPanel", () => {
         try {
             openTab(view.container, "Incremental");
 
-            const delayItem = findSettingItemByName(view.container, [
-                "Extract Memo Tooltip Delay",
-            ]);
+            const delayItem = findSettingItemByName(view.container, ["Extract Memo Tooltip Delay"]);
             expect(delayItem).not.toBeNull();
-            expect(delayItem?.querySelector(".setting-item-description")?.textContent ?? "")
-                .toContain("How long to hover before showing the extract memo tooltip");
+            expect(
+                delayItem?.querySelector(".setting-item-description")?.textContent ?? "",
+            ).toContain("How long to hover before showing the extract memo tooltip");
         } finally {
             view.cleanup();
         }
@@ -734,6 +735,20 @@ describe("EmbeddedSettingsPanel", () => {
                 (reviewCardItem?.querySelector('input[type="checkbox"]') as HTMLInputElement | null)
                     ?.checked,
             ).toBe(false);
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it("renders supporter badges with short visible text while preserving the aria label", () => {
+        const view = renderPanel(createSettings({ isPro: false }));
+
+        try {
+            const ankiClozeItem = findSettingItemByName(view.container, ["Anki Cloze"]);
+            const badge = ankiClozeItem?.querySelector<HTMLElement>(".sr-supporter-badge");
+
+            expect(badge?.textContent?.trim()).toBe("Supporter");
+            expect(badge?.getAttribute("aria-label")).toBe("Supporter feature");
         } finally {
             view.cleanup();
         }
@@ -1336,7 +1351,9 @@ describe("EmbeddedSettingsPanel", () => {
             expect(onSyroRenameCurrentDevice).toHaveBeenCalledWith("Desktop Prime");
 
             const deleteButtons = Array.from(
-                view.container.querySelectorAll<HTMLButtonElement>("button.sr-device-action-button"),
+                view.container.querySelectorAll<HTMLButtonElement>(
+                    "button.sr-device-action-button",
+                ),
             ).filter((button) => button.textContent?.includes("Delete device"));
             expect(deleteButtons).toHaveLength(1);
 
@@ -1531,13 +1548,14 @@ describe("EmbeddedSettingsPanel", () => {
             expect(deviceManagementSection).toBeTruthy();
             expect(
                 deviceManagementSection?.querySelector(
-                    '.setting-item.setting-item-heading > .setting-item-name',
+                    ".setting-item.setting-item-heading > .setting-item-name",
                 ),
             ).toBeNull();
 
             const directGroupHeadings = Array.from(deviceManagementSection?.children ?? []).filter(
                 (child): child is HTMLElement =>
-                    child instanceof HTMLElement && child.classList.contains("sr-device-group-heading"),
+                    child instanceof HTMLElement &&
+                    child.classList.contains("sr-device-group-heading"),
             );
             expect(directGroupHeadings).toHaveLength(2);
             expect(

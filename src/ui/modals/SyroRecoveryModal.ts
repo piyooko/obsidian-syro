@@ -1,11 +1,4 @@
-import {
-    App,
-    ButtonComponent,
-    DropdownComponent,
-    Modal,
-    Setting,
-    TextComponent,
-} from "obsidian";
+import { App, ButtonComponent, DropdownComponent, Modal, Setting, TextComponent } from "obsidian";
 import { t } from "src/lang/helpers";
 import type { SyroBaselineCandidate } from "src/dataStore/syroWorkspace";
 
@@ -69,42 +62,40 @@ export class SyroRecoveryModal extends Modal {
                     : t("SYRO_RECOVERY_REBUILD_DESC"),
         });
 
-        new Setting(contentEl)
-            .setName(t("SYRO_RECOVERY_DEVICE_NAME"))
-            .addText((text) => {
-                this.deviceNameInput = text;
-                text.setValue(this.deviceNameValue).onChange((value) => {
-                    this.deviceNameValue = value;
-                });
+        new Setting(contentEl).setName(t("SYRO_RECOVERY_DEVICE_NAME")).addText((text) => {
+            this.deviceNameInput = text;
+            text.setValue(this.deviceNameValue).onChange((value) => {
+                this.deviceNameValue = value;
             });
+        });
 
-        new Setting(contentEl)
-            .setName(t("SYRO_RECOVERY_SOURCE_DEVICE"))
-            .addDropdown((dropdown) => {
-                this.sourceDropdown = dropdown;
-                for (const candidate of this.context.candidates) {
-                    dropdown.addOption(
-                        candidate.deviceId,
-                        `${candidate.deviceName} (${candidate.shortDeviceId}) · ${candidate.lastSeenAt}`,
-                    );
-                }
-                if (this.selectedSourceDeviceId) {
-                    dropdown.setValue(this.selectedSourceDeviceId);
-                }
-                dropdown.onChange((value) => {
-                    this.selectedSourceDeviceId = value;
-                    this.syncConfirmState();
-                });
+        new Setting(contentEl).setName(t("SYRO_RECOVERY_SOURCE_DEVICE")).addDropdown((dropdown) => {
+            this.sourceDropdown = dropdown;
+            for (const candidate of this.context.candidates) {
+                dropdown.addOption(
+                    candidate.deviceId,
+                    `${candidate.deviceName} (${candidate.shortDeviceId}) · ${candidate.lastSeenAt}`,
+                );
+            }
+            if (this.selectedSourceDeviceId) {
+                dropdown.setValue(this.selectedSourceDeviceId);
+            }
+            dropdown.onChange((value) => {
+                this.selectedSourceDeviceId = value;
+                this.syncConfirmState();
             });
+        });
 
         const buttonRow = contentEl.createDiv("srs-flex-row sr-confirm-modal-actions");
-        this.cancelButton = new ButtonComponent(buttonRow).setButtonText(t("CANCEL")).onClick(() => {
-            if (this.isSubmitting) {
-                return;
-            }
+        this.cancelButton = new ButtonComponent(buttonRow)
+            .setButtonText(t("CANCEL"))
+            .onClick(() => {
+                if (this.isSubmitting) {
+                    return;
+                }
 
-            this.close();
-        });
+                this.close();
+            });
         this.confirmButton = new ButtonComponent(buttonRow)
             .setButtonText(t("CONFIRM"))
             .setCta()

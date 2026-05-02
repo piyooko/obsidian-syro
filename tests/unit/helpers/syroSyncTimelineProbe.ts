@@ -36,10 +36,7 @@ export function createSyroSyncTimelineProbe(notePath: string) {
             await plugin.appendSyroTimelineEdit(notePath, edited ?? null);
         },
 
-        async deleteLatestCommit(
-            ctx: SyroSyncDiagnosticContext,
-            client: string,
-        ): Promise<void> {
+        async deleteLatestCommit(ctx: SyroSyncDiagnosticContext, client: string): Promise<void> {
             const plugin = ctx.harness.getClient(client).plugin;
             const commit = latestCommit(ctx, client);
             await plugin.reviewCommitStore?.deleteCommit(notePath, commit.id);
@@ -51,12 +48,10 @@ export function createSyroSyncTimelineProbe(notePath: string) {
             client: string,
             message: string,
         ): void {
-            const entries = ctx.harness.readTimelineFormalState(client).filter(
-                (entry) => entry.path === notePath,
-            );
-            expect(entries).toEqual(
-                expect.arrayContaining([expect.objectContaining({ message })]),
-            );
+            const entries = ctx.harness
+                .readTimelineFormalState(client)
+                .filter((entry) => entry.path === notePath);
+            expect(entries).toEqual(expect.arrayContaining([expect.objectContaining({ message })]));
         },
 
         expectNoTimelineEntries(ctx: SyroSyncDiagnosticContext, client: string): void {

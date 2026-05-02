@@ -9,6 +9,7 @@ import {
     createIrExtractBlockElement,
     createIrExtractNoteTooltipElement,
     createIrExtractDecorationExtensions,
+    refreshIrExtractTooltipNotes,
     findActiveIrExtractSourceMatch,
     buildIrExtractRenderExtractsForTest,
     findIrExtractEditingRoot,
@@ -772,11 +773,9 @@ describe("irExtractDecoration helpers", () => {
 
             widget?.dispatchEvent(event);
 
-            expect(addEventListenerSpy).toHaveBeenCalledWith(
-                "wheel",
-                expect.any(Function),
-                { passive: true },
-            );
+            expect(addEventListenerSpy).toHaveBeenCalledWith("wheel", expect.any(Function), {
+                passive: true,
+            });
             expect(event.defaultPrevented).toBe(false);
             expect(value?.textContent).toBe("6");
             expect(onPriorityChange).toHaveBeenCalledWith(6);
@@ -1000,23 +999,13 @@ describe("irExtractDecoration helpers", () => {
         );
 
         expect(
-            syncIrExtractInfoCursorAtClientPoint(
-                scrollDOM,
-                new Map([[42, element]]),
-                15,
-                25,
-            ),
+            syncIrExtractInfoCursorAtClientPoint(scrollDOM, new Map([[42, element]]), 15, 25),
         ).toBe(true);
         expect(scrollDOM.style.cursor).toBe("pointer");
         expect(scrollDOM.classList.contains("sr-ir-info-cursor-pointer")).toBe(true);
 
         expect(
-            syncIrExtractInfoCursorAtClientPoint(
-                scrollDOM,
-                new Map([[42, element]]),
-                5,
-                25,
-            ),
+            syncIrExtractInfoCursorAtClientPoint(scrollDOM, new Map([[42, element]]), 5, 25),
         ).toBe(false);
         expect(scrollDOM.style.cursor).toBe("");
         expect(scrollDOM.classList.contains("sr-ir-info-cursor-pointer")).toBe(false);
@@ -1319,11 +1308,7 @@ describe("irExtractDecoration helpers", () => {
         const view = new EditorView({
             parent,
             state: EditorState.create({
-                doc: [
-                    "11111111111111",
-                    "111111111{{ir::11}}111",
-                    "11111111111111",
-                ].join("\n"),
+                doc: ["11111111111111", "111111111{{ir::11}}111", "11111111111111"].join("\n"),
                 extensions: [
                     createIrExtractDecorationExtensions({
                         canRevealSource: () => false,
@@ -1361,11 +1346,7 @@ describe("irExtractDecoration helpers", () => {
         document.body.appendChild(parent);
 
         let canRevealSource = true;
-        const doc = [
-            "11111111111111",
-            "111111111{{ir::11}}111",
-            "11111111111111",
-        ].join("\n");
+        const doc = ["11111111111111", "111111111{{ir::11}}111", "11111111111111"].join("\n");
 
         const view = new EditorView({
             parent,
@@ -1385,9 +1366,7 @@ describe("irExtractDecoration helpers", () => {
                 selection: { anchor: doc.indexOf("{{ir::") + "{{ir::".length },
             });
 
-            const revealedLines = Array.from(
-                view.dom.querySelectorAll<HTMLElement>(".cm-line"),
-            );
+            const revealedLines = Array.from(view.dom.querySelectorAll<HTMLElement>(".cm-line"));
             expect(revealedLines[1]?.textContent).toBe("111111111{{ir::11}}111");
 
             canRevealSource = false;
@@ -1427,6 +1406,7 @@ describe("irExtractDecoration helpers", () => {
                 extensions: [
                     createIrExtractDecorationExtensions({
                         isLivePreviewHost: () => true,
+                        extractMemoTooltipDelayMs: () => 0,
                         resolveExtractTooltipNote,
                     }),
                 ],
@@ -1504,9 +1484,9 @@ describe("irExtractDecoration helpers", () => {
             expect(saveExtractTooltipNote).toHaveBeenCalledTimes(1);
             expect(saveExtractTooltipNote).toHaveBeenCalledWith("extract-uuid-1", "新的摘录备注");
             expect(
-                document.querySelector<HTMLElement>(".sr-ir-info-action")?.classList.contains(
-                    "has-note",
-                ),
+                document
+                    .querySelector<HTMLElement>(".sr-ir-info-action")
+                    ?.classList.contains("has-note"),
             ).toBe(true);
         } finally {
             view.destroy();
@@ -1572,10 +1552,7 @@ describe("irExtractDecoration helpers", () => {
 
             expect(resolveExtractTooltipNote).toHaveBeenCalledWith(view, 0);
             expect(saveExtractTooltipNote).toHaveBeenCalledTimes(1);
-            expect(saveExtractTooltipNote).toHaveBeenCalledWith(
-                "extract-uuid-1",
-                "立刻输入的备注",
-            );
+            expect(saveExtractTooltipNote).toHaveBeenCalledWith("extract-uuid-1", "立刻输入的备注");
         } finally {
             view.destroy();
             restoreMeasureMocks();
@@ -1703,13 +1680,12 @@ describe("irExtractDecoration helpers", () => {
         const doc = "{{ir::one}} {{ir::two}}";
         const firstStart = doc.indexOf("{{ir::one}}");
         const secondStart = doc.indexOf("{{ir::two}}");
-        const resolveExtractTooltipNote = jest.fn(
-            (_view: EditorView, sourceStart: number) =>
-                Promise.resolve(
-                    sourceStart === firstStart
-                        ? { uuid: "extract-uuid-1", memo: "第一条备注", priority: 5 }
-                        : { uuid: "extract-uuid-2", memo: "", priority: 5 },
-                ),
+        const resolveExtractTooltipNote = jest.fn((_view: EditorView, sourceStart: number) =>
+            Promise.resolve(
+                sourceStart === firstStart
+                    ? { uuid: "extract-uuid-1", memo: "第一条备注", priority: 5 }
+                    : { uuid: "extract-uuid-2", memo: "", priority: 5 },
+            ),
         );
 
         const view = new EditorView({
@@ -1719,6 +1695,7 @@ describe("irExtractDecoration helpers", () => {
                 extensions: [
                     createIrExtractDecorationExtensions({
                         isLivePreviewHost: () => true,
+                        extractMemoTooltipDelayMs: () => 0,
                         resolveExtractTooltipNote,
                     }),
                 ],
@@ -1772,6 +1749,7 @@ describe("irExtractDecoration helpers", () => {
                 extensions: [
                     createIrExtractDecorationExtensions({
                         isLivePreviewHost: () => true,
+                        extractMemoTooltipDelayMs: () => 0,
                         resolveExtractTooltipNote,
                     }),
                 ],
@@ -1823,6 +1801,7 @@ describe("irExtractDecoration helpers", () => {
                 extensions: [
                     createIrExtractDecorationExtensions({
                         isLivePreviewHost: () => true,
+                        extractMemoTooltipDelayMs: () => 0,
                         resolveExtractTooltipNote,
                     }),
                 ],
@@ -1841,9 +1820,9 @@ describe("irExtractDecoration helpers", () => {
             );
             expect(textarea?.value).toBe("重开后备注");
             expect(
-                document.querySelector<HTMLElement>(".sr-ir-info-action")?.classList.contains(
-                    "has-note",
-                ),
+                document
+                    .querySelector<HTMLElement>(".sr-ir-info-action")
+                    ?.classList.contains("has-note"),
             ).toBe(true);
             expect(resolveExtractTooltipNote).toHaveBeenCalledWith(view, 0);
         } finally {
@@ -1903,7 +1882,10 @@ describe("irExtractDecoration helpers", () => {
             expect(actions[0]?.classList.contains("has-note")).toBe(true);
             expect(actions[1]?.classList.contains("has-note")).toBe(false);
             expect(resolveExtractTooltipNotes).toHaveBeenCalledTimes(1);
-            expect(resolveExtractTooltipNotes).toHaveBeenCalledWith(view, [firstStart, secondStart]);
+            expect(resolveExtractTooltipNotes).toHaveBeenCalledWith(view, [
+                firstStart,
+                secondStart,
+            ]);
         } finally {
             view.destroy();
             restoreMeasureMocks();
@@ -2068,6 +2050,7 @@ describe("irExtractDecoration helpers", () => {
                 extensions: [
                     createIrExtractDecorationExtensions({
                         isLivePreviewHost: () => true,
+                        extractMemoTooltipDelayMs: () => 0,
                         resolveExtractTooltipNote,
                         resolveExtractTooltipNotes,
                     }),
@@ -2156,6 +2139,58 @@ describe("irExtractDecoration helpers", () => {
             expect(action?.dataset.srIrExtractStart).toBe("0");
             expect(action?.classList.contains("is-visible")).toBe(false);
             expect(action?.getAttribute("aria-hidden")).toBe("true");
+        } finally {
+            view.destroy();
+            restoreMeasureMocks();
+        }
+    });
+
+    test("rehydrates automatic heading memo actions when externally refreshed", async () => {
+        const restoreMeasureMocks = installIrExtractMeasureMocks();
+        const parent = document.createElement("div");
+        parent.className = "is-live-preview";
+        document.body.appendChild(parent);
+        let hasAutoExtract = false;
+        const resolveExtractTooltipNotes = jest.fn(
+            (_view: EditorView, sourceStarts: readonly number[]) =>
+                Promise.resolve(
+                    hasAutoExtract
+                        ? sourceStarts.map((sourceStart) => ({
+                              sourceStart,
+                              uuid: "auto-extract-uuid-1",
+                              memo: "",
+                              priority: 5,
+                              sourceMode: "auto-slice" as const,
+                          }))
+                        : [],
+                ),
+        );
+
+        const view = new EditorView({
+            parent,
+            state: EditorState.create({
+                doc: "# 自动摘录标题\n正文",
+                extensions: [
+                    createIrExtractDecorationExtensions({
+                        isLivePreviewHost: () => true,
+                        resolveExtractTooltipNotes,
+                    }),
+                ],
+            }),
+        });
+
+        try {
+            await waitForIrExtractMeasure();
+            const action = parent.querySelector<HTMLElement>(".sr-ir-heading-note-action");
+            expect(action?.classList.contains("is-visible")).toBe(false);
+            expect(resolveExtractTooltipNotes).toHaveBeenCalledTimes(1);
+
+            hasAutoExtract = true;
+            refreshIrExtractTooltipNotes(view);
+            await waitForIrExtractMeasure();
+
+            expect(resolveExtractTooltipNotes).toHaveBeenCalledTimes(2);
+            expect(action?.classList.contains("is-visible")).toBe(true);
         } finally {
             view.destroy();
             restoreMeasureMocks();

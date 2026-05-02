@@ -38,7 +38,7 @@ function createDailyStateSection() {
         dailyDeckStats: {
             date: "2026-04-18",
             counts: {
-                "归档": {
+                归档: {
                     new: 20,
                     review: 5,
                 },
@@ -110,6 +110,6 @@ describe("PendingOverlayStore lifecycle", () => {
 
         await expect(newStore.drainFlush()).resolves.toBe(true);
         expect(adapter.write).toHaveBeenCalledTimes(1);
-        expect(files.get(normalizePath(path))).toContain("\"dailyState\"");
+        expect(files.get(normalizePath(path))).toContain('"dailyState"');
     });
 });

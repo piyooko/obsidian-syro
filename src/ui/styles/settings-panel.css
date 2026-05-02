@@ -1014,20 +1014,18 @@ body:not(.is-mobile) .sr-settings-panel .setting-items input[type="color"]::-moz
         var(--background-primary)
     );
     box-shadow:
-        inset 0 0 0
-        1px
-        color-mix(
-            in srgb,
-            var(--sr-device-badge-accent, var(--background-modifier-border)) 28%,
-            transparent
-        ),
-        0 0 0
-        1px
-        color-mix(
-            in srgb,
-            var(--sr-device-badge-accent, var(--background-modifier-border)) 8%,
-            transparent
-        ),
+        inset 0 0 0 1px
+            color-mix(
+                in srgb,
+                var(--sr-device-badge-accent, var(--background-modifier-border)) 28%,
+                transparent
+            ),
+        0 0 0 1px
+            color-mix(
+                in srgb,
+                var(--sr-device-badge-accent, var(--background-modifier-border)) 8%,
+                transparent
+            ),
         0 1px 2px color-mix(in srgb, black 24%, transparent);
     letter-spacing: 0.02em;
     line-height: 1.15;
@@ -1372,7 +1370,9 @@ body.is-mobile
     .sr-settings-container
     .sr-settings-sections
     .setting-items
-    > .setting-item:not(.mod-toggle):not(.setting-item--color):not(.setting-item--action):not(.sr-device-flat-item)
+    > .setting-item:not(.mod-toggle):not(.setting-item--color):not(.setting-item--action):not(
+        .sr-device-flat-item
+    )
     .setting-item-info {
     width: 100%;
     min-width: 0;
@@ -1384,7 +1384,9 @@ body.is-mobile
     .sr-settings-container
     .sr-settings-sections
     .setting-items
-    > .setting-item:not(.mod-toggle):not(.setting-item--color):not(.setting-item--action):not(.sr-device-flat-item)
+    > .setting-item:not(.mod-toggle):not(.setting-item--color):not(.setting-item--action):not(
+        .sr-device-flat-item
+    )
     .setting-item-control {
     width: 100%;
     margin-left: 0;
@@ -1395,8 +1397,7 @@ body.is-mobile
     .sr-settings-container
     .sr-settings-sections
     .setting-items
-    > .setting-item.sr-device-flat-item
-    {
+    > .setting-item.sr-device-flat-item {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center !important;

@@ -1,8 +1,4 @@
-export type SyroUuidAliasEntityType =
-    | "tracked-file"
-    | "card-item"
-    | "note-review"
-    | "extract-item";
+export type SyroUuidAliasEntityType = "tracked-file" | "card-item" | "note-review" | "extract-item";
 
 export type SyroUuidAliasMatchedBy =
     | "canonical-hit"

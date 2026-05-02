@@ -58,33 +58,31 @@ export class ExtractReviewDateModal extends Modal {
             this.close();
         };
 
-        new Setting(contentEl)
-            .setName(t("EXTRACT_SET_DATE_LABEL"))
-            .addText((text) => {
-                const initialDelayDaysValue = this.delayDaysValue;
-                text.inputEl.type = "number";
-                text.inputEl.min = "1";
-                text.inputEl.step = "1";
-                text.inputEl.inputMode = "numeric";
-                text.setPlaceholder("22");
-                configureExtractReviewDelayDaysInput(text.inputEl, initialDelayDaysValue);
-                text.onChange((value) => {
-                    this.delayDaysValue = value;
-                });
-                text.inputEl.addEventListener("keydown", (event) => {
-                    if (event.key !== "Enter") {
-                        return;
-                    }
-                    event.preventDefault();
-                    submitDelayDays();
-                });
-                window.setTimeout(() => {
-                    configureExtractReviewDelayDaysInput(text.inputEl, initialDelayDaysValue);
-                    this.delayDaysValue = initialDelayDaysValue;
-                    text.inputEl.focus();
-                    text.inputEl.select();
-                });
+        new Setting(contentEl).setName(t("EXTRACT_SET_DATE_LABEL")).addText((text) => {
+            const initialDelayDaysValue = this.delayDaysValue;
+            text.inputEl.type = "number";
+            text.inputEl.min = "1";
+            text.inputEl.step = "1";
+            text.inputEl.inputMode = "numeric";
+            text.setPlaceholder("22");
+            configureExtractReviewDelayDaysInput(text.inputEl, initialDelayDaysValue);
+            text.onChange((value) => {
+                this.delayDaysValue = value;
             });
+            text.inputEl.addEventListener("keydown", (event) => {
+                if (event.key !== "Enter") {
+                    return;
+                }
+                event.preventDefault();
+                submitDelayDays();
+            });
+            window.setTimeout(() => {
+                configureExtractReviewDelayDaysInput(text.inputEl, initialDelayDaysValue);
+                this.delayDaysValue = initialDelayDaysValue;
+                text.inputEl.focus();
+                text.inputEl.select();
+            });
+        });
 
         const actions = contentEl.createDiv("sr-confirm-modal-actions");
         actions.createEl("button", { text: t("CANCEL") }).addEventListener("click", () => {

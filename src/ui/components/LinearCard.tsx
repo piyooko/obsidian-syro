@@ -2100,7 +2100,7 @@ const MarkdownDisplay = ({
                 ref.current === target &&
                 renderGenerationRef.current === renderGeneration;
 
-            const buffer = document.createElement("div");
+            const buffer = createDiv();
             await renderSyroMarkdownToElement({
                 markdown: content,
                 renderMarkdown,
@@ -2934,14 +2934,17 @@ const ExtractMemoPill: FC<ExtractMemoPillProps> = ({
         [setPriorityWithFeedback],
     );
 
-    const handleImportancePointerEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-        const wasDragging = isDraggingRef.current;
-        isDraggingRef.current = false;
-        event.currentTarget.releasePointerCapture?.(event.pointerId);
-        if (wasDragging) {
-            commitPriority();
-        }
-    }, [commitPriority]);
+    const handleImportancePointerEnd = useCallback(
+        (event: React.PointerEvent<HTMLDivElement>) => {
+            const wasDragging = isDraggingRef.current;
+            isDraggingRef.current = false;
+            event.currentTarget.releasePointerCapture?.(event.pointerId);
+            if (wasDragging) {
+                commitPriority();
+            }
+        },
+        [commitPriority],
+    );
 
     const handleInput = useCallback(
         (event: React.SyntheticEvent<HTMLTextAreaElement>) => {
@@ -2957,11 +2960,7 @@ const ExtractMemoPill: FC<ExtractMemoPillProps> = ({
     );
 
     return (
-        <div
-            className="corner-pill-wrapper"
-            ref={widgetRef}
-            onClick={() => toggleWidget(true)}
-        >
+        <div className="corner-pill-wrapper" ref={widgetRef} onClick={() => toggleWidget(true)}>
             <div className="pill-icon">
                 <SquarePen size={16} strokeWidth={2} />
             </div>

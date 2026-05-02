@@ -135,7 +135,8 @@ export function buildManualIrLocators(
     for (const match of matches) {
         const uuid = uuidByStart.get(match.start);
         const locator = uuid ? locators[uuid] : null;
-        const parent = match.parentStart !== undefined ? locatorByStart.get(match.parentStart) : null;
+        const parent =
+            match.parentStart !== undefined ? locatorByStart.get(match.parentStart) : null;
         if (locator && parent) {
             locator.parentUuid = parent.uuid;
             locator.parentLineOrdinal = parent.lineOrdinal;
@@ -273,7 +274,8 @@ function normalizeManualIrCache(value: unknown): ManualIrCache | undefined {
             endLine: rawLocator.endLine,
             lineOrdinal: rawLocator.lineOrdinal,
             depth: rawLocator.depth,
-            parentUuid: typeof rawLocator.parentUuid === "string" ? rawLocator.parentUuid : undefined,
+            parentUuid:
+                typeof rawLocator.parentUuid === "string" ? rawLocator.parentUuid : undefined,
             parentLineOrdinal: isFiniteNumber(rawLocator.parentLineOrdinal)
                 ? rawLocator.parentLineOrdinal
                 : undefined,
@@ -327,7 +329,9 @@ function normalizeAutoHeadingCache(value: unknown): AutoHeadingCache | undefined
             autoSliceKey: rawHeading.autoSliceKey,
             level: Math.max(1, Math.round(rawHeading.level)),
             title: rawHeading.title,
-            titlePath: rawHeading.titlePath.filter((part): part is string => typeof part === "string"),
+            titlePath: rawHeading.titlePath.filter(
+                (part): part is string => typeof part === "string",
+            ),
             siblingTitleOrdinal: rawHeading.siblingTitleOrdinal,
             startLine: rawHeading.startLine,
             endLine: rawHeading.endLine,
@@ -345,7 +349,9 @@ function normalizeAutoHeadingCache(value: unknown): AutoHeadingCache | undefined
     };
 }
 
-export function normalizePersistedExtractNoteCache(value: unknown): PersistedExtractNoteCache | null {
+export function normalizePersistedExtractNoteCache(
+    value: unknown,
+): PersistedExtractNoteCache | null {
     const raw = asRecord(value);
     if (!raw || !isFiniteNumber(raw.scannedAt) || !isFiniteNumber(raw.fileMtime)) {
         return null;

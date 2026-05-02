@@ -5,11 +5,9 @@ function loadHelpers(locale: string) {
     let helpers: typeof import("src/lang/helpers");
 
     jest.isolateModules(() => {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { moment } = require("obsidian");
         const mockLocale = moment.locale as jest.MockedFunction<() => string>;
         mockLocale.mockImplementation(() => locale);
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         helpers = require("src/lang/helpers");
     });
 

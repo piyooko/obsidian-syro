@@ -114,7 +114,10 @@ describe("irExtractPostProcessor", () => {
         document.body.append(root);
 
         window.requestAnimationFrame = ((cb: FrameRequestCallback) =>
-            window.setTimeout(() => cb(performance.now()), 0)) as typeof window.requestAnimationFrame;
+            window.setTimeout(
+                () => cb(performance.now()),
+                0,
+            )) as typeof window.requestAnimationFrame;
         window.cancelAnimationFrame = ((id: number) => {
             window.clearTimeout(id);
         }) as typeof window.cancelAnimationFrame;

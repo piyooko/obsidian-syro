@@ -43,13 +43,15 @@ describe("extractNoteCache", () => {
             updatedAt: 1,
         });
 
-        expect(cache?.headings.map((heading) => ({
-            key: heading.autoSliceKey,
-            title: heading.title,
-            titlePath: heading.titlePath,
-            siblingTitleOrdinal: heading.siblingTitleOrdinal,
-            startLine: heading.startLine,
-        }))).toEqual([
+        expect(
+            cache?.headings.map((heading) => ({
+                key: heading.autoSliceKey,
+                title: heading.title,
+                titlePath: heading.titlePath,
+                siblingTitleOrdinal: heading.siblingTitleOrdinal,
+                startLine: heading.startLine,
+            })),
+        ).toEqual([
             {
                 key: "heading:2:A/Same:0",
                 title: "Same",
@@ -78,10 +80,12 @@ describe("extractNoteCache", () => {
             updatedAt: 1,
         });
 
-        expect(cache?.headings.map((heading) => ({
-            level: heading.level,
-            key: heading.autoSliceKey,
-        }))).toEqual([
+        expect(
+            cache?.headings.map((heading) => ({
+                level: heading.level,
+                key: heading.autoSliceKey,
+            })),
+        ).toEqual([
             { level: 1, key: "heading:1:A:0" },
             { level: 2, key: "heading:2:A/B:0" },
             { level: 7, key: "heading:7:A/B/C:0" },

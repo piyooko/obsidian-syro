@@ -1,7 +1,4 @@
-import {
-    getStringProp,
-    isRecord,
-} from "src/util/typeGuards";
+import { getStringProp, isRecord } from "src/util/typeGuards";
 
 export const SYRO_SYNC_RETENTION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -28,9 +25,7 @@ export function cloneSyncEntities(
     );
 }
 
-export function parseSyncEntities(
-    value: unknown,
-): Record<string, PersistedSyncEntityState> {
+export function parseSyncEntities(value: unknown): Record<string, PersistedSyncEntityState> {
     if (!isRecord(value)) {
         return {};
     }

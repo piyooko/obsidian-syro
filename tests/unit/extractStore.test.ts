@@ -144,7 +144,10 @@ describe("ExtractStore", () => {
         ).added;
         const internalItems = (
             store as unknown as {
-                items: Record<string, { timesReviewed: number; nextReview: number; priority: number }>;
+                items: Record<
+                    string,
+                    { timesReviewed: number; nextReview: number; priority: number }
+                >;
             }
         ).items;
         internalItems[created[0].uuid]!.timesReviewed = 2;
@@ -169,7 +172,10 @@ describe("ExtractStore", () => {
         ).added;
         const internalItems = (
             store as unknown as {
-                items: Record<string, { timesReviewed: number; nextReview: number; priority: number }>;
+                items: Record<
+                    string,
+                    { timesReviewed: number; nextReview: number; priority: number }
+                >;
             }
         ).items;
         internalItems[created[0].uuid]!.timesReviewed = 2;
@@ -185,11 +191,7 @@ describe("ExtractStore", () => {
 
     test("can filter review candidates by a resolved source deck instead of stale stored deck", () => {
         const store = createStore();
-        const [created] = store.syncFileExtracts(
-            "math.md",
-            "{{ir::one}}",
-            "old-deck",
-        ).added;
+        const [created] = store.syncFileExtracts("math.md", "{{ir::one}}", "old-deck").added;
 
         const resolveDeckName = jest.fn((item) =>
             item.sourcePath === "math.md" ? "数学卡" : item.deckName,
@@ -348,8 +350,7 @@ describe("ExtractStore", () => {
 
     test("syncs heading auto slices without touching manual IR extracts", () => {
         const store = createStore();
-        const manual = store.syncFileExtracts("notes/source.md", "{{ir::manual}}", "deck")
-            .added[0];
+        const manual = store.syncFileExtracts("notes/source.md", "{{ir::manual}}", "deck").added[0];
         const result = store.syncAutoExtractsForFile(
             "notes/source.md",
             "# A\none\n## A\nchild\n# B\ntwo",

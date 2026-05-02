@@ -34,7 +34,10 @@ export type Legacy011SourceName =
     | "local-state/cards.review_overlay.json"
     | "local-state/migration-state.json";
 
-type Legacy011Adapter = Pick<DataAdapter, "exists" | "mkdir" | "read" | "remove" | "rmdir" | "write">;
+type Legacy011Adapter = Pick<
+    DataAdapter,
+    "exists" | "mkdir" | "read" | "remove" | "rmdir" | "write"
+>;
 type Legacy011LogFn = (...args: unknown[]) => void;
 
 export interface Legacy011SourceFileEntry {
@@ -590,7 +593,11 @@ export async function migrateLegacy011WorkspaceFiles(
         result.copiedFiles.push(input.layout.timelinePath);
     }
     if (
-        await copyFileIfMissing(input.adapter, sourceFiles.primary.noteCacheJson, input.layout.noteCachePath)
+        await copyFileIfMissing(
+            input.adapter,
+            sourceFiles.primary.noteCacheJson,
+            input.layout.noteCachePath,
+        )
     ) {
         result.copiedFiles.push(input.layout.noteCachePath);
     }
@@ -671,7 +678,9 @@ export async function migrateLegacy011PluginState(
     }
 
     await input.sharedSettingsStore.save(extractSharedSettings(input.data.settings));
-    await input.trackingRulesStore.save(extractTrackingRules(input.data.folderTrackingRules, {}, {}));
+    await input.trackingRulesStore.save(
+        extractTrackingRules(input.data.folderTrackingRules, {}, {}),
+    );
     await input.dailyStateStore.save(input.buildDailyStateSnapshot());
     await input.deviceStateStore.save(input.buildCurrentDeviceState());
     await input.licenseStateStore.save(extractLicenseState(input.data.settings));

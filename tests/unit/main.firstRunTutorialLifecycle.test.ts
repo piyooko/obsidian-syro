@@ -15,9 +15,11 @@ describe("SRPlugin first run tutorial lifecycle", () => {
         plugin.noteReviewStore = undefined;
         plugin.noteAlgorithm = {};
 
-        const result = await (SRPlugin.prototype as unknown as {
-            initializeFirstRunTutorialNote: () => Promise<string>;
-        }).initializeFirstRunTutorialNote.call(plugin);
+        const result = await (
+            SRPlugin.prototype as unknown as {
+                initializeFirstRunTutorialNote: () => Promise<string>;
+            }
+        ).initializeFirstRunTutorialNote.call(plugin);
 
         expect(result).toBe("deferred");
     });
@@ -29,13 +31,19 @@ describe("SRPlugin first run tutorial lifecycle", () => {
         plugin.noteAlgorithm = undefined;
         plugin.logRuntimeDebug = jest.fn();
 
-        await (SRPlugin.prototype as unknown as {
-            maybeInitializeFirstRunTutorialNote: (trigger: "startup" | "device-change") => Promise<void>;
-        }).maybeInitializeFirstRunTutorialNote.call(plugin, "startup");
+        await (
+            SRPlugin.prototype as unknown as {
+                maybeInitializeFirstRunTutorialNote: (
+                    trigger: "startup" | "device-change",
+                ) => Promise<void>;
+            }
+        ).maybeInitializeFirstRunTutorialNote.call(plugin, "startup");
 
         expect(plugin.pendingFirstRunTutorialInitialization).toBe(true);
         expect(plugin.logRuntimeDebug).toHaveBeenCalledWith(
-            expect.stringContaining("[SR-FirstRunTutorial] Initialization deferred: trigger=startup"),
+            expect.stringContaining(
+                "[SR-FirstRunTutorial] Initialization deferred: trigger=startup",
+            ),
         );
     });
 
@@ -44,9 +52,13 @@ describe("SRPlugin first run tutorial lifecycle", () => {
         plugin.pendingFirstRunTutorialInitialization = true;
         plugin.initializeFirstRunTutorialNote = jest.fn(async () => "initialized");
 
-        await (SRPlugin.prototype as unknown as {
-            maybeInitializeFirstRunTutorialNote: (trigger: "startup" | "device-change") => Promise<void>;
-        }).maybeInitializeFirstRunTutorialNote.call(plugin, "device-change");
+        await (
+            SRPlugin.prototype as unknown as {
+                maybeInitializeFirstRunTutorialNote: (
+                    trigger: "startup" | "device-change",
+                ) => Promise<void>;
+            }
+        ).maybeInitializeFirstRunTutorialNote.call(plugin, "device-change");
 
         expect(plugin.initializeFirstRunTutorialNote).toHaveBeenCalledTimes(1);
         expect(plugin.pendingFirstRunTutorialInitialization).toBe(false);
@@ -59,11 +71,13 @@ describe("SRPlugin first run tutorial lifecycle", () => {
         const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
 
         await expect(
-            (SRPlugin.prototype as unknown as {
-                maybeInitializeFirstRunTutorialNote: (
-                    trigger: "startup" | "device-change",
-                ) => Promise<void>;
-            }).maybeInitializeFirstRunTutorialNote.call(plugin, "startup"),
+            (
+                SRPlugin.prototype as unknown as {
+                    maybeInitializeFirstRunTutorialNote: (
+                        trigger: "startup" | "device-change",
+                    ) => Promise<void>;
+                }
+            ).maybeInitializeFirstRunTutorialNote.call(plugin, "startup"),
         ).resolves.toBeUndefined();
 
         expect(plugin.pendingFirstRunTutorialInitialization).toBe(true);
@@ -96,9 +110,11 @@ describe("SRPlugin first run tutorial lifecycle", () => {
         plugin.updateAndSortDueNotes = jest.fn();
         plugin.syncEvents = { emit: jest.fn() };
 
-        const result = await (SRPlugin.prototype as unknown as {
-            initializeFirstRunTutorialNote: () => Promise<string>;
-        }).initializeFirstRunTutorialNote.call(plugin);
+        const result = await (
+            SRPlugin.prototype as unknown as {
+                initializeFirstRunTutorialNote: () => Promise<string>;
+            }
+        ).initializeFirstRunTutorialNote.call(plugin);
 
         expect(result).toBe("initialized");
         expect(plugin.app.vault.create).not.toHaveBeenCalled();
@@ -142,9 +158,11 @@ describe("SRPlugin first run tutorial lifecycle", () => {
             }),
         };
 
-        await (SRPlugin.prototype as unknown as {
-            reloadAfterSyroDeviceChange: () => Promise<void>;
-        }).reloadAfterSyroDeviceChange.call(plugin);
+        await (
+            SRPlugin.prototype as unknown as {
+                reloadAfterSyroDeviceChange: () => Promise<void>;
+            }
+        ).reloadAfterSyroDeviceChange.call(plugin);
 
         expect(plugin.pendingSyroRecoveryContext).toBeNull();
         expect(plugin.pendingSyroDeviceSelectionContext).toBeNull();

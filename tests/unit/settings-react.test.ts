@@ -187,9 +187,7 @@ describe("SRSettingTab", () => {
                 onSyroRenameCurrentDevice: (deviceName: string) => Promise<boolean | void>;
                 onSyroPullToCurrentDevice: (deviceId: string) => Promise<boolean | void>;
                 onSyroDeleteValidDevice: (deviceId: string) => Promise<boolean | void>;
-                onSyroDeleteInvalidDevice: (
-                    deviceFolderName: string,
-                ) => Promise<boolean | void>;
+                onSyroDeleteInvalidDevice: (deviceFolderName: string) => Promise<boolean | void>;
             };
         };
 

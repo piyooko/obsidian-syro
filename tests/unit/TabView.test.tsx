@@ -258,5 +258,4 @@ describe("TabView", () => {
         expect(mockResolveHybridEditorHotkeyRegistry).not.toHaveBeenCalled();
         expect(mockRunResolvedHybridEditorHotkeyCommand).not.toHaveBeenCalled();
     });
-
 });

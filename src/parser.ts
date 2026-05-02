@@ -71,10 +71,7 @@ function hasInlineMarker(
 
         const absoluteMarkerIdx = lineStartOffset + markerIdx;
         const isInsideCode = isIndexInsideCodeContext(markerIdx, codeContexts);
-        const isInsideExcludedRange = isIndexInsideExcludedRange(
-            absoluteMarkerIdx,
-            excludedRanges,
-        );
+        const isInsideExcludedRange = isIndexInsideExcludedRange(absoluteMarkerIdx, excludedRanges);
 
         const prefix = text.substring(0, markerIdx);
         const isInsideReservedCurlyPrefix = /\{\{(?:c\d+|ir)$/i.test(prefix);
@@ -189,12 +186,7 @@ export function parse(text: string, options: ParserOptions): ParsedQuestionInfo[
         if (cardType === null) {
             for (const { separator, type } of inlineSeparators) {
                 if (
-                    hasInlineMarker(
-                        currentLine,
-                        separator,
-                        currentLineStartOffset,
-                        irExtractRanges,
-                    )
+                    hasInlineMarker(currentLine, separator, currentLineStartOffset, irExtractRanges)
                 ) {
                     cardType = type;
                     break;
@@ -217,10 +209,7 @@ export function parse(text: string, options: ParserOptions): ParsedQuestionInfo[
 
             cardType = null;
             cardText = "";
-        } else if (
-            currentTrimmed === options.multilineCardSeparator &&
-            !isTrimmedMarkerInsideIr
-        ) {
+        } else if (currentTrimmed === options.multilineCardSeparator && !isTrimmedMarkerInsideIr) {
             // Ignore card if the front of the card is empty
             if (cardText.length > 1) {
                 // Pick up multiline basic cards

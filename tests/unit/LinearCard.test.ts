@@ -390,11 +390,13 @@ test("extract review header actions do not rely on title attributes", async () =
             ".sr-card-header:not(.sr-card-header-measure)",
         );
         const headerButtonWithIcon = (iconClass: string) =>
-            Array.from(liveHeader?.querySelectorAll<HTMLButtonElement>("button.sr-header-btn") ?? [])
-                .find((button) => button.querySelector(iconClass));
+            Array.from(
+                liveHeader?.querySelectorAll<HTMLButtonElement>("button.sr-header-btn") ?? [],
+            ).find((button) => button.querySelector(iconClass));
         const headerButtonWithLabel = (label: string) =>
-            Array.from(liveHeader?.querySelectorAll<HTMLButtonElement>("button.sr-header-btn") ?? [])
-                .find((button) => button.getAttribute("aria-label") === label);
+            Array.from(
+                liveHeader?.querySelectorAll<HTMLButtonElement>("button.sr-header-btn") ?? [],
+            ).find((button) => button.getAttribute("aria-label") === label);
 
         const backButton = headerButtonWithIcon(".lucide-arrow-left");
         const editButton = headerButtonWithLabel("Edit");
@@ -613,25 +615,27 @@ test("extract memo pill renders the priority dial and changes it with wheel and 
         expect(dial).not.toBeNull();
         expect(value?.textContent).toBe("5");
         expect(dial?.hasAttribute("title")).toBe(false);
-        expect(addEventListenerSpy).toHaveBeenCalledWith(
-            "wheel",
-            expect.any(Function),
-            { passive: false },
-        );
+        expect(addEventListenerSpy).toHaveBeenCalledWith("wheel", expect.any(Function), {
+            passive: false,
+        });
 
         act(() => {
             memoPill?.click();
         });
 
         act(() => {
-            dial?.dispatchEvent(new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }));
+            dial?.dispatchEvent(
+                new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }),
+            );
         });
         expect(value?.textContent).toBe("6");
         expect(onUpdateExtractPriority).not.toHaveBeenCalled();
         expect(dial?.classList.contains("tick-up")).toBe(true);
 
         act(() => {
-            dial?.dispatchEvent(new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }));
+            dial?.dispatchEvent(
+                new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }),
+            );
         });
         expect(value?.textContent).toBe("7");
         expect(onUpdateExtractPriority).not.toHaveBeenCalled();
@@ -822,9 +826,7 @@ test("extract memo pill locks inner text widths during collapse animation", () =
 
         expect(memoPill.classList.contains("is-active")).toBe(false);
         expect(memoPill.classList.contains("animate")).toBe(true);
-        expect(textarea.style.getPropertyValue("--sr-extract-memo-textarea-width")).toBe(
-            "340px",
-        );
+        expect(textarea.style.getPropertyValue("--sr-extract-memo-textarea-width")).toBe("340px");
         expect(preview.style.getPropertyValue("--sr-extract-memo-preview-width")).toBe("120px");
 
         act(() => {
@@ -2117,9 +2119,9 @@ test("card review hides edit mode entry and ignores edit-mode shortcuts", () => 
         const activeHeader = container.querySelector(
             ".sr-card-header:not(.sr-card-header-measure)",
         );
-        expect(activeHeader?.querySelectorAll(".sr-header-right > button.sr-header-btn")).toHaveLength(
-            0,
-        );
+        expect(
+            activeHeader?.querySelectorAll(".sr-header-right > button.sr-header-btn"),
+        ).toHaveLength(0);
         expect(container.querySelector(".sr-exit-edit-btn")).toBeNull();
 
         act(() => {
@@ -2264,9 +2266,7 @@ test("extract edit mode exit button follows the customized Obsidian command shor
         app: {
             hotkeyManager: {
                 customKeys: {
-                    "syro:srs-toggle-review-edit-mode": [
-                        { modifiers: ["Alt", "Shift"], key: "X" },
-                    ],
+                    "syro:srs-toggle-review-edit-mode": [{ modifiers: ["Alt", "Shift"], key: "X" }],
                 },
             },
         },
@@ -2991,9 +2991,7 @@ test("extract hybrid editor runs matching text command hotkeys before edit-mode 
 
         expect(container.querySelector(".sr-exit-edit-btn")).not.toBeNull();
         expect(onUpdateExtractContext).toHaveBeenCalled();
-        expect(onUpdateExtractContext.mock.calls.at(-1)?.[0].markdown).toBe(
-            "{{ir::make extract}}",
-        );
+        expect(onUpdateExtractContext.mock.calls.at(-1)?.[0].markdown).toBe("{{ir::make extract}}");
     } finally {
         act(() => root.unmount());
         container.remove();
@@ -3293,7 +3291,9 @@ test("extract memo safe area extends only extract review content scroll space", 
 
 test("mobile extract review keeps the same one-row four-action grid as card review", () => {
     const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
-    const mobileMediaBlocks = Array.from(css.matchAll(/@media\s*\(max-width:\s*640px\)\s*\{[\s\S]*?\n\}/g))
+    const mobileMediaBlocks = Array.from(
+        css.matchAll(/@media\s*\(max-width:\s*640px\)\s*\{[\s\S]*?\n\}/g),
+    )
         .map((match) => match[0])
         .join("\n");
 
@@ -3307,13 +3307,9 @@ test("mobile extract review keeps the same one-row four-action grid as card revi
 test("mobile review menu does not override the desktop dropdown menu styling", () => {
     const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
 
-    expect(css).not.toMatch(
-        /\.sr-linear-card-wrapper\.sr-phone-layout\s+\.sr-dropdown-menu\s*\{/,
-    );
+    expect(css).not.toMatch(/\.sr-linear-card-wrapper\.sr-phone-layout\s+\.sr-dropdown-menu\s*\{/);
     expect(css).not.toMatch(/\.sr-linear-card-wrapper\.sr-phone-layout\s+\.sr-menu-item\s*\{/);
-    expect(css).not.toMatch(
-        /\.sr-linear-card-wrapper\.sr-phone-layout\s+\.sr-menu-item-kbd\s*\{/,
-    );
+    expect(css).not.toMatch(/\.sr-linear-card-wrapper\.sr-phone-layout\s+\.sr-menu-item-kbd\s*\{/);
     expect(css).not.toMatch(
         /\.sr-linear-card-wrapper\.sr-phone-layout\s+[^{}]*\.sr-menu-item-kbd[^{}]*\{[^}]*display:\s*none\s*!important/s,
     );
@@ -3381,8 +3377,9 @@ test("extract memo sits 15px from bottom and 10px from right", () => {
     const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
     const wrapperRule = css.match(/\.corner-pill-wrapper\s*\{[^}]*\}/s)?.[0] ?? "";
     const mobileRule =
-        css.match(/@media \(max-width: 640px\)\s*\{[\s\S]*?\.corner-pill-wrapper\s*\{[^}]*\}/s)?.[0] ??
-        "";
+        css.match(
+            /@media \(max-width: 640px\)\s*\{[\s\S]*?\.corner-pill-wrapper\s*\{[^}]*\}/s,
+        )?.[0] ?? "";
 
     expect(wrapperRule).toContain("right: 10px");
     expect(wrapperRule).toContain("bottom: 15px");

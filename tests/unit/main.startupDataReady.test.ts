@@ -26,11 +26,13 @@ describe("SRPlugin startup data readiness gates", () => {
         plugin.syroReadOnlyReason = null;
         plugin.logRuntimeDebug = jest.fn();
 
-        const result = await (SRPlugin.prototype as unknown as {
-            initializeSyroDataBackedRuntimeIfReady: (
-                context: "startup" | "layout-ready" | "device-change",
-            ) => Promise<boolean>;
-        }).initializeSyroDataBackedRuntimeIfReady.call(plugin, "startup");
+        const result = await (
+            SRPlugin.prototype as unknown as {
+                initializeSyroDataBackedRuntimeIfReady: (
+                    context: "startup" | "layout-ready" | "device-change",
+                ) => Promise<boolean>;
+            }
+        ).initializeSyroDataBackedRuntimeIfReady.call(plugin, "startup");
 
         expect(result).toBe(false);
         expect(createSpy).not.toHaveBeenCalled();
@@ -49,13 +51,15 @@ describe("SRPlugin startup data readiness gates", () => {
             },
         };
 
-        const result = await (SRPlugin.prototype as unknown as {
-            requestSync: (options?: unknown) => Promise<{
-                status: string;
-                reason?: string;
-                trigger: string;
-            }>;
-        }).requestSync.call(plugin, {
+        const result = await (
+            SRPlugin.prototype as unknown as {
+                requestSync: (options?: unknown) => Promise<{
+                    status: string;
+                    reason?: string;
+                    trigger: string;
+                }>;
+            }
+        ).requestSync.call(plugin, {
             trigger: "manual",
         });
 
@@ -79,9 +83,11 @@ describe("SRPlugin startup data readiness gates", () => {
             },
         };
 
-        await (SRPlugin.prototype as unknown as {
-            initReviewQueueView: () => Promise<void>;
-        }).initReviewQueueView.call(plugin);
+        await (
+            SRPlugin.prototype as unknown as {
+                initReviewQueueView: () => Promise<void>;
+            }
+        ).initReviewQueueView.call(plugin);
 
         expect(plugin.ensureReviewQueueViewRegistered).toHaveBeenCalledTimes(1);
         expect(plugin.activateReviewQueueViewPanel).not.toHaveBeenCalled();
@@ -105,9 +111,11 @@ describe("SRPlugin startup data readiness gates", () => {
             },
         };
 
-        const openReviewQueueView = (SRPlugin.prototype as unknown as {
-            openReviewQueueView: () => Promise<void>;
-        }).openReviewQueueView;
+        const openReviewQueueView = (
+            SRPlugin.prototype as unknown as {
+                openReviewQueueView: () => Promise<void>;
+            }
+        ).openReviewQueueView;
 
         const pending = openReviewQueueView.call(plugin);
 

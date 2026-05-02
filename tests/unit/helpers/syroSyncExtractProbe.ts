@@ -131,12 +131,14 @@ export function createSyroSyncExtractProbe(sourcePath: string) {
 
         async syncFile(ctx: SyroSyncDiagnosticContext, client: string): Promise<void> {
             const plugin = ctx.harness.getClient(client).plugin;
-            await plugin.syncExtractsFromFile(Object.assign(new TFile(), {
-                path: sourcePath,
-                name: sourcePath.split("/").pop() ?? sourcePath,
-                basename: sourcePath.replace(/\.md$/i, ""),
-                extension: "md",
-            }));
+            await plugin.syncExtractsFromFile(
+                Object.assign(new TFile(), {
+                    path: sourcePath,
+                    name: sourcePath.split("/").pop() ?? sourcePath,
+                    basename: sourcePath.replace(/\.md$/i, ""),
+                    extension: "md",
+                }),
+            );
         },
     };
 }

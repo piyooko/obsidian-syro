@@ -144,7 +144,9 @@ function buildActiveExtractTimelineLog(item: ExtractItem): ReviewCommitLog | nul
         return null;
     }
     const extractCreatedAt =
-        item.sourceMode === "auto-slice" ? item.timelineCreatedAt ?? item.createdAt : item.createdAt;
+        item.sourceMode === "auto-slice"
+            ? (item.timelineCreatedAt ?? item.createdAt)
+            : item.createdAt;
 
     const quoteText =
         item.sourceMode === "auto-slice"
@@ -235,19 +237,6 @@ export class ReactNoteReviewView extends ItemView {
         return this.plugin.data.settings.showRuntimeDebugMessages === true;
     }
 
-    private logRuntimeDebug(message: string, details?: Record<string, unknown>): void {
-        if (!this.shouldLogRuntimeDebug()) {
-            return;
-        }
-
-        if (details) {
-            console.debug(message, details);
-            return;
-        }
-
-        console.debug(message);
-    }
-
     private shouldPersistTimelineOpenState(): boolean {
         return this.getDrawerInner() === null;
     }
@@ -313,27 +302,6 @@ export class ReactNoteReviewView extends ItemView {
         return drawerInner instanceof HTMLElement ? drawerInner : null;
     }
 
-    private describeLeaf(leaf: WorkspaceLeaf | null | undefined): Record<string, unknown> {
-        const view = leaf?.view;
-        const viewType =
-            typeof view?.getViewType === "function"
-                ? view.getViewType()
-                : (view?.constructor?.name ?? null);
-        const path =
-            view instanceof MarkdownView && typeof view.file?.path === "string"
-                ? view.file.path
-                : null;
-        const containerEl = (
-            leaf as (WorkspaceLeaf & { containerEl?: HTMLElement }) | null | undefined
-        )?.containerEl;
-
-        return {
-            viewType,
-            path,
-            containerClasses: containerEl instanceof HTMLElement ? containerEl.className : null,
-        };
-    }
-
     private getWorkspaceTabsContainer(leaf: WorkspaceLeaf | null | undefined): HTMLElement | null {
         const containerEl = (
             leaf as (WorkspaceLeaf & { containerEl?: HTMLElement }) | null | undefined
@@ -342,11 +310,7 @@ export class ReactNoteReviewView extends ItemView {
         return workspaceTabs instanceof HTMLElement ? workspaceTabs : null;
     }
 
-    private shouldAllowAutoFollowForFileOpen(
-        file: TFile,
-        activeLeaf: WorkspaceLeaf,
-        activeLeafPath: string,
-    ): boolean {
+    private shouldAllowAutoFollowForFileOpen(file: TFile, activeLeaf: WorkspaceLeaf): boolean {
         const now = Date.now();
         const activeTabsContainer = this.getWorkspaceTabsContainer(activeLeaf);
         const hasRecentLeafChange =
@@ -522,9 +486,9 @@ export class ReactNoteReviewView extends ItemView {
                 .map((item) => buildActiveExtractTimelineLog(item))
                 .filter((log): log is ReviewCommitLog => log !== null) ?? [];
 
-        return [...activeExtractLogs, ...commits].sort(
-            (left, right) => (right.timestamp ?? 0) - (left.timestamp ?? 0),
-        ).filter((log) => shouldShowTimelineLog(log, this.getTimelineDisplayPreferences()));
+        return [...activeExtractLogs, ...commits]
+            .sort((left, right) => (right.timestamp ?? 0) - (left.timestamp ?? 0))
+            .filter((log) => shouldShowTimelineLog(log, this.getTimelineDisplayPreferences()));
     }
 
     private canUseStandaloneTimelineItems(): boolean {
@@ -736,7 +700,7 @@ export class ReactNoteReviewView extends ItemView {
                     return;
                 }
 
-                if (!this.shouldAllowAutoFollowForFileOpen(file, activeLeaf, activeLeafPath)) {
+                if (!this.shouldAllowAutoFollowForFileOpen(file, activeLeaf)) {
                     return;
                 }
 
@@ -1593,7 +1557,10 @@ export class ReactNoteReviewView extends ItemView {
                     }
                     if (!this.commitStore || !this.selectedItem) return;
                     const selectedPath = this.selectedItem.path;
-                    const removedCommit = this.commitStore.getCommitSnapshot(selectedPath, commitId);
+                    const removedCommit = this.commitStore.getCommitSnapshot(
+                        selectedPath,
+                        commitId,
+                    );
                     this.runAsync(
                         (async () => {
                             await this.commitStore.deleteCommit(selectedPath, commitId);
@@ -1632,7 +1599,8 @@ export class ReactNoteReviewView extends ItemView {
     private async handleCommitSelect(log: ReviewCommitLog): Promise<void> {
         if (!log) return;
 
-        const targetPath = log.entryType === "extract" ? log.extract?.sourcePath : this.selectedItem?.path;
+        const targetPath =
+            log.entryType === "extract" ? log.extract?.sourcePath : this.selectedItem?.path;
         if (!targetPath) return;
 
         const file = this.app.vault.getAbstractFileByPath(targetPath);
@@ -1733,7 +1701,11 @@ export class ReactNoteReviewView extends ItemView {
         }
 
         if (!this.commitStore) return;
-        const updatedCommit = await this.commitStore.editCommit(this.selectedItem.path, commitId, payload);
+        const updatedCommit = await this.commitStore.editCommit(
+            this.selectedItem.path,
+            commitId,
+            payload,
+        );
         await this.plugin.appendSyroTimelineEdit(this.selectedItem.path, updatedCommit);
         if (payload.entryType === "manual") {
             await this.applyManualTimelineDurationSchedule(this.selectedItem.path, payload.message);

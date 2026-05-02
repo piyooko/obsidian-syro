@@ -408,7 +408,7 @@ function ensureTableWrapper(table: HTMLTableElement): HTMLElement {
         return table.parentElement;
     }
 
-    const wrapper = document.createElement("div");
+    const wrapper = createDiv();
     wrapper.className = "table-wrapper";
     table.parentElement?.insertBefore(wrapper, table);
     wrapper.appendChild(table);
@@ -420,7 +420,7 @@ function wrapTableCellContents(cell: HTMLElement): void {
         return;
     }
 
-    const wrapper = document.createElement("div");
+    const wrapper = createDiv();
     wrapper.className = "table-cell-wrapper";
     while (cell.firstChild) {
         wrapper.appendChild(cell.firstChild);
@@ -439,7 +439,7 @@ function addTableColHandle(
         return;
     }
 
-    const handle = document.createElement("span");
+    const handle = createSpan();
     handle.className = "table-col-drag-handle";
     handle.draggable = true;
     handle.setAttribute("contenteditable", "false");
@@ -480,7 +480,7 @@ function addTableRowHandle(
         return;
     }
 
-    const handle = document.createElement("span");
+    const handle = createSpan();
     handle.className = "table-row-drag-handle";
     handle.draggable = rowIndex > 0;
     handle.setAttribute("contenteditable", "false");
@@ -529,7 +529,7 @@ function addTableActionButton(
         return;
     }
 
-    const button = document.createElement("button");
+    const button = createEl("button");
     button.type = "button";
     button.className = className;
     button.setAttribute("contenteditable", "false");
@@ -599,8 +599,7 @@ function logHybridEditorDomKeydownDebug(
             selectionFrom: selection?.from ?? null,
             selectionTo: selection?.to ?? null,
             shiftKey: event.shiftKey,
-            targetClassName:
-                event.target instanceof HTMLElement ? event.target.className : null,
+            targetClassName: event.target instanceof HTMLElement ? event.target.className : null,
             targetTagName:
                 event.target instanceof HTMLElement ? event.target.tagName.toLowerCase() : null,
         },
@@ -636,7 +635,7 @@ class RenderedMarkdownBlockWidget extends WidgetType {
     }
 
     toDOM(view: EditorView): HTMLElement {
-        const container = document.createElement("div");
+        const container = createDiv();
         const tableClass = this.block.kind === "table" ? " cm-embed-block cm-table-widget" : "";
         container.className = `sr-hybrid-rendered-block markdown-preview-view markdown-rendered${tableClass}${this.className}`;
         container.dataset.srHybridBlockKind = this.block.kind;
@@ -1101,7 +1100,12 @@ export const ExtractHybridMarkdownEditorView: FC<ExtractHybridMarkdownEditorView
                     keydown: (event) => {
                         const currentView = viewRef.current;
                         if (!currentView) {
-                            logHybridEditorDomKeydownDebug(plugin, "dom-keydown-ignored", event, currentView);
+                            logHybridEditorDomKeydownDebug(
+                                plugin,
+                                "dom-keydown-ignored",
+                                event,
+                                currentView,
+                            );
                             return false;
                         }
 

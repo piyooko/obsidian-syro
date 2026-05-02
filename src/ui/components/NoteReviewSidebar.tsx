@@ -896,7 +896,7 @@ const TimelineRenderedMessage: React.FC<{
             for (const line of lines) {
                 if (cancelled) return;
 
-                const lineEl = document.createElement("div");
+                const lineEl = createDiv();
                 lineEl.className = "sr-timeline-message-line";
 
                 if (!line) {
@@ -1005,7 +1005,8 @@ export function calculateExtractQuoteTooltipPosition({
         ? Math.min(tooltipHeight, availableAbove)
         : Math.min(tooltipHeight, availableBelow);
     const maxHeight = visibleHeight < tooltipHeight ? visibleHeight : null;
-    const aboveTop = anchorRect.top - visibleHeight - gap;
+    const effectiveAboveHeight = maxHeight ?? tooltipHeight;
+    const aboveTop = anchorRect.top - effectiveAboveHeight - gap;
     const belowTop = anchorRect.bottom + gap;
     const top = placeAbove
         ? Math.max(viewportPadding, aboveTop)

@@ -36,11 +36,7 @@ export interface SyncScenario {
 
 function advanceDiagnosticClock(): void {
     const fakeClock = (setTimeout as unknown as { clock?: unknown }).clock;
-    if (
-        typeof jest === "undefined" ||
-        typeof jest.setSystemTime !== "function" ||
-        !fakeClock
-    ) {
+    if (typeof jest === "undefined" || typeof jest.setSystemTime !== "function" || !fakeClock) {
         return;
     }
     jest.setSystemTime(new Date(Date.now() + 1000));
@@ -189,8 +185,11 @@ export class SyroSyncDiagnosticHarness {
         }
         for (const action of scenario.actions) {
             if (action.expectRemote) {
-                await this.wrap(scenario, action, "remote", () =>
-                    action.expectRemote?.(this.context) ?? Promise.resolve(),
+                await this.wrap(
+                    scenario,
+                    action,
+                    "remote",
+                    () => action.expectRemote?.(this.context) ?? Promise.resolve(),
                 );
             }
         }

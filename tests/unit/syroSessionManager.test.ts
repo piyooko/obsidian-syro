@@ -148,7 +148,9 @@ function createSessionEventLine(record: SyroSessionRecord): string {
     });
 }
 
-function createCursorSnapshotLine(cursors: Record<string, { offset: number; lastOpId: string | null; updatedAt: string }>): string {
+function createCursorSnapshotLine(
+    cursors: Record<string, { offset: number; lastOpId: string | null; updatedAt: string }>,
+): string {
     return JSON.stringify({
         version: 1,
         lineType: "cursor-snapshot",
@@ -188,9 +190,13 @@ describe("SyroSessionManager", () => {
             configurable: true,
             value: {
                 randomUUID: () => "d84f1111-2222-3333-4444-555555555555",
-                getRandomValues: originalCrypto?.getRandomValues ?? ((buffer: Uint8Array) => buffer),
+                getRandomValues:
+                    originalCrypto?.getRandomValues ?? ((buffer: Uint8Array) => buffer),
                 subtle: originalCrypto?.subtle ?? {
-                    digest: async (_algorithm: string, data: BufferSource): Promise<ArrayBuffer> => {
+                    digest: async (
+                        _algorithm: string,
+                        data: BufferSource,
+                    ): Promise<ArrayBuffer> => {
                         const hash = createHash("sha256");
                         if (data instanceof ArrayBuffer) {
                             hash.update(Buffer.from(data));
@@ -198,7 +204,10 @@ describe("SyroSessionManager", () => {
                             hash.update(Buffer.from(data.buffer, data.byteOffset, data.byteLength));
                         }
                         const digest = hash.digest();
-                        return digest.buffer.slice(digest.byteOffset, digest.byteOffset + digest.byteLength);
+                        return digest.buffer.slice(
+                            digest.byteOffset,
+                            digest.byteOffset + digest.byteLength,
+                        );
                     },
                 },
             },
@@ -228,7 +237,10 @@ describe("SyroSessionManager", () => {
         return { adapter, app, files, layout: startup.layout! };
     }
 
-    async function addSecondaryDevice(adapter: MockAdapter, files: Map<string, string>): Promise<void> {
+    async function addSecondaryDevice(
+        adapter: MockAdapter,
+        files: Map<string, string>,
+    ): Promise<void> {
         await adapter.mkdir(".obsidian/plugins/syro/devices/Mobile--91ac");
         await adapter.mkdir(".obsidian/plugins/syro/sessions/Mobile--91ac");
         files.set(
@@ -241,7 +253,10 @@ describe("SyroSessionManager", () => {
         );
     }
 
-    async function addTabletDevice(adapter: MockAdapter, files: Map<string, string>): Promise<void> {
+    async function addTabletDevice(
+        adapter: MockAdapter,
+        files: Map<string, string>,
+    ): Promise<void> {
         await adapter.mkdir(".obsidian/plugins/syro/devices/Tablet--7f3a");
         await adapter.mkdir(".obsidian/plugins/syro/sessions/Tablet--7f3a");
         files.set(
@@ -317,8 +332,12 @@ describe("SyroSessionManager", () => {
     test("stages remote records from a still-growing session file and appends a local cursor snapshot only after finalize", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);
-        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
-        files.set(normalizePath(remoteSessionPath), `${createSessionEventLine(createRemoteRecord())}\n`);
+        const remoteSessionPath =
+            ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        files.set(
+            normalizePath(remoteSessionPath),
+            `${createSessionEventLine(createRemoteRecord())}\n`,
+        );
 
         const manager = new SyroSessionManager(app, layout);
         await manager.initialize();
@@ -344,8 +363,12 @@ describe("SyroSessionManager", () => {
     test("does not append a cursor snapshot when staged remote imports are not finalized", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);
-        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
-        files.set(normalizePath(remoteSessionPath), `${createSessionEventLine(createRemoteRecord())}\n`);
+        const remoteSessionPath =
+            ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        files.set(
+            normalizePath(remoteSessionPath),
+            `${createSessionEventLine(createRemoteRecord())}\n`,
+        );
 
         const manager = new SyroSessionManager(app, layout);
         await manager.initialize();
@@ -408,7 +431,8 @@ describe("SyroSessionManager", () => {
     test("ignores trailing partial lines until they become complete", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);
-        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        const remoteSessionPath =
+            ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
         const firstLine = createSessionEventLine(createRemoteRecord());
         const secondLine = createSessionEventLine(
             createRemoteRecord({
@@ -438,15 +462,14 @@ describe("SyroSessionManager", () => {
             string,
             SyroSessionRecord[],
         ];
-        expect(secondReplayArgs[1]).toEqual([
-            expect.objectContaining({ opId: "remote-op-2" }),
-        ]);
+        expect(secondReplayArgs[1]).toEqual([expect.objectContaining({ opId: "remote-op-2" })]);
     });
 
     test("restores cursor snapshots after restart and resumes from the saved offset", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);
-        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        const remoteSessionPath =
+            ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
         const firstLine = `${createSessionEventLine(createRemoteRecord())}\n`;
         files.set(normalizePath(remoteSessionPath), firstLine);
         files.set(
@@ -483,15 +506,14 @@ describe("SyroSessionManager", () => {
             string,
             SyroSessionRecord[],
         ];
-        expect(resumedReplayArgs[1]).toEqual([
-            expect.objectContaining({ opId: "remote-op-2" }),
-        ]);
+        expect(resumedReplayArgs[1]).toEqual([expect.objectContaining({ opId: "remote-op-2" })]);
     });
 
     test("recovers stale mid-line cursors by lastOpId instead of skipping malformed fragments", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);
-        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        const remoteSessionPath =
+            ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
         const firstLine = `${createSessionEventLine(createRemoteRecord())}\n`;
         const secondLine = `${createSessionEventLine(
             createRemoteRecord({
@@ -520,9 +542,7 @@ describe("SyroSessionManager", () => {
 
         expect(replaySession).toHaveBeenCalledTimes(1);
         const replayArgs = replaySession.mock.calls[0] as unknown as [string, SyroSessionRecord[]];
-        expect(replayArgs[1]).toEqual([
-            expect.objectContaining({ opId: "remote-op-2" }),
-        ]);
+        expect(replayArgs[1]).toEqual([expect.objectContaining({ opId: "remote-op-2" })]);
         expect(warnSpy).not.toHaveBeenCalledWith(
             "[SR-Syro] Ignored malformed session line.",
             expect.anything(),
@@ -532,7 +552,8 @@ describe("SyroSessionManager", () => {
     test("resets stale cursors to zero when the saved lastOpId no longer exists", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);
-        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        const remoteSessionPath =
+            ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
         const firstLine = `${createSessionEventLine(createRemoteRecord())}\n`;
         const secondLine = `${createSessionEventLine(
             createRemoteRecord({
@@ -579,7 +600,8 @@ describe("SyroSessionManager", () => {
             }),
         );
 
-        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        const remoteSessionPath =
+            ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
         const remoteRaw = `${createSessionEventLine(createRemoteRecord())}\n`;
         files.set(normalizePath(remoteSessionPath), remoteRaw);
         files.set(
@@ -621,7 +643,8 @@ describe("SyroSessionManager", () => {
     test("marks remote sessions at EOF after overwrite so old history is not imported again", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);
-        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        const remoteSessionPath =
+            ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
         const remoteRaw = `${createSessionEventLine(createRemoteRecord())}\n`;
         files.set(normalizePath(remoteSessionPath), remoteRaw);
         files.set(
@@ -654,10 +677,15 @@ describe("SyroSessionManager", () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);
         await addTabletDevice(adapter, files);
-        const mobileSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
-        const tabletSessionPath = ".obsidian/plugins/syro/sessions/Tablet--7f3a/2026-04-13.session.jsonl";
+        const mobileSessionPath =
+            ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-13.session.jsonl";
+        const tabletSessionPath =
+            ".obsidian/plugins/syro/sessions/Tablet--7f3a/2026-04-13.session.jsonl";
 
-        files.set(normalizePath(mobileSessionPath), `${createSessionEventLine(createRemoteRecord())}\n`);
+        files.set(
+            normalizePath(mobileSessionPath),
+            `${createSessionEventLine(createRemoteRecord())}\n`,
+        );
         files.set(
             normalizePath(tabletSessionPath),
             `${createSessionEventLine(
@@ -729,12 +757,18 @@ describe("SyroSessionManager", () => {
     test("deletes historical session files after all devices have confirmed EOF", async () => {
         const { app, adapter, files, layout } = await createWorkspaceContext();
         await addSecondaryDevice(adapter, files);
-        const remoteSessionPath = ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-12.session.jsonl";
-        files.set(normalizePath(remoteSessionPath), `${createSessionEventLine(createRemoteRecord({
-            sessionId: "Mobile--91ac/2026-04-12",
-            createdAt: "2026-04-12T12:00:00.000Z",
-            updatedAt: "2026-04-12T12:00:00.000Z",
-        }))}\n`);
+        const remoteSessionPath =
+            ".obsidian/plugins/syro/sessions/Mobile--91ac/2026-04-12.session.jsonl";
+        files.set(
+            normalizePath(remoteSessionPath),
+            `${createSessionEventLine(
+                createRemoteRecord({
+                    sessionId: "Mobile--91ac/2026-04-12",
+                    createdAt: "2026-04-12T12:00:00.000Z",
+                    updatedAt: "2026-04-12T12:00:00.000Z",
+                }),
+            )}\n`,
+        );
 
         const manager = new SyroSessionManager(app, layout);
         await manager.initialize();

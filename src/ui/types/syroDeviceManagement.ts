@@ -1,9 +1,4 @@
-export type SyroDeviceCardStatus =
-    | "current"
-    | "needs-sync"
-    | "up-to-date"
-    | "idle"
-    | "no-session";
+export type SyroDeviceCardStatus = "current" | "needs-sync" | "up-to-date" | "idle" | "no-session";
 
 export type SyroInvalidDeviceReason =
     | "missing-device-json"

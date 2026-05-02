@@ -2441,8 +2441,7 @@ body.syro-mobile-review-square-corners
     .cm-content {
     --sr-extract-memo-safe-area: 80px;
     padding-bottom: calc(
-        var(--syro-desktop-review-content-padding-y, 24px) +
-            var(--sr-extract-memo-safe-area, 80px)
+        var(--syro-desktop-review-content-padding-y, 24px) + var(--sr-extract-memo-safe-area, 80px)
     ) !important;
 }
 
@@ -2467,7 +2466,9 @@ body.syro-mobile-review-square-corners
     opacity: 0.5;
 }
 
-.sr-hybrid-markdown-source .sr-cloze-highlight:has(.sr-extract-context-muted) .sr-extract-context-muted {
+.sr-hybrid-markdown-source
+    .sr-cloze-highlight:has(.sr-extract-context-muted)
+    .sr-extract-context-muted {
     opacity: 1;
 }
 
@@ -2483,8 +2484,7 @@ body.syro-mobile-review-square-corners
 .sr-linear-card-wrapper.sr-phone-layout
     .sr-hybrid-markdown-source.markdown-source-view.mod-cm6
     .cm-content {
-    padding: var(--syro-mobile-review-content-padding-y, 16px)
-        18px !important;
+    padding: var(--syro-mobile-review-content-padding-y, 16px) 18px !important;
 }
 
 .sr-linear-card-wrapper.sr-phone-layout .sr-hybrid-markdown-source .cm-scroller {
@@ -2497,8 +2497,7 @@ body.syro-mobile-review-square-corners
     .cm-content {
     --sr-extract-memo-safe-area: 96px;
     padding-bottom: calc(
-        var(--syro-mobile-review-content-padding-y, 16px) +
-            var(--sr-extract-memo-safe-area, 96px)
+        var(--syro-mobile-review-content-padding-y, 16px) + var(--sr-extract-memo-safe-area, 96px)
     ) !important;
 }
 
@@ -2803,18 +2802,16 @@ body.syro-mobile-review-square-corners
     border-left: 2px solid var(--sr-extract-memo-text-bright);
 }
 
+body.syro-desktop-review-square-corners .sr-linear-card-wrapper:not(.sr-phone-layout) .text-preview,
 body.syro-desktop-review-square-corners
     .sr-linear-card-wrapper:not(.sr-phone-layout)
-    .text-preview,
-body.syro-desktop-review-square-corners
-    .sr-linear-card-wrapper:not(.sr-phone-layout)
-    .corner-pill-wrapper textarea,
+    .corner-pill-wrapper
+    textarea,
+body.syro-mobile-review-square-corners .sr-linear-card-wrapper.sr-phone-layout .text-preview,
 body.syro-mobile-review-square-corners
     .sr-linear-card-wrapper.sr-phone-layout
-    .text-preview,
-body.syro-mobile-review-square-corners
-    .sr-linear-card-wrapper.sr-phone-layout
-    .corner-pill-wrapper textarea {
+    .corner-pill-wrapper
+    textarea {
     transition-duration: 0.2s;
 }
 

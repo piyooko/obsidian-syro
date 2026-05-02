@@ -182,7 +182,12 @@ const HYBRID_HOTKEY_ACTIONS: HybridHotkeyActionDefinition[] = [
     },
     {
         action: "unindent",
-        commandIds: ["editor:unindent-list", "editor:indent-less", "editor:unindent", "editor:outdent"],
+        commandIds: [
+            "editor:unindent-list",
+            "editor:indent-less",
+            "editor:unindent",
+            "editor:outdent",
+        ],
         fallback: [],
         run: "editor:unindent-list",
     },
@@ -210,9 +215,7 @@ const SUPPORTED_HYBRID_COMMAND_IDS = new Set(
     HYBRID_HOTKEY_ACTIONS.flatMap((action) => action.commandIds),
 );
 
-const REVIEW_EDIT_MODE_FALLBACK_HOTKEYS: ObsidianHotkeySpec[] = [
-    { modifiers: ["Alt"], key: "E" },
-];
+const REVIEW_EDIT_MODE_FALLBACK_HOTKEYS: ObsidianHotkeySpec[] = [{ modifiers: ["Alt"], key: "E" }];
 
 const FORMAT_WRAPPERS: Record<string, [string, string]> = {
     "editor:insert-math-expression": ["$", "$"],
@@ -272,51 +275,23 @@ function parseHotkeySpec(
     logger?: HybridHotkeyLogger,
 ): ObsidianHotkeySpec | null {
     if (!hotkey || typeof hotkey !== "object") {
-        recordInvalidHotkey(
-            invalidHotkeys,
-            logger,
-            commandId,
-            source,
-            hotkey,
-            "hotkey-not-object",
-        );
+        recordInvalidHotkey(invalidHotkeys, logger, commandId, source, hotkey, "hotkey-not-object");
         return null;
     }
 
     const candidate = hotkey as { key?: unknown; modifiers?: unknown };
     if (typeof candidate.key !== "string" || candidate.key.length === 0) {
-        recordInvalidHotkey(
-            invalidHotkeys,
-            logger,
-            commandId,
-            source,
-            hotkey,
-            "invalid-key",
-        );
+        recordInvalidHotkey(invalidHotkeys, logger, commandId, source, hotkey, "invalid-key");
         return null;
     }
 
     if (!isStringArray(candidate.modifiers)) {
-        recordInvalidHotkey(
-            invalidHotkeys,
-            logger,
-            commandId,
-            source,
-            hotkey,
-            "invalid-modifiers",
-        );
+        recordInvalidHotkey(invalidHotkeys, logger, commandId, source, hotkey, "invalid-modifiers");
         return null;
     }
 
     if (isModifierOnlyKey(candidate.key)) {
-        recordInvalidHotkey(
-            invalidHotkeys,
-            logger,
-            commandId,
-            source,
-            hotkey,
-            "modifier-only-key",
-        );
+        recordInvalidHotkey(invalidHotkeys, logger, commandId, source, hotkey, "modifier-only-key");
         return null;
     }
 
@@ -611,9 +586,10 @@ export function getReviewEditModeHotkeyLabel(app: unknown): string | null {
     if (!hotkey) {
         return null;
     }
-    return [...normalizeModifiers(hotkey.modifiers).map(formatHotkeyModifier), formatHotkeyKey(hotkey.key)].join(
-        "+",
-    );
+    return [
+        ...normalizeModifiers(hotkey.modifiers).map(formatHotkeyModifier),
+        formatHotkeyKey(hotkey.key),
+    ].join("+");
 }
 
 function replaceSelectionWithWrapper(view: EditorView, prefix: string, suffix: string): void {
@@ -702,7 +678,11 @@ function toggleList(view: EditorView, ordered: boolean): void {
 
         const indent = line.text.match(/^\s*/)?.[0] ?? "";
         const marker = ordered ? `${index + 1}. ` : "- ";
-        changes.push({ from: line.from + indent.length, insert: marker, to: line.from + indent.length });
+        changes.push({
+            from: line.from + indent.length,
+            insert: marker,
+            to: line.from + indent.length,
+        });
     });
 
     dispatchLineChanges(view, changes);
@@ -983,10 +963,15 @@ export function handleHybridEditorHotkey(
             continue;
         }
 
-        return runResolvedHybridEditorHotkeyCommand(event, view, {
-            ...command,
-            hotkeys: [matchedHotkey],
-        }, logger);
+        return runResolvedHybridEditorHotkeyCommand(
+            event,
+            view,
+            {
+                ...command,
+                hotkeys: [matchedHotkey],
+            },
+            logger,
+        );
     }
 
     return false;

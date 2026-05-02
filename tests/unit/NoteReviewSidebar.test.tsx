@@ -963,7 +963,9 @@ describe("NoteReviewSidebar", () => {
             act(() => {
                 entry?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
             });
-            expect(onCommitSelect).toHaveBeenCalledWith(expect.objectContaining({ id: extractLog.id }));
+            expect(onCommitSelect).toHaveBeenCalledWith(
+                expect.objectContaining({ id: extractLog.id }),
+            );
 
             act(() => {
                 entry?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
@@ -1017,9 +1019,11 @@ describe("NoteReviewSidebar", () => {
                 1,
             );
             expect(
-                (view.container.querySelector(
-                    ".sr-timeline-extract-edit-memo",
-                ) as HTMLTextAreaElement | null)?.value,
+                (
+                    view.container.querySelector(
+                        ".sr-timeline-extract-edit-memo",
+                    ) as HTMLTextAreaElement | null
+                )?.value,
             ).toBe("memo body");
         } finally {
             view.cleanup();

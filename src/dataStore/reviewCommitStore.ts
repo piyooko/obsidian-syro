@@ -101,7 +101,11 @@ function cloneCommitLog<T extends ReviewCommitLog | ReviewCommitLog[] | undefine
 function cloneExtractSnapshot(
     extract: ReviewTimelineExtractSnapshot | undefined,
 ): ReviewTimelineExtractSnapshot | undefined {
-    return extract ? compactExtractSnapshot(JSON.parse(JSON.stringify(extract)) as ReviewTimelineExtractSnapshot) : undefined;
+    return extract
+        ? compactExtractSnapshot(
+              JSON.parse(JSON.stringify(extract)) as ReviewTimelineExtractSnapshot,
+          )
+        : undefined;
 }
 
 function compactExtractQuoteText(extract: ReviewTimelineExtractSnapshot): string {
@@ -124,10 +128,12 @@ function compactExtractQuoteText(extract: ReviewTimelineExtractSnapshot): string
     );
 }
 
-function compactExtractAnchor(
-    anchor: ReviewTimelineExtractAnchor,
-): ReviewTimelineExtractAnchor {
-    const { prefix: _prefix, suffix: _suffix, ...compactAnchor } = anchor as ReviewTimelineExtractAnchor & {
+function compactExtractAnchor(anchor: ReviewTimelineExtractAnchor): ReviewTimelineExtractAnchor {
+    const {
+        prefix: _prefix,
+        suffix: _suffix,
+        ...compactAnchor
+    } = anchor as ReviewTimelineExtractAnchor & {
         prefix?: unknown;
         suffix?: unknown;
     };
@@ -337,7 +343,8 @@ export class ReviewCommitStore {
         const extract = cloneExtractSnapshot(metadata?.extract);
         const log: ReviewCommitLog = {
             id: now.toString(),
-            message: entryType === "extract" ? (extract?.memoText ?? message).trim() : message.trim(),
+            message:
+                entryType === "extract" ? (extract?.memoText ?? message).trim() : message.trim(),
             timestamp: now,
             contextAnchor,
             scrollPercentage,
@@ -422,10 +429,7 @@ export class ReviewCommitStore {
         return snapshot;
     }
 
-    renamePathPrefixWithSnapshots(
-        oldPath: string,
-        newPath: string,
-    ): RenamedTimelineFileSnapshot[] {
+    renamePathPrefixWithSnapshots(oldPath: string, newPath: string): RenamedTimelineFileSnapshot[] {
         const renamedSnapshots: RenamedTimelineFileSnapshot[] = [];
         const nextData: ReviewCommitData = {};
         let changed = false;
@@ -443,7 +447,7 @@ export class ReviewCommitStore {
                 path: nextPath,
                 oldPath: filePath,
                 newPath: nextPath,
-            commits: cloneCommitLog(commits) ?? [],
+                commits: cloneCommitLog(commits) ?? [],
             });
         }
 
@@ -501,7 +505,9 @@ export class ReviewCommitStore {
             return false;
         }
 
-        this.data[existingPath] = this.data[existingPath].filter((commit) => commit.id !== commitId);
+        this.data[existingPath] = this.data[existingPath].filter(
+            (commit) => commit.id !== commitId,
+        );
         if (this.data[existingPath].length === 0) {
             delete this.data[existingPath];
         }

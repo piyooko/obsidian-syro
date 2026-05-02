@@ -215,6 +215,59 @@ function createMockElement(tagName = "div") {
     };
 }
 
+function createMockSvgElement(tagName) {
+    if (typeof document !== "undefined") {
+        const element = document.createElementNS("http://www.w3.org/2000/svg", tagName);
+        element.addClass = function addClass(...classNames) {
+            this.classList.add(...classNames);
+        };
+        return element;
+    }
+
+    return createMockElement(tagName);
+}
+
+function installGlobalDomHelpers() {
+    if (typeof globalThis.createEl !== "function") {
+        globalThis.createEl = (tagName, options = {}) =>
+            createMockElement(tagName).createEl
+                ? createMockElement("div").createEl(tagName, options)
+                : createMockElement(tagName);
+    }
+    if (typeof globalThis.createDiv !== "function") {
+        globalThis.createDiv = (options = {}) =>
+            createMockElement("div").createDiv
+                ? createMockElement("body").createDiv(options)
+                : createMockElement("div");
+    }
+    if (typeof globalThis.createSpan !== "function") {
+        globalThis.createSpan = (options = {}) =>
+            createMockElement("body").createEl("span", options);
+    }
+    if (typeof globalThis.createSvg !== "function") {
+        globalThis.createSvg = (tagName, options = {}) => {
+            const element = createMockSvgElement(tagName);
+            if (typeof options === "string") {
+                element.addClass?.(options);
+            } else if (options?.cls) {
+                element.addClass?.(options.cls);
+            }
+            if (options?.text) {
+                element.textContent = options.text;
+            }
+            return element;
+        };
+    }
+    if (typeof globalThis.createFragment !== "function") {
+        globalThis.createFragment = () =>
+            typeof document !== "undefined"
+                ? document.createDocumentFragment()
+                : createMockElement("fragment");
+    }
+}
+
+installGlobalDomHelpers();
+
 class Modal {
     constructor(app) {
         this.app = app;

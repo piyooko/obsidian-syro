@@ -33,18 +33,14 @@ function addAutoExtractMenuItem(plugin: SRPlugin, menu: Menu, fileish: TFile): v
             activeRule?.allHeadingLevels
                 ? [1, 2, 3, 4, 5, 6]
                 : (activeRule?.headingLevels ??
-                      (activeRule?.headingLevel !== undefined
-                          ? [activeRule.headingLevel]
-                          : [])),
+                  (activeRule?.headingLevel !== undefined ? [activeRule.headingLevel] : [])),
         );
         const isAllHeadingsChecked = activeRule?.allHeadingLevels === true;
 
         submenu.addItem((submenuItem) => {
             submenuItem.setIcon("library-big");
             submenuItem.setTitle(t("AUTO_EXTRACT_ALL_HEADINGS"));
-            (submenuItem as unknown as SubmenuCapableMenuItem).setChecked?.(
-                isAllHeadingsChecked,
-            );
+            (submenuItem as unknown as SubmenuCapableMenuItem).setChecked?.(isAllHeadingsChecked);
             submenuItem.onClick(async () => {
                 await plugin.setAutoExtractAllHeadings(fileish, !isAllHeadingsChecked);
                 new Notice(
@@ -61,9 +57,7 @@ function addAutoExtractMenuItem(plugin: SRPlugin, menu: Menu, fileish: TFile): v
             submenu.addItem((submenuItem) => {
                 submenuItem.setIcon("heading");
                 submenuItem.setTitle(t("AUTO_EXTRACT_BY_HEADING_LEVEL", { level }));
-                (submenuItem as unknown as SubmenuCapableMenuItem).setChecked?.(
-                    isLevelChecked,
-                );
+                (submenuItem as unknown as SubmenuCapableMenuItem).setChecked?.(isLevelChecked);
                 submenuItem.onClick(async () => {
                     await plugin.setAutoExtractHeadingLevel(fileish, level, !isLevelChecked);
                     new Notice(

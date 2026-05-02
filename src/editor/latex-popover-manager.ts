@@ -141,7 +141,7 @@ class LatexPopoverPlugin {
         this.lastFormulaCoords = { left: coords.left, top: coords.top };
 
         if (!this.container) {
-            this.container = document.createElement("div");
+            this.container = createDiv();
             this.container.className = "sr-latex-popover-anchor";
             document.body.appendChild(this.container);
             this.root = createRoot(this.container);

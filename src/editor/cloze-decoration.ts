@@ -122,7 +122,7 @@ class ClozeButtonWidget extends WidgetType {
     }
 
     toDOM(view: EditorView): HTMLElement {
-        const button = document.createElement("span");
+        const button = createSpan();
         button.addClass("sr-cloze-button");
         const icon = button.createSvg("svg", {
             attr: {

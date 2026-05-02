@@ -39,10 +39,7 @@ describe("InlineTitleReviewButtonManager", () => {
 
         manager.register();
 
-        expect(plugin.syncEvents.on).toHaveBeenCalledWith(
-            "extracts-updated",
-            expect.any(Function),
-        );
+        expect(plugin.syncEvents.on).toHaveBeenCalledWith("extracts-updated", expect.any(Function));
         manager.destroy();
     });
 
@@ -104,9 +101,9 @@ describe("InlineTitleReviewButtonManager", () => {
             await Promise.resolve();
 
             expect(plugin.getReadonlyNoteLocalCardStats).toHaveBeenCalledWith(file);
-            expect(containerEl.querySelector(".syro-inline-title-progress-count")?.textContent).toBe(
-                "1/3",
-            );
+            expect(
+                containerEl.querySelector(".syro-inline-title-progress-count")?.textContent,
+            ).toBe("1/3");
         } finally {
             manager.destroy();
             containerEl.remove();
@@ -181,16 +178,16 @@ describe("InlineTitleReviewButtonManager", () => {
             secondStats.resolve({ reviewableCount: 1, totalCount: 3 });
             await Promise.resolve();
             await Promise.resolve();
-            expect(containerEl.querySelector(".syro-inline-title-progress-count")?.textContent).toBe(
-                "1/3",
-            );
+            expect(
+                containerEl.querySelector(".syro-inline-title-progress-count")?.textContent,
+            ).toBe("1/3");
 
             firstStats.resolve({ reviewableCount: 9, totalCount: 9 });
             await Promise.resolve();
             await Promise.resolve();
-            expect(containerEl.querySelector(".syro-inline-title-progress-count")?.textContent).toBe(
-                "1/3",
-            );
+            expect(
+                containerEl.querySelector(".syro-inline-title-progress-count")?.textContent,
+            ).toBe("1/3");
         } finally {
             manager.destroy();
             containerEl.remove();

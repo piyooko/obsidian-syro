@@ -597,10 +597,10 @@ class ListMarkerWidget extends WidgetType {
     }
 
     toDOM(): HTMLElement {
-        const marker = document.createElement("span");
+        const marker = createSpan();
         marker.className = this.className;
 
-        const inner = document.createElement("span");
+        const inner = createSpan();
         inner.className = this.kind;
         inner.textContent = this.text;
         marker.appendChild(inner);

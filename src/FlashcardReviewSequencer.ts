@@ -136,10 +136,7 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
         });
     }
 
-    private queueSyroCardSession(
-        label: string,
-        action: Promise<boolean> | null | undefined,
-    ): void {
+    private queueSyroCardSession(label: string, action: Promise<boolean> | null | undefined): void {
         if (action == null) {
             return;
         }
@@ -410,15 +407,6 @@ export class FlashcardReviewSequencer implements IFlashcardReviewSequencer {
             newCount + dueCount + learningCount,
             learningCount,
         );
-    }
-
-    private createDebugDeckStatsSnapshot(stats: DeckStats) {
-        return {
-            dueCount: stats.dueCount,
-            newCount: stats.newCount,
-            totalCount: stats.totalCount,
-            learningCount: stats.learningCount,
-        };
     }
 
     private createDebugItemSnapshot(item: RepetitionItem | null | undefined) {

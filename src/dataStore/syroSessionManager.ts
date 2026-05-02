@@ -7,10 +7,7 @@ import {
     type DeckOptionsAssignmentPayload,
     type DeckOptionsPresetRemovalPayload,
 } from "./deckOptionsStore";
-import {
-    buildFileIdentityTargetUuid,
-    type SyroFileIdentity,
-} from "./syroFileIdentityStore";
+import { buildFileIdentityTargetUuid, type SyroFileIdentity } from "./syroFileIdentityStore";
 import type { DeckOptionsPreset } from "src/settings";
 import {
     classifySyroSessionRecordImpact,
@@ -25,12 +22,7 @@ import {
     formatLocalSessionDateKey,
     parseDeviceMetadata,
 } from "./syroWorkspace";
-import {
-    getNumberProp,
-    getStringProp,
-    isRecord,
-    parseJsonUnknown,
-} from "src/util/typeGuards";
+import { getNumberProp, getStringProp, isRecord, parseJsonUnknown } from "src/util/typeGuards";
 
 const SYRO_SESSION_RECORD_VERSION = 1;
 const SYRO_SESSION_LINE_VERSION = 1;
@@ -343,12 +335,7 @@ function parseCursorStateMap(value: unknown): Record<string, SyroSessionCursorSt
         const offset = getNumberProp(rawEntry, "offset");
         const lastOpId = getStringProp(rawEntry, "lastOpId");
         const updatedAt = getStringProp(rawEntry, "updatedAt")?.trim();
-        if (
-            typeof offset !== "number" ||
-            !Number.isFinite(offset) ||
-            offset < 0 ||
-            !updatedAt
-        ) {
+        if (typeof offset !== "number" || !Number.isFinite(offset) || offset < 0 || !updatedAt) {
             continue;
         }
 
@@ -508,16 +495,17 @@ export class SyroSessionManager {
         const sessionFiles = await this.listAllSessionFiles();
 
         for (const fileInfo of sessionFiles) {
-            const summary =
-                summaries.get(fileInfo.sourceDeviceFolderName) ??
-                {
-                    deviceFolderName: fileInfo.sourceDeviceFolderName,
-                    latestSessionAt: null,
-                    lastPulledIntoCurrentAt: null,
-                    hasPendingRemoteChanges: false,
-                };
+            const summary = summaries.get(fileInfo.sourceDeviceFolderName) ?? {
+                deviceFolderName: fileInfo.sourceDeviceFolderName,
+                latestSessionAt: null,
+                lastPulledIntoCurrentAt: null,
+                hasPendingRemoteChanges: false,
+            };
             const meta = await this.inspectSessionFile(fileInfo.filePath);
-            summary.latestSessionAt = pickLatestIsoTime(summary.latestSessionAt, meta.latestUpdatedAt);
+            summary.latestSessionAt = pickLatestIsoTime(
+                summary.latestSessionAt,
+                meta.latestUpdatedAt,
+            );
 
             if (fileInfo.sourceDeviceFolderName !== currentDeviceFolderName) {
                 const cursor = currentCursors[fileInfo.sessionPath];
@@ -535,14 +523,12 @@ export class SyroSessionManager {
                 continue;
             }
 
-            const summary =
-                summaries.get(sourceDeviceFolderName) ??
-                {
-                    deviceFolderName: sourceDeviceFolderName,
-                    latestSessionAt: null,
-                    lastPulledIntoCurrentAt: null,
-                    hasPendingRemoteChanges: false,
-                };
+            const summary = summaries.get(sourceDeviceFolderName) ?? {
+                deviceFolderName: sourceDeviceFolderName,
+                latestSessionAt: null,
+                lastPulledIntoCurrentAt: null,
+                hasPendingRemoteChanges: false,
+            };
             summary.lastPulledIntoCurrentAt = pickLatestIsoTime(
                 summary.lastPulledIntoCurrentAt,
                 cursor.updatedAt,
@@ -789,10 +775,7 @@ export class SyroSessionManager {
             if (delta.records.length > 0) {
                 const sessionReplayImpact = await replaySession(delta.sessionId, delta.records);
                 if (sessionReplayImpact) {
-                    replayImpact = mergeSyroSessionReplaySummary(
-                        replayImpact,
-                        sessionReplayImpact,
-                    );
+                    replayImpact = mergeSyroSessionReplaySummary(replayImpact, sessionReplayImpact);
                 }
             }
 
@@ -815,9 +798,7 @@ export class SyroSessionManager {
         return result;
     }
 
-    async finalizeImportedSessions(
-        result: SyroSessionImportResult | null | undefined,
-    ): Promise<{
+    async finalizeImportedSessions(result: SyroSessionImportResult | null | undefined): Promise<{
         deletedSessionIds: string[];
         archivedSessionIds: string[];
     }> {
@@ -922,7 +903,9 @@ export class SyroSessionManager {
     private async restoreCurrentDeviceCursorSnapshot(): Promise<void> {
         this.sessionCursors.clear();
         this.hasCurrentDeviceCursorSnapshot = false;
-        const latestSnapshot = await this.loadLatestCursorSnapshot(this.getCurrentDeviceFolderName());
+        const latestSnapshot = await this.loadLatestCursorSnapshot(
+            this.getCurrentDeviceFolderName(),
+        );
         if (!latestSnapshot) {
             return;
         }
@@ -986,10 +969,7 @@ export class SyroSessionManager {
 
             if (parsedLine.lineType === "event") {
                 lastOpId = parsedLine.record.opId;
-                latestUpdatedAt = pickLatestIsoTime(
-                    latestUpdatedAt,
-                    parsedLine.record.updatedAt,
-                );
+                latestUpdatedAt = pickLatestIsoTime(latestUpdatedAt, parsedLine.record.updatedAt);
                 continue;
             }
 
@@ -1035,11 +1015,12 @@ export class SyroSessionManager {
         let impact: SyroPendingSessionImpact | null = null;
         let lastProcessedOffset = resumeOffset;
         let lastOpId =
-            resumeOffset > 0
-                ? this.getPreviousEventOpIdAtOffset(completeText, resumeOffset)
-                : null;
+            resumeOffset > 0 ? this.getPreviousEventOpIdAtOffset(completeText, resumeOffset) : null;
 
-        for (const { rawLine, endOffset } of this.iterateCompleteLines(completeText, resumeOffset)) {
+        for (const { rawLine, endOffset } of this.iterateCompleteLines(
+            completeText,
+            resumeOffset,
+        )) {
             lastProcessedOffset = endOffset;
             if (rawLine.trim().length === 0) {
                 continue;
@@ -1119,10 +1100,7 @@ export class SyroSessionManager {
             return 0;
         }
 
-        const recoveredOffset = this.findEventEndOffsetByOpId(
-            completeText,
-            currentCursor.lastOpId,
-        );
+        const recoveredOffset = this.findEventEndOffsetByOpId(completeText, currentCursor.lastOpId);
         if (recoveredOffset !== null) {
             this.logDebug("[SR-Syro] stale-cursor-recovered-by-opid", {
                 offset,
@@ -1147,10 +1125,7 @@ export class SyroSessionManager {
         return completeText[offset - 1] === "\n";
     }
 
-    private getPreviousEventOpIdAtOffset(
-        completeText: string,
-        offset: number,
-    ): string | null {
+    private getPreviousEventOpIdAtOffset(completeText: string, offset: number): string | null {
         let lastOpId: string | null = null;
         for (const { rawLine, endOffset } of this.iterateCompleteLines(completeText, 0)) {
             if (endOffset > offset) {
@@ -1217,7 +1192,10 @@ export class SyroSessionManager {
                     continue;
                 }
 
-                const sessionPath = getRelativeSessionPath(this.layout.sessionsRoot, normalizedPath);
+                const sessionPath = getRelativeSessionPath(
+                    this.layout.sessionsRoot,
+                    normalizedPath,
+                );
                 sessionFiles.push({
                     sessionId: getSessionIdFromRelativePath(sessionPath),
                     sessionPath,
@@ -1228,7 +1206,9 @@ export class SyroSessionManager {
             }
         }
 
-        return sessionFiles.sort((left, right) => left.sessionPath.localeCompare(right.sessionPath));
+        return sessionFiles.sort((left, right) =>
+            left.sessionPath.localeCompare(right.sessionPath),
+        );
     }
 
     private async safeList(root: string): Promise<{ files: string[]; folders: string[] }> {
@@ -1396,7 +1376,9 @@ export class SyroSessionManager {
         };
     }
 
-    private async findLatestSessionEventAtMs(sessionFiles: SessionFileInfo[]): Promise<number | null> {
+    private async findLatestSessionEventAtMs(
+        sessionFiles: SessionFileInfo[],
+    ): Promise<number | null> {
         let latestEventAtMs: number | null = null;
 
         for (const fileInfo of sessionFiles) {

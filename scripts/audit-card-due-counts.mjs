@@ -4,8 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-const DEFAULT_PLUGIN_DIR =
-    "C:\\Users\\85870\\Dropbox\\血字的研究\\.obsidian\\plugins\\syro";
+const DEFAULT_PLUGIN_DIR = "C:\\Users\\85870\\Dropbox\\血字的研究\\.obsidian\\plugins\\syro";
 
 const CardQueue = {
     Suspended: -1,
@@ -460,7 +459,9 @@ function summarizeExtracts(extractsFilePath, now, deckFilter) {
 
     const due = activeItems
         .filter((item) => item.timesReviewed > 0 && item.nextReview <= now)
-        .sort((left, right) => left.priority - right.priority || left.nextReview - right.nextReview);
+        .sort(
+            (left, right) => left.priority - right.priority || left.nextReview - right.nextReview,
+        );
     const fresh = activeItems
         .filter((item) => item.timesReviewed === 0 || item.nextReview === 0)
         .sort((left, right) => left.priority - right.priority || left.createdAt - right.createdAt);
@@ -623,10 +624,7 @@ function printHuman(result, args) {
             );
 
             const nonZeroExtractDecks = deviceResult.extracts.byDeckRollup.filter(
-                (deck) =>
-                    deck.dueExtracts > 0 ||
-                    deck.newExtracts > 0 ||
-                    deck.futureExtracts > 0,
+                (deck) => deck.dueExtracts > 0 || deck.newExtracts > 0 || deck.futureExtracts > 0,
             );
             if (nonZeroExtractDecks.length > 0) {
                 console.log("Extract deck rollup:");

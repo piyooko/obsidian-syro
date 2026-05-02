@@ -175,12 +175,7 @@ test("Test not parsing reserved curly syntax prefixes as single line cards", () 
     expect(
         parseT("Before {{ir::Extract text with {{c1::cloze}} inside}} after", parserOptions),
     ).toEqual([
-        [
-            CardType.Cloze,
-            "Before {{ir::Extract text with {{c1::cloze}} inside}} after",
-            0,
-            0,
-        ],
+        [CardType.Cloze, "Before {{ir::Extract text with {{c1::cloze}} inside}} after", 0, 0],
     ]);
 });
 

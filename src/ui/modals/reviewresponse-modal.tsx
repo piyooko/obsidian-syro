@@ -113,7 +113,7 @@ export class reviewResponseModal {
             btnCols = optBtnCounts;
         }
 
-        this.containerEl = createEl("div");
+        this.containerEl = createDiv();
         this.containerEl.setAttribute("id", this.barId);
         this.containerEl.hide();
 

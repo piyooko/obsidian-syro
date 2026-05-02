@@ -28,8 +28,7 @@ export class UnitTestSRFile implements ISRFile {
         return unitTest_GetAllTagsFromTextEx(this.content);
     }
 
-    // eslint-disable-next-line  @typescript-eslint/no-unused-vars
-    getQuestionContext(cardLine: number): QuestionContextBreadcrumb[] {
+    getQuestionContext(_cardLine: number): QuestionContextBreadcrumb[] {
         return [];
     }
 

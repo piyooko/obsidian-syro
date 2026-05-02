@@ -247,9 +247,7 @@ export const CardDebugModal: FC<CardDebugModalProps> = ({ isOpen, onClose, data 
                                                 <input
                                                     type="text"
                                                     className="sr-debug-input"
-                                                    defaultValue={valueToDisplay(
-                                                        algorithmData.due,
-                                                    )}
+                                                    defaultValue={valueToDisplay(algorithmData.due)}
                                                     readOnly
                                                 />
                                             </div>

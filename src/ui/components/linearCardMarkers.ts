@@ -123,14 +123,14 @@ function clearMarkerMarkdown(target: HTMLElement) {
 }
 
 function createUnifiedMarkerElement(placeholderText: string, answerText: string): HTMLElement {
-    const wrapper = document.createElement("span");
+    const wrapper = createSpan();
     wrapper.className = "sr-cloze-wrapper";
 
-    const placeholder = document.createElement("span");
+    const placeholder = createSpan();
     placeholder.className = "sr-cloze-placeholder";
     placeholder.textContent = placeholderText;
 
-    const answer = document.createElement("span");
+    const answer = createSpan();
     answer.className = "sr-cloze-answer";
     setMarkerMarkdown(answer, answerText);
     answer.textContent = answerText;
@@ -142,7 +142,7 @@ function createUnifiedMarkerElement(placeholderText: string, answerText: string)
 }
 
 function createSingleMarkerElement(type: Exclude<SrMarkerType, "C">, content: string): HTMLElement {
-    const span = document.createElement("span");
+    const span = createSpan();
 
     if (type === "H") {
         span.className = "sr-cloze-hidden";
@@ -528,7 +528,7 @@ async function renderMarkdownInsideMarkerNode(
         return;
     }
 
-    const buffer = document.createElement("div");
+    const buffer = createDiv();
 
     try {
         const tokenized = preTokenizeSrMarkers(markdown);

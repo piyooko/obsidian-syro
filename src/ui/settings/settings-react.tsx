@@ -69,7 +69,10 @@ export class SRSettingTab extends PluginSettingTab {
                     try {
                         return await this.plugin.pullSyroDeviceToCurrent(deviceId);
                     } catch (error) {
-                        console.error("[SR-Settings] Failed to sync a Syro device into current", error);
+                        console.error(
+                            "[SR-Settings] Failed to sync a Syro device into current",
+                            error,
+                        );
                         new Notice(getDeviceManagementErrorMessage(error));
                         return false;
                     }

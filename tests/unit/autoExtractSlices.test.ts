@@ -86,17 +86,14 @@ describe("autoExtractSlices", () => {
     });
 
     test("cuts only selected heading levels in multi-level mode", () => {
-        const slices = buildAutoExtractSlices(
-            "# Root\n## A\na\n### B\nb\n#### C\nc\n## D\nd",
-            {
-                sourcePath: "note.md",
-                rule: "heading",
-                headingLevels: [2, 4],
-                enabled: true,
-                createdAt: 1,
-                updatedAt: 1,
-            },
-        );
+        const slices = buildAutoExtractSlices("# Root\n## A\na\n### B\nb\n#### C\nc\n## D\nd", {
+            sourcePath: "note.md",
+            rule: "heading",
+            headingLevels: [2, 4],
+            enabled: true,
+            createdAt: 1,
+            updatedAt: 1,
+        });
 
         expect(slices.map((slice) => slice.key)).toEqual([
             "heading:2:Root/A:0",
@@ -108,15 +105,18 @@ describe("autoExtractSlices", () => {
     });
 
     test("all-heading mode creates slices for extended heading levels", () => {
-        const slices = buildAutoExtractSlices("# Root\n## A\na\n####### Deep\nd\n########## Ten\nt", {
-            sourcePath: "note.md",
-            rule: "heading",
-            headingLevels: [1, 2, 3, 4, 5, 6],
-            allHeadingLevels: true,
-            enabled: true,
-            createdAt: 1,
-            updatedAt: 1,
-        });
+        const slices = buildAutoExtractSlices(
+            "# Root\n## A\na\n####### Deep\nd\n########## Ten\nt",
+            {
+                sourcePath: "note.md",
+                rule: "heading",
+                headingLevels: [1, 2, 3, 4, 5, 6],
+                allHeadingLevels: true,
+                enabled: true,
+                createdAt: 1,
+                updatedAt: 1,
+            },
+        );
 
         expect(slices.map((slice) => slice.key)).toEqual([
             "heading:1:Root:0",

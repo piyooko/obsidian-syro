@@ -4,6 +4,8 @@ import {
     toFallbackText,
 } from "src/ui/components/linearCardMarkers";
 
+require("obsidian");
+
 async function mockRenderMarkdown(content: string, el: HTMLElement): Promise<void> {
     const html = content
         .replace(

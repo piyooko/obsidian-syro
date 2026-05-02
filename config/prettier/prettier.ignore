@@ -1,6 +1,8 @@
 build
 coverage
+docs/site
 node_modules
+site
 .yarn
 .pnp.cjs
 .pnp.loader.mjs
