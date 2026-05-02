@@ -518,6 +518,53 @@ describe("ExtractStore", () => {
         expect(store.getActiveByPath("notes/source.md")).toHaveLength(0);
     });
 
+    test("repairs duplicate extracts produced by renamed source paths", () => {
+        const store = createStore();
+        const [oldPathItem] = store.syncFileExtracts(
+            "notes/Old.md",
+            "{{ir::A-manual-extract-alpha}}",
+            "deck",
+        ).added;
+        store.setMemo(oldPathItem.uuid, "kept memo");
+        const internalItems = (
+            store as unknown as {
+                items: Record<
+                    string,
+                    {
+                        timesReviewed: number;
+                        timesCorrect: number;
+                        updatedAt: number;
+                    }
+                >;
+            }
+        ).items;
+        internalItems[oldPathItem.uuid]!.timesReviewed = 1;
+        internalItems[oldPathItem.uuid]!.timesCorrect = 1;
+        internalItems[oldPathItem.uuid]!.updatedAt = 1000;
+        const [newPathItem] = store.syncFileExtracts(
+            "notes/New.md",
+            "{{ir::A-manual-extract-alpha}}",
+            "deck",
+        ).added;
+        internalItems[newPathItem.uuid]!.updatedAt = 2000;
+
+        const snapshots = store.repairDuplicateExtractsByPathAliases([
+            ["notes/Old.md", "notes/New.md"],
+        ]);
+
+        expect(snapshots).toHaveLength(1);
+        expect(snapshots[0].item.aliases).toContain(newPathItem.uuid);
+        const items = store.list();
+        expect(items).toHaveLength(1);
+        expect(items[0]).toMatchObject({
+            uuid: oldPathItem.uuid,
+            sourcePath: "notes/New.md",
+            memo: "kept memo",
+            timesReviewed: 1,
+        });
+        expect(items[0].aliases).toContain(newPathItem.uuid);
+    });
+
     test("canceling a heading level removes old active auto slices", () => {
         const store = createStore();
         const [heading] = store.syncAutoExtractsForFile(

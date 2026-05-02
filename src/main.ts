@@ -6762,7 +6762,7 @@ export default class SRPlugin extends Plugin {
     }
 
     private async appendSyroFileIdentityChange(
-        identity: SyroFileIdentity,
+        identity: SyroFileIdentity & { oldPath?: string; newPath?: string },
         opType: "upsert" | "delete",
         updatedAt?: string,
     ): Promise<boolean> {
@@ -6797,7 +6797,11 @@ export default class SRPlugin extends Plugin {
         };
         const appended =
             (await this.syroSessionManager?.appendFileIdentityChange(
-                storedIdentity,
+                {
+                    ...storedIdentity,
+                    ...(identity.oldPath ? { oldPath: identity.oldPath } : {}),
+                    ...(identity.newPath ? { newPath: identity.newPath } : {}),
+                },
                 opType,
                 appliedUpdatedAt,
             )) ?? false;
@@ -6814,7 +6818,9 @@ export default class SRPlugin extends Plugin {
         return appended;
     }
 
-    public async appendSyroFileIdentityUpsert(identity: SyroFileIdentity): Promise<boolean> {
+    public async appendSyroFileIdentityUpsert(
+        identity: SyroFileIdentity & { oldPath?: string; newPath?: string },
+    ): Promise<boolean> {
         return this.appendSyroFileIdentityChange(identity, "upsert");
     }
 

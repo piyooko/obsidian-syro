@@ -272,6 +272,8 @@ function parseFileIdentityPayload(payload: unknown): {
     uuid: string;
     createdAt?: string;
     path?: string;
+    oldPath?: string;
+    newPath?: string;
     aliases: string[];
 } | null {
     if (!isRecord(payload)) {
@@ -287,6 +289,8 @@ function parseFileIdentityPayload(payload: unknown): {
         uuid,
         createdAt: getStringProp(payload, "createdAt")?.trim(),
         path: getStringProp(payload, "path")?.trim(),
+        oldPath: getStringProp(payload, "oldPath")?.trim(),
+        newPath: getStringProp(payload, "newPath")?.trim(),
         aliases: getArrayProp(payload, "aliases").filter(
             (alias): alias is string => typeof alias === "string",
         ),
@@ -685,6 +689,8 @@ export async function replaySyroSessionRecords(
     };
     const deferredRecords: DeferredReplayRecord[] = [];
     const negativeCache = new Set<string>();
+    const extractFilePathAliases = new Map<string, string>();
+    const extractFilePathAliasGroups = new Map<string, Set<string>>();
     const dailyStateReplayStats = {
         seen: 0,
         applied: 0,
@@ -1191,11 +1197,35 @@ export async function replaySyroSessionRecords(
             };
         }
 
+        const identity = deps.fileIdentityStore.getByPath(item.sourcePath);
+        const candidatePaths = new Set<string>([item.sourcePath]);
+        if (identity) {
+            candidatePaths.add(identity.path);
+            for (const entry of Object.values(deps.fileIdentityStore.getState().entries)) {
+                if (
+                    entry.uuid === identity.uuid ||
+                    entry.aliases.includes(identity.uuid) ||
+                    identity.aliases.includes(entry.uuid)
+                ) {
+                    candidatePaths.add(entry.path);
+                }
+            }
+        }
+        for (const [path, uuid] of extractFilePathAliases.entries()) {
+            if (path === item.sourcePath) {
+                for (const [candidatePath, candidateUuid] of extractFilePathAliases.entries()) {
+                    if (candidateUuid === uuid) {
+                        candidatePaths.add(candidatePath);
+                    }
+                }
+                continue;
+            }
+        }
         const match = extractStore
             .list()
             .find(
                 (candidate) =>
-                    candidate.sourcePath === item.sourcePath &&
+                    candidatePaths.has(candidate.sourcePath) &&
                     candidate.sourceAnchor?.contentHash === item.sourceAnchor?.contentHash &&
                     candidate.sourceAnchor?.start === item.sourceAnchor?.start &&
                     candidate.sourceAnchor?.end === item.sourceAnchor?.end &&
@@ -1878,9 +1908,21 @@ export async function replaySyroSessionRecords(
 
         const payload = parseFileIdentityPayload(record.payload);
         const fileUuid = parseFileIdentityUuidFromTarget(record.targetUuid) || payload?.uuid || "";
-        const path = payload?.path?.trim() || record.pathHint?.trim() || "";
+        const path =
+            payload?.newPath?.trim() ||
+            payload?.path?.trim() ||
+            record.pathHint?.trim() ||
+            "";
         if (!fileUuid || !path) {
             continue;
+        }
+        if (payload?.oldPath) {
+            extractFilePathAliases.set(payload.oldPath, fileUuid);
+            extractFilePathAliases.set(path, fileUuid);
+            const group = extractFilePathAliasGroups.get(fileUuid) ?? new Set<string>();
+            group.add(payload.oldPath);
+            group.add(path);
+            extractFilePathAliasGroups.set(fileUuid, group);
         }
 
         const targetUuid = buildFileIdentityTargetUuid(fileUuid);
@@ -1904,7 +1946,7 @@ export async function replaySyroSessionRecords(
                 entityType: "file-identity",
                 pathHint: path,
             });
-        } else if (record.opType === "upsert") {
+        } else if (record.opType === "upsert" || record.opType === "rename") {
             deps.fileIdentityStore.upsert({
                 uuid: fileUuid,
                 createdAt: payload?.createdAt || record.createdAt,
@@ -2552,6 +2594,12 @@ export async function replaySyroSessionRecords(
     }
 
     cardsChanged = canonicalizeTrackedFilesFromFileIdentities() || cardsChanged;
+    if (extractStore && extractFilePathAliasGroups.size > 0) {
+        const repairedExtracts = extractStore.repairDuplicateExtractsByPathAliases(
+            [...extractFilePathAliasGroups.values()].map((paths) => [...paths]),
+        );
+        extractsChanged = repairedExtracts.length > 0 || extractsChanged;
+    }
 
     if (fileIdentitiesChanged) {
         await deps.fileIdentityStore.save();

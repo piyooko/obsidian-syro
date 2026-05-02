@@ -298,6 +298,7 @@ module.exports = new Proxy(
         WorkspaceLeaf,
         getAllTags: jest.fn(() => []),
         moment,
+        debounce: (fn) => fn,
         setTooltip: jest.fn(),
     },
     {

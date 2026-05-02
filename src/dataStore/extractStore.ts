@@ -201,6 +201,107 @@ function applyRepetitionItemState(target: ExtractItem, source: RepetitionItem): 
     target.updatedAt = Date.now();
 }
 
+function getExtractCompletenessScore(item: ExtractItem): number {
+    let score = 0;
+    if (item.stage === "graduated") score += 32;
+    if ((item.memo ?? "").trim().length > 0) score += 16;
+    if (item.timesReviewed > 0) score += 8;
+    if (item.timesCorrect > 0) score += 4;
+    if (item.nextReview > 0) score += 2;
+    if (item.priority !== DEFAULT_EXTRACT_PRIORITY) score += 1;
+    return score;
+}
+
+function chooseCanonicalExtract(left: ExtractItem, right: ExtractItem): ExtractItem {
+    const leftScore = getExtractCompletenessScore(left);
+    const rightScore = getExtractCompletenessScore(right);
+    if (leftScore !== rightScore) {
+        return leftScore > rightScore ? left : right;
+    }
+    if (left.updatedAt !== right.updatedAt) {
+        return left.updatedAt > right.updatedAt ? left : right;
+    }
+    return left.uuid.localeCompare(right.uuid) <= 0 ? left : right;
+}
+
+function buildExtractSemanticKey(item: ExtractItem): string {
+    const anchor = item.sourceAnchor;
+    const anchorKey =
+        anchor?.contentHash !== undefined &&
+        anchor?.start !== undefined &&
+        anchor?.end !== undefined
+            ? `${anchor.contentHash}:${anchor.start}:${anchor.end}`
+            : "";
+    return [
+        item.sourceMode,
+        item.sliceRule,
+        item.autoSliceKey ?? "",
+        anchorKey,
+        item.rawMarkdown.trim(),
+        item.deckName || DEFAULT_DECKNAME,
+    ].join("\u0000");
+}
+
+function mergeExtractItemState(canonical: ExtractItem, incoming: ExtractItem): ExtractItem {
+    const preferred = chooseCanonicalExtract(canonical, incoming);
+    const secondary = preferred === canonical ? incoming : canonical;
+    const merged = cloneItem(preferred);
+    merged.uuid = preferred.uuid;
+    merged.aliases = mergeEquivalentUuids(preferred.uuid, preferred.aliases, [
+        secondary.uuid,
+        ...(secondary.aliases ?? []),
+        ...(incoming.aliases ?? []),
+        ...(canonical.aliases ?? []),
+    ]);
+    merged.sourcePath =
+        incoming.updatedAt >= canonical.updatedAt ? incoming.sourcePath : canonical.sourcePath;
+    merged.sourceAnchor =
+        incoming.updatedAt >= canonical.updatedAt ? incoming.sourceAnchor : canonical.sourceAnchor;
+    merged.rawMarkdown =
+        incoming.rawMarkdown.trim().length > 0 ? incoming.rawMarkdown : canonical.rawMarkdown;
+    merged.memo =
+        incoming.memo.trim().length > 0 || canonical.memo.trim().length === 0
+            ? incoming.memo
+            : canonical.memo;
+    merged.memoEditedAt =
+        (incoming.memoEditedAt ?? 0) >= (canonical.memoEditedAt ?? 0)
+            ? incoming.memoEditedAt
+            : canonical.memoEditedAt;
+    merged.deckName = incoming.deckName || canonical.deckName || DEFAULT_DECKNAME;
+    merged.sourceMode = incoming.sourceMode;
+    merged.sliceRule = incoming.sliceRule;
+    merged.autoSliceKey = incoming.autoSliceKey ?? canonical.autoSliceKey;
+    merged.priority =
+        incoming.priority !== DEFAULT_EXTRACT_PRIORITY || canonical.priority === DEFAULT_EXTRACT_PRIORITY
+            ? incoming.priority
+            : canonical.priority;
+    if (incoming.timesReviewed >= canonical.timesReviewed) {
+        merged.nextReview = incoming.nextReview;
+        merged.timesReviewed = incoming.timesReviewed;
+        merged.timesCorrect = incoming.timesCorrect;
+        merged.errorStreak = incoming.errorStreak;
+        merged.data = { ...(incoming.data ?? { currentInterval: 1 }) };
+    } else {
+        merged.nextReview = canonical.nextReview;
+        merged.timesReviewed = canonical.timesReviewed;
+        merged.timesCorrect = canonical.timesCorrect;
+        merged.errorStreak = canonical.errorStreak;
+        merged.data = { ...(canonical.data ?? { currentInterval: 1 }) };
+    }
+    merged.stage =
+        canonical.stage === "graduated" || incoming.stage === "graduated" ? "graduated" : "active";
+    merged.parentUuid = incoming.parentUuid ?? canonical.parentUuid;
+    merged.createdAt = Math.min(canonical.createdAt, incoming.createdAt);
+    merged.timelineCreatedAt = Math.max(
+        canonical.timelineCreatedAt ?? 0,
+        incoming.timelineCreatedAt ?? 0,
+    ) || undefined;
+    merged.updatedAt = Math.max(canonical.updatedAt, incoming.updatedAt);
+    merged.graduatedAt =
+        Math.max(canonical.graduatedAt ?? 0, incoming.graduatedAt ?? 0) || undefined;
+    return merged;
+}
+
 function getExtractReviewOrderTime(item: ExtractItem): number {
     return item.timesReviewed > 0 && item.nextReview > 0 ? item.nextReview : item.createdAt;
 }
@@ -429,7 +530,6 @@ export class ExtractStore {
             return [];
         }
         item.aliases = mergeEquivalentUuids(item.uuid, item.aliases, incomingUuids);
-        item.updatedAt = Date.now();
         return [...item.aliases];
     }
 
@@ -1042,6 +1142,43 @@ export class ExtractStore {
         return snapshots;
     }
 
+    repairDuplicateExtractsByPathAliases(pathAliasGroups: readonly (readonly string[])[]): ExtractSnapshot[] {
+        const snapshots: ExtractSnapshot[] = [];
+        for (const rawGroup of pathAliasGroups) {
+            const paths = rawGroup
+                .map((path) => normalizePath(path))
+                .filter((path, index, values) => path.length > 0 && values.indexOf(path) === index);
+            if (paths.length < 2) {
+                continue;
+            }
+            const canonicalPath = paths[paths.length - 1];
+            const candidates = Object.values(this.items).filter((item) =>
+                paths.includes(item.sourcePath),
+            );
+            const groups = new Map<string, ExtractItem[]>();
+            for (const item of candidates) {
+                const key = buildExtractSemanticKey(item);
+                groups.set(key, [...(groups.get(key) ?? []), item]);
+            }
+            for (const groupItems of groups.values()) {
+                if (groupItems.length < 2) {
+                    continue;
+                }
+                let merged = cloneItem(groupItems[0]);
+                for (const item of groupItems.slice(1)) {
+                    merged = mergeExtractItemState(merged, item);
+                }
+                merged.sourcePath = canonicalPath;
+                for (const item of groupItems) {
+                    delete this.items[item.uuid];
+                }
+                this.items[merged.uuid] = merged;
+                snapshots.push({ item: cloneItem(merged) });
+            }
+        }
+        return snapshots;
+    }
+
     cleanupMissingFiles(vault: Vault): boolean {
         let changed = false;
         for (const item of Object.values(this.items)) {
@@ -1066,36 +1203,52 @@ export class ExtractStore {
         }
         const canonicalUuid = this.findCanonicalUuid(incoming.uuid);
         const existing = canonicalUuid ? this.items[canonicalUuid] : null;
-        if (existing && existing.uuid !== incoming.uuid) {
-            incoming.aliases = mergeEquivalentUuids(incoming.uuid, incoming.aliases, [
-                existing.uuid,
-                ...(existing.aliases ?? []),
-            ]);
+        if (existing) {
+            const merged = mergeExtractItemState(existing, incoming);
             delete this.items[existing.uuid];
+            delete this.items[incoming.uuid];
+            this.items[merged.uuid] = merged;
+            this.nextItemId = Math.max(this.nextItemId, merged.id + 1, incoming.id + 1);
+            return;
         }
-        incoming.aliases = normalizeUuidAliases(incoming.uuid, [
-            ...(incoming.aliases ?? []),
-            ...(existing?.aliases ?? []),
-        ]);
+        incoming.aliases = normalizeUuidAliases(incoming.uuid, incoming.aliases);
         this.items[incoming.uuid] = incoming;
         this.nextItemId = Math.max(this.nextItemId, incoming.id + 1);
     }
 
     graduateByUuid(uuid: string, fallbackSnapshot?: ExtractSnapshot): boolean {
         const canonicalUuid = this.findCanonicalUuid(uuid);
+        const fallbackItem = fallbackSnapshot?.item
+            ? normalizeExtractItem(fallbackSnapshot.item)
+            : null;
         if (canonicalUuid && this.items[canonicalUuid]) {
-            this.items[canonicalUuid].stage = "graduated";
-            this.items[canonicalUuid].graduatedAt = Date.now();
-            this.items[canonicalUuid].updatedAt = this.items[canonicalUuid].graduatedAt;
+            const existing = this.items[canonicalUuid];
+            const merged = fallbackItem
+                ? mergeExtractItemState(existing, { ...fallbackItem, stage: "graduated" })
+                : cloneItem(existing);
+            merged.uuid = existing.uuid;
+            merged.aliases = mergeEquivalentUuids(existing.uuid, existing.aliases, [
+                uuid,
+                ...(fallbackItem?.aliases ?? []),
+                fallbackItem?.uuid ?? "",
+            ]);
+            merged.stage = "graduated";
+            merged.graduatedAt = fallbackItem?.graduatedAt ?? existing.graduatedAt ?? Date.now();
+            merged.updatedAt = fallbackItem?.updatedAt ?? merged.graduatedAt;
+            delete this.items[canonicalUuid];
+            if (fallbackItem) {
+                delete this.items[fallbackItem.uuid];
+            }
+            this.items[merged.uuid] = merged;
             return true;
         }
-        if (fallbackSnapshot?.item) {
-            const item = normalizeExtractItem(fallbackSnapshot.item);
-            if (!item) return false;
+        if (fallbackItem) {
+            const item = fallbackItem;
             item.stage = "graduated";
-            item.graduatedAt = Date.now();
-            item.updatedAt = item.graduatedAt;
+            item.graduatedAt = item.graduatedAt ?? item.updatedAt ?? Date.now();
+            item.updatedAt = item.updatedAt ?? item.graduatedAt;
             this.items[item.uuid] = item;
+            this.nextItemId = Math.max(this.nextItemId, item.id + 1);
             return true;
         }
         return false;

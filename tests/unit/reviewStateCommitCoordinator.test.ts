@@ -101,4 +101,55 @@ describe("ReviewStateCommitCoordinator", () => {
         expect(result).toBe(false);
         expect(appendCardSnapshot).not.toHaveBeenCalled();
     });
+
+    test("drain retries pending card review commits before sync import", async () => {
+        const entry = {
+            id: 11,
+            commitId: "card-review:test-retry",
+            sessionCommitted: false,
+            sessionOpType: "review",
+        };
+        const snapshot = {
+            item: {
+                ID: 11,
+                uuid: "card-review-uuid",
+                timesReviewed: 1,
+            },
+        };
+        let overlayFlushAttempts = 0;
+        const appendCardSnapshot = jest.fn(async () => true);
+        const store = {
+            stageReviewItemDelta: jest.fn(() => entry),
+            requestFlushReviewOverlay: jest.fn(),
+            drainReviewOverlayFlush: jest.fn(async () => {
+                overlayFlushAttempts += 1;
+                return overlayFlushAttempts > 1;
+            }),
+            getPendingReviewOverlayEntry: jest.fn(() => ({ ...entry })),
+            getCardSnapshot: jest.fn(() => snapshot),
+            markPendingReviewSessionCommitted: jest.fn(() => {
+                entry.sessionCommitted = true;
+                return true;
+            }),
+            clearPendingReviewEntry: jest.fn(() => true),
+        };
+
+        const coordinator = new ReviewStateCommitCoordinator({
+            getStore: () => store as any,
+            appendCardSnapshot,
+            requestCardsSave: jest.fn(),
+            flushCardsSave: jest.fn(async () => true),
+        });
+
+        coordinator.queueCardCommit(11, "review");
+        expect(await coordinator.drain(50)).toBe(false);
+        expect(appendCardSnapshot).not.toHaveBeenCalled();
+
+        expect(await coordinator.drain(50)).toBe(true);
+        expect(appendCardSnapshot).toHaveBeenCalledWith(snapshot, "review");
+        expect(store.markPendingReviewSessionCommitted).toHaveBeenCalledWith(
+            11,
+            "card-review:test-retry",
+        );
+    });
 });

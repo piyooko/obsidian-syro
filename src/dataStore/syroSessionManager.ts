@@ -685,7 +685,7 @@ export class SyroSessionManager {
     }
 
     async appendFileIdentityChange(
-        identity: SyroFileIdentity,
+        identity: SyroFileIdentity & { oldPath?: string; newPath?: string },
         opType: "upsert" | "delete",
         updatedAt?: string,
     ): Promise<boolean> {
@@ -698,6 +698,8 @@ export class SyroSessionManager {
                 uuid: identity.uuid,
                 createdAt: identity.createdAt,
                 path: identity.path,
+                ...(identity.oldPath ? { oldPath: identity.oldPath } : {}),
+                ...(identity.newPath ? { newPath: identity.newPath } : {}),
                 aliases: identity.aliases,
             },
             pathHint: identity.path,

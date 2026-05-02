@@ -94,9 +94,10 @@ function buildFileIdentityChange(input: {
     existingIdentity?: SyroFileIdentity | null;
     fallbackUuid?: string;
     path: string;
+    oldPath?: string;
     aliases?: readonly string[];
     deleted: boolean;
-}): SyroFileIdentity {
+}): SyroFileIdentity & { oldPath?: string; newPath?: string } {
     const fallbackUuid =
         input.fallbackUuid?.trim() || createDeterministicFileIdentityUuid(input.path);
     const uuid = input.existingIdentity?.uuid ?? fallbackUuid;
@@ -105,6 +106,7 @@ function buildFileIdentityChange(input: {
         createdAt: input.existingIdentity?.createdAt ?? new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         path: input.path,
+        ...(input.oldPath ? { oldPath: input.oldPath, newPath: input.path } : {}),
         aliases: normalizeFileIdentityAliases(uuid, [
             ...(input.existingIdentity?.aliases ?? []),
             ...(input.aliases ?? []),
@@ -178,6 +180,7 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
             const noteReviewStore = plugin.noteReviewStore;
             const reviewCommitStore = plugin.reviewCommitStore;
             const store = plugin.store;
+            const extractStore = plugin.extractStore;
             if (!noteReviewStore || !reviewCommitStore || !store) {
                 return;
             }
@@ -198,6 +201,7 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                             existingIdentity,
                             fallbackUuid: renamedNote.item.uuid,
                             path: renamedNote.path,
+                            oldPath,
                             aliases: renamedNote.item.aliases ?? [],
                             deleted: false,
                         }),
@@ -212,6 +216,7 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                             existingIdentity,
                             fallbackUuid: snapshot.entry.item.uuid,
                             path: snapshot.entry.path,
+                            oldPath: snapshot.oldPath,
                             aliases: snapshot.entry.item.aliases ?? [],
                             deleted: false,
                         }),
@@ -228,6 +233,19 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
             }
             if (plugin.renameAutoExtractRulePath?.(oldPath, file.path)) {
                 noteChanged = true;
+            }
+
+            if (extractStore && plugin.data.settings.enableExtracts !== false) {
+                const renamedExtracts = extractStore.renamePathPrefix(oldPath, file.path);
+                const repairedExtracts = extractStore.repairDuplicateExtractsByPathAliases([
+                    [oldPath, file.path],
+                ]);
+                if (renamedExtracts.length > 0 || repairedExtracts.length > 0) {
+                    await extractStore.save();
+                    for (const snapshot of [...renamedExtracts, ...repairedExtracts]) {
+                        await plugin.appendSyroExtractUpsert(snapshot, "sync");
+                    }
+                }
             }
 
             if (file instanceof TFile && file.extension === "md") {
@@ -258,6 +276,7 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                                 renamedTimeline.oldPath,
                             ),
                             path: renamedTimeline.newPath,
+                            oldPath: renamedTimeline.oldPath,
                             aliases: existingIdentity?.aliases ?? [],
                             deleted: false,
                         }),
@@ -278,6 +297,7 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                             existingIdentity,
                             fallbackUuid: createDeterministicFileIdentityUuid(snapshot.oldPath),
                             path: snapshot.newPath,
+                            oldPath: snapshot.oldPath,
                             aliases: existingIdentity?.aliases ?? [],
                             deleted: false,
                         }),
@@ -301,6 +321,7 @@ export function registerTrackFileEvents(plugin: SRPlugin) {
                             existingIdentity,
                             fallbackUuid: snapshot.file.uuid,
                             path: snapshot.file.path,
+                            oldPath: snapshot.oldPath,
                             aliases: snapshot.file.aliases ?? [],
                             deleted: false,
                         }),

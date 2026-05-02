@@ -20,6 +20,7 @@ import {
 import { CardType } from "src/Question";
 import { DEFAULT_SETTINGS, resolveDeckOptionsPreset, type DeckOptionsPreset } from "src/settings";
 import { TrackedItem } from "src/dataStore/trackedFile";
+import type { SyroUuidAliasGroup } from "src/dataStore/syroUuidAlias";
 
 function normalizePath(path: string): string {
     return path.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/g, "");
@@ -160,6 +161,13 @@ function createReplayDependencies(
         trackingRulesTombstones: createDefaultTrackingRulesState().tombstones,
         dailyStateAppliedOpIds: {} as Record<string, string>,
         currentDeviceReviewCount: 7,
+        collectedAliasGroups: {} as Record<string, SyroUuidAliasGroup[]>,
+        collectAliasGroups(domain: "cards" | "notes" | "extracts", groups: SyroUuidAliasGroup[]) {
+            this.collectedAliasGroups[domain] = [
+                ...(this.collectedAliasGroups[domain] ?? []),
+                ...groups,
+            ];
+        },
     };
 }
 
@@ -247,6 +255,63 @@ function createDeckOptionsAssignmentRecord(
             presetUuid,
         },
         pathHint: "syro/devices/Desktop--d84f/deck-options.json",
+    };
+}
+
+function createExtractItem(
+    overrides: Partial<{
+        id: number;
+        uuid: string;
+        aliases: string[];
+        sourcePath: string;
+        rawMarkdown: string;
+        memo: string;
+        memoEditedAt: number;
+        priority: number;
+        nextReview: number;
+        timesReviewed: number;
+        timesCorrect: number;
+        errorStreak: number;
+        stage: "active" | "graduated";
+        createdAt: number;
+        updatedAt: number;
+        graduatedAt: number;
+    }> = {},
+) {
+    return {
+        id: overrides.id ?? 1,
+        uuid: overrides.uuid ?? "extract-1",
+        aliases: overrides.aliases ?? [],
+        sourcePath: overrides.sourcePath ?? "notes/Extract.md",
+        sourceAnchor: {
+            start: 10,
+            end: 24,
+            innerStart: 16,
+            innerEnd: 22,
+            startLine: 0,
+            endLine: 0,
+            contentHash: "1234",
+            ordinal: 0,
+            sourceLength: 100,
+        },
+        rawMarkdown: overrides.rawMarkdown ?? "Important quote",
+        memo: overrides.memo ?? "",
+        memoEditedAt: overrides.memoEditedAt,
+        deckName: "Extracts",
+        sourceMode: "manual-ir" as const,
+        sliceRule: "manual-ir" as const,
+        priority: overrides.priority ?? 5,
+        nextReview: overrides.nextReview ?? 0,
+        timesReviewed: overrides.timesReviewed ?? 0,
+        timesCorrect: overrides.timesCorrect ?? 0,
+        errorStreak: overrides.errorStreak ?? 0,
+        stage: overrides.stage ?? "active",
+        createdAt: overrides.createdAt ?? 1770000000000,
+        updatedAt: overrides.updatedAt ?? 1770000000000,
+        graduatedAt: overrides.graduatedAt,
+        data: {
+            currentInterval: 1,
+        },
     };
 }
 
@@ -826,6 +891,175 @@ describe("replaySyroSessionRecords", () => {
         expect(extractStore.list()).toHaveLength(1);
         expect(extractStore.get("extract-remote")?.aliases).toContain("extract-local");
         expect(extractStore.get("extract-local")?.uuid).toBe("extract-remote");
+    });
+
+    test("keeps remote extract review state when replaying a graduate snapshot", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+        const extractStore = (deps as any).extractStore as ExtractStore;
+
+        extractStore.upsertSnapshot({
+            item: createExtractItem({
+                uuid: "extract-graduate",
+                sourcePath: "notes/Auto.md",
+                rawMarkdown: "# A-auto-heading-one",
+                timesReviewed: 0,
+                timesCorrect: 0,
+                nextReview: 0,
+                stage: "active",
+                updatedAt: 1770000000000,
+            }),
+        });
+
+        await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-extract-graduate",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "extracts",
+                    entityType: "extract-item",
+                    opType: "graduate",
+                    targetUuid: "extract-graduate",
+                    createdAt: "2026-04-13T12:05:00.000Z",
+                    updatedAt: "2026-04-13T12:05:00.000Z",
+                    payload: {
+                        item: createExtractItem({
+                            uuid: "extract-graduate",
+                            sourcePath: "notes/Auto.md",
+                            rawMarkdown: "# A-auto-heading-one",
+                            memo: "A auto heading memo",
+                            priority: 7,
+                            nextReview: 1770100000000,
+                            timesReviewed: 1,
+                            timesCorrect: 1,
+                            stage: "graduated",
+                            updatedAt: 1770001000000,
+                            graduatedAt: 1770001000000,
+                        }),
+                    },
+                    pathHint: "notes/Auto.md",
+                },
+            ],
+            deps,
+        );
+
+        expect(extractStore.get("extract-graduate")).toMatchObject({
+            uuid: "extract-graduate",
+            stage: "graduated",
+            memo: "A auto heading memo",
+            priority: 7,
+            nextReview: 1770100000000,
+            timesReviewed: 1,
+            timesCorrect: 1,
+            graduatedAt: 1770001000000,
+            updatedAt: 1770001000000,
+        });
+    });
+
+    test("merges extract snapshots across renamed file identity aliases", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const deps = createReplayDependencies(adapter, settings);
+        const extractStore = (deps as any).extractStore as ExtractStore;
+
+        extractStore.upsertSnapshot({
+            item: createExtractItem({
+                id: 1,
+                uuid: "extract-old-path",
+                sourcePath: "notes/Old.md",
+                rawMarkdown: "A-manual-extract-alpha",
+                memo: "kept memo",
+                timesReviewed: 1,
+                timesCorrect: 1,
+                updatedAt: 1770000000000,
+            }),
+        });
+        deps.fileIdentityStore.upsert({
+            uuid: "file-renamed",
+            createdAt: "2026-04-13T12:00:00.000Z",
+            updatedAt: "2026-04-13T12:01:00.000Z",
+            path: "notes/New.md",
+            aliases: [],
+            deleted: false,
+        });
+
+        await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-file-rename",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "file-identities",
+                    entityType: "file-identity",
+                    opType: "rename",
+                    targetUuid: "file:file-renamed",
+                    createdAt: "2026-04-13T12:02:00.000Z",
+                    updatedAt: "2026-04-13T12:02:00.000Z",
+                    payload: {
+                        uuid: "file-renamed",
+                        path: "notes/New.md",
+                        oldPath: "notes/Old.md",
+                        newPath: "notes/New.md",
+                        aliases: [],
+                    },
+                    pathHint: "notes/New.md",
+                },
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-extract-new-path",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "extracts",
+                    entityType: "extract-item",
+                    opType: "sync",
+                    targetUuid: "extract-new-path",
+                    createdAt: "2026-04-13T12:03:00.000Z",
+                    updatedAt: "2026-04-13T12:03:00.000Z",
+                    payload: {
+                        item: createExtractItem({
+                            id: 2,
+                            uuid: "extract-new-path",
+                            sourcePath: "notes/New.md",
+                            rawMarkdown: "A-manual-extract-alpha",
+                            memo: "",
+                            timesReviewed: 0,
+                            timesCorrect: 0,
+                            updatedAt: 1770001000000,
+                        }),
+                    },
+                    pathHint: "notes/New.md",
+                },
+            ],
+            deps,
+        );
+
+        const items = extractStore.list();
+        expect(items).toHaveLength(1);
+        expect(items[0]).toMatchObject({
+            uuid: "extract-old-path",
+            sourcePath: "notes/New.md",
+            memo: "kept memo",
+            timesReviewed: 1,
+        });
+        expect(items[0].aliases).toContain("extract-new-path");
+        expect(deps.collectedAliasGroups.extracts).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    entityType: "extract-item",
+                    equivalentUuids: expect.arrayContaining([
+                        "extract-old-path",
+                        "extract-new-path",
+                    ]),
+                }),
+            ]),
+        );
     });
 
     test("replays timeline rename-file records against canonical file uuids without leaving old paths behind", async () => {
@@ -1730,6 +1964,89 @@ describe("replaySyroSessionRecords", () => {
         expect(replayedItem?.timesReviewed).toBe(2);
         expect(replayedItem?.timesCorrect).toBe(2);
         expect(replayedItem?.nextReview).toBe(Date.parse("2026-04-15T12:00:00.000Z"));
+    });
+
+    test("merges semantically identical card review snapshots with different uuids", async () => {
+        const { adapter } = createMockAdapter();
+        const settings = createSettings();
+        const localStore = createStoreWithAdapter(adapter);
+        localStore.trackFile("cards/alias-review.md", RPITEMTYPE.CARD, false);
+        const localFile = localStore.getTrackedFile("cards/alias-review.md");
+        const localTrackedItem = new TrackedItem(
+            "hash-review-alias",
+            3,
+            "context",
+            CardType.SingleLineBasic,
+            {
+                startOffset: 10,
+                endOffset: 20,
+                blockStartOffset: 0,
+                blockEndOffset: 30,
+            },
+            "c1",
+        );
+        localFile.trackedItems.push(localTrackedItem);
+        localStore.updateCardItems(localFile, localTrackedItem, "#flashcards", false);
+        const localSnapshot = localStore.getCardSnapshot(localTrackedItem.reviewId);
+        const localFileSnapshot = localStore.getTrackedFileSnapshot("cards/alias-review.md");
+        if (!localSnapshot || !localFileSnapshot) {
+            throw new Error("Expected local card snapshots");
+        }
+        const remoteSnapshot = JSON.parse(JSON.stringify(localSnapshot));
+        remoteSnapshot.item.uuid = "remote-card-review-uuid";
+        remoteSnapshot.item.aliases = [];
+        remoteSnapshot.item.timesReviewed = 1;
+        remoteSnapshot.item.timesCorrect = 1;
+        remoteSnapshot.item.nextReview = Date.parse("2026-04-15T12:00:00.000Z");
+        remoteSnapshot.item.data = {
+            ...remoteSnapshot.item.data,
+            due: "2026-04-15T12:00:00.000Z",
+            last_review: "2026-04-13T12:00:00.000Z",
+            reps: 1,
+        };
+        remoteSnapshot.fileUuid = localFileSnapshot.uuid;
+        remoteSnapshot.trackedFileUuid = localFileSnapshot.uuid;
+        remoteSnapshot.trackedFileAliases = [...(localFileSnapshot.aliases ?? [])];
+
+        const deps = createReplayDependencies(adapter, settings, localStore);
+        await replaySyroSessionRecords(
+            [
+                {
+                    version: 1,
+                    sessionId: "2026-04-13T12-00-00__91ac__0001",
+                    opId: "op-card-review-alias",
+                    deviceId: "91ac",
+                    deviceName: "Mobile",
+                    domain: "cards",
+                    entityType: "card-item",
+                    opType: "review",
+                    targetUuid: "remote-card-review-uuid",
+                    createdAt: "2026-04-13T12:00:00.000Z",
+                    updatedAt: "2026-04-13T12:00:00.000Z",
+                    payload: remoteSnapshot,
+                    pathHint: "cards/alias-review.md",
+                },
+            ],
+            deps,
+        );
+
+        const items = localStore.data.items.filter((item) => item?.uuid);
+        expect(items).toHaveLength(1);
+        expect(items[0].uuid).toBe(localSnapshot.item.uuid);
+        expect(items[0].aliases).toContain("remote-card-review-uuid");
+        expect(items[0].timesReviewed).toBe(1);
+        expect(items[0].timesCorrect).toBe(1);
+        expect(deps.collectedAliasGroups.cards).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    entityType: "card-item",
+                    equivalentUuids: expect.arrayContaining([
+                        localSnapshot.item.uuid,
+                        "remote-card-review-uuid",
+                    ]),
+                }),
+            ]),
+        );
     });
 
     test("delete-file tombstones block older card upserts from resurrecting removed cards", async () => {

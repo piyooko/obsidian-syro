@@ -8,9 +8,12 @@ import {
 } from "src/dataStore/pendingOverlayStore";
 import { Queue } from "src/dataStore/queue";
 import { parseDailyState, type PersistedDailyState } from "src/dataStore/syroPluginDataStore";
+import type { SyroSessionDomain, SyroSessionRecord } from "src/dataStore/syroSessionManager";
+import type { PersistedSyncEntityState } from "src/dataStore/syroSyncMeta";
 import { SyroWorkspace } from "src/dataStore/syroWorkspace";
 import { deckToUIState, findDeckByPath } from "src/ui/adapters/deckAdapter";
 import SRPlugin from "src/main";
+import { registerTrackFileEvents } from "src/Events/trackFileEvents";
 import { QuestionPostponementList } from "src/QuestionPostponementList";
 import { RPITEMTYPE } from "src/dataStore/repetitionItem";
 import { ReviewResponse, FlashcardReviewMode } from "src/scheduling";
@@ -43,6 +46,8 @@ export interface HarnessDeckCounts {
 export interface HarnessCardsStateEntry {
     key: string;
     path: string;
+    itemId: number;
+    fingerprint: string;
     uuid: string;
     aliases: string[];
     trackedFileUuid: string;
@@ -127,6 +132,21 @@ export interface HarnessSessionRecordDigest {
     updatedAt: string;
 }
 
+export interface HarnessSessionRecordEntry {
+    sessionPath: string;
+    deviceFolderName: string;
+    record: SyroSessionRecord;
+}
+
+export interface HarnessSessionRecordFilter {
+    client?: string;
+    deviceFolderName?: string;
+    domain?: SyroSessionDomain;
+    entityType?: string;
+    opType?: string;
+    targetUuid?: string;
+}
+
 export interface HarnessCursorSnapshotDigest {
     updatedAt: string;
     cursors: Record<
@@ -167,6 +187,16 @@ export interface MultiDeviceHarness {
     stagePendingOverlay(clientKey: string): Promise<void>;
     flushLocalPersistence(clientKey: string): Promise<boolean>;
     sync(clientKey: string, mode?: "incremental" | "full"): Promise<void>;
+    importPendingSessions(clientKey: string): Promise<unknown>;
+    modifyVaultFile(clientKey: string, path: string, nextText: string): Promise<void>;
+    deleteVaultFile(clientKey: string, path: string): Promise<void>;
+    renameVaultFile(clientKey: string, oldPath: string, newPath: string): Promise<void>;
+    readRawDeviceJson(clientKey: string, domain: SyroSessionDomain | "pending-overlay"): unknown | null;
+    readSyncEntity(
+        clientKey: string,
+        domain: SyroSessionDomain | "pending-overlay",
+        targetUuid: string,
+    ): PersistedSyncEntityState | null;
     readCardsFormalState(clientKey: string): HarnessCardsStateEntry[];
     readTrackedFilesFormalState(clientKey: string): HarnessTrackedFileStateEntry[];
     readExtractsFormalState(clientKey: string): HarnessExtractStateEntry[];
@@ -179,6 +209,7 @@ export interface MultiDeviceHarness {
         deckPaths: string[],
     ): Record<string, HarnessDeckCounts | null>;
     readDeviceFolders(): HarnessDeviceFolderEntry[];
+    readSessionRecords(filter?: HarnessSessionRecordFilter): HarnessSessionRecordEntry[];
     readSessionDigests(): Record<string, HarnessSessionRecordDigest[]>;
     collectDiagnostics(clientKeys: string[], deckPaths: string[]): HarnessStateDiagnostics;
     getClient(clientKey: string): HarnessClient;
@@ -533,12 +564,35 @@ function createTFolder(shared: SharedFileSystem, path: string): TFolder {
 
 function createApp(shared: SharedFileSystem, basePath: string): any {
     const adapter = createAdapter(shared, basePath);
+    const vaultEventHandlers = new Map<string, Array<(...args: any[]) => unknown>>();
+    const registerVaultHandler = (
+        event: string,
+        handler: (...args: any[]) => unknown,
+    ): { detach: () => void } => {
+        const handlers = vaultEventHandlers.get(event) ?? [];
+        handlers.push(handler);
+        vaultEventHandlers.set(event, handlers);
+        return {
+            detach: () => {
+                const current = vaultEventHandlers.get(event) ?? [];
+                vaultEventHandlers.set(
+                    event,
+                    current.filter((entry) => entry !== handler),
+                );
+            },
+        };
+    };
+    const triggerVaultEvent = async (event: string, ...args: any[]): Promise<void> => {
+        for (const handler of vaultEventHandlers.get(event) ?? []) {
+            await handler(...args);
+        }
+    };
     const metadataCache = {
         getFileCache: jest.fn((file: TFile) => {
             const text = shared.files.get(normalizePath(file.path)) ?? "";
             return buildFileCache(text);
         }),
-        on: jest.fn(),
+        on: jest.fn(registerVaultHandler),
         off: jest.fn(),
         resolvedLinks: {},
         unresolvedLinks: {},
@@ -574,7 +628,7 @@ function createApp(shared: SharedFileSystem, basePath: string): any {
         modify: jest.fn(async (file: TFile, content: string) => {
             writeSharedFile(shared, file.path, content);
         }),
-        on: jest.fn(),
+        on: jest.fn(registerVaultHandler),
         off: jest.fn(),
         read: jest.fn(async (file: TFile) => shared.files.get(normalizePath(file.path)) ?? ""),
         trash: jest.fn(async (file: TFile) => {
@@ -596,6 +650,7 @@ function createApp(shared: SharedFileSystem, basePath: string): any {
         },
         metadataCache,
         vault,
+        __triggerVaultEvent: triggerVaultEvent,
         workspace: {
             detachLeavesOfType: jest.fn(),
             getActiveFile: jest.fn(() => null),
@@ -684,6 +739,8 @@ function normalizeCardsState(raw: string | null | undefined): HarnessCardsStateE
                 snapshot.trackedItem?.clozeId ?? "",
             ].join("::"),
             path: snapshot.path,
+            itemId: snapshot.item.ID,
+            fingerprint: snapshot.trackedItem?.fingerprint ?? "",
             uuid: snapshot.item.uuid,
             aliases: [...(snapshot.item.aliases ?? [])].sort((left, right) =>
                 left.localeCompare(right),
@@ -898,6 +955,75 @@ function collectSessionDigests(
     return result;
 }
 
+function collectSessionRecords(
+    shared: SharedFileSystem,
+    clients: Map<string, HarnessClient>,
+    filter: HarnessSessionRecordFilter = {},
+): HarnessSessionRecordEntry[] {
+    const deviceFolderNameForClient = filter.client
+        ? clients.has(filter.client)
+            ? getCurrentDeviceFolderName(clients.get(filter.client)!.plugin)
+            : ""
+        : filter.deviceFolderName;
+    const result: HarnessSessionRecordEntry[] = [];
+    for (const [path, raw] of shared.files.entries()) {
+        if (
+            !path.startsWith(".obsidian/plugins/syro/sessions/") ||
+            !path.endsWith(".session.jsonl")
+        ) {
+            continue;
+        }
+        const sessionPath = path.replace(".obsidian/plugins/syro/sessions/", "");
+        const deviceFolderName = sessionPath.split("/")[0] ?? "";
+        if (deviceFolderNameForClient && deviceFolderName !== deviceFolderNameForClient) {
+            continue;
+        }
+        const records = raw
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0)
+            .map((line) => {
+                try {
+                    return JSON.parse(line) as Record<string, any>;
+                } catch {
+                    return null;
+                }
+            })
+            .filter((line): line is Record<string, any> => !!line)
+            .filter((line) => line.lineType === "event" && line.record)
+            .map((line) => line.record as SyroSessionRecord)
+            .filter((record) => {
+                if (filter.domain && record.domain !== filter.domain) {
+                    return false;
+                }
+                if (filter.entityType && record.entityType !== filter.entityType) {
+                    return false;
+                }
+                if (filter.opType && record.opType !== filter.opType) {
+                    return false;
+                }
+                if (filter.targetUuid && record.targetUuid !== filter.targetUuid) {
+                    return false;
+                }
+                return true;
+            });
+        for (const record of records) {
+            result.push({
+                sessionPath,
+                deviceFolderName,
+                record,
+            });
+        }
+    }
+    return result.sort((left, right) => {
+        const sessionCompare = left.sessionPath.localeCompare(right.sessionPath);
+        if (sessionCompare !== 0) {
+            return sessionCompare;
+        }
+        return left.record.createdAt.localeCompare(right.record.createdAt);
+    });
+}
+
 function collectLatestCursorSnapshots(
     shared: SharedFileSystem,
 ): Record<string, HarnessCursorSnapshotDigest | null> {
@@ -1017,6 +1143,7 @@ async function createPluginClient(
     Iadapter.create(app);
     await plugin.loadPluginData();
     await initializePluginRuntime(plugin);
+    registerTrackFileEvents(plugin);
     return {
         key,
         app,
@@ -1290,6 +1417,76 @@ export function createSyroMultiDeviceHarness(): MultiDeviceHarness {
     const readSessionDigests = (): Record<string, HarnessSessionRecordDigest[]> =>
         collectSessionDigests(shared);
 
+    const deviceJsonPathForDomain = (
+        clientKey: string,
+        domain: SyroSessionDomain | "pending-overlay",
+    ): string => {
+        const client = clients.get(clientKey);
+        if (!client) {
+            throw new Error(`Unknown client: ${clientKey}`);
+        }
+        const layout = getLayout(client.plugin);
+        switch (domain) {
+            case "cards":
+                return layout.cardsPath;
+            case "notes":
+                return layout.notesPath;
+            case "timeline":
+                return layout.timelinePath;
+            case "extracts":
+                return layout.extractsPath;
+            case "deck-options":
+                return layout.deckOptionsPath;
+            case "file-identities":
+                return layout.fileIdentitiesPath;
+            case "settings":
+                return layout.settingsPath;
+            case "tracking-rules":
+                return layout.trackingRulesPath;
+            case "daily-state":
+                return layout.dailyStatePath;
+            case "pending-overlay":
+                return layout.pendingOverlayPath;
+            default:
+                throw new Error(`Unsupported domain: ${domain}`);
+        }
+    };
+
+    const readRawDeviceJson = (
+        clientKey: string,
+        domain: SyroSessionDomain | "pending-overlay",
+    ): unknown | null => {
+        const raw = shared.files.get(normalizePath(deviceJsonPathForDomain(clientKey, domain)));
+        if (!raw) {
+            return null;
+        }
+        try {
+            return JSON.parse(raw) as unknown;
+        } catch {
+            return null;
+        }
+    };
+
+    const readSyncEntity = (
+        clientKey: string,
+        domain: SyroSessionDomain | "pending-overlay",
+        targetUuid: string,
+    ): PersistedSyncEntityState | null => {
+        const raw = readRawDeviceJson(clientKey, domain);
+        if (!raw || typeof raw !== "object") {
+            return null;
+        }
+        const syncEntities = (raw as Record<string, any>).syncEntities;
+        if (!syncEntities || typeof syncEntities !== "object") {
+            return null;
+        }
+        return (syncEntities as Record<string, PersistedSyncEntityState>)[targetUuid] ?? null;
+    };
+
+    const readSessionRecords = (
+        filter: HarnessSessionRecordFilter = {},
+    ): HarnessSessionRecordEntry[] => collectSessionRecords(shared, clients, filter);
+
     const collectDiagnostics = (
         clientKeys: string[],
         deckPaths: string[],
@@ -1362,6 +1559,31 @@ export function createSyroMultiDeviceHarness(): MultiDeviceHarness {
             return client.plugin.flushReviewPersistence(2500, { notify: false });
         },
 
+        async modifyVaultFile(clientKey: string, path: string, nextText: string): Promise<void> {
+            const client = await activateClient(clientKey);
+            const normalized = normalizePath(path);
+            writeSharedFile(shared, normalized, nextText);
+            const file = createTFile(shared, normalized);
+            await client.app.__triggerVaultEvent("modify", file);
+        },
+
+        async deleteVaultFile(clientKey: string, path: string): Promise<void> {
+            const client = await activateClient(clientKey);
+            const normalized = normalizePath(path);
+            const file = createTFile(shared, normalized);
+            removeSharedFile(shared, normalized);
+            await client.app.__triggerVaultEvent("delete", file);
+        },
+
+        async renameVaultFile(clientKey: string, oldPath: string, newPath: string): Promise<void> {
+            const client = await activateClient(clientKey);
+            const normalizedOldPath = normalizePath(oldPath);
+            const normalizedNewPath = normalizePath(newPath);
+            moveSharedPath(shared, normalizedOldPath, normalizedNewPath);
+            const file = createTFile(shared, normalizedNewPath);
+            await client.app.__triggerVaultEvent("rename", file, normalizedOldPath);
+        },
+
         async sync(clientKey: string, mode: "incremental" | "full" = "incremental"): Promise<void> {
             const client = await activateClient(clientKey);
             await client.plugin.requestSync({
@@ -1369,6 +1591,19 @@ export function createSyroMultiDeviceHarness(): MultiDeviceHarness {
                 mode,
                 trigger: "manual",
             });
+        },
+
+        async importPendingSessions(clientKey: string): Promise<unknown> {
+            const client = await activateClient(clientKey);
+            const result = await (client.plugin as any).importPendingSyroSessions({
+                sealOwnOpenSession: true,
+                reason: "diagnostic",
+            });
+            await ((client.plugin as any).finalizeImportedSyroSessions?.(
+                result ?? null,
+                "diagnostic",
+            ) ?? Promise.resolve(result ?? null));
+            return result ?? null;
         },
 
         readCardsFormalState,
@@ -1388,6 +1623,12 @@ export function createSyroMultiDeviceHarness(): MultiDeviceHarness {
         readDeckCounts,
 
         readDeviceFolders,
+
+        readRawDeviceJson,
+
+        readSyncEntity,
+
+        readSessionRecords,
 
         readSessionDigests,
 
