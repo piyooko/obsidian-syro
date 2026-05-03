@@ -2515,13 +2515,25 @@ body.syro-mobile-review-square-corners
 }
 
 .corner-pill-wrapper {
-    --sr-extract-memo-bg-app: #121212;
-    --sr-extract-memo-surface: #1e1e1e;
-    --sr-extract-memo-border-dim: rgba(255, 255, 255, 0.06);
-    --sr-extract-memo-border-focus: rgba(255, 255, 255, 0.25);
-    --sr-extract-memo-text-main: #dadada;
-    --sr-extract-memo-text-muted: #666666;
-    --sr-extract-memo-text-bright: #ffffff;
+    --sr-extract-memo-surface: color-mix(in srgb, var(--background-secondary) 82%, transparent);
+    --sr-extract-memo-surface-active: color-mix(
+        in srgb,
+        var(--background-secondary) 96%,
+        var(--background-primary)
+    );
+    --sr-extract-memo-border-dim: color-mix(
+        in srgb,
+        var(--background-modifier-border) 80%,
+        transparent
+    );
+    --sr-extract-memo-border-focus: color-mix(
+        in srgb,
+        var(--text-muted) 35%,
+        var(--background-modifier-border)
+    );
+    --sr-extract-memo-text-main: var(--text-normal);
+    --sr-extract-memo-text-muted: var(--text-muted);
+    --sr-extract-memo-text-bright: var(--text-normal);
     --sr-extract-memo-animation-duration: var(
         --syro-desktop-review-extract-memo-animation-duration,
         350ms
@@ -2530,7 +2542,7 @@ body.syro-mobile-review-square-corners
     position: absolute;
     right: 10px;
     bottom: 15px;
-    background: rgba(30, 30, 30, 0.5);
+    background: var(--sr-extract-memo-surface);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--sr-extract-memo-border-dim);
@@ -2552,6 +2564,16 @@ body.syro-mobile-review-square-corners
     );
 }
 
+.theme-dark .corner-pill-wrapper {
+    --sr-extract-memo-surface: rgba(30, 30, 30, 0.5);
+    --sr-extract-memo-surface-active: rgba(26, 26, 26, 0.98);
+    --sr-extract-memo-border-dim: rgba(255, 255, 255, 0.06);
+    --sr-extract-memo-border-focus: rgba(255, 255, 255, 0.25);
+    --sr-extract-memo-text-main: #dadada;
+    --sr-extract-memo-text-muted: #666666;
+    --sr-extract-memo-text-bright: #ffffff;
+}
+
 .corner-pill-wrapper.animate {
     transition:
         width var(--sr-extract-memo-animation-duration) cubic-bezier(0.2, 0.8, 0.2, 1),
@@ -2566,7 +2588,7 @@ body.syro-mobile-review-square-corners
     width: var(--sr-extract-memo-width, 400px);
     border-radius: 10px;
     border-color: var(--sr-extract-memo-border-focus);
-    background: rgba(26, 26, 26, 0.98);
+    background: var(--sr-extract-memo-surface-active);
 }
 
 .pill-icon {
@@ -2771,7 +2793,7 @@ body.syro-mobile-review-square-corners
     .sr-linear-card-wrapper.sr-phone-layout
     .corner-pill-wrapper {
     border-radius: 4px;
-    border-left: 2px solid rgba(255, 255, 255, 0.15);
+    border-left: 2px solid var(--sr-extract-memo-border-dim);
     box-shadow:
         0 6px 12px rgba(0, 0, 0, 0.3),
         0 1px 2px rgba(0, 0, 0, 0.2);

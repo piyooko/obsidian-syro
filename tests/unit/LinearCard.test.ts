@@ -3387,6 +3387,27 @@ test("extract memo sits 15px from bottom and 10px from right", () => {
     expect(mobileRule).toContain("bottom: 15px");
 });
 
+test("extract memo follows Obsidian theme colors by default", () => {
+    const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
+    const wrapperRule = css.match(/\.corner-pill-wrapper\s*\{[^}]*\}/s)?.[0] ?? "";
+    const activeRule = css.match(/\.corner-pill-wrapper\.is-active\s*\{[^}]*\}/s)?.[0] ?? "";
+
+    expect(wrapperRule).toContain(
+        "--sr-extract-memo-surface: color-mix(in srgb, var(--background-secondary) 82%, transparent)",
+    );
+    expect(wrapperRule).toMatch(
+        /--sr-extract-memo-surface-active:\s*color-mix\(\s*in srgb,\s*var\(--background-secondary\) 96%,\s*var\(--background-primary\)\s*\)/,
+    );
+    expect(wrapperRule).toMatch(
+        /--sr-extract-memo-border-dim:\s*color-mix\(\s*in srgb,\s*var\(--background-modifier-border\) 80%,\s*transparent\s*\)/,
+    );
+    expect(wrapperRule).toContain("--sr-extract-memo-text-main: var(--text-normal)");
+    expect(wrapperRule).toContain("background: var(--sr-extract-memo-surface)");
+    expect(activeRule).toContain("background: var(--sr-extract-memo-surface-active)");
+    expect(wrapperRule).not.toContain("background: rgba(30, 30, 30, 0.5)");
+    expect(activeRule).not.toContain("background: rgba(26, 26, 26, 0.98)");
+});
+
 test("extract memo active state does not add expanded background shadow", () => {
     const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
     const activeRule = css.match(/\.corner-pill-wrapper\.is-active\s*\{[^}]*\}/s)?.[0] ?? "";
@@ -3421,7 +3442,7 @@ test("review square corners switch the extract memo pill to sharp panel styling"
     const css = readFileSync(join(process.cwd(), "src/ui/styles/linear-card.css"), "utf8");
 
     expect(css).toMatch(
-        /body\.syro-desktop-review-square-corners[\s\S]*\.corner-pill-wrapper\s*\{[\s\S]*border-radius:\s*4px[\s\S]*border-left:\s*2px solid rgba\(255,\s*255,\s*255,\s*0\.15\)[\s\S]*box-shadow:\s*0 6px 12px rgba\(0,\s*0,\s*0,\s*0\.3\),\s*0 1px 2px rgba\(0,\s*0,\s*0,\s*0\.2\)/,
+        /body\.syro-desktop-review-square-corners[\s\S]*\.corner-pill-wrapper\s*\{[\s\S]*border-radius:\s*4px[\s\S]*border-left:\s*2px solid var\(--sr-extract-memo-border-dim\)[\s\S]*box-shadow:\s*0 6px 12px rgba\(0,\s*0,\s*0,\s*0\.3\),\s*0 1px 2px rgba\(0,\s*0,\s*0,\s*0\.2\)/,
     );
     expect(css).toMatch(
         /body\.syro-desktop-review-square-corners[\s\S]*\.corner-pill-wrapper\.animate\s*\{[\s\S]*width var\(--sr-extract-memo-animation-duration\) cubic-bezier\(0\.16,\s*1,\s*0\.3,\s*1\)/,
